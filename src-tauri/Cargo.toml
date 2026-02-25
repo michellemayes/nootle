@@ -38,6 +38,9 @@ ringbuf = "0.4"
 hound = "3.5"
 cidre = { version = "0.14", features = ["av"], optional = true }
 
+[dev-dependencies]
+tempfile = "3"
+
 [features]
 default = []
 system-audio = ["cidre"]
