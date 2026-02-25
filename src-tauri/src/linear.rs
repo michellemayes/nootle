@@ -125,11 +125,11 @@ pub async fn list_teams(api_key: &str) -> anyhow::Result<Vec<LinearTeam>> {
 
 pub async fn list_projects(api_key: &str, team_id: &str) -> anyhow::Result<Vec<LinearProject>> {
     let client = reqwest::Client::new();
-    let query = format!(
-        r#"{{ projects(filter: {{ accessibleTeams: {{ id: {{ eq: "{}" }} }} }}) {{ nodes {{ id name }} }} }}"#,
-        team_id
-    );
-    let body = serde_json::json!({ "query": query });
+    let query = r#"query ListProjects($teamId: String!) { projects(filter: { accessibleTeams: { id: { eq: $teamId } } }) { nodes { id name } } }"#;
+    let body = serde_json::json!({
+        "query": query,
+        "variables": { "teamId": team_id }
+    });
 
     let resp = client
         .post(LINEAR_API_URL)

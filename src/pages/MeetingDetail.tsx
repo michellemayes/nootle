@@ -74,6 +74,14 @@ function CreateTicketButton({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (defaultTeamId && !teamId) setTeamId(defaultTeamId);
+  }, [defaultTeamId]);
+
+  useEffect(() => {
+    if (defaultProjectId && !projectId) setProjectId(defaultProjectId);
+  }, [defaultProjectId]);
+
   const { projects } = useLinearProjects(teamId || null);
 
   const filteredModels = models.filter((m) => m.provider === selectedProvider);
