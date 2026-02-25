@@ -20,7 +20,7 @@ export function Sidebar() {
     <aside className="flex h-screen w-60 flex-col border-r bg-card">
       {/* Logo */}
       <div className="flex items-center gap-2 px-5 pt-6 pb-4">
-        <img src="/nootle-icon.svg" alt="Nootle" className="h-8 w-8" />
+        <img src="/nootle-icon.png" alt="Nootle" className="h-8 w-8 rounded-lg" />
         <span className="text-lg font-semibold tracking-tight">Nootle</span>
       </div>
 
