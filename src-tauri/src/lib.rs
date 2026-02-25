@@ -231,6 +231,12 @@ pub fn run() {
             commands::seed_default_prompts,
             commands::get_model_status,
             commands::get_diarization_status,
+            commands::list_linear_teams,
+            commands::list_linear_projects,
+            commands::create_linear_ticket,
+            commands::get_linear_tickets,
+            commands::get_linear_setting,
+            commands::set_linear_setting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
