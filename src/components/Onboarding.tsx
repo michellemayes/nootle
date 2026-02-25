@@ -53,7 +53,6 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   };
 
   return (
-    <div className="dark">
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
         <AnimatePresence mode="wait">
           <motion.div
@@ -180,7 +179,6 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           </motion.div>
         </AnimatePresence>
       </div>
-    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ThemeProvider } from "@/hooks/useTheme";
 import { Sidebar } from "@/components/Sidebar";
 import { Onboarding } from "@/components/Onboarding";
 import { MeetingLibrary } from "@/pages/MeetingLibrary";
@@ -24,11 +25,15 @@ function App() {
   );
 
   if (!onboarded) {
-    return <Onboarding onComplete={() => setOnboarded(true)} />;
+    return (
+      <ThemeProvider>
+        <Onboarding onComplete={() => setOnboarded(true)} />
+      </ThemeProvider>
+    );
   }
 
   return (
-    <div className="dark">
+    <ThemeProvider>
       <BrowserRouter>
         <Routes>
           <Route
@@ -81,7 +86,7 @@ function App() {
           />
         </Routes>
       </BrowserRouter>
-    </div>
+    </ThemeProvider>
   );
 }
 
