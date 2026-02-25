@@ -3,13 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
+import { Mic, FileText, Sparkles, Settings, HelpCircle, Circle, Moon, Sun } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const navItems = [
-  { to: "/", label: "Meetings", icon: "\uD83C\uDFA4" },
-  { to: "/templates", label: "Templates", icon: "\uD83D\uDCC4" },
-  { to: "/prompts", label: "Prompts", icon: "\u2728" },
-  { to: "/settings", label: "Settings", icon: "\u2699\uFE0F" },
-  { to: "/help", label: "Help", icon: "\u2753" },
+const navItems: { to: string; label: string; icon: LucideIcon }[] = [
+  { to: "/", label: "Meetings", icon: Mic },
+  { to: "/templates", label: "Templates", icon: FileText },
+  { to: "/prompts", label: "Prompts", icon: Sparkles },
+  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/help", label: "Help", icon: HelpCircle },
 ];
 
 export function Sidebar() {
@@ -32,7 +34,7 @@ export function Sidebar() {
           className="w-full justify-start gap-2"
           onClick={() => navigate("/recording")}
         >
-          <span className="text-base leading-none">{"\u23FA"}</span>
+          <Circle className="h-4 w-4" />
           New Recording
         </Button>
       </div>
@@ -55,7 +57,7 @@ export function Sidebar() {
               )
             }
           >
-            <span className="text-base leading-none">{item.icon}</span>
+            <item.icon className="h-4 w-4" />
             {item.label}
           </NavLink>
         ))}
@@ -71,7 +73,7 @@ export function Sidebar() {
           title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
           className="h-8 w-8 p-0"
         >
-          {theme === "light" ? "\u{1F319}" : "\u{2600}\u{FE0F}"}
+          {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
         </Button>
       </div>
     </aside>

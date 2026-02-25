@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useChat } from "@/hooks/useChat";
 import { useLLM } from "@/hooks/useLLM";
+import { X } from "lucide-react";
 
 interface ChatPanelProps {
   meetingId: string;
@@ -72,7 +73,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
           <div className="flex items-center justify-between px-4 py-3 border-b">
             <h3 className="font-semibold">Chat with Meeting</h3>
             <Button variant="ghost" size="icon-sm" onClick={onClose}>
-              {"\u2715"}
+              <X className="h-4 w-4" />
             </Button>
           </div>
 

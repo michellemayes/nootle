@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { useMeetings } from "@/hooks/useMeetings";
 import { useCategories } from "@/hooks/useCategories";
 import type { Meeting } from "@/types";
+import { Search, Mic } from "lucide-react";
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -100,9 +101,7 @@ export function MeetingLibrary() {
       {/* Search and filters */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-            {"\uD83D\uDD0D"}
-          </span>
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search meetings..."
             value={search}
@@ -146,7 +145,7 @@ export function MeetingLibrary() {
         </div>
       ) : meetings.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <span className="text-4xl">{"\uD83C\uDFA4"}</span>
+          <Mic className="h-10 w-10 text-muted-foreground" />
           <h2 className="text-lg font-medium">No meetings yet</h2>
           <p className="text-sm text-muted-foreground">
             Start a new recording to get started

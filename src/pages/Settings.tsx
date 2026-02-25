@@ -9,6 +9,7 @@ import { useLLM } from "@/hooks/useLLM";
 import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import { useModelDownload } from "@/hooks/useModelDownload";
 import { useTheme } from "@/hooks/useTheme";
+import { EyeOff, Eye, Moon, Sun } from "lucide-react";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "ollama"];
 
@@ -79,7 +80,7 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
             onClick={() => setShowKey(!showKey)}
             title={showKey ? "Hide" : "Show"}
           >
-            {showKey ? "\uD83D\uDE48" : "\uD83D\uDC41"}
+            {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={saving || !keyValue.trim()}>
             {saving ? "..." : "Save"}
@@ -222,7 +223,7 @@ export function SettingsPage() {
                 </p>
               </div>
               <Button variant="outline" size="sm" onClick={toggleTheme}>
-                {theme === "light" ? "\u{1F319} Dark" : "\u{2600}\u{FE0F} Light"}
+                {theme === "light" ? <><Moon className="h-4 w-4" /> Dark</> : <><Sun className="h-4 w-4" /> Light</>}
               </Button>
             </div>
           </CardContent>
