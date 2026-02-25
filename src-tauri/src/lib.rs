@@ -7,6 +7,7 @@ pub mod error;
 pub mod keychain;
 pub mod llm;
 pub mod mcp;
+pub mod permissions;
 pub mod summarization;
 pub mod transcription;
 
@@ -230,6 +231,10 @@ pub fn run() {
             commands::seed_default_prompts,
             commands::get_model_status,
             commands::get_diarization_status,
+            commands::check_permissions,
+            commands::request_microphone_permission,
+            commands::request_screen_recording_permission,
+            commands::request_calendar_permission,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,8 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
+import { useTheme } from "@/hooks/useTheme";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "ollama"];
 
@@ -120,6 +122,7 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
 export function SettingsPage() {
   const { storedProviders, storeKey, deleteKey } = useApiKeys();
   const { providers: llmProviders } = useLLM();
+  const { theme, toggleTheme } = useTheme();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -134,70 +137,93 @@ export function SettingsPage() {
   );
 
   return (
-    <div className="flex flex-1 flex-col gap-8 p-8 max-w-3xl">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Configure API keys and application settings
-        </p>
-      </div>
+    <ScrollArea className="flex-1">
+      <div className="flex flex-col gap-8 p-8 max-w-3xl">
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Configure API keys and application settings
+          </p>
+        </div>
 
-      {/* API Keys */}
-      <Card>
-        <CardHeader>
-          <CardTitle>API Keys</CardTitle>
-          <CardDescription>
-            Configure API keys for LLM providers. Keys are stored securely in the
-            macOS Keychain.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="divide-y">
-            {allProviders.map((provider) => (
-              <ApiKeyRow
-                key={provider}
-                provider={provider}
-                isStored={storedProviders.includes(provider)}
-                onSave={(key) => storeKey(provider, key)}
-                onDelete={() => deleteKey(provider)}
-              />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* About */}
-      <Card>
-        <CardHeader>
-          <CardTitle>About</CardTitle>
-          <CardDescription>
-            Nootle v0.1.0 — Meeting recorder and summarizer
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <h3 className="text-sm font-medium mb-2">MCP Server Configuration</h3>
-            <p className="text-xs text-muted-foreground mb-3">
-              Add this to your MCP client configuration to use Nootle as an MCP
-              server:
-            </p>
-            <div className="relative">
-              <pre className="rounded-lg bg-muted p-4 text-xs font-mono overflow-x-auto">
-                {MCP_CONFIG}
-              </pre>
-              <Button
-                variant="secondary"
-                size="xs"
-                className="absolute top-2 right-2"
-                onClick={handleCopy}
-              >
-                {copied ? "Copied!" : "Copy"}
+        {/* Appearance */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Appearance</CardTitle>
+            <CardDescription>Choose your preferred color scheme</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Theme</p>
+                <p className="text-sm text-muted-foreground">
+                  {theme === "light" ? "Light mode" : "Dark mode"}
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={toggleTheme}>
+                {theme === "light" ? "\u{1F319} Dark" : "\u{2600}\u{FE0F} Light"}
               </Button>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+          </CardContent>
+        </Card>
+
+        {/* API Keys */}
+        <Card>
+          <CardHeader>
+            <CardTitle>API Keys</CardTitle>
+            <CardDescription>
+              Configure API keys for LLM providers. Keys are stored securely in the
+              macOS Keychain.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="divide-y">
+              {allProviders.map((provider) => (
+                <ApiKeyRow
+                  key={provider}
+                  provider={provider}
+                  isStored={storedProviders.includes(provider)}
+                  onSave={(key) => storeKey(provider, key)}
+                  onDelete={() => deleteKey(provider)}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* About */}
+        <Card>
+          <CardHeader>
+            <CardTitle>About</CardTitle>
+            <CardDescription>
+              Nootle v0.1.0 — Meeting recorder and summarizer
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <h3 className="text-sm font-medium mb-2">MCP Server Configuration</h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Add this to your MCP client configuration to use Nootle as an MCP
+                server:
+              </p>
+              <div className="relative">
+                <pre className="rounded-lg bg-muted p-4 text-xs font-mono overflow-x-auto">
+                  {MCP_CONFIG}
+                </pre>
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  className="absolute top-2 right-2"
+                  onClick={handleCopy}
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </ScrollArea>
   );
 }

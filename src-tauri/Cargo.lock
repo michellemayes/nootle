@@ -2633,6 +2633,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "block2",
  "chrono",
  "cidre",
  "cpal",
@@ -2641,6 +2642,7 @@ dependencies = [
  "hound",
  "log",
  "ndarray 0.16.1",
+ "objc2",
  "ort",
  "reqwest 0.12.28",
  "ringbuf",
