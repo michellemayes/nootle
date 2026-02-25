@@ -3,6 +3,8 @@ use crate::db::*;
 use crate::diarization::DiarizationEngine;
 use crate::keychain;
 use crate::llm::{ChatMessage, LlmRegistry};
+use crate::model_download::{self, DownloadManager};
+use crate::model_registry;
 use crate::summarization;
 use crate::transcription::{self, TranscriptionEngine};
 use std::sync::Arc;
@@ -13,6 +15,7 @@ pub type DbState = Arc<Database>;
 pub type RecordingState = Arc<TokioMutex<Option<RecordingSession>>>;
 pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
 pub type DetectorState = Arc<std::sync::Mutex<crate::detection::MeetingDetector>>;
+pub type DownloadManagerState = Arc<TokioMutex<DownloadManager>>;
 
 // Meeting commands
 #[tauri::command]
@@ -428,7 +431,18 @@ pub fn get_active_meeting_apps(detector: State<'_, DetectorState>) -> Result<Vec
 
 // Transcription commands
 #[tauri::command]
-pub fn get_model_status() -> Result<String, String> {
+pub async fn get_model_status(
+    download_mgr: State<'_, DownloadManagerState>,
+) -> Result<String, String> {
+    let mgr = download_mgr.lock().await;
+    let is_downloading = mgr.cancel_token.is_some();
+    drop(mgr);
+
+    if is_downloading {
+        return serde_json::to_string(&transcription::ModelStatus::Downloading { progress: 0.0 })
+            .map_err(|e| e.to_string());
+    }
+
     let status = transcription::TranscriptionEngine::check_status();
     serde_json::to_string(&status).map_err(|e| e.to_string())
 }
@@ -436,6 +450,27 @@ pub fn get_model_status() -> Result<String, String> {
 #[tauri::command]
 pub fn get_diarization_status() -> Result<bool, String> {
     Ok(crate::diarization::DiarizationEngine::models_available())
+}
+
+// Permission commands
+#[tauri::command]
+pub fn check_permissions() -> Result<crate::permissions::PermissionStatus, String> {
+    Ok(crate::permissions::check_all())
+}
+
+#[tauri::command]
+pub async fn request_microphone_permission() -> Result<bool, String> {
+    Ok(crate::permissions::request_microphone().await)
+}
+
+#[tauri::command]
+pub fn request_screen_recording_permission() -> Result<bool, String> {
+    Ok(crate::permissions::request_screen_recording())
+}
+
+#[tauri::command]
+pub async fn request_calendar_permission() -> Result<bool, String> {
+    Ok(crate::permissions::request_calendar().await)
 }
 
 // Onboarding commands
@@ -600,4 +635,55 @@ pub fn set_linear_setting(
     }
     db.set_linear_setting(&key, &value)
         .map_err(|e| e.to_string())
+}
+
+// Model download commands
+
+#[tauri::command]
+pub async fn get_available_models() -> Result<serde_json::Value, String> {
+    serde_json::to_value(model_registry::MODEL_REGISTRY).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_downloaded_models() -> Result<Vec<model_download::ModelOnDiskStatus>, String> {
+    Ok(model_download::get_all_model_status())
+}
+
+#[tauri::command]
+pub async fn download_model(
+    app: tauri::AppHandle,
+    download_mgr: State<'_, DownloadManagerState>,
+    model_id: String,
+    variant_id: String,
+) -> Result<(), String> {
+    let (model, variant) = model_registry::get_variant(&model_id, &variant_id)
+        .ok_or_else(|| format!("Unknown model/variant: {model_id}/{variant_id}"))?;
+
+    let cancel = {
+        let mut mgr = download_mgr.lock().await;
+        mgr.new_token()
+    };
+
+    let result = model_download::download_variant(app, model, variant, cancel).await;
+
+    {
+        let mut mgr = download_mgr.lock().await;
+        mgr.clear_token();
+    }
+
+    result
+}
+
+#[tauri::command]
+pub async fn cancel_download(download_mgr: State<'_, DownloadManagerState>) -> Result<(), String> {
+    let mut mgr = download_mgr.lock().await;
+    mgr.cancel();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_model(model_id: String) -> Result<(), String> {
+    let model =
+        model_registry::get_model(&model_id).ok_or_else(|| format!("Unknown model: {model_id}"))?;
+    model_download::delete_model_files(model)
 }
