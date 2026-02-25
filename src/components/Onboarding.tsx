@@ -61,7 +61,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
-            className="mx-auto w-full max-w-lg rounded-2xl border border-border bg-card p-8 shadow-2xl"
+            className="mx-auto w-full max-w-lg overflow-y-auto max-h-[90vh] rounded-2xl border border-border bg-card p-8 shadow-2xl"
           >
             {/* Progress dots */}
             <div className="mb-8 flex justify-center gap-2">
