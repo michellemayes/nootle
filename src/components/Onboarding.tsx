@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, type ReactNode } from "react
 import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,6 +20,40 @@ const PROVIDERS = [
   { id: "google", name: "Google Gemini", placeholder: "AIza..." },
   { id: "groq", name: "Groq", placeholder: "gsk_..." },
 ] as const;
+
+function SparkleShower() {
+  const particles = Array.from({ length: 12 }, (_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    delay: Math.random() * 2,
+    duration: 2 + Math.random() * 2,
+    size: 2 + Math.random() * 3,
+  }));
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {particles.map((p) => (
+        <motion.div
+          key={p.id}
+          className="absolute rounded-full bg-primary/30"
+          style={{
+            left: `${p.left}%`,
+            width: p.size,
+            height: p.size,
+          }}
+          initial={{ y: -10, opacity: 0 }}
+          animate={{ y: "100%", opacity: [0, 0.8, 0] }}
+          transition={{
+            duration: p.duration,
+            delay: p.delay,
+            repeat: Infinity,
+            ease: "linear",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -96,13 +131,12 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                   Welcome to Nootle
                 </h1>
                 <p className="mb-8 text-muted-foreground">
-                  Your AI-powered meeting recorder. Nootle captures audio,
-                  transcribes in real-time, and generates smart summaries — all
-                  locally on your Mac.
+                  Nootle captures your meetings, transcribes them live, and
+                  cooks up smart summaries — all on your Mac.
                 </p>
-                <Button size="lg" onClick={next}>
+                <MotionButton size="lg" onClick={next}>
                   Get Started
-                </Button>
+                </MotionButton>
               </div>
             )}
 
@@ -146,23 +180,24 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                   <Button variant="ghost" onClick={next}>
                     Skip
                   </Button>
-                  <Button onClick={next}>Continue</Button>
+                  <MotionButton onClick={next}>Continue</MotionButton>
                 </div>
               </div>
             )}
 
             {step === "Done" && (
-              <div className="text-center">
-                <h2 className="mb-2 text-3xl font-bold text-foreground">
-                  You're all set!
+              <div className="relative text-center">
+                <SparkleShower />
+                <h2 className="relative mb-2 text-3xl font-bold text-foreground">
+                  You're ready to nootle!
                 </h2>
-                <p className="mb-8 text-muted-foreground">
+                <p className="relative mb-8 text-muted-foreground">
                   Nootle will automatically detect meetings in Zoom, Teams, and
                   Google Meet. You can also start recording manually anytime.
                 </p>
-                <Button size="lg" onClick={finish} disabled={saving}>
+                <MotionButton size="lg" onClick={finish} disabled={saving} className="relative">
                   {saving ? "Setting up..." : "Start Using Nootle"}
-                </Button>
+                </MotionButton>
               </div>
             )}
           </motion.div>
@@ -262,9 +297,9 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
         </p>
       )}
       <div className="mt-8 flex justify-end">
-        <Button onClick={onNext} disabled={!allGranted}>
+        <MotionButton onClick={onNext} disabled={!allGranted}>
           Continue
-        </Button>
+        </MotionButton>
       </div>
     </div>
   );
@@ -495,9 +530,15 @@ function PermissionRow({
         <p className="text-sm text-muted-foreground">{desc}</p>
       </div>
       {granted ? (
-        <Badge variant="secondary" className="bg-green-500/15 text-green-600 dark:text-green-400">
-          Granted
-        </Badge>
+        <motion.div
+          initial={{ scale: 1 }}
+          animate={{ scale: [1, 1.15, 1] }}
+          transition={{ duration: 0.3 }}
+        >
+          <Badge variant="secondary" className="bg-green-500/15 text-green-600 dark:text-green-400">
+            Granted
+          </Badge>
+        </motion.div>
       ) : (
         <Button
           variant="outline"

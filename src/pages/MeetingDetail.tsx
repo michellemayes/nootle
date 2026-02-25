@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
+import { SparkleEffect } from "@/components/SparkleEffect";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -231,6 +233,7 @@ export function MeetingDetail() {
   const { projects: linearProjects } = useLinearProjects(linearTeamId);
   const [chatOpen, setChatOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [justGenerated, setJustGenerated] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
@@ -275,6 +278,8 @@ export function MeetingDetail() {
     setGenerating(true);
     try {
       await generateSummary(selectedPrompt, selectedProvider, selectedModel);
+      setJustGenerated(true);
+      setTimeout(() => setJustGenerated(false), 100);
     } catch {
       // Error handling could be improved
     } finally {
@@ -326,7 +331,7 @@ export function MeetingDetail() {
           <Badge variant="outline">{meeting.status}</Badge>
         </div>
         <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
-          <MessageSquare className="h-4 w-4" /> Chat
+          <MessageSquare className="h-4 w-4" /> Ask Nootle
         </Button>
       </div>
 
@@ -347,7 +352,7 @@ export function MeetingDetail() {
                 </p>
               ) : segments.length === 0 ? (
                 <p className="text-sm text-muted-foreground italic">
-                  No transcript available yet
+                  No transcript here — this one's a mystery
                 </p>
               ) : (
                 segments.map((seg) => (
@@ -423,14 +428,19 @@ export function MeetingDetail() {
                 ))}
               </select>
             </div>
-            <Button
-              size="sm"
-              className="w-full"
-              onClick={handleGenerate}
-              disabled={generating || !selectedPrompt || !selectedProvider || !selectedModel}
-            >
-              {generating ? "Generating..." : "Generate Summary"}
-            </Button>
+            <div className="relative flex items-center justify-center">
+              <MotionButton
+                size="sm"
+                className="w-full"
+                onClick={handleGenerate}
+                disabled={generating || !selectedPrompt || !selectedProvider || !selectedModel}
+              >
+                {generating ? "Cooking..." : "Cook Up a Summary"}
+              </MotionButton>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <SparkleEffect trigger={justGenerated} />
+              </div>
+            </div>
           </div>
 
           {/* Summary tabs */}
@@ -439,7 +449,7 @@ export function MeetingDetail() {
               <div className="flex flex-col items-center justify-center p-8 gap-2">
                 <FileText className="h-8 w-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground text-center">
-                  No summaries yet. Generate one above.
+                  Nothing cooked up yet. Pick a prompt and let it rip.
                 </p>
               </div>
             ) : (

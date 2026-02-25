@@ -2,6 +2,13 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
+
+const LOADING_MESSAGES = [
+  "Warming up the noodles...",
+  "Untangling the transcript...",
+  "Slurping through the data...",
+  "Almost there, just al dente...",
+];
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -54,10 +61,11 @@ function MeetingCard({ meeting }: { meeting: Meeting }) {
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -2 }}
       transition={{ duration: 0.2 }}
     >
       <Card
-        className="cursor-pointer transition-colors hover:bg-accent/30"
+        className="cursor-pointer transition-colors hover:bg-accent/30 hover:shadow-md"
         onClick={() => navigate(`/meeting/${meeting.id}`)}
       >
         <CardContent className="space-y-3">
@@ -85,6 +93,7 @@ export function MeetingLibrary() {
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(
     undefined,
   );
+  const [loadingMessage] = useState(() => LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]);
   const { meetings, loading } = useMeetings(categoryFilter, search || undefined);
   const { categories } = useCategories();
 
@@ -141,15 +150,27 @@ export function MeetingLibrary() {
       {/* Meeting grid */}
       {loading ? (
         <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">Loading meetings...</p>
+          <p className="text-sm text-muted-foreground">{loadingMessage}</p>
         </div>
       ) : meetings.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <Mic className="h-10 w-10 text-muted-foreground" />
-          <h2 className="text-lg font-medium">No meetings yet</h2>
-          <p className="text-sm text-muted-foreground">
-            Start a new recording to get started
-          </p>
+          {search.toLowerCase() === "noodle" ? (
+            <>
+              <span className="text-4xl">{"\uD83C\uDF5C"}</span>
+              <h2 className="text-lg font-medium">You found the secret noodle!</h2>
+              <p className="text-sm text-muted-foreground">
+                Unfortunately, it's not a meeting.
+              </p>
+            </>
+          ) : (
+            <>
+              <Mic className="h-10 w-10 text-muted-foreground" />
+              <h2 className="text-lg font-medium">No meetings yet</h2>
+              <p className="text-sm text-muted-foreground">
+                Hit record and let Nootle do its thing
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

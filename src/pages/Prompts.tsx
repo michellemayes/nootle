@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -104,9 +105,9 @@ export function PromptsPage() {
               >
                 Cancel
               </Button>
-              <Button onClick={handleCreate} disabled={!newName.trim() || !newContent.trim()}>
+              <MotionButton onClick={handleCreate} disabled={!newName.trim() || !newContent.trim()}>
                 Create
-              </Button>
+              </MotionButton>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -122,16 +123,19 @@ export function PromptsPage() {
           <Sparkles className="h-10 w-10 text-muted-foreground" />
           <h2 className="text-lg font-medium">No prompts yet</h2>
           <p className="text-sm text-muted-foreground">
-            Add instructions to control what the AI writes
+            Teach Nootle what to listen for
           </p>
         </div>
       ) : (
         <div className="space-y-3">
+          <AnimatePresence>
           {prompts.map((prompt) => (
             <motion.div
               key={prompt.id}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+              layout
             >
               <Card>
                 <CardContent>
@@ -168,6 +172,7 @@ export function PromptsPage() {
               </Card>
             </motion.div>
           ))}
+          </AnimatePresence>
         </div>
       )}
     </div>

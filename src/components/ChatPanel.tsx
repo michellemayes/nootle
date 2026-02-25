@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
+import { ThinkingDots } from "@/components/ThinkingDots";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -71,7 +73,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b">
-            <h3 className="font-semibold">Chat with Meeting</h3>
+            <h3 className="font-semibold">Ask Nootle</h3>
             <Button variant="ghost" size="icon-sm" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>
@@ -113,12 +115,15 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
             <div ref={scrollRef} className="flex flex-col gap-3 p-4">
               {messages.length === 0 && (
                 <p className="text-center text-sm text-muted-foreground py-8">
-                  Ask questions about this meeting
+                  Go ahead, quiz Nootle about this meeting
                 </p>
               )}
               {messages.map((msg, i) => (
-                <div
+                <motion.div
                   key={i}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.15 }}
                   className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
@@ -130,12 +135,12 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
                   >
                     {msg.content}
                   </div>
-                </div>
+                </motion.div>
               ))}
               {loading && (
                 <div className="flex justify-start">
                   <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
-                    Thinking...
+                    <ThinkingDots />
                   </div>
                 </div>
               )}
@@ -162,9 +167,9 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
               disabled={loading}
               className="flex-1"
             />
-            <Button size="sm" onClick={handleSend} disabled={loading || !input.trim()}>
-              Send
-            </Button>
+            <MotionButton size="sm" onClick={handleSend} disabled={loading || !input.trim()}>
+              Ask
+            </MotionButton>
           </div>
 
           {/* Clear button */}
