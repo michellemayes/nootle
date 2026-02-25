@@ -19,6 +19,13 @@ export default function Home() {
           >
             Michelle Mayes
           </a>
+          {" "}&middot;{" "}
+          <a
+            href="https://github.com/michellemayes/nootle"
+            className="underline hover:text-gray-700"
+          >
+            GitHub
+          </a>
         </p>
       </footer>
     </main>
