@@ -71,8 +71,7 @@ pub fn check_microphone() -> String {
         if cls.is_null() {
             return "undetermined".to_string();
         }
-        let sel =
-            sel_registerName(b"authorizationStatusForMediaType:\0".as_ptr() as *const c_char);
+        let sel = sel_registerName(b"authorizationStatusForMediaType:\0".as_ptr() as *const c_char);
         let msg_send: unsafe extern "C" fn(Class, Sel, Id) -> i64 =
             std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         let status = msg_send(cls, sel, AVMediaTypeAudio);
@@ -106,7 +105,7 @@ pub async fn request_microphone() -> bool {
                 return false;
             }
             let sel = sel_registerName(
-                b"requestAccessForMediaType:completionHandler:\0".as_ptr() as *const c_char,
+                b"requestAccessForMediaType:completionHandler:\0".as_ptr() as *const c_char
             );
             let msg_send: unsafe extern "C" fn(
                 Class,
@@ -197,7 +196,7 @@ pub async fn request_calendar() -> bool {
 
             // [store requestFullAccessToEventsWithCompletion:]
             let sel = sel_registerName(
-                b"requestFullAccessToEventsWithCompletion:\0".as_ptr() as *const c_char,
+                b"requestFullAccessToEventsWithCompletion:\0".as_ptr() as *const c_char
             );
             let msg_send_block: unsafe extern "C" fn(
                 Id,
