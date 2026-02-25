@@ -55,12 +55,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const [accentHue, setAccentHue] = useState<number>(() => {
     const stored = localStorage.getItem("accent-hue");
-    return stored ? Number(stored) : 0;
+    return stored ? (Number(stored) || 0) : 0;
   });
 
   const [accentChroma, setAccentChroma] = useState<number>(() => {
     const stored = localStorage.getItem("accent-chroma");
-    return stored ? Number(stored) : 0;
+    return stored ? (Number(stored) || 0) : 0;
   });
 
   useEffect(() => {
