@@ -1,10 +1,11 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
+import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "ollama"];
 
@@ -117,6 +118,55 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
   );
 }
 
+function LinearDefaults() {
+  const { teams, loading: teamsLoading, fetchTeams } = useLinearTeams();
+  const { defaultTeamId, defaultProjectId, saveDefaultTeam, saveDefaultProject } =
+    useLinearSettings();
+  const { projects, loading: projectsLoading } = useLinearProjects(defaultTeamId);
+
+  useEffect(() => {
+    fetchTeams();
+  }, [fetchTeams]);
+
+  return (
+    <div className="space-y-3 border-t pt-4">
+      <p className="text-sm font-medium">Defaults</p>
+      <div className="flex items-center gap-3">
+        <label className="w-20 shrink-0 text-sm text-muted-foreground">Team</label>
+        <select
+          value={defaultTeamId ?? ""}
+          onChange={(e) => saveDefaultTeam(e.target.value)}
+          disabled={teamsLoading}
+          className="h-8 flex-1 rounded-md border bg-transparent px-2 text-sm"
+        >
+          <option value="">Select team</option>
+          {teams.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name} ({t.key})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-3">
+        <label className="w-20 shrink-0 text-sm text-muted-foreground">Project</label>
+        <select
+          value={defaultProjectId ?? ""}
+          onChange={(e) => saveDefaultProject(e.target.value)}
+          disabled={projectsLoading || !defaultTeamId}
+          className="h-8 flex-1 rounded-md border bg-transparent px-2 text-sm"
+        >
+          <option value="">None (optional)</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { storedProviders, storeKey, deleteKey } = useApiKeys();
   const { providers: llmProviders } = useLLM();
@@ -164,6 +214,27 @@ export function SettingsPage() {
               />
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Linear */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Linear</CardTitle>
+          <CardDescription>
+            Connect to Linear to create tickets from meeting summaries.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ApiKeyRow
+            provider="linear"
+            isStored={storedProviders.includes("linear")}
+            onSave={(key) => storeKey("linear", key)}
+            onDelete={() => deleteKey("linear")}
+          />
+          {storedProviders.includes("linear") && (
+            <LinearDefaults />
+          )}
         </CardContent>
       </Card>
 
