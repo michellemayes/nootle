@@ -6,13 +6,15 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
 import { Button } from "@/components/ui/button";
 import { MotionButton } from "@/components/MotionButton";
+import { Mic, FileText, Sparkles, Settings, HelpCircle, Circle, Moon, Sun } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const navItems = [
-  { to: "/", label: "Meetings", icon: "\uD83C\uDFA4" },
-  { to: "/templates", label: "Templates", icon: "\uD83D\uDCC4" },
-  { to: "/prompts", label: "Prompts", icon: "\u2728" },
-  { to: "/settings", label: "Settings", icon: "\u2699\uFE0F" },
-  { to: "/help", label: "Help", icon: "\u2753" },
+const navItems: { to: string; label: string; icon: LucideIcon }[] = [
+  { to: "/", label: "Meetings", icon: Mic },
+  { to: "/templates", label: "Templates", icon: FileText },
+  { to: "/prompts", label: "Prompts", icon: Sparkles },
+  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/help", label: "Help", icon: HelpCircle },
 ];
 
 export function Sidebar() {
@@ -63,12 +65,12 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex items-center gap-2 px-5 pt-6 pb-4">
         <motion.div
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground"
+          className="cursor-pointer"
           whileHover={{ rotate: [0, -3, 3, 0] }}
           transition={{ duration: 0.4, ease: "easeInOut" }}
           onClick={handleLogoClick}
         >
-          N
+          <img src="/nootle-icon.png" alt="Nootle" className="h-8 w-8 rounded-lg" />
         </motion.div>
         <span className="text-lg font-semibold tracking-tight">Nootle</span>
       </div>
@@ -79,7 +81,7 @@ export function Sidebar() {
           className="w-full justify-start gap-2"
           onClick={() => navigate("/recording")}
         >
-          <span className="text-base leading-none">{"\u23FA"}</span>
+          <Circle className="h-4 w-4" />
           Record Something
         </MotionButton>
       </div>
@@ -103,11 +105,11 @@ export function Sidebar() {
             }
           >
             <motion.span
-              className="text-base leading-none"
+              className="inline-flex"
               whileHover={{ y: -1 }}
               transition={{ type: "spring", stiffness: 300, damping: 10 }}
             >
-              {item.icon}
+              <item.icon className="h-4 w-4" />
             </motion.span>
             {item.label}
           </NavLink>
@@ -124,7 +126,7 @@ export function Sidebar() {
           title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
           className="h-8 w-8 p-0"
         >
-          {theme === "light" ? "\u{1F319}" : "\u{2600}\u{FE0F}"}
+          {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
         </Button>
       </div>
     </motion.aside>

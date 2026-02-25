@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useCategories } from "@/hooks/useCategories";
+import { FileText, Trash2 } from "lucide-react";
 
 export function TemplatesPage() {
   const { templates, loading, createTemplate, deleteTemplate } = useTemplates();
@@ -54,7 +55,7 @@ export function TemplatesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Templates</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage summary templates for different meeting types
+            Reusable section layouts that structure how summaries are organized
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -65,7 +66,7 @@ export function TemplatesPage() {
             <DialogHeader>
               <DialogTitle>New Template</DialogTitle>
               <DialogDescription>
-                Create a template for structured meeting summaries
+                Define the sections and layout for a type of meeting
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -138,7 +139,7 @@ export function TemplatesPage() {
         <p className="text-sm text-muted-foreground">Loading templates...</p>
       ) : templates.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <span className="text-4xl">{"\uD83D\uDCC4"}</span>
+          <FileText className="h-10 w-10 text-muted-foreground" />
           <h2 className="text-lg font-medium">No templates yet</h2>
           <p className="text-sm text-muted-foreground">
             Give Nootle a format to follow
@@ -179,7 +180,7 @@ export function TemplatesPage() {
                       className="text-muted-foreground hover:text-destructive shrink-0"
                       onClick={() => deleteTemplate(template.id)}
                     >
-                      {"\uD83D\uDDD1"}
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </CardContent>

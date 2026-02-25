@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
 import type { TranscriptSegment } from "@/types";
 import { listen } from "@tauri-apps/api/event";
+import { Square } from "lucide-react";
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -184,7 +185,7 @@ export function RecordingView() {
           onClick={handleStop}
           disabled={stopping}
         >
-          {"\u23F9"} Stop Recording
+          <Square className="h-5 w-5" /> Stop Recording
         </MotionButton>
         <AnimatePresence>
           {stopping && (

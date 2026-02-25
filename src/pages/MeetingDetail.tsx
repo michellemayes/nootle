@@ -15,6 +15,7 @@ import { usePrompts } from "@/hooks/usePrompts";
 import { useLLM } from "@/hooks/useLLM";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import type { LinearTicket, LinearTeam, LinearProject, ModelInfo } from "@/types";
+import { ArrowLeft, MessageSquare, FileText, Play } from "lucide-react";
 
 const speakerColors = [
   "text-blue-400",
@@ -319,7 +320,7 @@ export function MeetingDetail() {
       <div className="flex items-center justify-between border-b px-8 py-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
-            {"\u2190"} Back
+            <ArrowLeft className="h-4 w-4" /> Back
           </Button>
           <div>
             <h1 className="text-xl font-bold">{meeting.title}</h1>
@@ -330,7 +331,7 @@ export function MeetingDetail() {
           <Badge variant="outline">{meeting.status}</Badge>
         </div>
         <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
-          {"\uD83D\uDCAC"} Ask Nootle
+          <MessageSquare className="h-4 w-4" /> Ask Nootle
         </Button>
       </div>
 
@@ -446,7 +447,7 @@ export function MeetingDetail() {
           <ScrollArea className="flex-1">
             {summaries.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-8 gap-2">
-                <span className="text-2xl">{"\uD83D\uDCDD"}</span>
+                <FileText className="h-8 w-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground text-center">
                   Nothing cooked up yet. Pick a prompt and let it rip.
                 </p>
@@ -497,7 +498,7 @@ export function MeetingDetail() {
       <div className="border-t px-8 py-3">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon-sm" disabled>
-            {"\u25B6"}
+            <Play className="h-4 w-4" />
           </Button>
           <div className="flex-1">
             <div className="h-1.5 rounded-full bg-muted">

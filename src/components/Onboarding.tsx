@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import {
   useModelDownload,
   type ModelDefinition,
 } from "@/hooks/useModelDownload";
+import { Mic, Monitor, Calendar } from "lucide-react";
 
 const STEPS = ["Welcome", "Permissions", "Models", "API Keys", "Done"] as const;
 type Step = (typeof STEPS)[number];
@@ -265,7 +266,7 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
       </p>
       <div className="space-y-3">
         <PermissionRow
-          icon="🎙"
+          icon={<Mic className="h-5 w-5" />}
           title="Microphone"
           desc="Record your voice during meetings"
           granted={micGranted}
@@ -273,7 +274,7 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
           requesting={requesting === "microphone"}
         />
         <PermissionRow
-          icon="🖥"
+          icon={<Monitor className="h-5 w-5" />}
           title="Screen Recording"
           desc="Capture system audio from meeting apps"
           granted={screenGranted}
@@ -282,7 +283,7 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
           buttonLabel={screenGranted ? undefined : "Open System Settings"}
         />
         <PermissionRow
-          icon="📅"
+          icon={<Calendar className="h-5 w-5" />}
           title="Calendar"
           desc="Auto-detect meetings from your calendar"
           granted={calGranted}
@@ -513,7 +514,7 @@ function PermissionRow({
   requesting,
   buttonLabel,
 }: {
-  icon: string;
+  icon: ReactNode;
   title: string;
   desc: string;
   granted: boolean;
@@ -523,7 +524,7 @@ function PermissionRow({
 }) {
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border p-3">
-      <span className="text-xl">{icon}</span>
+      <span className="text-muted-foreground">{icon}</span>
       <div className="flex-1">
         <p className="font-medium text-foreground">{title}</p>
         <p className="text-sm text-muted-foreground">{desc}</p>
