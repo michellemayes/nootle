@@ -6,14 +6,16 @@ pub mod diarization;
 pub mod error;
 pub mod keychain;
 pub mod llm;
+pub mod model_download;
 pub mod model_registry;
 pub mod mcp;
 pub mod summarization;
 pub mod transcription;
 
-use commands::{DetectorState, LlmState, RecordingState};
+use commands::{DetectorState, DownloadManagerState, LlmState, RecordingState};
 use detection::MeetingDetector;
 use llm::{LlmRegistry, OllamaProvider};
+use model_download::DownloadManager;
 use std::sync::Arc;
 use tauri::Emitter;
 use tokio::sync::Mutex as TokioMutex;
@@ -51,6 +53,7 @@ pub fn run() {
 
     let detector = Arc::new(std::sync::Mutex::new(MeetingDetector::new()));
     let detector_state: DetectorState = detector.clone();
+    let download_manager: DownloadManagerState = Arc::new(TokioMutex::new(DownloadManager::new()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -167,6 +170,7 @@ pub fn run() {
         .manage(recording_state)
         .manage(llm_state)
         .manage(detector_state)
+        .manage(download_manager)
         .setup(move |app| {
             let app_handle = app.handle().clone();
             let update_handle = app_handle.clone();
@@ -231,6 +235,11 @@ pub fn run() {
             commands::seed_default_prompts,
             commands::get_model_status,
             commands::get_diarization_status,
+            commands::get_available_models,
+            commands::get_downloaded_models,
+            commands::download_model,
+            commands::cancel_download,
+            commands::delete_model,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
