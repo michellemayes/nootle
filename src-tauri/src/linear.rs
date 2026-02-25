@@ -113,7 +113,9 @@ pub async fn list_teams(api_key: &str) -> anyhow::Result<Vec<LinearTeam>> {
         anyhow::bail!("Linear API error: {}", err);
     }
 
-    let data = resp.data.ok_or_else(|| anyhow::anyhow!("No data in response"))?;
+    let data = resp
+        .data
+        .ok_or_else(|| anyhow::anyhow!("No data in response"))?;
     Ok(data
         .teams
         .nodes
@@ -147,7 +149,9 @@ pub async fn list_projects(api_key: &str, team_id: &str) -> anyhow::Result<Vec<L
         anyhow::bail!("Linear API error: {}", err);
     }
 
-    let data = resp.data.ok_or_else(|| anyhow::anyhow!("No data in response"))?;
+    let data = resp
+        .data
+        .ok_or_else(|| anyhow::anyhow!("No data in response"))?;
     Ok(data
         .projects
         .nodes
@@ -175,7 +179,10 @@ pub async fn create_issue(
     });
 
     if let Some(pid) = project_id {
-        input.as_object_mut().unwrap().insert("projectId".into(), serde_json::json!(pid));
+        input
+            .as_object_mut()
+            .unwrap()
+            .insert("projectId".into(), serde_json::json!(pid));
     }
 
     let body = serde_json::json!({
@@ -196,7 +203,9 @@ pub async fn create_issue(
         anyhow::bail!("Linear API error: {}", err);
     }
 
-    let data = resp.data.ok_or_else(|| anyhow::anyhow!("No data in response"))?;
+    let data = resp
+        .data
+        .ok_or_else(|| anyhow::anyhow!("No data in response"))?;
     if !data.issue_create.success {
         anyhow::bail!("Linear issue creation failed");
     }

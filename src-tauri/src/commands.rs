@@ -514,7 +514,9 @@ pub async fn list_linear_teams() -> Result<Vec<crate::linear::LinearTeam>, Strin
 }
 
 #[tauri::command]
-pub async fn list_linear_projects(team_id: String) -> Result<Vec<crate::linear::LinearProject>, String> {
+pub async fn list_linear_projects(
+    team_id: String,
+) -> Result<Vec<crate::linear::LinearProject>, String> {
     let api_key = crate::keychain::get_api_key("linear")
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Linear API key not configured".to_string())?;
@@ -535,7 +537,9 @@ pub async fn create_linear_ticket(
 ) -> Result<crate::db::LinearTicket, String> {
     // Fetch summary from DB
     let summary = db.get_summary(&summary_id).map_err(|e| e.to_string())?;
-    let meeting = db.get_meeting(&summary.meeting_id).map_err(|e| e.to_string())?;
+    let meeting = db
+        .get_meeting(&summary.meeting_id)
+        .map_err(|e| e.to_string())?;
 
     // Use LLM to generate ticket title and description
     let llm_registry = llm.read().await;
@@ -554,7 +558,10 @@ pub async fn create_linear_ticket(
         },
     ];
 
-    let llm_response = llm_provider.chat(messages, &model).await.map_err(|e| e.to_string())?;
+    let llm_response = llm_provider
+        .chat(messages, &model)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Parse LLM response, fallback to raw content
     let (title, description) = match serde_json::from_str::<serde_json::Value>(&llm_response) {
@@ -616,10 +623,7 @@ pub fn get_linear_tickets(
 }
 
 #[tauri::command]
-pub fn get_linear_setting(
-    db: State<'_, DbState>,
-    key: String,
-) -> Result<Option<String>, String> {
+pub fn get_linear_setting(db: State<'_, DbState>, key: String) -> Result<Option<String>, String> {
     db.get_linear_setting(&key).map_err(|e| e.to_string())
 }
 
