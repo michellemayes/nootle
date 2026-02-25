@@ -865,6 +865,12 @@ impl Database {
         Ok(())
     }
 
+    pub fn delete_linear_setting(&self, key: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM linear_settings WHERE key = ?1", params![key])?;
+        Ok(())
+    }
+
     // --- FTS5 Search ---
 
     pub fn search_transcripts(&self, query: &str) -> Result<Vec<TranscriptSearchResult>> {

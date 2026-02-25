@@ -326,10 +326,18 @@ pub async fn is_recording(recording: State<'_, RecordingState>) -> Result<bool, 
 // Keychain commands
 #[tauri::command]
 pub async fn store_api_key(
+    db: State<'_, DbState>,
     llm: State<'_, LlmState>,
     provider: String,
     key: String,
 ) -> Result<(), String> {
+    // Linear keys are stored in the database alongside other Linear settings
+    if provider == "linear" {
+        db.set_linear_setting("api_key", &key)
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
     keychain::store_api_key(&provider, &key).map_err(|e| e.to_string())?;
 
     // Hot-reload: register the provider in the LLM registry
@@ -340,7 +348,7 @@ pub async fn store_api_key(
         "anthropic" => Box::new(crate::llm::AnthropicProvider::new(key)),
         "google" => Box::new(crate::llm::GoogleProvider::new(key)),
         "groq" => Box::new(crate::llm::GroqProvider::new(key)),
-        _ => return Ok(()), // Unknown provider — key stored but no runtime registration
+        _ => return Ok(()),
     };
     registry.register(new_provider);
 
@@ -348,12 +356,25 @@ pub async fn store_api_key(
 }
 
 #[tauri::command]
-pub fn get_api_key(provider: String) -> Result<Option<String>, String> {
+pub fn get_api_key(db: State<'_, DbState>, provider: String) -> Result<Option<String>, String> {
+    if provider == "linear" {
+        return db.get_linear_setting("api_key").map_err(|e| e.to_string());
+    }
     keychain::get_api_key(&provider).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn delete_api_key(llm: State<'_, LlmState>, provider: String) -> Result<(), String> {
+pub async fn delete_api_key(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    provider: String,
+) -> Result<(), String> {
+    if provider == "linear" {
+        db.delete_linear_setting("api_key")
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
     keychain::delete_api_key(&provider).map_err(|e| e.to_string())?;
 
     // Hot-reload: remove the provider from the LLM registry
@@ -364,8 +385,15 @@ pub async fn delete_api_key(llm: State<'_, LlmState>, provider: String) -> Resul
 }
 
 #[tauri::command]
-pub fn list_stored_providers() -> Result<Vec<String>, String> {
-    Ok(keychain::list_stored_providers())
+pub fn list_stored_providers(db: State<'_, DbState>) -> Result<Vec<String>, String> {
+    let mut providers = keychain::list_stored_providers();
+    // Check if Linear API key is stored in the database
+    if let Ok(Some(key)) = db.get_linear_setting("api_key") {
+        if !key.is_empty() {
+            providers.push("linear".to_string());
+        }
+    }
+    Ok(providers)
 }
 
 // Summarization commands
@@ -504,9 +532,13 @@ pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
 
 // Linear commands
 #[tauri::command]
-pub async fn list_linear_teams() -> Result<Vec<crate::linear::LinearTeam>, String> {
-    let api_key = crate::keychain::get_api_key("linear")
+pub async fn list_linear_teams(
+    db: State<'_, DbState>,
+) -> Result<Vec<crate::linear::LinearTeam>, String> {
+    let api_key = db
+        .get_linear_setting("api_key")
         .map_err(|e| e.to_string())?
+        .filter(|k| !k.is_empty())
         .ok_or_else(|| "Linear API key not configured".to_string())?;
     crate::linear::list_teams(&api_key)
         .await
@@ -515,10 +547,13 @@ pub async fn list_linear_teams() -> Result<Vec<crate::linear::LinearTeam>, Strin
 
 #[tauri::command]
 pub async fn list_linear_projects(
+    db: State<'_, DbState>,
     team_id: String,
 ) -> Result<Vec<crate::linear::LinearProject>, String> {
-    let api_key = crate::keychain::get_api_key("linear")
+    let api_key = db
+        .get_linear_setting("api_key")
         .map_err(|e| e.to_string())?
+        .filter(|k| !k.is_empty())
         .ok_or_else(|| "Linear API key not configured".to_string())?;
     crate::linear::list_projects(&api_key, &team_id)
         .await
@@ -582,8 +617,10 @@ pub async fn create_linear_ticket(
     };
 
     // Get Linear API key and create issue
-    let api_key = crate::keychain::get_api_key("linear")
+    let api_key = db
+        .get_linear_setting("api_key")
         .map_err(|e| e.to_string())?
+        .filter(|k| !k.is_empty())
         .ok_or_else(|| "Linear API key not configured".to_string())?;
 
     let issue = crate::linear::create_issue(
@@ -633,7 +670,7 @@ pub fn set_linear_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
-    const ALLOWED_KEYS: &[&str] = &["default_team_id", "default_project_id"];
+    const ALLOWED_KEYS: &[&str] = &["default_team_id", "default_project_id", "api_key"];
     if !ALLOWED_KEYS.contains(&key.as_str()) {
         return Err(format!("Invalid setting key: {}", key));
     }
