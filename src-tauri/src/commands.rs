@@ -180,8 +180,14 @@ pub fn update_template(
     sections: String,
     auto_apply_rules: String,
 ) -> Result<Template, String> {
-    db.update_template(&id, &name, category_id.as_deref(), &sections, &auto_apply_rules)
-        .map_err(|e| e.to_string())
+    db.update_template(
+        &id,
+        &name,
+        category_id.as_deref(),
+        &sections,
+        &auto_apply_rules,
+    )
+    .map_err(|e| e.to_string())
 }
 
 // Summary commands
