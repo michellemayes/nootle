@@ -5,6 +5,12 @@ pub struct AudioMixer {
     duck_ratio: f32,
 }
 
+impl Default for AudioMixer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AudioMixer {
     pub fn new() -> Self {
         Self {
@@ -39,12 +45,6 @@ impl AudioMixer {
         }
         let sum: f32 = samples.iter().map(|s| s * s).sum();
         (sum / samples.len() as f32).sqrt()
-    }
-}
-
-impl Default for AudioMixer {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

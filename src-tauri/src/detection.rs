@@ -23,6 +23,12 @@ pub struct MeetingDetector {
     known_active: HashSet<String>,
 }
 
+impl Default for MeetingDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MeetingDetector {
     pub fn new() -> Self {
         Self {
@@ -63,12 +69,6 @@ impl MeetingDetector {
     /// Get list of currently active meeting apps
     pub fn active_apps(&self) -> Vec<String> {
         self.known_active.iter().cloned().collect()
-    }
-}
-
-impl Default for MeetingDetector {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

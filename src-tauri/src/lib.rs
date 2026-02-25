@@ -9,6 +9,7 @@ pub mod llm;
 pub mod mcp;
 pub mod model_download;
 pub mod model_registry;
+pub mod permissions;
 pub mod summarization;
 pub mod transcription;
 
@@ -240,6 +241,10 @@ pub fn run() {
             commands::download_model,
             commands::cancel_download,
             commands::delete_model,
+            commands::check_permissions,
+            commands::request_microphone_permission,
+            commands::request_screen_recording_permission,
+            commands::request_calendar_permission,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

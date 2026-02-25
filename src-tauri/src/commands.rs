@@ -452,6 +452,27 @@ pub fn get_diarization_status() -> Result<bool, String> {
     Ok(crate::diarization::DiarizationEngine::models_available())
 }
 
+// Permission commands
+#[tauri::command]
+pub fn check_permissions() -> Result<crate::permissions::PermissionStatus, String> {
+    Ok(crate::permissions::check_all())
+}
+
+#[tauri::command]
+pub async fn request_microphone_permission() -> Result<bool, String> {
+    Ok(crate::permissions::request_microphone().await)
+}
+
+#[tauri::command]
+pub fn request_screen_recording_permission() -> Result<bool, String> {
+    Ok(crate::permissions::request_screen_recording())
+}
+
+#[tauri::command]
+pub async fn request_calendar_permission() -> Result<bool, String> {
+    Ok(crate::permissions::request_calendar().await)
+}
+
 // Onboarding commands
 #[tauri::command]
 pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {

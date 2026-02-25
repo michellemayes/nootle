@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/hooks/useTheme";
 
 const navItems = [
   { to: "/", label: "Meetings", icon: "\uD83C\uDFA4" },
@@ -12,6 +13,7 @@ const navItems = [
 
 export function Sidebar() {
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r bg-card">
@@ -59,8 +61,17 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="px-5 py-4">
+      <div className="flex items-center justify-between px-5 py-4">
         <p className="text-xs text-muted-foreground">Nootle v0.1.0</p>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleTheme}
+          title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+          className="h-8 w-8 p-0"
+        >
+          {theme === "light" ? "\u{1F319}" : "\u{2600}\u{FE0F}"}
+        </Button>
       </div>
     </aside>
   );
