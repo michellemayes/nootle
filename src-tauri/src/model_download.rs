@@ -3,7 +3,7 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::path::PathBuf;
+use std::path::Path;
 use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
@@ -43,6 +43,12 @@ pub struct ModelOnDiskStatus {
 /// Shared download state — holds cancellation token for active download.
 pub struct DownloadManager {
     pub(crate) cancel_token: Option<CancellationToken>,
+}
+
+impl Default for DownloadManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DownloadManager {
@@ -143,12 +149,13 @@ pub async fn download_variant(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn download_single_file(
     app: &tauri::AppHandle,
     client: &Client,
     model_id: &str,
     file: &ModelFile,
-    model_dir: &PathBuf,
+    model_dir: &Path,
     cancel: &CancellationToken,
     cumulative_bytes: u64,
     total_bytes: u64,
@@ -274,7 +281,7 @@ async fn download_single_file(
     Ok(())
 }
 
-async fn hash_file(path: &PathBuf) -> Result<String, String> {
+async fn hash_file(path: &Path) -> Result<String, String> {
     let data = tokio::fs::read(path)
         .await
         .map_err(|e| format!("Failed to read file for hashing: {e}"))?;
