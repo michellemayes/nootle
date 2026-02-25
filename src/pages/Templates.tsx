@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useCategories } from "@/hooks/useCategories";
+import { FileText, Trash2 } from "lucide-react";
 
 export function TemplatesPage() {
   const { templates, loading, createTemplate, deleteTemplate } = useTemplates();
@@ -137,7 +138,7 @@ export function TemplatesPage() {
         <p className="text-sm text-muted-foreground">Loading templates...</p>
       ) : templates.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <span className="text-4xl">{"\uD83D\uDCC4"}</span>
+          <FileText className="h-10 w-10 text-muted-foreground" />
           <h2 className="text-lg font-medium">No templates yet</h2>
           <p className="text-sm text-muted-foreground">
             Create a template to standardize meeting summaries
@@ -175,7 +176,7 @@ export function TemplatesPage() {
                       className="text-muted-foreground hover:text-destructive shrink-0"
                       onClick={() => deleteTemplate(template.id)}
                     >
-                      {"\uD83D\uDDD1"}
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </CardContent>

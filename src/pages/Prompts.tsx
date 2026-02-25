@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { usePrompts } from "@/hooks/usePrompts";
+import { Sparkles, Star, Trash2 } from "lucide-react";
 
 export function PromptsPage() {
   const { prompts, loading, createPrompt, deletePrompt } = usePrompts();
@@ -118,7 +119,7 @@ export function PromptsPage() {
         <p className="text-sm text-muted-foreground">Loading prompts...</p>
       ) : prompts.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <span className="text-4xl">{"\u2728"}</span>
+          <Sparkles className="h-10 w-10 text-muted-foreground" />
           <h2 className="text-lg font-medium">No prompts yet</h2>
           <p className="text-sm text-muted-foreground">
             Create a prompt to get started with summarization
@@ -139,9 +140,7 @@ export function PromptsPage() {
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium">{prompt.name}</h3>
                         {prompt.is_favorite && (
-                          <span className="text-amber-400 text-sm" title="Favorite">
-                            {"\u2605"}
-                          </span>
+                          <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
                         )}
                         {prompt.is_auto_run && (
                           <span
@@ -162,7 +161,7 @@ export function PromptsPage() {
                       className="text-muted-foreground hover:text-destructive shrink-0"
                       onClick={() => deletePrompt(prompt.id)}
                     >
-                      {"\uD83D\uDDD1"}
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </CardContent>
