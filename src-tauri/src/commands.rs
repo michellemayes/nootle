@@ -10,6 +10,7 @@ use tokio::sync::Mutex as TokioMutex;
 pub type DbState = Arc<Database>;
 pub type RecordingState = Arc<TokioMutex<Option<RecordingSession>>>;
 pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
+pub type DetectorState = Arc<std::sync::Mutex<crate::detection::MeetingDetector>>;
 
 // Meeting commands
 #[tauri::command]
@@ -298,4 +299,11 @@ pub async fn list_llm_models(llm: State<'_, LlmState>) -> Result<Vec<crate::llm:
 pub async fn list_llm_providers(llm: State<'_, LlmState>) -> Result<Vec<String>, String> {
     let llm = llm.read().await;
     Ok(llm.provider_names())
+}
+
+// Meeting detection commands
+#[tauri::command]
+pub fn get_active_meeting_apps(detector: State<'_, DetectorState>) -> Result<Vec<String>, String> {
+    let detector = detector.lock().map_err(|e| e.to_string())?;
+    Ok(detector.active_apps())
 }

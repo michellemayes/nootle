@@ -10,9 +10,11 @@ pub mod mcp;
 pub mod summarization;
 pub mod transcription;
 
-use commands::{LlmState, RecordingState};
+use commands::{DetectorState, LlmState, RecordingState};
+use detection::MeetingDetector;
 use llm::{LlmRegistry, OllamaProvider};
 use std::sync::Arc;
+use tauri::Emitter;
 use tokio::sync::Mutex as TokioMutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -46,11 +48,35 @@ pub fn run() {
 
     let llm_state: LlmState = Arc::new(tokio::sync::RwLock::new(llm_registry));
 
+    let detector = Arc::new(std::sync::Mutex::new(MeetingDetector::new()));
+    let detector_state: DetectorState = detector.clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(db)
         .manage(recording_state)
         .manage(llm_state)
+        .manage(detector_state)
+        .setup(move |app| {
+            let app_handle = app.handle().clone();
+            let detector = detector.clone();
+
+            // Spawn polling task for meeting detection
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    let detected = {
+                        let mut d = detector.lock().unwrap();
+                        d.check()
+                    };
+                    for meeting in detected {
+                        let _ = app_handle.emit("meeting-detected", &meeting);
+                    }
+                }
+            });
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::create_meeting,
             commands::list_meetings,
@@ -80,6 +106,7 @@ pub fn run() {
             commands::chat_with_meeting,
             commands::list_llm_models,
             commands::list_llm_providers,
+            commands::get_active_meeting_apps,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
