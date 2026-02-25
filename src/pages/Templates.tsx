@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useCategories } from "@/hooks/useCategories";
+import { FileText, Trash2 } from "lucide-react";
 
 export function TemplatesPage() {
   const { templates, loading, createTemplate, deleteTemplate } = useTemplates();
@@ -53,7 +55,7 @@ export function TemplatesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Templates</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage summary templates for different meeting types
+            Reusable section layouts that structure how summaries are organized
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -64,7 +66,7 @@ export function TemplatesPage() {
             <DialogHeader>
               <DialogTitle>New Template</DialogTitle>
               <DialogDescription>
-                Create a template for structured meeting summaries
+                Define the sections and layout for a type of meeting
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -122,9 +124,9 @@ export function TemplatesPage() {
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleCreate} disabled={!newName.trim()}>
+              <MotionButton onClick={handleCreate} disabled={!newName.trim()}>
                 Create
-              </Button>
+              </MotionButton>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -137,19 +139,22 @@ export function TemplatesPage() {
         <p className="text-sm text-muted-foreground">Loading templates...</p>
       ) : templates.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <span className="text-4xl">{"\uD83D\uDCC4"}</span>
+          <FileText className="h-10 w-10 text-muted-foreground" />
           <h2 className="text-lg font-medium">No templates yet</h2>
           <p className="text-sm text-muted-foreground">
-            Create a template to standardize meeting summaries
+            Give Nootle a format to follow
           </p>
         </div>
       ) : (
         <div className="space-y-3">
+          <AnimatePresence>
           {templates.map((template) => (
             <motion.div
               key={template.id}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+              layout
             >
               <Card>
                 <CardContent>
@@ -175,13 +180,14 @@ export function TemplatesPage() {
                       className="text-muted-foreground hover:text-destructive shrink-0"
                       onClick={() => deleteTemplate(template.id)}
                     >
-                      {"\uD83D\uDDD1"}
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </CardContent>
               </Card>
             </motion.div>
           ))}
+          </AnimatePresence>
         </div>
       )}
     </div>

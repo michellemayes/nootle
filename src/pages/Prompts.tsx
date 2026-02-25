@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -14,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { usePrompts } from "@/hooks/usePrompts";
+import { Sparkles, Star, Trash2 } from "lucide-react";
 
 export function PromptsPage() {
   const { prompts, loading, createPrompt, deletePrompt } = usePrompts();
@@ -40,7 +42,7 @@ export function PromptsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Prompts</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage prompts for meeting summarization
+            Instructions that tell the AI what to focus on and how to write
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -51,7 +53,7 @@ export function PromptsPage() {
             <DialogHeader>
               <DialogTitle>New Prompt</DialogTitle>
               <DialogDescription>
-                Create a prompt template for meeting summaries
+                Write instructions for the AI — what to extract, how detailed to be, what tone to use
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -65,10 +67,10 @@ export function PromptsPage() {
               </div>
               <div>
                 <label className="text-sm font-medium mb-1.5 block">
-                  Content
+                  Instructions
                 </label>
                 <textarea
-                  placeholder="Write your prompt template..."
+                  placeholder="e.g., Focus on action items and decisions. Use bullet points. Keep it under 500 words."
                   value={newContent}
                   onChange={(e) => setNewContent(e.target.value)}
                   rows={5}
@@ -103,9 +105,9 @@ export function PromptsPage() {
               >
                 Cancel
               </Button>
-              <Button onClick={handleCreate} disabled={!newName.trim() || !newContent.trim()}>
+              <MotionButton onClick={handleCreate} disabled={!newName.trim() || !newContent.trim()}>
                 Create
-              </Button>
+              </MotionButton>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -118,19 +120,22 @@ export function PromptsPage() {
         <p className="text-sm text-muted-foreground">Loading prompts...</p>
       ) : prompts.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <span className="text-4xl">{"\u2728"}</span>
+          <Sparkles className="h-10 w-10 text-muted-foreground" />
           <h2 className="text-lg font-medium">No prompts yet</h2>
           <p className="text-sm text-muted-foreground">
-            Create a prompt to get started with summarization
+            Teach Nootle what to listen for
           </p>
         </div>
       ) : (
         <div className="space-y-3">
+          <AnimatePresence>
           {prompts.map((prompt) => (
             <motion.div
               key={prompt.id}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+              layout
             >
               <Card>
                 <CardContent>
@@ -139,9 +144,7 @@ export function PromptsPage() {
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium">{prompt.name}</h3>
                         {prompt.is_favorite && (
-                          <span className="text-amber-400 text-sm" title="Favorite">
-                            {"\u2605"}
-                          </span>
+                          <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
                         )}
                         {prompt.is_auto_run && (
                           <span
@@ -162,13 +165,14 @@ export function PromptsPage() {
                       className="text-muted-foreground hover:text-destructive shrink-0"
                       onClick={() => deletePrompt(prompt.id)}
                     >
-                      {"\uD83D\uDDD1"}
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </CardContent>
               </Card>
             </motion.div>
           ))}
+          </AnimatePresence>
         </div>
       )}
     </div>

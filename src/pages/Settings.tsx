@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -10,6 +11,7 @@ import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/us
 import { useModelDownload } from "@/hooks/useModelDownload";
 import { useTheme } from "@/hooks/useTheme";
 import { AccentColorPicker } from "@/components/AccentColorPicker";
+import { EyeOff, Eye, Moon, Sun } from "lucide-react";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "ollama"];
 
@@ -80,7 +82,7 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
             onClick={() => setShowKey(!showKey)}
             title={showKey ? "Hide" : "Show"}
           >
-            {showKey ? "\uD83D\uDE48" : "\uD83D\uDC41"}
+            {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={saving || !keyValue.trim()}>
             {saving ? "..." : "Save"}
@@ -198,7 +200,7 @@ export function SettingsPage() {
   );
 
   return (
-    <ScrollArea className="flex-1">
+    <ScrollArea className="flex-1 min-h-0">
       <div className="flex flex-col gap-8 p-8 max-w-3xl">
         {/* Header */}
         <div>
@@ -223,7 +225,7 @@ export function SettingsPage() {
                 </p>
               </div>
               <Button variant="outline" size="sm" onClick={toggleTheme}>
-                {theme === "light" ? "\u{1F319} Dark" : "\u{2600}\u{FE0F} Light"}
+                {theme === "light" ? <><Moon className="h-4 w-4" /> Dark</> : <><Sun className="h-4 w-4" /> Light</>}
               </Button>
             </div>
             <AccentColorPicker />
@@ -283,7 +285,7 @@ export function SettingsPage() {
           <CardHeader>
             <CardTitle>About</CardTitle>
             <CardDescription>
-              Nootle v0.1.0 — Meeting recorder and summarizer
+              Nootle v0.1.0 — Your meetings, transcribed and summarized with a twist
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -303,7 +305,17 @@ export function SettingsPage() {
                   className="absolute top-2 right-2"
                   onClick={handleCopy}
                 >
-                  {copied ? "Copied!" : "Copy"}
+                  <AnimatePresence mode="wait">
+                    <motion.span
+                      key={copied ? "check" : "copy"}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: copied ? [1, 1.2, 1] : 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      {copied ? "\u2713 Copied" : "Copy"}
+                    </motion.span>
+                  </AnimatePresence>
                 </Button>
               </div>
             </div>

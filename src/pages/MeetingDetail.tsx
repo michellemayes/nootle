@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
+import { SparkleEffect } from "@/components/SparkleEffect";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,6 +15,7 @@ import { usePrompts } from "@/hooks/usePrompts";
 import { useLLM } from "@/hooks/useLLM";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import type { LinearTicket, LinearTeam, LinearProject, ModelInfo } from "@/types";
+import { ArrowLeft, MessageSquare, FileText, Play } from "lucide-react";
 
 const speakerColors = [
   "text-blue-400",
@@ -230,6 +233,7 @@ export function MeetingDetail() {
   const { projects: linearProjects } = useLinearProjects(linearTeamId);
   const [chatOpen, setChatOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [justGenerated, setJustGenerated] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
@@ -274,6 +278,8 @@ export function MeetingDetail() {
     setGenerating(true);
     try {
       await generateSummary(selectedPrompt, selectedProvider, selectedModel);
+      setJustGenerated(true);
+      setTimeout(() => setJustGenerated(false), 100);
     } catch {
       // Error handling could be improved
     } finally {
@@ -314,7 +320,7 @@ export function MeetingDetail() {
       <div className="flex items-center justify-between border-b px-8 py-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
-            {"\u2190"} Back
+            <ArrowLeft className="h-4 w-4" /> Back
           </Button>
           <div>
             <h1 className="text-xl font-bold">{meeting.title}</h1>
@@ -325,7 +331,7 @@ export function MeetingDetail() {
           <Badge variant="outline">{meeting.status}</Badge>
         </div>
         <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
-          {"\uD83D\uDCAC"} Chat
+          <MessageSquare className="h-4 w-4" /> Ask Nootle
         </Button>
       </div>
 
@@ -346,7 +352,7 @@ export function MeetingDetail() {
                 </p>
               ) : segments.length === 0 ? (
                 <p className="text-sm text-muted-foreground italic">
-                  No transcript available yet
+                  No transcript here — this one's a mystery
                 </p>
               ) : (
                 segments.map((seg) => (
@@ -422,23 +428,28 @@ export function MeetingDetail() {
                 ))}
               </select>
             </div>
-            <Button
-              size="sm"
-              className="w-full"
-              onClick={handleGenerate}
-              disabled={generating || !selectedPrompt || !selectedProvider || !selectedModel}
-            >
-              {generating ? "Generating..." : "Generate Summary"}
-            </Button>
+            <div className="relative flex items-center justify-center">
+              <MotionButton
+                size="sm"
+                className="w-full"
+                onClick={handleGenerate}
+                disabled={generating || !selectedPrompt || !selectedProvider || !selectedModel}
+              >
+                {generating ? "Cooking..." : "Cook Up a Summary"}
+              </MotionButton>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <SparkleEffect trigger={justGenerated} />
+              </div>
+            </div>
           </div>
 
           {/* Summary tabs */}
           <ScrollArea className="flex-1">
             {summaries.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-8 gap-2">
-                <span className="text-2xl">{"\uD83D\uDCDD"}</span>
+                <FileText className="h-8 w-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground text-center">
-                  No summaries yet. Generate one above.
+                  Nothing cooked up yet. Pick a prompt and let it rip.
                 </p>
               </div>
             ) : (
@@ -487,7 +498,7 @@ export function MeetingDetail() {
       <div className="border-t px-8 py-3">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon-sm" disabled>
-            {"\u25B6"}
+            <Play className="h-4 w-4" />
           </Button>
           <div className="flex-1">
             <div className="h-1.5 rounded-full bg-muted">

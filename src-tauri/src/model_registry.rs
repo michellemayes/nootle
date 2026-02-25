@@ -37,25 +37,31 @@ pub struct ModelDefinition {
     pub variants: &'static [ModelVariant],
 }
 
-// ── Parakeet TDT 0.6B v2 (Transcription) ──────────────────────────────
+// ── Parakeet TDT 0.6B v3 (Transcription) ──────────────────────────────
 
 const PARAKEET_INT8_FILES: &[ModelFile] = &[
     ModelFile {
         local_name: "encoder.onnx",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/encoder-model.int8.onnx",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.int8.onnx",
         size_bytes: 652_000_000,
         sha256: "",
     },
     ModelFile {
         local_name: "decoder.onnx",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/decoder_joint-model.int8.onnx",
-        size_bytes: 9_000_000,
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.int8.onnx",
+        size_bytes: 18_200_000,
         sha256: "",
     },
     ModelFile {
         local_name: "vocab.txt",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/vocab.txt",
-        size_bytes: 10_000,
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt",
+        size_bytes: 94_000,
+        sha256: "",
+    },
+    ModelFile {
+        local_name: "nemo128.onnx",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/nemo128.onnx",
+        size_bytes: 140_000,
         sha256: "",
     },
 ];
@@ -63,26 +69,32 @@ const PARAKEET_INT8_FILES: &[ModelFile] = &[
 const PARAKEET_FULL_FILES: &[ModelFile] = &[
     ModelFile {
         local_name: "encoder.onnx",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/encoder-model.onnx",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx",
         size_bytes: 41_800_000,
         sha256: "",
     },
     ModelFile {
         local_name: "encoder.onnx.data",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/encoder-model.onnx.data",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx.data",
         size_bytes: 2_440_000_000,
         sha256: "",
     },
     ModelFile {
         local_name: "decoder.onnx",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/decoder_joint-model.onnx",
-        size_bytes: 35_800_000,
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.onnx",
+        size_bytes: 72_500_000,
         sha256: "",
     },
     ModelFile {
         local_name: "vocab.txt",
-        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/vocab.txt",
-        size_bytes: 10_000,
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt",
+        size_bytes: 94_000,
+        sha256: "",
+    },
+    ModelFile {
+        local_name: "nemo128.onnx",
+        url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/nemo128.onnx",
+        size_bytes: 140_000,
         sha256: "",
     },
 ];
@@ -90,15 +102,15 @@ const PARAKEET_FULL_FILES: &[ModelFile] = &[
 const PARAKEET_VARIANTS: &[ModelVariant] = &[
     ModelVariant {
         id: "int8",
-        label: "Quantized (≈660 MB) — faster download, slightly less accurate",
+        label: "Quantized (≈670 MB) — faster download, slightly less accurate",
         files: PARAKEET_INT8_FILES,
-        total_size_bytes: 661_010_000,
+        total_size_bytes: 670_434_000,
     },
     ModelVariant {
         id: "full",
         label: "Full Precision (≈2.5 GB) — best quality, large download",
         files: PARAKEET_FULL_FILES,
-        total_size_bytes: 2_517_610_000,
+        total_size_bytes: 2_554_534_000,
     },
 ];
 
@@ -113,7 +125,7 @@ const DIARIZATION_FILES: &[ModelFile] = &[
     },
     ModelFile {
         local_name: "embedding.onnx",
-        url: "https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34/resolve/main/voxceleb_resnet34.onnx",
+        url: "https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34-LM/resolve/main/voxceleb_resnet34_LM.onnx",
         size_bytes: 26_500_000,
         sha256: "",
     },
@@ -130,17 +142,17 @@ const DIARIZATION_VARIANTS: &[ModelVariant] = &[ModelVariant {
 
 pub const MODEL_REGISTRY: &[ModelDefinition] = &[
     ModelDefinition {
-        id: "parakeet-tdt-0.6b-v2",
-        name: "Parakeet TDT 0.6B v2",
+        id: "parakeet-tdt-0.6b-v3",
+        name: "Parakeet TDT 0.6B v3",
         description: "NVIDIA speech-to-text model for English transcription",
         category: ModelCategory::Transcription,
-        dir_name: "parakeet-tdt-0.6b-v2",
+        dir_name: "parakeet-tdt-0.6b-v3",
         variants: PARAKEET_VARIANTS,
     },
     ModelDefinition {
         id: "diarization",
         name: "Speaker Diarization",
-        description: "Identifies who is speaking (pyannote segmentation + WeSpeaker embedding)",
+        description: "Identifies who is speaking (pyannote segmentation + WeSpeaker LM embedding)",
         category: ModelCategory::Diarization,
         dir_name: "diarization",
         variants: DIARIZATION_VARIANTS,
@@ -191,7 +203,7 @@ mod tests {
 
     #[test]
     fn parakeet_has_two_variants() {
-        let model = get_model("parakeet-tdt-0.6b-v2").unwrap();
+        let model = get_model("parakeet-tdt-0.6b-v3").unwrap();
         assert_eq!(model.variants.len(), 2);
         assert_eq!(model.variants[0].id, "int8");
         assert_eq!(model.variants[1].id, "full");
@@ -206,29 +218,29 @@ mod tests {
 
     #[test]
     fn get_variant_works() {
-        let (model, variant) = get_variant("parakeet-tdt-0.6b-v2", "int8").unwrap();
-        assert_eq!(model.id, "parakeet-tdt-0.6b-v2");
+        let (model, variant) = get_variant("parakeet-tdt-0.6b-v3", "int8").unwrap();
+        assert_eq!(model.id, "parakeet-tdt-0.6b-v3");
         assert_eq!(variant.id, "int8");
-        assert_eq!(variant.files.len(), 3);
+        assert_eq!(variant.files.len(), 4);
     }
 
     #[test]
     fn get_variant_returns_none_for_bad_id() {
         assert!(get_variant("nonexistent", "int8").is_none());
-        assert!(get_variant("parakeet-tdt-0.6b-v2", "nonexistent").is_none());
+        assert!(get_variant("parakeet-tdt-0.6b-v3", "nonexistent").is_none());
     }
 
     #[test]
     fn model_dir_contains_nootle() {
-        let model = get_model("parakeet-tdt-0.6b-v2").unwrap();
+        let model = get_model("parakeet-tdt-0.6b-v3").unwrap();
         let dir = model_dir(model);
         assert!(dir.to_str().unwrap().contains("Nootle"));
-        assert!(dir.to_str().unwrap().contains("parakeet-tdt-0.6b-v2"));
+        assert!(dir.to_str().unwrap().contains("parakeet-tdt-0.6b-v3"));
     }
 
     #[test]
     fn variant_not_downloaded_by_default() {
-        let model = get_model("parakeet-tdt-0.6b-v2").unwrap();
+        let model = get_model("parakeet-tdt-0.6b-v3").unwrap();
         let variant = &model.variants[0];
         assert!(!is_variant_downloaded(model, variant));
     }
