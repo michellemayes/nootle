@@ -218,10 +218,12 @@ pub async fn stop_recording(
         .ok_or_else(|| "Not recording".to_string())?;
 
     let meeting_id = session.meeting_id().to_string();
+    let audio_path = session.audio_path().to_string_lossy().to_string();
     session.stop();
 
-    // Update meeting status to transcribing
-    db.update_meeting_status(&meeting_id, "transcribing")
+    // Finalize meeting with end time and audio path
+    let end_time = chrono::Utc::now().to_rfc3339();
+    db.finalize_meeting(&meeting_id, &end_time, Some(&audio_path), "transcribing")
         .map_err(|e| e.to_string())?;
 
     // Return the updated meeting

@@ -70,6 +70,34 @@ fn test_update_meeting_status() {
 }
 
 #[test]
+fn test_finalize_meeting() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Finalize Test".to_string(),
+            category_id: None,
+            calendar_event_id: None,
+        })
+        .unwrap();
+
+    assert!(meeting.end_time.is_none());
+    assert!(meeting.audio_path.is_none());
+
+    db.finalize_meeting(
+        &meeting.id,
+        "2026-02-25T12:00:00Z",
+        Some("/path/to/audio.wav"),
+        "transcribing",
+    )
+    .unwrap();
+
+    let updated = db.get_meeting(&meeting.id).unwrap();
+    assert_eq!(updated.end_time, Some("2026-02-25T12:00:00Z".to_string()));
+    assert_eq!(updated.audio_path, Some("/path/to/audio.wav".to_string()));
+    assert_eq!(updated.status, "transcribing");
+}
+
+#[test]
 fn test_delete_meeting() {
     let db = Database::new_in_memory().unwrap();
     let meeting = db

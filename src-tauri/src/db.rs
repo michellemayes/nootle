@@ -362,6 +362,24 @@ impl Database {
         Ok(())
     }
 
+    pub fn finalize_meeting(
+        &self,
+        id: &str,
+        end_time: &str,
+        audio_path: Option<&str>,
+        status: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "UPDATE meetings SET end_time = ?1, audio_path = ?2, status = ?3, updated_at = ?4 WHERE id = ?5",
+            params![end_time, audio_path, status, now, id],
+        )?;
+
+        Ok(())
+    }
+
     pub fn delete_meeting(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
 
