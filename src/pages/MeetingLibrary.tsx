@@ -155,11 +155,23 @@ export function MeetingLibrary() {
         </div>
       ) : meetings.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <span className="text-4xl">{"\uD83C\uDFA4"}</span>
-          <h2 className="text-lg font-medium">No meetings yet</h2>
-          <p className="text-sm text-muted-foreground">
-            Hit record and let Nootle do its thing
-          </p>
+          {search.toLowerCase() === "noodle" ? (
+            <>
+              <span className="text-4xl">{"\uD83C\uDF5C"}</span>
+              <h2 className="text-lg font-medium">You found the secret noodle!</h2>
+              <p className="text-sm text-muted-foreground">
+                Unfortunately, it's not a meeting.
+              </p>
+            </>
+          ) : (
+            <>
+              <span className="text-4xl">{"\uD83C\uDFA4"}</span>
+              <h2 className="text-lg font-medium">No meetings yet</h2>
+              <p className="text-sm text-muted-foreground">
+                Hit record and let Nootle do its thing
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

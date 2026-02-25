@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { MotionButton } from "@/components/MotionButton";
+import { SparkleEffect } from "@/components/SparkleEffect";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -48,6 +49,7 @@ export function MeetingDetail() {
   const { models, providers } = useLLM();
   const [chatOpen, setChatOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [justGenerated, setJustGenerated] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
@@ -92,6 +94,8 @@ export function MeetingDetail() {
     setGenerating(true);
     try {
       await generateSummary(selectedPrompt, selectedProvider, selectedModel);
+      setJustGenerated(true);
+      setTimeout(() => setJustGenerated(false), 100);
     } catch {
       // Error handling could be improved
     } finally {
@@ -240,14 +244,19 @@ export function MeetingDetail() {
                 ))}
               </select>
             </div>
-            <MotionButton
-              size="sm"
-              className="w-full"
-              onClick={handleGenerate}
-              disabled={generating || !selectedPrompt || !selectedProvider || !selectedModel}
-            >
-              {generating ? "Cooking..." : "Cook Up a Summary"}
-            </MotionButton>
+            <div className="relative flex items-center justify-center">
+              <MotionButton
+                size="sm"
+                className="w-full"
+                onClick={handleGenerate}
+                disabled={generating || !selectedPrompt || !selectedProvider || !selectedModel}
+              >
+                {generating ? "Cooking..." : "Cook Up a Summary"}
+              </MotionButton>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <SparkleEffect trigger={justGenerated} />
+              </div>
+            </div>
           </div>
 
           {/* Summary tabs */}

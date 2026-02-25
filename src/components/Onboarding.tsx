@@ -16,6 +16,40 @@ const PROVIDERS = [
   { id: "groq", name: "Groq", placeholder: "gsk_..." },
 ] as const;
 
+function SparkleShower() {
+  const particles = Array.from({ length: 12 }, (_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    delay: Math.random() * 2,
+    duration: 2 + Math.random() * 2,
+    size: 2 + Math.random() * 3,
+  }));
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {particles.map((p) => (
+        <motion.div
+          key={p.id}
+          className="absolute rounded-full bg-primary/30"
+          style={{
+            left: `${p.left}%`,
+            width: p.size,
+            height: p.size,
+          }}
+          initial={{ y: -10, opacity: 0 }}
+          animate={{ y: "100%", opacity: [0, 0.8, 0] }}
+          transition={{
+            duration: p.duration,
+            delay: p.delay,
+            repeat: Infinity,
+            ease: "linear",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState<Step>("Welcome");
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
@@ -136,15 +170,16 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             )}
 
             {step === "Done" && (
-              <div className="text-center">
-                <h2 className="mb-2 text-3xl font-bold text-foreground">
+              <div className="relative text-center">
+                <SparkleShower />
+                <h2 className="relative mb-2 text-3xl font-bold text-foreground">
                   You're ready to nootle!
                 </h2>
-                <p className="mb-8 text-muted-foreground">
+                <p className="relative mb-8 text-muted-foreground">
                   Nootle will automatically detect meetings in Zoom, Teams, and
                   Google Meet. You can also start recording manually anytime.
                 </p>
-                <MotionButton size="lg" onClick={finish} disabled={saving}>
+                <MotionButton size="lg" onClick={finish} disabled={saving} className="relative">
                   {saving ? "Setting up..." : "Start Using Nootle"}
                 </MotionButton>
               </div>
@@ -279,9 +314,15 @@ function PermissionRow({
         <p className="text-sm text-muted-foreground">{desc}</p>
       </div>
       {granted ? (
-        <Badge variant="secondary" className="bg-green-500/15 text-green-600 dark:text-green-400">
-          Granted
-        </Badge>
+        <motion.div
+          initial={{ scale: 1 }}
+          animate={{ scale: [1, 1.15, 1] }}
+          transition={{ duration: 0.3 }}
+        >
+          <Badge variant="secondary" className="bg-green-500/15 text-green-600 dark:text-green-400">
+            Granted
+          </Badge>
+        </motion.div>
       ) : (
         <Button
           variant="outline"

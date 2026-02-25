@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -217,7 +218,17 @@ export function SettingsPage() {
                   className="absolute top-2 right-2"
                   onClick={handleCopy}
                 >
-                  {copied ? "Copied!" : "Copy"}
+                  <AnimatePresence mode="wait">
+                    <motion.span
+                      key={copied ? "check" : "copy"}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: copied ? [1, 1.2, 1] : 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      {copied ? "\u2713 Copied" : "Copy"}
+                    </motion.span>
+                  </AnimatePresence>
                 </Button>
               </div>
             </div>

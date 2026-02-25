@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -62,6 +62,7 @@ export function RecordingView() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
+  const [stopping, setStopping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Start recording on mount
@@ -92,6 +93,8 @@ export function RecordingView() {
   }, [segments]);
 
   const handleStop = useCallback(async () => {
+    setStopping(true);
+    await new Promise((r) => setTimeout(r, 400));
     try {
       const meeting = await stopRecording();
       navigate(`/meeting/${meeting.id}`);
@@ -173,14 +176,27 @@ export function RecordingView() {
       </div>
 
       {/* Stop button */}
-      <MotionButton
-        size="lg"
-        variant="destructive"
-        className="h-14 px-10 text-lg"
-        onClick={handleStop}
-      >
-        {"\u23F9"} Stop Recording
-      </MotionButton>
+      <div className="relative inline-flex">
+        <MotionButton
+          size="lg"
+          variant="destructive"
+          className="h-14 px-10 text-lg"
+          onClick={handleStop}
+          disabled={stopping}
+        >
+          {"\u23F9"} Stop Recording
+        </MotionButton>
+        <AnimatePresence>
+          {stopping && (
+            <motion.div
+              className="absolute inset-0 rounded-md border-2 border-destructive"
+              initial={{ scale: 1, opacity: 0.6 }}
+              animate={{ scale: 1.5, opacity: 0 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+            />
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
