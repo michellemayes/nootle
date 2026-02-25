@@ -8,8 +8,9 @@ pub struct RecordingSession {
     is_active: Arc<AtomicBool>,
     audio_path: PathBuf,
     /// Channel to send audio chunks for transcription
-    pub audio_tx: mpsc::Sender<Vec<f32>>,
+    audio_tx: Option<mpsc::Sender<Vec<f32>>>,
     audio_rx: Option<mpsc::Receiver<Vec<f32>>>,
+    capture_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl RecordingSession {
@@ -26,8 +27,9 @@ impl RecordingSession {
             meeting_id: meeting_id.to_string(),
             is_active: Arc::new(AtomicBool::new(false)),
             audio_path,
-            audio_tx,
+            audio_tx: Some(audio_tx),
             audio_rx: Some(audio_rx),
+            capture_handle: None,
         })
     }
 
@@ -50,10 +52,27 @@ impl RecordingSession {
     }
 
     pub fn start(&self) {
-        self.is_active.store(true, Ordering::Relaxed);
+        self.is_active.store(true, Ordering::Release);
     }
 
     pub fn stop(&self) {
-        self.is_active.store(false, Ordering::Relaxed);
+        self.is_active.store(false, Ordering::Release);
+    }
+
+    /// Get a clone of the is_active flag for the capture thread.
+    pub fn is_active_flag(&self) -> Arc<AtomicBool> {
+        self.is_active.clone()
+    }
+
+    pub fn set_capture_handle(&mut self, handle: std::thread::JoinHandle<()>) {
+        self.capture_handle = Some(handle);
+    }
+
+    pub fn take_capture_handle(&mut self) -> Option<std::thread::JoinHandle<()>> {
+        self.capture_handle.take()
+    }
+
+    pub fn take_audio_tx(&mut self) -> Option<mpsc::Sender<Vec<f32>>> {
+        self.audio_tx.take()
     }
 }

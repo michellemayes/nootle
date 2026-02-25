@@ -1,4 +1,4 @@
-use crate::audio::RecordingSession;
+use crate::audio::{run_audio_capture, validate_audio_devices, RecordingSession};
 use crate::db::*;
 use crate::diarization::DiarizationEngine;
 use crate::keychain;
@@ -199,7 +199,35 @@ pub async fn start_recording(
             return Err(e.to_string());
         }
     };
+
+    // Initialize audio capture on this thread to fail early if there are permission or device issues
+    let audio_tx = match session.take_audio_tx() {
+        Some(tx) => tx,
+        None => {
+            let _ = db.delete_meeting(&meeting.id);
+            return Err("Failed to initialize audio channel".to_string());
+        }
+    };
+
+    if let Err(e) = validate_audio_devices() {
+        let _ = db.delete_meeting(&meeting.id);
+        return Err(format!("Audio device validation failed: {e}"));
+    }
+
     session.start();
+
+    // Spawn audio capture loop on a dedicated thread
+    {
+        let is_active = session.is_active_flag();
+        let audio_path = session.audio_path().to_path_buf();
+
+        let handle = std::thread::spawn(move || {
+            if let Err(e) = run_audio_capture(audio_tx, is_active, audio_path) {
+                tracing::error!("Audio capture failed: {e}");
+            }
+        });
+        session.set_capture_handle(handle);
+    }
 
     // Spawn live transcription pipeline if models are available
     if let Some(audio_rx) = session.take_audio_rx() {
@@ -299,14 +327,25 @@ pub async fn stop_recording(
     db: State<'_, DbState>,
     recording: State<'_, RecordingState>,
 ) -> Result<Meeting, String> {
-    let mut session_lock = recording.lock().await;
-    let session = session_lock
-        .take()
-        .ok_or_else(|| "Not recording".to_string())?;
+    let mut session = {
+        let mut session_lock = recording.lock().await;
+        session_lock
+            .take()
+            .ok_or_else(|| "Not recording".to_string())?
+    };
 
     let meeting_id = session.meeting_id().to_string();
     let audio_path = session.audio_path().to_string_lossy().to_string();
     session.stop();
+
+    // Wait for the capture thread to finish writing the WAV file (outside the lock)
+    if let Some(handle) = session.take_capture_handle() {
+        match tokio::task::spawn_blocking(move || handle.join()).await {
+            Ok(Ok(())) => tracing::debug!("Audio capture thread joined cleanly"),
+            Ok(Err(_)) => tracing::error!("Audio capture thread panicked"),
+            Err(e) => tracing::error!("Failed to join audio capture thread: {e}"),
+        }
+    }
 
     // Finalize meeting with end time and audio path
     let end_time = chrono::Utc::now().to_rfc3339();
