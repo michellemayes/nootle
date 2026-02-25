@@ -36,4 +36,8 @@ dirs = "6"
 cpal = "0.15"
 ringbuf = "0.4"
 hound = "3.5"
+cidre = { version = "0.14", features = ["av"], optional = true }
 
+[features]
+default = []
+system-audio = ["cidre"]
