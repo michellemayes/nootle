@@ -66,6 +66,12 @@ impl MeetingDetector {
     }
 }
 
+impl Default for MeetingDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

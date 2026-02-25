@@ -212,11 +212,11 @@ impl TranscriptionEngine {
                     continue;
                 }
                 // Handle SentencePiece underscore prefix (word boundary)
-                if token.starts_with('\u{2581}') {
+                if let Some(stripped) = token.strip_prefix('\u{2581}') {
                     if !text.is_empty() {
                         text.push(' ');
                     }
-                    text.push_str(&token[3..]); // Skip the UTF-8 encoded
+                    text.push_str(stripped);
                 } else {
                     text.push_str(token);
                 }

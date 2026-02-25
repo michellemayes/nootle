@@ -279,7 +279,7 @@ impl DiarizationEngine {
         let outputs = self.embedding.run(ort::inputs!["input" => input_tensor])?;
 
         let (_, emb_data) = outputs[0].try_extract_tensor::<f32>()?;
-        Ok(emb_data.iter().copied().collect())
+        Ok(emb_data.to_vec())
     }
 
     /// Merge adjacent segments with the same speaker.
