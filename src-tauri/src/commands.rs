@@ -431,7 +431,18 @@ pub fn get_active_meeting_apps(detector: State<'_, DetectorState>) -> Result<Vec
 
 // Transcription commands
 #[tauri::command]
-pub fn get_model_status() -> Result<String, String> {
+pub async fn get_model_status(
+    download_mgr: State<'_, DownloadManagerState>,
+) -> Result<String, String> {
+    let mgr = download_mgr.lock().await;
+    let is_downloading = mgr.cancel_token.is_some();
+    drop(mgr);
+
+    if is_downloading {
+        return serde_json::to_string(&transcription::ModelStatus::Downloading { progress: 0.0 })
+            .map_err(|e| e.to_string());
+    }
+
     let status = transcription::TranscriptionEngine::check_status();
     serde_json::to_string(&status).map_err(|e| e.to_string())
 }
