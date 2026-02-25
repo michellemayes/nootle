@@ -1,4 +1,4 @@
-use crate::audio::RecordingSession;
+use crate::audio::{AudioMixer, AudioWriter, MicCapture, RecordingSession, SystemAudioCapture};
 use crate::db::*;
 use crate::diarization::DiarizationEngine;
 use crate::keychain;
@@ -199,7 +199,35 @@ pub async fn start_recording(
             return Err(e.to_string());
         }
     };
+
+    // Initialize audio capture on this thread to fail early if there are permission or device issues
+    let audio_tx = match session.take_audio_tx() {
+        Some(tx) => tx,
+        None => {
+            let _ = db.delete_meeting(&meeting.id);
+            return Err("Failed to initialize audio channel".to_string());
+        }
+    };
+
+    if let Err(e) = validate_audio_devices() {
+        let _ = db.delete_meeting(&meeting.id);
+        return Err(format!("Audio device validation failed: {e}"));
+    }
+
     session.start();
+
+    // Spawn audio capture loop on a dedicated thread
+    {
+        let is_active = session.is_active_flag();
+        let audio_path = session.audio_path().to_path_buf();
+
+        let handle = std::thread::spawn(move || {
+            if let Err(e) = run_audio_capture(audio_tx, is_active, audio_path) {
+                tracing::error!("Audio capture failed: {e}");
+            }
+        });
+        session.set_capture_handle(handle);
+    }
 
     // Spawn live transcription pipeline if models are available
     if let Some(audio_rx) = session.take_audio_rx() {
@@ -299,14 +327,23 @@ pub async fn stop_recording(
     db: State<'_, DbState>,
     recording: State<'_, RecordingState>,
 ) -> Result<Meeting, String> {
-    let mut session_lock = recording.lock().await;
-    let session = session_lock
-        .take()
-        .ok_or_else(|| "Not recording".to_string())?;
+    let mut session = {
+        let mut session_lock = recording.lock().await;
+        session_lock.take().ok_or_else(|| "Not recording".to_string())?
+    };
 
     let meeting_id = session.meeting_id().to_string();
     let audio_path = session.audio_path().to_string_lossy().to_string();
     session.stop();
+
+    // Wait for the capture thread to finish writing the WAV file (outside the lock)
+    if let Some(handle) = session.take_capture_handle() {
+        match tokio::task::spawn_blocking(move || handle.join()).await {
+            Ok(Ok(())) => tracing::debug!("Audio capture thread joined cleanly"),
+            Ok(Err(_)) => tracing::error!("Audio capture thread panicked"),
+            Err(e) => tracing::error!("Failed to join audio capture thread: {e}"),
+        }
+    }
 
     // Finalize meeting with end time and audio path
     let end_time = chrono::Utc::now().to_rfc3339();
@@ -727,4 +764,153 @@ pub async fn delete_model(model_id: String) -> Result<(), String> {
     let model =
         model_registry::get_model(&model_id).ok_or_else(|| format!("Unknown model: {model_id}"))?;
     model_download::delete_model_files(model)
+}
+
+// ---------------------------------------------------------------------------
+// Audio capture loop
+// ---------------------------------------------------------------------------
+
+/// Validate that audio devices are available and can be accessed.
+/// Called synchronously before spawning the capture thread.
+fn validate_audio_devices() -> anyhow::Result<()> {
+    let _mic = MicCapture::new()?;
+    // System audio is optional, so we don't fail if it's unavailable
+    Ok(())
+}
+
+/// Runs on a dedicated std::thread. Reads audio from hardware, resamples to
+/// 16 kHz, mixes mic + system audio, writes a WAV file, and feeds chunks to
+/// the transcription pipeline via `audio_tx`.
+fn run_audio_capture(
+    audio_tx: tokio::sync::mpsc::Sender<Vec<f32>>,
+    is_active: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    audio_path: std::path::PathBuf,
+) -> anyhow::Result<()> {
+    use std::sync::atomic::Ordering;
+
+    const TARGET_RATE: u32 = 16_000;
+    const POLL_MS: u64 = 50;
+    // Send a chunk to the transcription pipeline every ~2 seconds.
+    const SEND_SAMPLES: usize = TARGET_RATE as usize * 2;
+
+    // --- Microphone (required) ---
+    let mut mic = MicCapture::new()?;
+    let mic_rate = mic.sample_rate;
+    mic.start()?;
+
+    // --- System audio (optional) ---
+    let mut sys_audio: Option<SystemAudioCapture> = match SystemAudioCapture::new() {
+        Ok(s) => {
+            if let Err(e) = s.start() {
+                tracing::warn!("Failed to start system audio: {e}");
+                None
+            } else {
+                Some(s)
+            }
+        }
+        Err(e) => {
+            tracing::warn!("System audio not available: {e}");
+            None
+        }
+    };
+    let sys_rate = sys_audio.as_ref().map(|s| s.sample_rate).unwrap_or(48_000);
+
+    let mixer = AudioMixer::new();
+    let mut writer = AudioWriter::new(&audio_path, TARGET_RATE)?;
+
+    // Read buffers sized for one poll interval at native sample rates.
+    let mic_buf_len = (mic_rate as usize * POLL_MS as usize) / 1000;
+    let sys_buf_len = (sys_rate as usize * POLL_MS as usize) / 1000;
+    let mut mic_buf = vec![0.0f32; mic_buf_len];
+    let mut sys_buf = vec![0.0f32; sys_buf_len];
+
+    let mut accumulator: Vec<f32> = Vec::with_capacity(SEND_SAMPLES);
+
+    while is_active.load(Ordering::Acquire) {
+        // Read from mic ring buffer
+        let mic_n = mic.read_samples(&mut mic_buf);
+        let mic_samples = &mic_buf[..mic_n];
+
+        // Read from system audio ring buffer
+        let sys_samples: &[f32] = if let Some(ref mut sys) = sys_audio {
+            let n = sys.read_samples(&mut sys_buf);
+            &sys_buf[..n]
+        } else {
+            &[]
+        };
+
+        // Resample both to 16 kHz
+        let mic_16k = resample(mic_samples, mic_rate, TARGET_RATE);
+        let sys_16k = if !sys_samples.is_empty() {
+            resample(sys_samples, sys_rate, TARGET_RATE)
+        } else {
+            vec![]
+        };
+
+        // Mix (or pass through mic-only)
+        let mixed = if sys_16k.is_empty() {
+            mic_16k
+        } else {
+            let len = mic_16k.len().max(sys_16k.len());
+            let mut mic_padded = mic_16k;
+            let mut sys_padded = sys_16k;
+            mic_padded.resize(len, 0.0);
+            sys_padded.resize(len, 0.0);
+            mixer.mix(&sys_padded, &mic_padded)
+        };
+
+        if !mixed.is_empty() {
+            writer.write_samples(&mixed)?;
+            accumulator.extend_from_slice(&mixed);
+        }
+
+        // Send accumulated chunk to transcription pipeline
+        if accumulator.len() >= SEND_SAMPLES {
+            let chunk = std::mem::take(&mut accumulator);
+            if audio_tx.blocking_send(chunk).is_err() {
+                break; // receiver dropped
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(POLL_MS));
+    }
+
+    // Flush remaining samples
+    if !accumulator.is_empty() {
+        let _ = audio_tx.blocking_send(accumulator);
+    }
+
+    // Clean up
+    mic.stop()?;
+    if let Some(ref sys) = sys_audio {
+        let _ = sys.stop();
+    }
+    writer.finalize()?;
+
+    tracing::info!("Audio capture loop finished");
+    Ok(())
+}
+
+/// Linear-interpolation resampler (sufficient for speech).
+fn resample(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+    if samples.is_empty() || from_rate == to_rate {
+        return samples.to_vec();
+    }
+    let ratio = from_rate as f64 / to_rate as f64;
+    let out_len = (samples.len() as f64 / ratio) as usize;
+    let mut out = Vec::with_capacity(out_len);
+    for i in 0..out_len {
+        let src = i as f64 * ratio;
+        let idx = src as usize;
+        let frac = src - idx as f64;
+        let s = if idx + 1 < samples.len() {
+            samples[idx] as f64 * (1.0 - frac) + samples[idx + 1] as f64 * frac
+        } else if idx < samples.len() {
+            samples[idx] as f64
+        } else {
+            0.0
+        };
+        out.push(s as f32);
+    }
+    out
 }
