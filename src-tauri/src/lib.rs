@@ -107,6 +107,9 @@ pub fn run() {
             commands::list_llm_models,
             commands::list_llm_providers,
             commands::get_active_meeting_apps,
+            commands::seed_default_prompts,
+            commands::get_model_status,
+            commands::get_diarization_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

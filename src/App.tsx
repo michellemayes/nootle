@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Sidebar } from "@/components/Sidebar";
+import { Onboarding } from "@/components/Onboarding";
 import { MeetingLibrary } from "@/pages/MeetingLibrary";
 import { RecordingView } from "@/pages/RecordingView";
 import { MeetingDetail } from "@/pages/MeetingDetail";
@@ -17,6 +19,14 @@ function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  const [onboarded, setOnboarded] = useState(
+    () => localStorage.getItem("onboarding_complete") === "true"
+  );
+
+  if (!onboarded) {
+    return <Onboarding onComplete={() => setOnboarded(true)} />;
+  }
+
   return (
     <div className="dark">
       <BrowserRouter>

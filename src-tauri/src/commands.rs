@@ -3,6 +3,7 @@ use crate::db::*;
 use crate::keychain;
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::summarization;
+use crate::transcription;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex as TokioMutex;
@@ -306,4 +307,45 @@ pub async fn list_llm_providers(llm: State<'_, LlmState>) -> Result<Vec<String>,
 pub fn get_active_meeting_apps(detector: State<'_, DetectorState>) -> Result<Vec<String>, String> {
     let detector = detector.lock().map_err(|e| e.to_string())?;
     Ok(detector.active_apps())
+}
+
+// Transcription commands
+#[tauri::command]
+pub fn get_model_status() -> Result<String, String> {
+    let status = transcription::TranscriptionEngine::check_status();
+    serde_json::to_string(&status).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_diarization_status() -> Result<bool, String> {
+    Ok(crate::diarization::DiarizationEngine::models_available())
+}
+
+// Onboarding commands
+#[tauri::command]
+pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
+    let defaults = vec![
+        ("Meeting Summary", "Summarize this meeting transcript. Include: key decisions, action items with owners, and main discussion points. Be concise.", true, true),
+        ("Action Items", "Extract all action items from this meeting transcript. Format each as: - [Owner]: [Task] (deadline if mentioned).", true, true),
+        ("Key Decisions", "List all decisions made during this meeting. For each, note: the decision, who made it, and any context.", true, false),
+        ("Follow-up Questions", "Based on this meeting, what open questions remain unanswered? What topics need follow-up?", false, false),
+        ("TL;DR", "Give a 2-3 sentence TL;DR of this meeting. What was it about and what was the outcome?", true, false),
+    ];
+
+    for (name, content, is_favorite, is_auto_run) in defaults {
+        // Skip if a prompt with this name already exists
+        let existing = db.list_prompts().map_err(|e| e.to_string())?;
+        if existing.iter().any(|p| p.name == name) {
+            continue;
+        }
+        db.create_prompt(NewPrompt {
+            name: name.to_string(),
+            content: content.to_string(),
+            is_favorite,
+            is_auto_run,
+        })
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }

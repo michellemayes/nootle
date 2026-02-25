@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "nootle-app",
+  "productName": "Nootle",
   "version": "0.1.0",
-  "identifier": "com.michelle.nootle-app",
+  "identifier": "com.nootle.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,14 @@
   "app": {
     "windows": [
       {
-        "title": "nootle-app",
-        "width": 800,
-        "height": 600
+        "title": "Nootle",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": true,
+        "transparent": false,
+        "center": true
       }
     ],
     "security": {
@@ -30,6 +35,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "entitlements": "entitlements.plist",
+      "minimumSystemVersion": "14.0"
+    }
   }
 }
