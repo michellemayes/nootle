@@ -122,26 +122,39 @@ export function useLinearSettings() {
     })();
   }, []);
 
+  const [error, setError] = useState<string | null>(null);
+
   const saveDefaultTeam = useCallback(async (teamId: string) => {
-    await invoke("set_linear_setting", {
-      key: "default_team_id",
-      value: teamId,
-    });
-    setDefaultTeamId(teamId);
+    try {
+      setError(null);
+      await invoke("set_linear_setting", {
+        key: "default_team_id",
+        value: teamId,
+      });
+      setDefaultTeamId(teamId);
+    } catch (err) {
+      setError(String(err));
+    }
   }, []);
 
   const saveDefaultProject = useCallback(async (projectId: string) => {
-    await invoke("set_linear_setting", {
-      key: "default_project_id",
-      value: projectId,
-    });
-    setDefaultProjectId(projectId);
+    try {
+      setError(null);
+      await invoke("set_linear_setting", {
+        key: "default_project_id",
+        value: projectId,
+      });
+      setDefaultProjectId(projectId);
+    } catch (err) {
+      setError(String(err));
+    }
   }, []);
 
   return {
     defaultTeamId,
     defaultProjectId,
     loading,
+    error,
     saveDefaultTeam,
     saveDefaultProject,
   };

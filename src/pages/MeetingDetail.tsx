@@ -12,7 +12,7 @@ import { useSummaries } from "@/hooks/useSummaries";
 import { usePrompts } from "@/hooks/usePrompts";
 import { useLLM } from "@/hooks/useLLM";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
-import type { LinearTicket, LinearTeam, ModelInfo } from "@/types";
+import type { LinearTicket, LinearTeam, LinearProject, ModelInfo } from "@/types";
 
 const speakerColors = [
   "text-blue-400",
@@ -43,21 +43,25 @@ function CreateTicketButton({
   summaryId,
   existingTicket,
   teams,
+  projects,
   defaultTeamId,
   defaultProjectId,
   providers,
   models,
   onFetchTeams,
+  onTeamChange,
   onCreate,
 }: {
   summaryId: string;
   existingTicket: LinearTicket | undefined;
   teams: LinearTeam[];
+  projects: LinearProject[];
   defaultTeamId: string | null;
   defaultProjectId: string | null;
   providers: string[];
   models: ModelInfo[];
   onFetchTeams: () => void;
+  onTeamChange: (teamId: string | null) => void;
   onCreate: (
     summaryId: string,
     teamId: string,
@@ -81,8 +85,6 @@ function CreateTicketButton({
   useEffect(() => {
     if (defaultProjectId && !projectId) setProjectId(defaultProjectId);
   }, [defaultProjectId]);
-
-  const { projects } = useLinearProjects(teamId || null);
 
   const filteredModels = models.filter((m) => m.provider === selectedProvider);
 
@@ -126,6 +128,7 @@ function CreateTicketButton({
         size="sm"
         onClick={() => {
           onFetchTeams();
+          onTeamChange(teamId || defaultTeamId || null);
           setOpen(true);
         }}
       >
@@ -139,6 +142,7 @@ function CreateTicketButton({
             onChange={(e) => {
               setTeamId(e.target.value);
               setProjectId("");
+              onTeamChange(e.target.value || null);
             }}
             className="h-8 w-full rounded-md border bg-transparent px-2 text-xs"
           >
@@ -222,6 +226,8 @@ export function MeetingDetail() {
   const { tickets, createTicket } = useLinearTickets(id!);
   const { teams, fetchTeams } = useLinearTeams();
   const { defaultTeamId, defaultProjectId } = useLinearSettings();
+  const [linearTeamId, setLinearTeamId] = useState<string | null>(null);
+  const { projects: linearProjects } = useLinearProjects(linearTeamId);
   const [chatOpen, setChatOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState("");
@@ -458,11 +464,13 @@ export function MeetingDetail() {
                           summaryId={s.id}
                           existingTicket={tickets.find((t) => t.summary_id === s.id)}
                           teams={teams}
+                          projects={linearProjects}
                           defaultTeamId={defaultTeamId}
                           defaultProjectId={defaultProjectId}
                           providers={providers}
                           models={models}
                           onFetchTeams={fetchTeams}
+                          onTeamChange={setLinearTeamId}
                           onCreate={createTicket}
                         />
                       </div>

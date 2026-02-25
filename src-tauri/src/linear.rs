@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 
 const LINEAR_API_URL: &str = "https://api.linear.app/graphql";
+
+static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearTeam {
@@ -92,7 +95,7 @@ fn extract_errors<T>(response: &GqlResponse<T>) -> Option<String> {
 }
 
 pub async fn list_teams(api_key: &str) -> anyhow::Result<Vec<LinearTeam>> {
-    let client = reqwest::Client::new();
+    let client = &*CLIENT;
     let body = serde_json::json!({
         "query": "{ teams { nodes { id name key } } }"
     });
@@ -124,7 +127,7 @@ pub async fn list_teams(api_key: &str) -> anyhow::Result<Vec<LinearTeam>> {
 }
 
 pub async fn list_projects(api_key: &str, team_id: &str) -> anyhow::Result<Vec<LinearProject>> {
-    let client = reqwest::Client::new();
+    let client = &*CLIENT;
     let query = r#"query ListProjects($teamId: String!) { projects(filter: { accessibleTeams: { id: { eq: $teamId } } }) { nodes { id name } } }"#;
     let body = serde_json::json!({
         "query": query,
@@ -163,7 +166,7 @@ pub async fn create_issue(
     title: &str,
     description: &str,
 ) -> anyhow::Result<LinearIssueResult> {
-    let client = reqwest::Client::new();
+    let client = &*CLIENT;
 
     let mut input = serde_json::json!({
         "teamId": team_id,

@@ -594,6 +594,10 @@ pub fn set_linear_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
+    const ALLOWED_KEYS: &[&str] = &["default_team_id", "default_project_id"];
+    if !ALLOWED_KEYS.contains(&key.as_str()) {
+        return Err(format!("Invalid setting key: {}", key));
+    }
     db.set_linear_setting(&key, &value)
         .map_err(|e| e.to_string())
 }
