@@ -519,9 +519,7 @@ pub async fn download_model(
 }
 
 #[tauri::command]
-pub async fn cancel_download(
-    download_mgr: State<'_, DownloadManagerState>,
-) -> Result<(), String> {
+pub async fn cancel_download(download_mgr: State<'_, DownloadManagerState>) -> Result<(), String> {
     let mut mgr = download_mgr.lock().await;
     mgr.cancel();
     Ok(())
@@ -529,7 +527,7 @@ pub async fn cancel_download(
 
 #[tauri::command]
 pub async fn delete_model(model_id: String) -> Result<(), String> {
-    let model = model_registry::get_model(&model_id)
-        .ok_or_else(|| format!("Unknown model: {model_id}"))?;
+    let model =
+        model_registry::get_model(&model_id).ok_or_else(|| format!("Unknown model: {model_id}"))?;
     model_download::delete_model_files(model)
 }

@@ -87,7 +87,15 @@ pub async fn download_variant(
 
     for file in variant.files {
         if cancel.is_cancelled() {
-            emit_progress(&app, model.id, DownloadState::Cancelled, file.local_name, 0, 0, 0.0);
+            emit_progress(
+                &app,
+                model.id,
+                DownloadState::Cancelled,
+                file.local_name,
+                0,
+                0,
+                0.0,
+            );
             return Err("Download cancelled".to_string());
         }
 
@@ -155,9 +163,7 @@ async fn download_single_file(
 
     // Resume support: check existing .part file size
     let existing_bytes = if part_path.exists() {
-        std::fs::metadata(&part_path)
-            .map(|m| m.len())
-            .unwrap_or(0)
+        std::fs::metadata(&part_path).map(|m| m.len()).unwrap_or(0)
     } else {
         0
     };
@@ -173,14 +179,16 @@ async fn download_single_file(
         );
     }
 
-    let response = request.send().await.map_err(|e| format!("HTTP request failed: {e}"))?;
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {e}"))?;
     let status_code = response.status().as_u16();
 
     if !(200..=299).contains(&status_code) && status_code != 206 {
         return Err(format!(
             "HTTP {} when downloading {}",
-            status_code,
-            file.local_name
+            status_code, file.local_name
         ));
     }
 
@@ -219,8 +227,7 @@ async fn download_single_file(
         downloaded += chunk.len() as u64;
 
         // Emit progress at most every 1%
-        let overall_pct =
-            (cumulative_bytes + downloaded) as f64 / total_bytes as f64;
+        let overall_pct = (cumulative_bytes + downloaded) as f64 / total_bytes as f64;
         let pct_int = (overall_pct * 100.0) as i32;
         if pct_int > last_emitted_pct {
             last_emitted_pct = pct_int;

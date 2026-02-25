@@ -153,7 +153,10 @@ pub fn get_model(id: &str) -> Option<&'static ModelDefinition> {
 }
 
 /// Look up a specific variant within a model.
-pub fn get_variant(model_id: &str, variant_id: &str) -> Option<(&'static ModelDefinition, &'static ModelVariant)> {
+pub fn get_variant(
+    model_id: &str,
+    variant_id: &str,
+) -> Option<(&'static ModelDefinition, &'static ModelVariant)> {
     let model = get_model(model_id)?;
     let variant = model.variants.iter().find(|v| v.id == variant_id)?;
     Some((model, variant))
@@ -171,7 +174,10 @@ pub fn model_dir(model: &ModelDefinition) -> std::path::PathBuf {
 /// Check if all files for a variant are present on disk.
 pub fn is_variant_downloaded(model: &ModelDefinition, variant: &ModelVariant) -> bool {
     let dir = model_dir(model);
-    variant.files.iter().all(|f| dir.join(f.local_name).exists())
+    variant
+        .files
+        .iter()
+        .all(|f| dir.join(f.local_name).exists())
 }
 
 #[cfg(test)]

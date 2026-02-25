@@ -6,9 +6,9 @@ pub mod diarization;
 pub mod error;
 pub mod keychain;
 pub mod llm;
+pub mod mcp;
 pub mod model_download;
 pub mod model_registry;
-pub mod mcp;
 pub mod summarization;
 pub mod transcription;
 
