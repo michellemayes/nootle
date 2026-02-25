@@ -4,6 +4,7 @@ pub mod db;
 pub mod detection;
 pub mod diarization;
 pub mod error;
+pub mod keychain;
 pub mod llm;
 pub mod mcp;
 pub mod transcription;
@@ -46,6 +47,10 @@ pub fn run() {
             commands::start_recording,
             commands::stop_recording,
             commands::is_recording,
+            commands::store_api_key,
+            commands::get_api_key,
+            commands::delete_api_key,
+            commands::list_stored_providers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

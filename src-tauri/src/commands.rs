@@ -1,5 +1,6 @@
 use crate::audio::RecordingSession;
 use crate::db::*;
+use crate::keychain;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex as TokioMutex;
@@ -227,4 +228,25 @@ pub async fn stop_recording(
 pub async fn is_recording(recording: State<'_, RecordingState>) -> Result<bool, String> {
     let session = recording.lock().await;
     Ok(session.is_some())
+}
+
+// Keychain commands
+#[tauri::command]
+pub fn store_api_key(provider: String, key: String) -> Result<(), String> {
+    keychain::store_api_key(&provider, &key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_api_key(provider: String) -> Result<Option<String>, String> {
+    keychain::get_api_key(&provider).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_api_key(provider: String) -> Result<(), String> {
+    keychain::delete_api_key(&provider).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_stored_providers() -> Result<Vec<String>, String> {
+    Ok(keychain::list_stored_providers())
 }

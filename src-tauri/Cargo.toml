@@ -38,6 +38,7 @@ cpal = "0.15"
 ringbuf = "0.4"
 hound = "3.5"
 cidre = { version = "0.14", features = ["av"], optional = true }
+security-framework = "3"
 
 [dev-dependencies]
 tempfile = "3"
