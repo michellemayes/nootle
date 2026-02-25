@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
@@ -22,15 +22,23 @@ function WaveformBar({ index }: { index: number }) {
   return (
     <motion.div
       className="w-1 rounded-full bg-primary"
+      initial={{ height: 0, opacity: 0 }}
       animate={{
         height: [8, 24 + Math.random() * 16, 8],
+        opacity: 1,
       }}
       transition={{
-        duration: 0.6 + Math.random() * 0.4,
-        repeat: Infinity,
-        repeatType: "reverse",
-        delay: index * 0.05,
-        ease: "easeInOut",
+        height: {
+          duration: 0.6 + Math.random() * 0.4,
+          repeat: Infinity,
+          repeatType: "reverse",
+          delay: 0.3 + index * 0.05,
+          ease: "easeInOut",
+        },
+        opacity: {
+          duration: 0.2,
+          delay: index * 0.03,
+        },
       }}
     />
   );
@@ -165,14 +173,14 @@ export function RecordingView() {
       </div>
 
       {/* Stop button */}
-      <Button
+      <MotionButton
         size="lg"
         variant="destructive"
         className="h-14 px-10 text-lg"
         onClick={handleStop}
       >
         {"\u23F9"} Stop Recording
-      </Button>
+      </MotionButton>
     </div>
   );
 }

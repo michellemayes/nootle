@@ -1,11 +1,21 @@
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { forwardRef } from "react";
-import type { ComponentPropsWithoutRef } from "react";
+import React from "react";
 
-type ButtonProps = ComponentPropsWithoutRef<typeof Button>;
+const MotionButtonInner = motion.create(Button);
 
-export const MotionButton = forwardRef<HTMLButtonElement, ButtonProps>(
-  function MotionButton(props, ref) {
-    return <Button ref={ref} {...props} />;
-  },
-);
+type MotionButtonProps = React.ComponentProps<typeof MotionButtonInner>;
+
+export const MotionButton = React.forwardRef<
+  HTMLButtonElement,
+  MotionButtonProps
+>(function MotionButton(props, ref) {
+  return (
+    <MotionButtonInner
+      ref={ref}
+      whileTap={{ scale: 0.97 }}
+      transition={{ type: "spring", stiffness: 400, damping: 17 }}
+      {...props}
+    />
+  );
+});

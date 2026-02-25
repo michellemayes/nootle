@@ -60,10 +60,11 @@ function MeetingCard({ meeting }: { meeting: Meeting }) {
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -2 }}
       transition={{ duration: 0.2 }}
     >
       <Card
-        className="cursor-pointer transition-colors hover:bg-accent/30"
+        className="cursor-pointer transition-colors hover:bg-accent/30 hover:shadow-md"
         onClick={() => navigate(`/meeting/${meeting.id}`)}
       >
         <CardContent className="space-y-3">

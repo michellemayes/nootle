@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -122,9 +123,9 @@ export function TemplatesPage() {
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleCreate} disabled={!newName.trim()}>
+              <MotionButton onClick={handleCreate} disabled={!newName.trim()}>
                 Create
-              </Button>
+              </MotionButton>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -145,11 +146,14 @@ export function TemplatesPage() {
         </div>
       ) : (
         <div className="space-y-3">
+          <AnimatePresence>
           {templates.map((template) => (
             <motion.div
               key={template.id}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+              layout
             >
               <Card>
                 <CardContent>
@@ -182,6 +186,7 @@ export function TemplatesPage() {
               </Card>
             </motion.div>
           ))}
+          </AnimatePresence>
         </div>
       )}
     </div>

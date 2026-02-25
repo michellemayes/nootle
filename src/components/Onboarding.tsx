@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 
@@ -85,9 +86,9 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                   Nootle captures your meetings, transcribes them live, and
                   cooks up smart summaries — all on your Mac.
                 </p>
-                <Button size="lg" onClick={next}>
+                <MotionButton size="lg" onClick={next}>
                   Get Started
-                </Button>
+                </MotionButton>
               </div>
             )}
 
@@ -129,7 +130,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                   <Button variant="ghost" onClick={next}>
                     Skip
                   </Button>
-                  <Button onClick={next}>Continue</Button>
+                  <MotionButton onClick={next}>Continue</MotionButton>
                 </div>
               </div>
             )}
@@ -143,9 +144,9 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                   Nootle will automatically detect meetings in Zoom, Teams, and
                   Google Meet. You can also start recording manually anytime.
                 </p>
-                <Button size="lg" onClick={finish} disabled={saving}>
+                <MotionButton size="lg" onClick={finish} disabled={saving}>
                   {saving ? "Setting up..." : "Start Using Nootle"}
-                </Button>
+                </MotionButton>
               </div>
             )}
           </motion.div>
@@ -245,9 +246,9 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
         </p>
       )}
       <div className="mt-8 flex justify-end">
-        <Button onClick={onNext} disabled={!allGranted}>
+        <MotionButton onClick={onNext} disabled={!allGranted}>
           Continue
-        </Button>
+        </MotionButton>
       </div>
     </div>
   );

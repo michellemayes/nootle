@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -239,14 +240,14 @@ export function MeetingDetail() {
                 ))}
               </select>
             </div>
-            <Button
+            <MotionButton
               size="sm"
               className="w-full"
               onClick={handleGenerate}
               disabled={generating || !selectedPrompt || !selectedProvider || !selectedModel}
             >
               {generating ? "Cooking..." : "Cook Up a Summary"}
-            </Button>
+            </MotionButton>
           </div>
 
           {/* Summary tabs */}
