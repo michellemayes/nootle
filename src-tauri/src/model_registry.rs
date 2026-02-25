@@ -113,7 +113,7 @@ const DIARIZATION_FILES: &[ModelFile] = &[
     },
     ModelFile {
         local_name: "embedding.onnx",
-        url: "https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34/resolve/main/voxceleb_resnet34.onnx",
+        url: "https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34-LM/resolve/main/voxceleb_resnet34_LM.onnx",
         size_bytes: 26_500_000,
         sha256: "",
     },
@@ -140,7 +140,7 @@ pub const MODEL_REGISTRY: &[ModelDefinition] = &[
     ModelDefinition {
         id: "diarization",
         name: "Speaker Diarization",
-        description: "Identifies who is speaking (pyannote segmentation + WeSpeaker embedding)",
+        description: "Identifies who is speaking (pyannote segmentation + WeSpeaker LM embedding)",
         category: ModelCategory::Diarization,
         dir_name: "diarization",
         variants: DIARIZATION_VARIANTS,
