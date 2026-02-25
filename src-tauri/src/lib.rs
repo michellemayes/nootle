@@ -5,6 +5,7 @@ pub mod detection;
 pub mod diarization;
 pub mod error;
 pub mod keychain;
+pub mod linear;
 pub mod llm;
 pub mod mcp;
 pub mod model_download;
@@ -236,6 +237,12 @@ pub fn run() {
             commands::seed_default_prompts,
             commands::get_model_status,
             commands::get_diarization_status,
+            commands::list_linear_teams,
+            commands::list_linear_projects,
+            commands::create_linear_ticket,
+            commands::get_linear_tickets,
+            commands::get_linear_setting,
+            commands::set_linear_setting,
             commands::get_available_models,
             commands::get_downloaded_models,
             commands::download_model,

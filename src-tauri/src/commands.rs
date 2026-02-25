@@ -502,6 +502,145 @@ pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
     Ok(())
 }
 
+// Linear commands
+#[tauri::command]
+pub async fn list_linear_teams() -> Result<Vec<crate::linear::LinearTeam>, String> {
+    let api_key = crate::keychain::get_api_key("linear")
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Linear API key not configured".to_string())?;
+    crate::linear::list_teams(&api_key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_linear_projects(
+    team_id: String,
+) -> Result<Vec<crate::linear::LinearProject>, String> {
+    let api_key = crate::keychain::get_api_key("linear")
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Linear API key not configured".to_string())?;
+    crate::linear::list_projects(&api_key, &team_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_linear_ticket(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    summary_id: String,
+    team_id: String,
+    project_id: Option<String>,
+    provider: String,
+    model: String,
+) -> Result<crate::db::LinearTicket, String> {
+    // Fetch summary from DB
+    let summary = db.get_summary(&summary_id).map_err(|e| e.to_string())?;
+    let meeting = db
+        .get_meeting(&summary.meeting_id)
+        .map_err(|e| e.to_string())?;
+
+    // Use LLM to generate ticket title and description
+    let llm_registry = llm.read().await;
+    let llm_provider = llm_registry
+        .get_provider(&provider)
+        .ok_or_else(|| format!("Provider '{}' not found", provider))?;
+
+    let messages = vec![
+        crate::llm::ChatMessage {
+            role: "system".into(),
+            content: "You are a helpful assistant that creates Linear tickets from meeting summaries. Return valid JSON with exactly two fields: \"title\" (concise, under 80 characters) and \"description\" (markdown-formatted, structured with sections as appropriate). Return ONLY the JSON object, no other text.".into(),
+        },
+        crate::llm::ChatMessage {
+            role: "user".into(),
+            content: format!("Meeting: {}\n\nSummary:\n{}", meeting.title, summary.content),
+        },
+    ];
+
+    let llm_response = llm_provider
+        .chat(messages, &model)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Parse LLM response, fallback to raw content
+    let (title, description) = match serde_json::from_str::<serde_json::Value>(&llm_response) {
+        Ok(json) => {
+            let title = json
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&meeting.title)
+                .to_string();
+            let desc = json
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&summary.content)
+                .to_string();
+            (title, desc)
+        }
+        Err(_) => (meeting.title.clone(), summary.content.clone()),
+    };
+
+    // Get Linear API key and create issue
+    let api_key = crate::keychain::get_api_key("linear")
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Linear API key not configured".to_string())?;
+
+    let issue = crate::linear::create_issue(
+        &api_key,
+        &team_id,
+        project_id.as_deref(),
+        &title,
+        &description,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Store ticket reference in DB
+    let ticket = db
+        .create_linear_ticket(NewLinearTicket {
+            summary_id: &summary_id,
+            meeting_id: &summary.meeting_id,
+            linear_issue_id: &issue.id,
+            linear_issue_url: &issue.url,
+            linear_identifier: &issue.identifier,
+            title: &issue.title,
+            team_id: &team_id,
+            project_id: project_id.as_deref(),
+        })
+        .map_err(|e| e.to_string())?;
+
+    Ok(ticket)
+}
+
+#[tauri::command]
+pub fn get_linear_tickets(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<crate::db::LinearTicket>, String> {
+    db.get_linear_tickets(&meeting_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_linear_setting(db: State<'_, DbState>, key: String) -> Result<Option<String>, String> {
+    db.get_linear_setting(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_linear_setting(
+    db: State<'_, DbState>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    const ALLOWED_KEYS: &[&str] = &["default_team_id", "default_project_id"];
+    if !ALLOWED_KEYS.contains(&key.as_str()) {
+        return Err(format!("Invalid setting key: {}", key));
+    }
+    db.set_linear_setting(&key, &value)
+        .map_err(|e| e.to_string())
+}
+
 // Model download commands
 
 #[tauri::command]
