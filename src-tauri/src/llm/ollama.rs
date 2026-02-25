@@ -5,6 +5,12 @@ pub struct OllamaProvider {
     client: reqwest::Client,
 }
 
+impl Default for OllamaProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OllamaProvider {
     pub fn new() -> Self {
         Self {

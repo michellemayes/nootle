@@ -5,6 +5,12 @@ pub struct AudioMixer {
     duck_ratio: f32,
 }
 
+impl Default for AudioMixer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AudioMixer {
     pub fn new() -> Self {
         Self {

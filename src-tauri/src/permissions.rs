@@ -67,11 +67,11 @@ fn authorization_status_to_string(status: i64) -> String {
 /// Check `[AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio]`.
 pub fn check_microphone() -> String {
     unsafe {
-        let cls = objc_getClass(b"AVCaptureDevice\0".as_ptr() as *const c_char);
+        let cls = objc_getClass(c"AVCaptureDevice".as_ptr());
         if cls.is_null() {
             return "undetermined".to_string();
         }
-        let sel = sel_registerName(b"authorizationStatusForMediaType:\0".as_ptr() as *const c_char);
+        let sel = sel_registerName(c"authorizationStatusForMediaType:".as_ptr());
         let msg_send: unsafe extern "C" fn(Class, Sel, Id) -> i64 =
             std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         let status = msg_send(cls, sel, AVMediaTypeAudio);
@@ -100,13 +100,11 @@ pub async fn request_microphone() -> bool {
         });
 
         unsafe {
-            let cls = objc_getClass(b"AVCaptureDevice\0".as_ptr() as *const c_char);
+            let cls = objc_getClass(c"AVCaptureDevice".as_ptr());
             if cls.is_null() {
                 return false;
             }
-            let sel = sel_registerName(
-                b"requestAccessForMediaType:completionHandler:\0".as_ptr() as *const c_char
-            );
+            let sel = sel_registerName(c"requestAccessForMediaType:completionHandler:".as_ptr());
             let msg_send: unsafe extern "C" fn(
                 Class,
                 Sel,
@@ -136,12 +134,11 @@ pub fn request_screen_recording() -> bool {
 /// `EKEntityTypeEvent` == 0.
 pub fn check_calendar() -> String {
     unsafe {
-        let cls = objc_getClass(b"EKEventStore\0".as_ptr() as *const c_char);
+        let cls = objc_getClass(c"EKEventStore".as_ptr());
         if cls.is_null() {
             return "undetermined".to_string();
         }
-        let sel =
-            sel_registerName(b"authorizationStatusForEntityType:\0".as_ptr() as *const c_char);
+        let sel = sel_registerName(c"authorizationStatusForEntityType:".as_ptr());
         let msg_send: unsafe extern "C" fn(Class, Sel, u64) -> i64 =
             std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         let status = msg_send(cls, sel, 0u64); // 0 = EKEntityTypeEvent
@@ -171,14 +168,14 @@ pub async fn request_calendar() -> bool {
         });
 
         unsafe {
-            let cls = objc_getClass(b"EKEventStore\0".as_ptr() as *const c_char);
+            let cls = objc_getClass(c"EKEventStore".as_ptr());
             if cls.is_null() {
                 return false;
             }
 
             // [[EKEventStore alloc] init]
-            let alloc_sel = sel_registerName(b"alloc\0".as_ptr() as *const c_char);
-            let init_sel = sel_registerName(b"init\0".as_ptr() as *const c_char);
+            let alloc_sel = sel_registerName(c"alloc".as_ptr());
+            let init_sel = sel_registerName(c"init".as_ptr());
 
             let msg_send_id: unsafe extern "C" fn(Class, Sel) -> Id =
                 std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
@@ -195,9 +192,7 @@ pub async fn request_calendar() -> bool {
             }
 
             // [store requestFullAccessToEventsWithCompletion:]
-            let sel = sel_registerName(
-                b"requestFullAccessToEventsWithCompletion:\0".as_ptr() as *const c_char
-            );
+            let sel = sel_registerName(c"requestFullAccessToEventsWithCompletion:".as_ptr());
             let msg_send_block: unsafe extern "C" fn(
                 Id,
                 Sel,

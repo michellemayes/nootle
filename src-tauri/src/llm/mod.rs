@@ -16,6 +16,12 @@ pub struct LlmRegistry {
     providers: Vec<Box<dyn LlmProvider>>,
 }
 
+impl Default for LlmRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LlmRegistry {
     pub fn new() -> Self {
         Self { providers: vec![] }
