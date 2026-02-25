@@ -8,6 +8,10 @@ pub mod llm;
 pub mod mcp;
 pub mod transcription;
 
+use commands::RecordingState;
+use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app_dir = dirs::data_dir().unwrap().join("Nootle");
@@ -15,9 +19,12 @@ pub fn run() {
     let db_path = app_dir.join("nootle.db");
     let db = std::sync::Arc::new(db::Database::new(db_path.to_str().unwrap()).unwrap());
 
+    let recording_state: RecordingState = Arc::new(TokioMutex::new(None));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(db)
+        .manage(recording_state)
         .invoke_handler(tauri::generate_handler![
             commands::create_meeting,
             commands::list_meetings,
@@ -36,6 +43,9 @@ pub fn run() {
             commands::list_templates,
             commands::delete_template,
             commands::get_summaries,
+            commands::start_recording,
+            commands::stop_recording,
+            commands::is_recording,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

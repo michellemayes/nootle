@@ -1,8 +1,11 @@
+use crate::audio::RecordingSession;
 use crate::db::*;
 use std::sync::Arc;
 use tauri::State;
+use tokio::sync::Mutex as TokioMutex;
 
 pub type DbState = Arc<Database>;
+pub type RecordingState = Arc<TokioMutex<Option<RecordingSession>>>;
 
 // Meeting commands
 #[tauri::command]
@@ -153,4 +156,75 @@ pub fn get_summaries(
 ) -> Result<Vec<Summary>, String> {
     db.get_summaries_for_meeting(&meeting_id)
         .map_err(|e| e.to_string())
+}
+
+// Recording commands
+#[tauri::command]
+pub async fn start_recording(
+    db: State<'_, DbState>,
+    recording: State<'_, RecordingState>,
+    title: String,
+    category_id: Option<String>,
+    calendar_event_id: Option<String>,
+) -> Result<Meeting, String> {
+    // Check if already recording
+    let mut session_lock = recording.lock().await;
+    if session_lock.is_some() {
+        return Err("Already recording".to_string());
+    }
+
+    // Create meeting in DB
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title,
+            category_id,
+            calendar_event_id,
+        })
+        .map_err(|e| e.to_string())?;
+
+    // Create recording session
+    let recordings_dir = dirs::data_dir()
+        .unwrap()
+        .join("Nootle")
+        .join("recordings");
+    let session = RecordingSession::new(&recordings_dir, &meeting.id, 16000)
+        .map_err(|e| e.to_string())?;
+    session.start();
+
+    *session_lock = Some(session);
+
+    Ok(meeting)
+}
+
+#[tauri::command]
+pub async fn stop_recording(
+    db: State<'_, DbState>,
+    recording: State<'_, RecordingState>,
+) -> Result<Meeting, String> {
+    let mut session_lock = recording.lock().await;
+    let session = session_lock
+        .take()
+        .ok_or_else(|| "Not recording".to_string())?;
+
+    session.stop();
+
+    // Find the current recording meeting (most recent with status "recording")
+    let meetings = db.list_meetings(None, None).map_err(|e| e.to_string())?;
+    let meeting = meetings
+        .into_iter()
+        .find(|m| m.status == "recording")
+        .ok_or_else(|| "No active recording found".to_string())?;
+
+    // Update meeting status to transcribing
+    db.update_meeting_status(&meeting.id, "transcribing")
+        .map_err(|e| e.to_string())?;
+
+    // Return the updated meeting
+    db.get_meeting(&meeting.id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn is_recording(recording: State<'_, RecordingState>) -> Result<bool, String> {
+    let session = recording.lock().await;
+    Ok(session.is_some())
 }
