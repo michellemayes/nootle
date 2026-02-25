@@ -32,7 +32,6 @@ function hexToHueChroma(hex: string): { hue: number; chroma: number } {
   const m_cbrt = Math.cbrt(m_);
   const s_cbrt = Math.cbrt(s_);
 
-  const _L = 0.2104542553 * l_cbrt + 0.7936177850 * m_cbrt - 0.0040720468 * s_cbrt;
   const a = 1.9779984951 * l_cbrt - 2.4285922050 * m_cbrt + 0.4505937099 * s_cbrt;
   const bOk = 0.0259040371 * l_cbrt + 0.7827717662 * m_cbrt - 0.8086757660 * s_cbrt;
 
