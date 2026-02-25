@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Nootle needs microphone access to record your voice during meetings.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Nootle needs screen recording permission to capture system audio from meeting apps via Core Audio Process Tap.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Nootle uses your calendar to auto-detect upcoming meetings and pre-fill meeting titles.</string>
+</dict>
+</plist>
