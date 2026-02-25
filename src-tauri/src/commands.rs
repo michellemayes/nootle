@@ -329,7 +329,9 @@ pub async fn stop_recording(
 ) -> Result<Meeting, String> {
     let mut session = {
         let mut session_lock = recording.lock().await;
-        session_lock.take().ok_or_else(|| "Not recording".to_string())?
+        session_lock
+            .take()
+            .ok_or_else(|| "Not recording".to_string())?
     };
 
     let meeting_id = session.meeting_id().to_string();
@@ -765,4 +767,3 @@ pub async fn delete_model(model_id: String) -> Result<(), String> {
         model_registry::get_model(&model_id).ok_or_else(|| format!("Unknown model: {model_id}"))?;
     model_download::delete_model_files(model)
 }
-
