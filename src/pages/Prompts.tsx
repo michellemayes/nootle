@@ -40,7 +40,7 @@ export function PromptsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Prompts</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage prompts for meeting summarization
+            Instructions that tell the AI what to focus on and how to write
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -51,7 +51,7 @@ export function PromptsPage() {
             <DialogHeader>
               <DialogTitle>New Prompt</DialogTitle>
               <DialogDescription>
-                Create a prompt template for meeting summaries
+                Write instructions for the AI — what to extract, how detailed to be, what tone to use
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -65,10 +65,10 @@ export function PromptsPage() {
               </div>
               <div>
                 <label className="text-sm font-medium mb-1.5 block">
-                  Content
+                  Instructions
                 </label>
                 <textarea
-                  placeholder="Write your prompt template..."
+                  placeholder="e.g., Focus on action items and decisions. Use bullet points. Keep it under 500 words."
                   value={newContent}
                   onChange={(e) => setNewContent(e.target.value)}
                   rows={5}
@@ -121,7 +121,7 @@ export function PromptsPage() {
           <span className="text-4xl">{"\u2728"}</span>
           <h2 className="text-lg font-medium">No prompts yet</h2>
           <p className="text-sm text-muted-foreground">
-            Create a prompt to get started with summarization
+            Add instructions to control what the AI writes
           </p>
         </div>
       ) : (

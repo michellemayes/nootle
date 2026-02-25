@@ -53,7 +53,7 @@ export function TemplatesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Templates</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage summary templates for different meeting types
+            Reusable section layouts that structure how summaries are organized
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -64,7 +64,7 @@ export function TemplatesPage() {
             <DialogHeader>
               <DialogTitle>New Template</DialogTitle>
               <DialogDescription>
-                Create a template for structured meeting summaries
+                Define the sections and layout for a type of meeting
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -140,7 +140,7 @@ export function TemplatesPage() {
           <span className="text-4xl">{"\uD83D\uDCC4"}</span>
           <h2 className="text-lg font-medium">No templates yet</h2>
           <p className="text-sm text-muted-foreground">
-            Create a template to standardize meeting summaries
+            Define section layouts for different meeting types like standups, 1:1s, or all-hands
           </p>
         </div>
       ) : (

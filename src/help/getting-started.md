@@ -29,7 +29,7 @@ Open any meeting from the library to see:
 - **Summary** — click **Generate Summary** to create an AI-powered summary using your configured LLM provider. You can customize the summary style under **Prompts**.
 - **Chat** — ask follow-up questions about the meeting. For example: "What action items were discussed?" or "Summarize what Alice said about the budget."
 
-## Customizing Prompts and Templates
+## Customizing Summaries
 
-- **Prompts** (sidebar → Prompts) — edit the instructions Nootle sends to the LLM when generating summaries or answering chat questions.
-- **Templates** (sidebar → Templates) — create reusable summary formats for different meeting types (standup, 1:1, all-hands, etc).
+- **Prompts** (sidebar → Prompts) — control *what the AI focuses on* and *how it writes*. A prompt is a set of instructions like "extract action items, keep it concise, use bullet points." Different prompts produce different styles of summary from the same meeting.
+- **Templates** (sidebar → Templates) — control *which sections appear* in the summary and in what order. For example, a standup template might have "Yesterday / Today / Blockers" sections, while a 1:1 template might have "Discussion / Action Items / Follow-ups."
