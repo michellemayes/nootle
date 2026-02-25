@@ -192,7 +192,7 @@ pub fn run() {
             });
 
             // Background update check
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 use tauri_plugin_updater::UpdaterExt;
                 if let Ok(updater) = update_handle.updater() {
                     if let Ok(Some(update)) = updater.check().await {
