@@ -53,8 +53,7 @@ mod core_audio_impl {
             return 0;
         }
 
-        let samples =
-            unsafe { std::slice::from_raw_parts(buf.data as *const f32, sample_count) };
+        let samples = unsafe { std::slice::from_raw_parts(buf.data as *const f32, sample_count) };
 
         ctx.producer.push_slice(samples);
 
@@ -77,20 +76,20 @@ mod core_audio_impl {
         pub fn new() -> anyhow::Result<Self> {
             let tap_desc = audio::TapDesc::mono_global_tap_excluding_processes(&[]);
 
-            let tap_guard = tap_desc
-                .tap()
-                .map_err(|e| anyhow!("Failed to create process tap (check Screen Recording permission): {:?}", e))?;
+            let tap_guard = tap_desc.tap().map_err(|e| {
+                anyhow!(
+                    "Failed to create process tap (check Screen Recording permission): {:?}",
+                    e
+                )
+            })?;
 
             let sample_rate = tap_guard.stream_basic_desc().sample_rate as u32;
             tracing::info!(sample_rate, "Core Audio Process Tap created");
 
             let uid = format!("nootle-system-tap-{}", uuid::Uuid::new_v4());
-            let aggregate_device_id = audio::AggregateDevice::create(
-                &uid,
-                "Nootle System Audio",
-                &tap_guard,
-            )
-            .map_err(|e| anyhow!("Failed to create aggregate device: {:?}", e))?;
+            let aggregate_device_id =
+                audio::AggregateDevice::create(&uid, "Nootle System Audio", &tap_guard)
+                    .map_err(|e| anyhow!("Failed to create aggregate device: {:?}", e))?;
 
             let rb = HeapRb::<f32>::new(sample_rate as usize * 5);
             let (producer, consumer) = rb.split();
@@ -103,12 +102,8 @@ mod core_audio_impl {
 
             let ctx_ptr = &*ctx as *const AudioContext as *mut std::ffi::c_void;
             let io_proc_id = unsafe {
-                audio::Device::create_io_proc_id(
-                    aggregate_device_id,
-                    audio_io_proc,
-                    ctx_ptr,
-                )
-                .map_err(|e| anyhow!("Failed to create IO proc: {:?}", e))?
+                audio::Device::create_io_proc_id(aggregate_device_id, audio_io_proc, ctx_ptr)
+                    .map_err(|e| anyhow!("Failed to create IO proc: {:?}", e))?
             };
 
             tracing::info!("Core Audio aggregate device and IO proc ready");

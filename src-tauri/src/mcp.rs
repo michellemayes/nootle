@@ -1,11 +1,8 @@
 use std::sync::Arc;
 
 use rmcp::{
-    ErrorData as McpError, RoleServer, ServerHandler,
-    handler::server::router::tool::ToolRouter,
-    handler::server::wrapper::Parameters,
-    model::*,
-    schemars, tool, tool_handler, tool_router,
+    handler::server::router::tool::ToolRouter, handler::server::wrapper::Parameters, model::*,
+    schemars, tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler,
 };
 use serde_json::json;
 
@@ -53,7 +50,9 @@ impl NootleMcpServer {
     }
 
     /// List meetings with optional category and search filters
-    #[tool(description = "List meetings with optional category_id and search filters. Returns meeting metadata (id, title, start_time, status, etc).")]
+    #[tool(
+        description = "List meetings with optional category_id and search filters. Returns meeting metadata (id, title, start_time, status, etc)."
+    )]
     fn list_meetings(
         &self,
         Parameters(params): Parameters<ListMeetingsParams>,
@@ -65,33 +64,32 @@ impl NootleMcpServer {
                 McpError::internal_error(format!("Failed to list meetings: {}", e), None)
             })?;
 
-        let json = serde_json::to_string_pretty(&meetings).map_err(|e| {
-            McpError::internal_error(format!("Serialization error: {}", e), None)
-        })?;
+        let json = serde_json::to_string_pretty(&meetings)
+            .map_err(|e| McpError::internal_error(format!("Serialization error: {}", e), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
     /// Get full meeting details including transcript and summaries
-    #[tool(description = "Get full meeting details including transcript segments and summaries. Requires a meeting ID.")]
+    #[tool(
+        description = "Get full meeting details including transcript segments and summaries. Requires a meeting ID."
+    )]
     fn get_meeting(
         &self,
         Parameters(params): Parameters<GetMeetingParams>,
     ) -> Result<CallToolResult, McpError> {
-        let meeting = self.db.get_meeting(&params.id).map_err(|e| {
-            McpError::internal_error(format!("Failed to get meeting: {}", e), None)
-        })?;
+        let meeting = self
+            .db
+            .get_meeting(&params.id)
+            .map_err(|e| McpError::internal_error(format!("Failed to get meeting: {}", e), None))?;
 
         let transcript = self.db.get_transcript(&params.id).map_err(|e| {
             McpError::internal_error(format!("Failed to get transcript: {}", e), None)
         })?;
 
-        let summaries = self
-            .db
-            .get_summaries_for_meeting(&params.id)
-            .map_err(|e| {
-                McpError::internal_error(format!("Failed to get summaries: {}", e), None)
-            })?;
+        let summaries = self.db.get_summaries_for_meeting(&params.id).map_err(|e| {
+            McpError::internal_error(format!("Failed to get summaries: {}", e), None)
+        })?;
 
         let result = json!({
             "meeting": meeting,
@@ -99,15 +97,16 @@ impl NootleMcpServer {
             "summaries": summaries,
         });
 
-        let json = serde_json::to_string_pretty(&result).map_err(|e| {
-            McpError::internal_error(format!("Serialization error: {}", e), None)
-        })?;
+        let json = serde_json::to_string_pretty(&result)
+            .map_err(|e| McpError::internal_error(format!("Serialization error: {}", e), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
     /// Full-text search across all transcripts
-    #[tool(description = "Full-text search across all meeting transcripts. Returns matching transcript segments with meeting context.")]
+    #[tool(
+        description = "Full-text search across all meeting transcripts. Returns matching transcript segments with meeting context."
+    )]
     fn search_transcripts(
         &self,
         Parameters(params): Parameters<SearchTranscriptsParams>,
@@ -116,9 +115,8 @@ impl NootleMcpServer {
             McpError::internal_error(format!("Failed to search transcripts: {}", e), None)
         })?;
 
-        let json = serde_json::to_string_pretty(&results).map_err(|e| {
-            McpError::internal_error(format!("Serialization error: {}", e), None)
-        })?;
+        let json = serde_json::to_string_pretty(&results)
+            .map_err(|e| McpError::internal_error(format!("Serialization error: {}", e), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
@@ -204,7 +202,14 @@ impl ServerHandler for NootleMcpServer {
 
             let transcript_text: String = segments
                 .iter()
-                .map(|s| format!("[{}] {}: {}", format_ms(s.start_ms), s.speaker_label, s.text))
+                .map(|s| {
+                    format!(
+                        "[{}] {}: {}",
+                        format_ms(s.start_ms),
+                        s.speaker_label,
+                        s.text
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join("\n");
 
@@ -324,9 +329,7 @@ mod tests {
         assert!(result.is_ok());
         let result = result.unwrap();
         // Should contain the test meeting
-        let text = result.content[0]
-            .as_text()
-            .expect("Expected text content");
+        let text = result.content[0].as_text().expect("Expected text content");
         assert!(text.text.contains("Test Meeting"));
     }
 
@@ -341,9 +344,7 @@ mod tests {
         let result = server.search_transcripts(Parameters(params));
         assert!(result.is_ok());
         let result = result.unwrap();
-        let text = result.content[0]
-            .as_text()
-            .expect("Expected text content");
+        let text = result.content[0].as_text().expect("Expected text content");
         assert!(text.text.contains("project updates"));
     }
 }

@@ -1,6 +1,5 @@
 use nootle_app_lib::db::{
-    Database, NewCategory, NewMeeting, NewPrompt, NewSummary, NewTemplate,
-    NewTranscriptSegment,
+    Database, NewCategory, NewMeeting, NewPrompt, NewSummary, NewTemplate, NewTranscriptSegment,
 };
 
 #[test]

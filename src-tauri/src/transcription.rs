@@ -262,9 +262,10 @@ pub async fn try_load_engine(engine: &SharedTranscriptionEngine) -> anyhow::Resu
         }
         ModelStatus::NotDownloaded => Err(anyhow!("Models not downloaded yet")),
         ModelStatus::Error(e) => Err(anyhow!("Model error: {}", e)),
-        ModelStatus::Downloading { progress } => {
-            Err(anyhow!("Models still downloading: {:.0}%", progress * 100.0))
-        }
+        ModelStatus::Downloading { progress } => Err(anyhow!(
+            "Models still downloading: {:.0}%",
+            progress * 100.0
+        )),
     }
 }
 

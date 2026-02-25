@@ -204,10 +204,9 @@ impl DiarizationEngine {
 
                     if audio_end > audio_start {
                         let speaker_audio = &audio[audio_start..audio_end];
-                        let speaker_id =
-                            self.identify_speaker(speaker_audio).unwrap_or_else(|_| {
-                                format!("Speaker {}", speaker_idx + 1)
-                            });
+                        let speaker_id = self
+                            .identify_speaker(speaker_audio)
+                            .unwrap_or_else(|_| format!("Speaker {}", speaker_idx + 1));
 
                         segments.push(SpeakerSegment {
                             speaker_id,

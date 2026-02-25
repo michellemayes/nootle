@@ -6,7 +6,7 @@ fn main() {
 
     if args.contains(&"--mcp".to_string()) {
         // Run as MCP server (stdio mode, no GUI)
-        use rmcp::{ServiceExt, transport::stdio};
+        use rmcp::{transport::stdio, ServiceExt};
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {

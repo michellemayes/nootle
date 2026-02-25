@@ -9,7 +9,7 @@ impl AudioMixer {
     pub fn new() -> Self {
         Self {
             duck_threshold: 0.01, // RMS threshold for mic activity
-            duck_ratio: 0.3,     // reduce system audio to 30% when ducking
+            duck_ratio: 0.3,      // reduce system audio to 30% when ducking
         }
     }
 
