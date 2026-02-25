@@ -1,4 +1,5 @@
 import { Hero } from "@/components/Hero";
+import { AppMockup } from "@/components/AppMockup";
 import { Features } from "@/components/Features";
 import { HowItWorks } from "@/components/HowItWorks";
 import { SponsorCTA } from "@/components/SponsorCTA";
@@ -7,6 +8,7 @@ export default function Home() {
   return (
     <main>
       <Hero />
+      <AppMockup />
       <Features />
       <HowItWorks />
       <SponsorCTA />
