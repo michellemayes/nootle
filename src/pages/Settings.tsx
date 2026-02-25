@@ -9,6 +9,7 @@ import { useLLM } from "@/hooks/useLLM";
 import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import { useModelDownload } from "@/hooks/useModelDownload";
 import { useTheme } from "@/hooks/useTheme";
+import { AccentColorPicker } from "@/components/AccentColorPicker";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "ollama"];
 
@@ -213,7 +214,7 @@ export function SettingsPage() {
             <CardTitle>Appearance</CardTitle>
             <CardDescription>Choose your preferred color scheme</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">Theme</p>
@@ -225,6 +226,7 @@ export function SettingsPage() {
                 {theme === "light" ? "\u{1F319} Dark" : "\u{2600}\u{FE0F} Light"}
               </Button>
             </div>
+            <AccentColorPicker />
           </CardContent>
         </Card>
 
