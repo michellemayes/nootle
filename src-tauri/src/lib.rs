@@ -7,9 +7,11 @@ pub mod error;
 pub mod keychain;
 pub mod llm;
 pub mod mcp;
+pub mod summarization;
 pub mod transcription;
 
-use commands::RecordingState;
+use commands::{LlmState, RecordingState};
+use llm::{LlmRegistry, OllamaProvider};
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
@@ -22,10 +24,33 @@ pub fn run() {
 
     let recording_state: RecordingState = Arc::new(TokioMutex::new(None));
 
+    // Initialize LLM registry with available providers
+    let mut llm_registry = LlmRegistry::new();
+
+    // Always register Ollama (no API key needed)
+    llm_registry.register(Box::new(OllamaProvider::new()));
+
+    // Register providers with stored API keys
+    if let Ok(Some(key)) = keychain::get_api_key("openai") {
+        llm_registry.register(Box::new(llm::OpenAiProvider::new(key)));
+    }
+    if let Ok(Some(key)) = keychain::get_api_key("anthropic") {
+        llm_registry.register(Box::new(llm::AnthropicProvider::new(key)));
+    }
+    if let Ok(Some(key)) = keychain::get_api_key("google") {
+        llm_registry.register(Box::new(llm::GoogleProvider::new(key)));
+    }
+    if let Ok(Some(key)) = keychain::get_api_key("groq") {
+        llm_registry.register(Box::new(llm::GroqProvider::new(key)));
+    }
+
+    let llm_state: LlmState = Arc::new(tokio::sync::RwLock::new(llm_registry));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(db)
         .manage(recording_state)
+        .manage(llm_state)
         .invoke_handler(tauri::generate_handler![
             commands::create_meeting,
             commands::list_meetings,
@@ -51,6 +76,10 @@ pub fn run() {
             commands::get_api_key,
             commands::delete_api_key,
             commands::list_stored_providers,
+            commands::generate_summary,
+            commands::chat_with_meeting,
+            commands::list_llm_models,
+            commands::list_llm_providers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

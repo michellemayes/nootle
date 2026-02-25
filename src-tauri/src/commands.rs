@@ -1,12 +1,15 @@
 use crate::audio::RecordingSession;
 use crate::db::*;
 use crate::keychain;
+use crate::llm::{ChatMessage, LlmRegistry};
+use crate::summarization;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex as TokioMutex;
 
 pub type DbState = Arc<Database>;
 pub type RecordingState = Arc<TokioMutex<Option<RecordingSession>>>;
+pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
 
 // Meeting commands
 #[tauri::command]
@@ -249,4 +252,50 @@ pub fn delete_api_key(provider: String) -> Result<(), String> {
 #[tauri::command]
 pub fn list_stored_providers() -> Result<Vec<String>, String> {
     Ok(keychain::list_stored_providers())
+}
+
+// Summarization commands
+#[tauri::command]
+pub async fn generate_summary(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    prompt_id: String,
+    provider: String,
+    model: String,
+) -> Result<Summary, String> {
+    let llm = llm.read().await;
+    summarization::summarize_meeting(&db, &llm, &meeting_id, &prompt_id, &provider, &model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn chat_with_meeting(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    message: String,
+    history: Vec<ChatMessage>,
+    provider: String,
+    model: String,
+) -> Result<String, String> {
+    let llm = llm.read().await;
+    summarization::chat_with_transcript(
+        &db, &llm, &meeting_id, &message, history, &provider, &model,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_llm_models(llm: State<'_, LlmState>) -> Result<Vec<crate::llm::ModelInfo>, String> {
+    let llm = llm.read().await;
+    Ok(llm.all_models())
+}
+
+#[tauri::command]
+pub async fn list_llm_providers(llm: State<'_, LlmState>) -> Result<Vec<String>, String> {
+    let llm = llm.read().await;
+    Ok(llm.provider_names())
 }
