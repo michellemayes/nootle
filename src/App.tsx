@@ -9,6 +9,7 @@ import { MeetingDetail } from "@/pages/MeetingDetail";
 import { PromptsPage } from "@/pages/Prompts";
 import { TemplatesPage } from "@/pages/Templates";
 import { SettingsPage } from "@/pages/Settings";
+import { HelpPage } from "@/pages/Help";
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -81,6 +82,14 @@ function App() {
             element={
               <Layout>
                 <SettingsPage />
+              </Layout>
+            }
+          />
+          <Route
+            path="/help"
+            element={
+              <Layout>
+                <HelpPage />
               </Layout>
             }
           />

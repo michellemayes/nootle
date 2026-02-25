@@ -9,6 +9,7 @@ const navItems = [
   { to: "/templates", label: "Templates", icon: "\uD83D\uDCC4" },
   { to: "/prompts", label: "Prompts", icon: "\u2728" },
   { to: "/settings", label: "Settings", icon: "\u2699\uFE0F" },
+  { to: "/help", label: "Help", icon: "\u2753" },
 ];
 
 export function Sidebar() {
