@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
+import { useTheme } from "@/hooks/useTheme";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "ollama"];
 
@@ -120,6 +121,7 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
 export function SettingsPage() {
   const { storedProviders, storeKey, deleteKey } = useApiKeys();
   const { providers: llmProviders } = useLLM();
+  const { theme, toggleTheme } = useTheme();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -142,6 +144,27 @@ export function SettingsPage() {
           Configure API keys and application settings
         </p>
       </div>
+
+      {/* Appearance */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Appearance</CardTitle>
+          <CardDescription>Choose your preferred color scheme</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Theme</p>
+              <p className="text-sm text-muted-foreground">
+                {theme === "light" ? "Light mode" : "Dark mode"}
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={toggleTheme}>
+              {theme === "light" ? "\u{1F319} Dark" : "\u{2600}\u{FE0F} Light"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* API Keys */}
       <Card>
