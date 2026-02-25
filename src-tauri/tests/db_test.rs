@@ -1,5 +1,6 @@
 use nootle_app_lib::db::{
-    Database, NewCategory, NewMeeting, NewPrompt, NewSummary, NewTemplate, NewTranscriptSegment,
+    Database, NewCategory, NewLinearTicket, NewMeeting, NewPrompt, NewSummary, NewTemplate,
+    NewTranscriptSegment,
 };
 
 #[test]
@@ -212,6 +213,50 @@ fn test_summaries() {
     let sums = db.get_summaries_for_meeting(&meeting.id).unwrap();
     assert_eq!(sums.len(), 1);
     assert_eq!(sums[0].provider, "openai");
+}
+
+#[test]
+fn test_create_and_list_linear_tickets() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Linear Sync".into(),
+            category_id: None,
+            calendar_event_id: None,
+        })
+        .unwrap();
+    let summary = db
+        .create_summary(NewSummary {
+            meeting_id: meeting.id.clone(),
+            prompt_id: None,
+            provider: "openai".into(),
+            model: "gpt-4o".into(),
+            content: "Action items for ticket creation".into(),
+        })
+        .unwrap();
+
+    let created = db
+        .create_linear_ticket(NewLinearTicket {
+            summary_id: &summary.id,
+            meeting_id: &meeting.id,
+            linear_issue_id: "issue_123",
+            linear_issue_url: "https://linear.app/nootle/issue/NOOTLE-123/example",
+            linear_identifier: "NOOTLE-123",
+            title: "Follow up on action items",
+            team_id: "team_abc",
+            project_id: Some("project_xyz"),
+        })
+        .unwrap();
+
+    assert_eq!(created.summary_id, summary.id);
+    assert_eq!(created.meeting_id, meeting.id);
+    assert_eq!(created.linear_identifier, "NOOTLE-123");
+    assert_eq!(created.project_id, Some("project_xyz".to_string()));
+
+    let tickets = db.get_linear_tickets(&meeting.id).unwrap();
+    assert_eq!(tickets.len(), 1);
+    assert_eq!(tickets[0].id, created.id);
+    assert_eq!(tickets[0].title, "Follow up on action items");
 }
 
 #[test]

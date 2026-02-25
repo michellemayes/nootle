@@ -598,16 +598,16 @@ pub async fn create_linear_ticket(
 
     // Store ticket reference in DB
     let ticket = db
-        .create_linear_ticket(
-            &summary_id,
-            &summary.meeting_id,
-            &issue.id,
-            &issue.url,
-            &issue.identifier,
-            &issue.title,
-            &team_id,
-            project_id.as_deref(),
-        )
+        .create_linear_ticket(NewLinearTicket {
+            summary_id: &summary_id,
+            meeting_id: &summary.meeting_id,
+            linear_issue_id: &issue.id,
+            linear_issue_url: &issue.url,
+            linear_identifier: &issue.identifier,
+            title: &issue.title,
+            team_id: &team_id,
+            project_id: project_id.as_deref(),
+        })
         .map_err(|e| e.to_string())?;
 
     Ok(ticket)

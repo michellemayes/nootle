@@ -131,6 +131,17 @@ pub struct LinearTicket {
     pub created_at: String,
 }
 
+pub struct NewLinearTicket<'a> {
+    pub summary_id: &'a str,
+    pub meeting_id: &'a str,
+    pub linear_issue_id: &'a str,
+    pub linear_issue_url: &'a str,
+    pub linear_identifier: &'a str,
+    pub title: &'a str,
+    pub team_id: &'a str,
+    pub project_id: Option<&'a str>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptSearchResult {
     pub meeting_id: String,
@@ -754,17 +765,7 @@ impl Database {
 
     // --- Linear Tickets ---
 
-    pub fn create_linear_ticket(
-        &self,
-        summary_id: &str,
-        meeting_id: &str,
-        linear_issue_id: &str,
-        linear_issue_url: &str,
-        linear_identifier: &str,
-        title: &str,
-        team_id: &str,
-        project_id: Option<&str>,
-    ) -> Result<LinearTicket> {
+    pub fn create_linear_ticket(&self, params: NewLinearTicket<'_>) -> Result<LinearTicket> {
         let conn = self.conn.lock().unwrap();
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
@@ -772,19 +773,19 @@ impl Database {
         conn.execute(
             "INSERT INTO linear_tickets (id, summary_id, meeting_id, linear_issue_id, linear_issue_url, linear_identifier, title, team_id, project_id, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![id, summary_id, meeting_id, linear_issue_id, linear_issue_url, linear_identifier, title, team_id, project_id, now],
+            params![id, params.summary_id, params.meeting_id, params.linear_issue_id, params.linear_issue_url, params.linear_identifier, params.title, params.team_id, params.project_id, now],
         )?;
 
         Ok(LinearTicket {
             id,
-            summary_id: summary_id.to_string(),
-            meeting_id: meeting_id.to_string(),
-            linear_issue_id: linear_issue_id.to_string(),
-            linear_issue_url: linear_issue_url.to_string(),
-            linear_identifier: linear_identifier.to_string(),
-            title: title.to_string(),
-            team_id: team_id.to_string(),
-            project_id: project_id.map(|s| s.to_string()),
+            summary_id: params.summary_id.to_string(),
+            meeting_id: params.meeting_id.to_string(),
+            linear_issue_id: params.linear_issue_id.to_string(),
+            linear_issue_url: params.linear_issue_url.to_string(),
+            linear_identifier: params.linear_identifier.to_string(),
+            title: params.title.to_string(),
+            team_id: params.team_id.to_string(),
+            project_id: params.project_id.map(|s| s.to_string()),
             created_at: now,
         })
     }
