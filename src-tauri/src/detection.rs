@@ -5,7 +5,7 @@ use sysinfo::System;
 const MEETING_APPS: &[(&str, &str)] = &[
     ("zoom.us", "Zoom"),
     ("Microsoft Teams", "Teams"),
-    ("Google Chrome", "Google Meet"),  // Meet runs in Chrome
+    ("Google Chrome", "Google Meet"), // Meet runs in Chrome
     ("Brave Browser", "Google Meet"),
     ("Arc", "Google Meet"),
     ("Safari", "Google Meet"),
@@ -34,7 +34,8 @@ impl MeetingDetector {
     /// Check for newly started meeting apps.
     /// Returns only newly detected meetings (not ones already known).
     pub fn check(&mut self) -> Vec<DetectedMeeting> {
-        self.system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        self.system
+            .refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         let mut detected = Vec::new();
         let mut currently_running = HashSet::new();
 
@@ -62,6 +63,12 @@ impl MeetingDetector {
     /// Get list of currently active meeting apps
     pub fn active_apps(&self) -> Vec<String> {
         self.known_active.iter().cloned().collect()
+    }
+}
+
+impl Default for MeetingDetector {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

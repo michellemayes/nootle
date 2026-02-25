@@ -9,7 +9,7 @@ impl AudioMixer {
     pub fn new() -> Self {
         Self {
             duck_threshold: 0.01, // RMS threshold for mic activity
-            duck_ratio: 0.3,     // reduce system audio to 30% when ducking
+            duck_ratio: 0.3,      // reduce system audio to 30% when ducking
         }
     }
 
@@ -39,6 +39,12 @@ impl AudioMixer {
         }
         let sum: f32 = samples.iter().map(|s| s * s).sum();
         (sum / samples.len() as f32).sqrt()
+    }
+}
+
+impl Default for AudioMixer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

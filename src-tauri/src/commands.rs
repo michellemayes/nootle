@@ -157,10 +157,7 @@ pub fn delete_template(db: State<'_, DbState>, id: String) -> Result<(), String>
 
 // Summary commands
 #[tauri::command]
-pub fn get_summaries(
-    db: State<'_, DbState>,
-    meeting_id: String,
-) -> Result<Vec<Summary>, String> {
+pub fn get_summaries(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<Summary>, String> {
     db.get_summaries_for_meeting(&meeting_id)
         .map_err(|e| e.to_string())
 }
@@ -191,10 +188,7 @@ pub async fn start_recording(
         .map_err(|e| e.to_string())?;
 
     // Create recording session — rollback meeting if this fails
-    let recordings_dir = dirs::data_dir()
-        .unwrap()
-        .join("Nootle")
-        .join("recordings");
+    let recordings_dir = dirs::data_dir().unwrap().join("Nootle").join("recordings");
     let mut session = match RecordingSession::new(&recordings_dir, &meeting.id, 16000) {
         Ok(s) => s,
         Err(e) => {
@@ -231,7 +225,9 @@ async fn run_transcription_pipeline(
     let mut transcription_engine = match TranscriptionEngine::load() {
         Ok(e) => Some(e),
         Err(err) => {
-            tracing::info!("Transcription models not available, skipping live transcription: {err}");
+            tracing::info!(
+                "Transcription models not available, skipping live transcription: {err}"
+            );
             None
         }
     };
@@ -354,10 +350,7 @@ pub fn get_api_key(provider: String) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub async fn delete_api_key(
-    llm: State<'_, LlmState>,
-    provider: String,
-) -> Result<(), String> {
+pub async fn delete_api_key(llm: State<'_, LlmState>, provider: String) -> Result<(), String> {
     keychain::delete_api_key(&provider).map_err(|e| e.to_string())?;
 
     // Hot-reload: remove the provider from the LLM registry
@@ -400,14 +393,22 @@ pub async fn chat_with_meeting(
 ) -> Result<String, String> {
     let llm = llm.read().await;
     summarization::chat_with_transcript(
-        &db, &llm, &meeting_id, &message, history, &provider, &model,
+        &db,
+        &llm,
+        &meeting_id,
+        &message,
+        history,
+        &provider,
+        &model,
     )
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn list_llm_models(llm: State<'_, LlmState>) -> Result<Vec<crate::llm::ModelInfo>, String> {
+pub async fn list_llm_models(
+    llm: State<'_, LlmState>,
+) -> Result<Vec<crate::llm::ModelInfo>, String> {
     let llm = llm.read().await;
     Ok(llm.all_models())
 }

@@ -134,14 +134,18 @@ pub struct Database {
 impl Database {
     pub fn new(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
-        let db = Self { conn: Mutex::new(conn) };
+        let db = Self {
+            conn: Mutex::new(conn),
+        };
         db.initialize()?;
         Ok(db)
     }
 
     pub fn new_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
-        let db = Self { conn: Mutex::new(conn) };
+        let db = Self {
+            conn: Mutex::new(conn),
+        };
         db.initialize()?;
         Ok(db)
     }
@@ -278,30 +282,36 @@ impl Database {
              FROM meetings WHERE id = ?1",
         )?;
 
-        let meeting = stmt.query_row(params![id], |row| {
-            Ok(Meeting {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                start_time: row.get(2)?,
-                end_time: row.get(3)?,
-                category_id: row.get(4)?,
-                audio_path: row.get(5)?,
-                status: row.get(6)?,
-                calendar_event_id: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+        let meeting = stmt
+            .query_row(params![id], |row| {
+                Ok(Meeting {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    start_time: row.get(2)?,
+                    end_time: row.get(3)?,
+                    category_id: row.get(4)?,
+                    audio_path: row.get(5)?,
+                    status: row.get(6)?,
+                    calendar_event_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
             })
-        }).map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => {
-                NootleError::Other(format!("Meeting not found: {}", id))
-            }
-            other => NootleError::Database(other),
-        })?;
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Meeting not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
 
         Ok(meeting)
     }
 
-    pub fn list_meetings(&self, category_id: Option<&str>, search: Option<&str>) -> Result<Vec<Meeting>> {
+    pub fn list_meetings(
+        &self,
+        category_id: Option<&str>,
+        search: Option<&str>,
+    ) -> Result<Vec<Meeting>> {
         let conn = self.conn.lock().unwrap();
 
         let mut sql = String::from(
@@ -329,7 +339,8 @@ impl Database {
         sql.push_str(" ORDER BY start_time DESC");
 
         let mut stmt = conn.prepare(&sql)?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
         let meetings = stmt
             .query_map(param_refs.as_slice(), |row| {
                 Ok(Meeting {
@@ -612,7 +623,14 @@ impl Database {
         conn.execute(
             "INSERT INTO templates (id, name, category_id, sections, auto_apply_rules, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, new.name, new.category_id, new.sections, new.auto_apply_rules, now],
+            params![
+                id,
+                new.name,
+                new.category_id,
+                new.sections,
+                new.auto_apply_rules,
+                now
+            ],
         )?;
 
         Ok(Template {

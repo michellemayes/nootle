@@ -1,6 +1,6 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use ringbuf::HeapRb;
 use ringbuf::traits::{Consumer, Producer, Split};
+use ringbuf::HeapRb;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 

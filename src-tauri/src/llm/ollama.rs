@@ -21,6 +21,12 @@ impl OllamaProvider {
     }
 }
 
+impl Default for OllamaProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait::async_trait]
 impl LlmProvider for OllamaProvider {
     fn provider_name(&self) -> &str {

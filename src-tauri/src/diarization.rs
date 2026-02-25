@@ -204,10 +204,9 @@ impl DiarizationEngine {
 
                     if audio_end > audio_start {
                         let speaker_audio = &audio[audio_start..audio_end];
-                        let speaker_id =
-                            self.identify_speaker(speaker_audio).unwrap_or_else(|_| {
-                                format!("Speaker {}", speaker_idx + 1)
-                            });
+                        let speaker_id = self
+                            .identify_speaker(speaker_audio)
+                            .unwrap_or_else(|_| format!("Speaker {}", speaker_idx + 1));
 
                         segments.push(SpeakerSegment {
                             speaker_id,
@@ -280,7 +279,7 @@ impl DiarizationEngine {
         let outputs = self.embedding.run(ort::inputs!["input" => input_tensor])?;
 
         let (_, emb_data) = outputs[0].try_extract_tensor::<f32>()?;
-        Ok(emb_data.iter().copied().collect())
+        Ok(emb_data.to_vec())
     }
 
     /// Merge adjacent segments with the same speaker.

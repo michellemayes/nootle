@@ -21,7 +21,14 @@ pub async fn summarize_meeting(
     // Format transcript as text
     let transcript_text = transcript
         .iter()
-        .map(|s| format!("[{}] {}: {}", format_ms(s.start_ms), s.speaker_label, s.text))
+        .map(|s| {
+            format!(
+                "[{}] {}: {}",
+                format_ms(s.start_ms),
+                s.speaker_label,
+                s.text
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -86,7 +93,14 @@ pub async fn chat_with_transcript(
     let transcript = db.get_transcript(meeting_id)?;
     let transcript_text = transcript
         .iter()
-        .map(|s| format!("[{}] {}: {}", format_ms(s.start_ms), s.speaker_label, s.text))
+        .map(|s| {
+            format!(
+                "[{}] {}: {}",
+                format_ms(s.start_ms),
+                s.speaker_label,
+                s.text
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
 

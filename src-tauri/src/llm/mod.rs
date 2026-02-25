@@ -50,3 +50,9 @@ impl LlmRegistry {
             .collect()
     }
 }
+
+impl Default for LlmRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
