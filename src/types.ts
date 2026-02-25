@@ -72,3 +72,27 @@ export interface DetectedMeeting {
   app_name: string;
   display_name: string;
 }
+
+export interface LinearTicket {
+  id: string;
+  summary_id: string;
+  meeting_id: string;
+  linear_issue_id: string;
+  linear_issue_url: string;
+  linear_identifier: string;
+  title: string;
+  team_id: string;
+  project_id: string | null;
+  created_at: string;
+}
+
+export interface LinearTeam {
+  id: string;
+  name: string;
+  key: string;
+}
+
+export interface LinearProject {
+  id: string;
+  name: string;
+}

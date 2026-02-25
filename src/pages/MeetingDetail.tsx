@@ -13,6 +13,8 @@ import { useTranscript } from "@/hooks/useTranscripts";
 import { useSummaries } from "@/hooks/useSummaries";
 import { usePrompts } from "@/hooks/usePrompts";
 import { useLLM } from "@/hooks/useLLM";
+import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
+import type { LinearTicket, LinearTeam, LinearProject, ModelInfo } from "@/types";
 
 const speakerColors = [
   "text-blue-400",
@@ -39,6 +41,182 @@ function formatDate(dateStr: string): string {
   });
 }
 
+function CreateTicketButton({
+  summaryId,
+  existingTicket,
+  teams,
+  projects,
+  defaultTeamId,
+  defaultProjectId,
+  providers,
+  models,
+  onFetchTeams,
+  onTeamChange,
+  onCreate,
+}: {
+  summaryId: string;
+  existingTicket: LinearTicket | undefined;
+  teams: LinearTeam[];
+  projects: LinearProject[];
+  defaultTeamId: string | null;
+  defaultProjectId: string | null;
+  providers: string[];
+  models: ModelInfo[];
+  onFetchTeams: () => void;
+  onTeamChange: (teamId: string | null) => void;
+  onCreate: (
+    summaryId: string,
+    teamId: string,
+    projectId: string | null,
+    provider: string,
+    model: string,
+  ) => Promise<LinearTicket>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [teamId, setTeamId] = useState(defaultTeamId ?? "");
+  const [projectId, setProjectId] = useState(defaultProjectId ?? "");
+  const [selectedProvider, setSelectedProvider] = useState(providers[0] ?? "");
+  const [selectedModel, setSelectedModel] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (defaultTeamId && !teamId) setTeamId(defaultTeamId);
+  }, [defaultTeamId]);
+
+  useEffect(() => {
+    if (defaultProjectId && !projectId) setProjectId(defaultProjectId);
+  }, [defaultProjectId]);
+
+  const filteredModels = models.filter((m) => m.provider === selectedProvider);
+
+  if (existingTicket) {
+    return (
+      <a
+        href={existingTicket.linear_issue_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+      >
+        {existingTicket.linear_identifier}
+      </a>
+    );
+  }
+
+  const handleCreate = async () => {
+    if (!teamId || !selectedProvider || !selectedModel) return;
+    setCreating(true);
+    setError(null);
+    try {
+      await onCreate(
+        summaryId,
+        teamId,
+        projectId || null,
+        selectedProvider,
+        selectedModel,
+      );
+      setOpen(false);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          onFetchTeams();
+          onTeamChange(teamId || defaultTeamId || null);
+          setOpen(true);
+        }}
+      >
+        Create Ticket
+      </Button>
+
+      {open && (
+        <div className="mt-2 space-y-2 rounded-md border p-3">
+          <select
+            value={teamId}
+            onChange={(e) => {
+              setTeamId(e.target.value);
+              setProjectId("");
+              onTeamChange(e.target.value || null);
+            }}
+            className="h-8 w-full rounded-md border bg-transparent px-2 text-xs"
+          >
+            <option value="">Select team</option>
+            {teams.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.key})
+              </option>
+            ))}
+          </select>
+          <select
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            disabled={!teamId}
+            className="h-8 w-full rounded-md border bg-transparent px-2 text-xs"
+          >
+            <option value="">No project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <div className="flex gap-2">
+            <select
+              value={selectedProvider}
+              onChange={(e) => {
+                setSelectedProvider(e.target.value);
+                setSelectedModel("");
+              }}
+              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
+            >
+              {providers.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
+            >
+              <option value="">Model</option>
+              {filteredModels.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </div>
+          {error && (
+            <p className="text-xs text-destructive">{error}</p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={handleCreate}
+              disabled={creating || !teamId || !selectedProvider || !selectedModel}
+            >
+              {creating ? "Creating..." : "Create"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function MeetingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -47,6 +225,11 @@ export function MeetingDetail() {
   const { summaries, generateSummary } = useSummaries(id!);
   const { prompts } = usePrompts();
   const { models, providers } = useLLM();
+  const { tickets, createTicket } = useLinearTickets(id!);
+  const { teams, fetchTeams } = useLinearTeams();
+  const { defaultTeamId, defaultProjectId } = useLinearSettings();
+  const [linearTeamId, setLinearTeamId] = useState<string | null>(null);
+  const { projects: linearProjects } = useLinearProjects(linearTeamId);
   const [chatOpen, setChatOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
@@ -285,6 +468,21 @@ export function MeetingDetail() {
                       </div>
                       <div className="prose prose-sm prose-invert max-w-none text-sm leading-relaxed text-foreground whitespace-pre-wrap">
                         {s.content}
+                      </div>
+                      <div className="mt-3 flex items-center gap-2">
+                        <CreateTicketButton
+                          summaryId={s.id}
+                          existingTicket={tickets.find((t) => t.summary_id === s.id)}
+                          teams={teams}
+                          projects={linearProjects}
+                          defaultTeamId={defaultTeamId}
+                          defaultProjectId={defaultProjectId}
+                          providers={providers}
+                          models={models}
+                          onFetchTeams={fetchTeams}
+                          onTeamChange={setLinearTeamId}
+                          onCreate={createTicket}
+                        />
                       </div>
                     </div>
                   </TabsContent>
