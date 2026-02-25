@@ -62,7 +62,7 @@ pub fn run() {
             let detector = detector.clone();
 
             // Spawn polling task for meeting detection
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     let detected = {
