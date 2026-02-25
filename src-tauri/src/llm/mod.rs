@@ -1,6 +1,14 @@
+pub mod anthropic;
+pub mod google;
+pub mod groq;
+pub mod ollama;
 pub mod openai;
 pub mod types;
 
+pub use anthropic::AnthropicProvider;
+pub use google::GoogleProvider;
+pub use groq::GroqProvider;
+pub use ollama::OllamaProvider;
 pub use openai::OpenAiProvider;
 pub use types::{ChatMessage, LlmProvider, ModelInfo};
 
