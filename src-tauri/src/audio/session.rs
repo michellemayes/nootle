@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 pub struct RecordingSession {
+    meeting_id: String,
     is_active: Arc<AtomicBool>,
     audio_path: PathBuf,
     /// Channel to send audio chunks for transcription
@@ -22,11 +23,16 @@ impl RecordingSession {
         let (audio_tx, audio_rx) = mpsc::channel::<Vec<f32>>(100);
 
         Ok(Self {
+            meeting_id: meeting_id.to_string(),
             is_active: Arc::new(AtomicBool::new(false)),
             audio_path,
             audio_tx,
             audio_rx: Some(audio_rx),
         })
+    }
+
+    pub fn meeting_id(&self) -> &str {
+        &self.meeting_id
     }
 
     pub fn audio_path(&self) -> &std::path::Path {

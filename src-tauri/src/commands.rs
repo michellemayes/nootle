@@ -188,13 +188,18 @@ pub async fn start_recording(
         })
         .map_err(|e| e.to_string())?;
 
-    // Create recording session
+    // Create recording session — rollback meeting if this fails
     let recordings_dir = dirs::data_dir()
         .unwrap()
         .join("Nootle")
         .join("recordings");
-    let session = RecordingSession::new(&recordings_dir, &meeting.id, 16000)
-        .map_err(|e| e.to_string())?;
+    let session = match RecordingSession::new(&recordings_dir, &meeting.id, 16000) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = db.delete_meeting(&meeting.id);
+            return Err(e.to_string());
+        }
+    };
     session.start();
 
     *session_lock = Some(session);
@@ -212,21 +217,15 @@ pub async fn stop_recording(
         .take()
         .ok_or_else(|| "Not recording".to_string())?;
 
+    let meeting_id = session.meeting_id().to_string();
     session.stop();
 
-    // Find the current recording meeting (most recent with status "recording")
-    let meetings = db.list_meetings(None, None).map_err(|e| e.to_string())?;
-    let meeting = meetings
-        .into_iter()
-        .find(|m| m.status == "recording")
-        .ok_or_else(|| "No active recording found".to_string())?;
-
     // Update meeting status to transcribing
-    db.update_meeting_status(&meeting.id, "transcribing")
+    db.update_meeting_status(&meeting_id, "transcribing")
         .map_err(|e| e.to_string())?;
 
     // Return the updated meeting
-    db.get_meeting(&meeting.id).map_err(|e| e.to_string())
+    db.get_meeting(&meeting_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
