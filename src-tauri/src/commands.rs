@@ -1,11 +1,12 @@
 use crate::audio::RecordingSession;
 use crate::db::*;
+use crate::diarization::DiarizationEngine;
 use crate::keychain;
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::summarization;
-use crate::transcription;
+use crate::transcription::{self, TranscriptionEngine};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 use tokio::sync::Mutex as TokioMutex;
 
 pub type DbState = Arc<Database>;
@@ -167,6 +168,7 @@ pub fn get_summaries(
 // Recording commands
 #[tauri::command]
 pub async fn start_recording(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
     recording: State<'_, RecordingState>,
     title: String,
@@ -193,7 +195,7 @@ pub async fn start_recording(
         .unwrap()
         .join("Nootle")
         .join("recordings");
-    let session = match RecordingSession::new(&recordings_dir, &meeting.id, 16000) {
+    let mut session = match RecordingSession::new(&recordings_dir, &meeting.id, 16000) {
         Ok(s) => s,
         Err(e) => {
             let _ = db.delete_meeting(&meeting.id);
@@ -202,9 +204,95 @@ pub async fn start_recording(
     };
     session.start();
 
+    // Spawn live transcription pipeline if models are available
+    if let Some(audio_rx) = session.take_audio_rx() {
+        let db_clone = db.inner().clone();
+        let meeting_id = meeting.id.clone();
+        let app_handle = app.clone();
+
+        tokio::spawn(async move {
+            run_transcription_pipeline(audio_rx, db_clone, meeting_id, app_handle).await;
+        });
+    }
+
     *session_lock = Some(session);
 
     Ok(meeting)
+}
+
+/// Background task: consume audio chunks, transcribe, diarize, persist, and emit events.
+async fn run_transcription_pipeline(
+    mut audio_rx: tokio::sync::mpsc::Receiver<Vec<f32>>,
+    db: Arc<Database>,
+    meeting_id: String,
+    app: tauri::AppHandle,
+) {
+    // Try to load transcription engine
+    let mut transcription_engine = match TranscriptionEngine::load() {
+        Ok(e) => Some(e),
+        Err(err) => {
+            tracing::info!("Transcription models not available, skipping live transcription: {err}");
+            None
+        }
+    };
+
+    // Try to load diarization engine
+    let mut diarization_engine = match DiarizationEngine::load() {
+        Ok(e) => Some(e),
+        Err(err) => {
+            tracing::info!("Diarization models not available, skipping: {err}");
+            None
+        }
+    };
+
+    let mut offset_samples: u64 = 0;
+    let sample_rate: u64 = 16000;
+
+    while let Some(chunk) = audio_rx.recv().await {
+        let offset_ms = offset_samples * 1000 / sample_rate;
+        let chunk_len = chunk.len() as u64;
+
+        // Run transcription
+        if let Some(ref mut engine) = transcription_engine {
+            match engine.transcribe(&chunk, offset_ms) {
+                Ok(segments) => {
+                    for seg in &segments {
+                        // Run diarization to get speaker label
+                        let speaker = if let Some(ref mut diar) = diarization_engine {
+                            match diar.diarize(&chunk, offset_ms) {
+                                Ok(diar_segs) => diar_segs
+                                    .first()
+                                    .map(|s| s.speaker_id.clone())
+                                    .unwrap_or_else(|| "Speaker".to_string()),
+                                Err(_) => "Speaker".to_string(),
+                            }
+                        } else {
+                            "Speaker".to_string()
+                        };
+
+                        let _ = db.create_transcript_segment(NewTranscriptSegment {
+                            meeting_id: meeting_id.clone(),
+                            speaker_label: speaker,
+                            text: seg.text.clone(),
+                            start_ms: seg.start_ms as i64,
+                            end_ms: seg.end_ms as i64,
+                            confidence: 0.9,
+                        });
+                    }
+
+                    // Emit updated transcript to frontend
+                    if let Ok(all_segments) = db.get_transcript(&meeting_id) {
+                        let _ = app.emit("transcript-update", &all_segments);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Transcription failed for chunk: {e}");
+                }
+            }
+        }
+
+        offset_samples += chunk_len;
+    }
 }
 
 #[tauri::command]
