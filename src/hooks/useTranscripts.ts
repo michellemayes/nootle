@@ -32,8 +32,10 @@ export function useTranscript(meetingId: string) {
 export interface TranscriptSearchResult {
   meeting_id: string;
   meeting_title: string;
-  segment_text: string;
+  speaker_label: string;
+  text: string;
   start_ms: number;
+  end_ms: number;
 }
 
 export async function searchTranscripts(
