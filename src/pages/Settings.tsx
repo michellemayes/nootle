@@ -197,7 +197,7 @@ export function SettingsPage() {
   );
 
   return (
-    <ScrollArea className="flex-1">
+    <ScrollArea className="flex-1 min-h-0">
       <div className="flex flex-col gap-8 p-8 max-w-3xl">
         {/* Header */}
         <div>
