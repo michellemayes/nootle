@@ -226,7 +226,7 @@ pub fn run() {
             commands::stop_recording,
             commands::is_recording,
             commands::store_api_key,
-            commands::get_api_key,
+            commands::has_api_key,
             commands::delete_api_key,
             commands::list_stored_providers,
             commands::generate_summary,

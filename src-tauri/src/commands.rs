@@ -17,6 +17,16 @@ pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
 pub type DetectorState = Arc<std::sync::Mutex<crate::detection::MeetingDetector>>;
 pub type DownloadManagerState = Arc<TokioMutex<DownloadManager>>;
 
+const ALLOWED_PROVIDERS: &[&str] = &["openai", "anthropic", "google", "groq", "linear"];
+
+fn validate_provider(provider: &str) -> Result<(), String> {
+    if ALLOWED_PROVIDERS.contains(&provider) {
+        Ok(())
+    } else {
+        Err(format!("Invalid provider: {}", provider))
+    }
+}
+
 // Meeting commands
 #[tauri::command]
 pub fn create_meeting(
@@ -59,6 +69,10 @@ pub fn update_meeting_status(
     id: String,
     status: String,
 ) -> Result<(), String> {
+    const VALID_STATUSES: &[&str] = &["recording", "transcribing", "summarized", "archived"];
+    if !VALID_STATUSES.contains(&status.as_str()) {
+        return Err(format!("Invalid meeting status: {}", status));
+    }
     db.update_meeting_status(&id, &status)
         .map_err(|e| e.to_string())
 }
@@ -71,6 +85,13 @@ pub fn create_category(
     color: Option<String>,
     icon: Option<String>,
 ) -> Result<Category, String> {
+    if let Some(ref c) = color {
+        let valid =
+            c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+        if !valid {
+            return Err(format!("Invalid hex color: {}", c));
+        }
+    }
     db.create_category(NewCategory { name, color, icon })
         .map_err(|e| e.to_string())
 }
@@ -330,6 +351,7 @@ pub async fn store_api_key(
     provider: String,
     key: String,
 ) -> Result<(), String> {
+    validate_provider(&provider)?;
     keychain::store_api_key(&provider, &key).map_err(|e| e.to_string())?;
 
     // Hot-reload: register the provider in the LLM registry
@@ -348,12 +370,16 @@ pub async fn store_api_key(
 }
 
 #[tauri::command]
-pub fn get_api_key(provider: String) -> Result<Option<String>, String> {
-    keychain::get_api_key(&provider).map_err(|e| e.to_string())
+pub fn has_api_key(provider: String) -> Result<bool, String> {
+    validate_provider(&provider)?;
+    keychain::get_api_key(&provider)
+        .map(|opt| opt.is_some())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn delete_api_key(llm: State<'_, LlmState>, provider: String) -> Result<(), String> {
+    validate_provider(&provider)?;
     keychain::delete_api_key(&provider).map_err(|e| e.to_string())?;
 
     // Hot-reload: remove the provider from the LLM registry

@@ -38,25 +38,28 @@ pub struct ModelDefinition {
 }
 
 // ── Parakeet TDT 0.6B v2 (Transcription) ──────────────────────────────
+// TODO(security): Populate sha256 fields below by downloading each model file
+// and running `shasum -a 256 <file>`. The verification logic in model_download.rs
+// is already implemented — it just needs non-empty hash values.
 
 const PARAKEET_INT8_FILES: &[ModelFile] = &[
     ModelFile {
         local_name: "encoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/encoder-model.int8.onnx",
         size_bytes: 652_000_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "decoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/decoder_joint-model.int8.onnx",
         size_bytes: 9_000_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "vocab.txt",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/vocab.txt",
         size_bytes: 10_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
 ];
 
@@ -65,25 +68,25 @@ const PARAKEET_FULL_FILES: &[ModelFile] = &[
         local_name: "encoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/encoder-model.onnx",
         size_bytes: 41_800_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "encoder.onnx.data",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/encoder-model.onnx.data",
         size_bytes: 2_440_000_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "decoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/decoder_joint-model.onnx",
         size_bytes: 35_800_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "vocab.txt",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main/vocab.txt",
         size_bytes: 10_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
 ];
 
@@ -109,13 +112,13 @@ const DIARIZATION_FILES: &[ModelFile] = &[
         local_name: "segmentation.onnx",
         url: "https://huggingface.co/onnx-community/pyannote-segmentation-3.0/resolve/main/onnx/model.onnx",
         size_bytes: 6_000_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "embedding.onnx",
         url: "https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34/resolve/main/voxceleb_resnet34.onnx",
         size_bytes: 26_500_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
 ];
 
