@@ -130,6 +130,19 @@ pub fn delete_prompt(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_prompt(&id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn update_prompt(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    content: String,
+    is_favorite: bool,
+    is_auto_run: bool,
+) -> Result<Prompt, String> {
+    db.update_prompt(&id, &name, &content, is_favorite, is_auto_run)
+        .map_err(|e| e.to_string())
+}
+
 // Template commands
 #[tauri::command]
 pub fn create_template(
@@ -156,6 +169,19 @@ pub fn list_templates(db: State<'_, DbState>) -> Result<Vec<Template>, String> {
 #[tauri::command]
 pub fn delete_template(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_template(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_template(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    category_id: Option<String>,
+    sections: String,
+    auto_apply_rules: String,
+) -> Result<Template, String> {
+    db.update_template(&id, &name, category_id.as_deref(), &sections, &auto_apply_rules)
+        .map_err(|e| e.to_string())
 }
 
 // Summary commands
