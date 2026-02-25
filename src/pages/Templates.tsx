@@ -140,7 +140,7 @@ export function TemplatesPage() {
           <span className="text-4xl">{"\uD83D\uDCC4"}</span>
           <h2 className="text-lg font-medium">No templates yet</h2>
           <p className="text-sm text-muted-foreground">
-            Create a template to standardize meeting summaries
+            Give Nootle a format to follow
           </p>
         </div>
       ) : (

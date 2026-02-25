@@ -197,7 +197,7 @@ export function SettingsPage() {
           <CardHeader>
             <CardTitle>About</CardTitle>
             <CardDescription>
-              Nootle v0.1.0 — Meeting recorder and summarizer
+              Nootle v0.1.0 — Your meetings, transcribed and summarized with a twist
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

@@ -2,6 +2,13 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
+
+const LOADING_MESSAGES = [
+  "Warming up the noodles...",
+  "Untangling the transcript...",
+  "Slurping through the data...",
+  "Almost there, just al dente...",
+];
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -84,6 +91,7 @@ export function MeetingLibrary() {
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(
     undefined,
   );
+  const [loadingMessage] = useState(() => LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]);
   const { meetings, loading } = useMeetings(categoryFilter, search || undefined);
   const { categories } = useCategories();
 
@@ -142,14 +150,14 @@ export function MeetingLibrary() {
       {/* Meeting grid */}
       {loading ? (
         <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">Loading meetings...</p>
+          <p className="text-sm text-muted-foreground">{loadingMessage}</p>
         </div>
       ) : meetings.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <span className="text-4xl">{"\uD83C\uDFA4"}</span>
           <h2 className="text-lg font-medium">No meetings yet</h2>
           <p className="text-sm text-muted-foreground">
-            Start a new recording to get started
+            Hit record and let Nootle do its thing
           </p>
         </div>
       ) : (

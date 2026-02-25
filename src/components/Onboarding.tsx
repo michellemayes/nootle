@@ -82,9 +82,8 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                   Welcome to Nootle
                 </h1>
                 <p className="mb-8 text-muted-foreground">
-                  Your AI-powered meeting recorder. Nootle captures audio,
-                  transcribes in real-time, and generates smart summaries — all
-                  locally on your Mac.
+                  Nootle captures your meetings, transcribes them live, and
+                  cooks up smart summaries — all on your Mac.
                 </p>
                 <Button size="lg" onClick={next}>
                   Get Started
@@ -138,7 +137,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             {step === "Done" && (
               <div className="text-center">
                 <h2 className="mb-2 text-3xl font-bold text-foreground">
-                  You're all set!
+                  You're ready to nootle!
                 </h2>
                 <p className="mb-8 text-muted-foreground">
                   Nootle will automatically detect meetings in Zoom, Teams, and

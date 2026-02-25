@@ -142,7 +142,7 @@ export function MeetingDetail() {
           <Badge variant="outline">{meeting.status}</Badge>
         </div>
         <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
-          {"\uD83D\uDCAC"} Chat
+          {"\uD83D\uDCAC"} Ask Nootle
         </Button>
       </div>
 
@@ -163,7 +163,7 @@ export function MeetingDetail() {
                 </p>
               ) : segments.length === 0 ? (
                 <p className="text-sm text-muted-foreground italic">
-                  No transcript available yet
+                  No transcript here — this one's a mystery
                 </p>
               ) : (
                 segments.map((seg) => (
@@ -245,7 +245,7 @@ export function MeetingDetail() {
               onClick={handleGenerate}
               disabled={generating || !selectedPrompt || !selectedProvider || !selectedModel}
             >
-              {generating ? "Generating..." : "Generate Summary"}
+              {generating ? "Cooking..." : "Cook Up a Summary"}
             </Button>
           </div>
 
@@ -255,7 +255,7 @@ export function MeetingDetail() {
               <div className="flex flex-col items-center justify-center p-8 gap-2">
                 <span className="text-2xl">{"\uD83D\uDCDD"}</span>
                 <p className="text-sm text-muted-foreground text-center">
-                  No summaries yet. Generate one above.
+                  Nothing cooked up yet. Pick a prompt and let it rip.
                 </p>
               </div>
             ) : (

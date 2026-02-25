@@ -146,7 +146,7 @@ export function RecordingView() {
           <div ref={scrollRef}>
             {segments.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">
-                Transcript will appear here as you speak...
+                Listening... your words will show up here
               </p>
             ) : (
               <div className="space-y-2">

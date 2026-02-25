@@ -70,7 +70,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b">
-            <h3 className="font-semibold">Chat with Meeting</h3>
+            <h3 className="font-semibold">Ask Nootle</h3>
             <Button variant="ghost" size="icon-sm" onClick={onClose}>
               {"\u2715"}
             </Button>
@@ -112,7 +112,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
             <div ref={scrollRef} className="flex flex-col gap-3 p-4">
               {messages.length === 0 && (
                 <p className="text-center text-sm text-muted-foreground py-8">
-                  Ask questions about this meeting
+                  Go ahead, quiz Nootle about this meeting
                 </p>
               )}
               {messages.map((msg, i) => (
@@ -162,7 +162,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
               className="flex-1"
             />
             <Button size="sm" onClick={handleSend} disabled={loading || !input.trim()}>
-              Send
+              Ask
             </Button>
           </div>
 

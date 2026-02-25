@@ -121,7 +121,7 @@ export function PromptsPage() {
           <span className="text-4xl">{"\u2728"}</span>
           <h2 className="text-lg font-medium">No prompts yet</h2>
           <p className="text-sm text-muted-foreground">
-            Create a prompt to get started with summarization
+            Teach Nootle what to listen for
           </p>
         </div>
       ) : (
