@@ -326,8 +326,26 @@ pub async fn is_recording(recording: State<'_, RecordingState>) -> Result<bool, 
 
 // Keychain commands
 #[tauri::command]
-pub fn store_api_key(provider: String, key: String) -> Result<(), String> {
-    keychain::store_api_key(&provider, &key).map_err(|e| e.to_string())
+pub async fn store_api_key(
+    llm: State<'_, LlmState>,
+    provider: String,
+    key: String,
+) -> Result<(), String> {
+    keychain::store_api_key(&provider, &key).map_err(|e| e.to_string())?;
+
+    // Hot-reload: register the provider in the LLM registry
+    let mut registry = llm.write().await;
+    registry.unregister(&provider);
+    let new_provider: Box<dyn crate::llm::LlmProvider> = match provider.as_str() {
+        "openai" => Box::new(crate::llm::OpenAiProvider::new(key)),
+        "anthropic" => Box::new(crate::llm::AnthropicProvider::new(key)),
+        "google" => Box::new(crate::llm::GoogleProvider::new(key)),
+        "groq" => Box::new(crate::llm::GroqProvider::new(key)),
+        _ => return Ok(()), // Unknown provider — key stored but no runtime registration
+    };
+    registry.register(new_provider);
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -336,8 +354,17 @@ pub fn get_api_key(provider: String) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub fn delete_api_key(provider: String) -> Result<(), String> {
-    keychain::delete_api_key(&provider).map_err(|e| e.to_string())
+pub async fn delete_api_key(
+    llm: State<'_, LlmState>,
+    provider: String,
+) -> Result<(), String> {
+    keychain::delete_api_key(&provider).map_err(|e| e.to_string())?;
+
+    // Hot-reload: remove the provider from the LLM registry
+    let mut registry = llm.write().await;
+    registry.unregister(&provider);
+
+    Ok(())
 }
 
 #[tauri::command]

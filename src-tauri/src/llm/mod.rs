@@ -25,6 +25,10 @@ impl LlmRegistry {
         self.providers.push(provider);
     }
 
+    pub fn unregister(&mut self, name: &str) {
+        self.providers.retain(|p| p.provider_name() != name);
+    }
+
     pub fn get_provider(&self, name: &str) -> Option<&dyn LlmProvider> {
         self.providers
             .iter()
