@@ -118,6 +118,20 @@ pub struct NewSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinearTicket {
+    pub id: String,
+    pub summary_id: String,
+    pub meeting_id: String,
+    pub linear_issue_id: String,
+    pub linear_issue_url: String,
+    pub linear_identifier: String,
+    pub title: String,
+    pub team_id: String,
+    pub project_id: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptSearchResult {
     pub meeting_id: String,
     pub meeting_title: String,
@@ -202,6 +216,24 @@ impl Database {
                 model TEXT NOT NULL,
                 content TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS linear_tickets (
+                id TEXT PRIMARY KEY,
+                summary_id TEXT NOT NULL REFERENCES summaries(id) ON DELETE CASCADE,
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                linear_issue_id TEXT NOT NULL,
+                linear_issue_url TEXT NOT NULL,
+                linear_identifier TEXT NOT NULL,
+                title TEXT NOT NULL,
+                team_id TEXT NOT NULL,
+                project_id TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS linear_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS templates (
@@ -718,6 +750,118 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(summaries)
+    }
+
+    // --- Linear Tickets ---
+
+    pub fn create_linear_ticket(
+        &self,
+        summary_id: &str,
+        meeting_id: &str,
+        linear_issue_id: &str,
+        linear_issue_url: &str,
+        linear_identifier: &str,
+        title: &str,
+        team_id: &str,
+        project_id: Option<&str>,
+    ) -> Result<LinearTicket> {
+        let conn = self.conn.lock().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO linear_tickets (id, summary_id, meeting_id, linear_issue_id, linear_issue_url, linear_identifier, title, team_id, project_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![id, summary_id, meeting_id, linear_issue_id, linear_issue_url, linear_identifier, title, team_id, project_id, now],
+        )?;
+
+        Ok(LinearTicket {
+            id,
+            summary_id: summary_id.to_string(),
+            meeting_id: meeting_id.to_string(),
+            linear_issue_id: linear_issue_id.to_string(),
+            linear_issue_url: linear_issue_url.to_string(),
+            linear_identifier: linear_identifier.to_string(),
+            title: title.to_string(),
+            team_id: team_id.to_string(),
+            project_id: project_id.map(|s| s.to_string()),
+            created_at: now,
+        })
+    }
+
+    pub fn get_linear_tickets(&self, meeting_id: &str) -> Result<Vec<LinearTicket>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, summary_id, meeting_id, linear_issue_id, linear_issue_url, linear_identifier, title, team_id, project_id, created_at
+             FROM linear_tickets WHERE meeting_id = ?1 ORDER BY created_at DESC",
+        )?;
+
+        let tickets = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok(LinearTicket {
+                    id: row.get(0)?,
+                    summary_id: row.get(1)?,
+                    meeting_id: row.get(2)?,
+                    linear_issue_id: row.get(3)?,
+                    linear_issue_url: row.get(4)?,
+                    linear_identifier: row.get(5)?,
+                    title: row.get(6)?,
+                    team_id: row.get(7)?,
+                    project_id: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(tickets)
+    }
+
+    pub fn get_summary(&self, id: &str) -> Result<Summary> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, meeting_id, prompt_id, provider, model, content, created_at
+             FROM summaries WHERE id = ?1",
+        )?;
+
+        stmt.query_row(params![id], |row| {
+            Ok(Summary {
+                id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                prompt_id: row.get(2)?,
+                provider: row.get(3)?,
+                model: row.get(4)?,
+                content: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                NootleError::Other(format!("Summary not found: {}", id))
+            }
+            other => NootleError::Database(other),
+        })
+    }
+
+    // --- Linear Settings ---
+
+    pub fn get_linear_setting(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT value FROM linear_settings WHERE key = ?1")?;
+        match stmt.query_row(params![key], |row| row.get::<_, String>(0)) {
+            Ok(value) => Ok(Some(value)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn set_linear_setting(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO linear_settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 
     // --- FTS5 Search ---
