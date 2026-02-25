@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 
 const STEPS = ["Welcome", "Permissions", "API Keys", "Done"] as const;
 type Step = (typeof STEPS)[number];
@@ -92,35 +93,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             )}
 
             {step === "Permissions" && (
-              <div>
-                <h2 className="mb-2 text-2xl font-bold text-foreground">
-                  Permissions
-                </h2>
-                <p className="mb-6 text-sm text-muted-foreground">
-                  Nootle needs a few permissions to work. macOS will prompt you
-                  when each is first needed.
-                </p>
-                <div className="space-y-4">
-                  <PermissionRow
-                    icon="🎤"
-                    title="Microphone"
-                    desc="Record your voice during meetings"
-                  />
-                  <PermissionRow
-                    icon="🖥"
-                    title="Screen Recording"
-                    desc="Capture system audio from meeting apps"
-                  />
-                  <PermissionRow
-                    icon="📅"
-                    title="Calendar"
-                    desc="Auto-detect meetings from your calendar"
-                  />
-                </div>
-                <div className="mt-8 flex justify-end">
-                  <Button onClick={next}>Continue</Button>
-                </div>
-              </div>
+              <PermissionsStep onNext={next} />
             )}
 
             {step === "API Keys" && (
@@ -182,22 +155,143 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   );
 }
 
+interface PermissionStatusData {
+  microphone: string;
+  screen_recording: boolean;
+  calendar: string;
+}
+
+function PermissionsStep({ onNext }: { onNext: () => void }) {
+  const [status, setStatus] = useState<PermissionStatusData | null>(null);
+  const [requesting, setRequesting] = useState<string | null>(null);
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const s = await invoke<PermissionStatusData>("check_permissions");
+      setStatus(s);
+    } catch (e) {
+      console.error("Failed to check permissions:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkStatus();
+    const interval = setInterval(checkStatus, 2000);
+    return () => clearInterval(interval);
+  }, [checkStatus]);
+
+  const allGranted =
+    status?.microphone === "granted" &&
+    status?.screen_recording === true &&
+    status?.calendar === "granted";
+
+  const requestPermission = async (type: "microphone" | "screen_recording" | "calendar") => {
+    setRequesting(type);
+    try {
+      if (type === "microphone") {
+        await invoke("request_microphone_permission");
+      } else if (type === "screen_recording") {
+        await invoke("request_screen_recording_permission");
+      } else {
+        await invoke("request_calendar_permission");
+      }
+      await checkStatus();
+    } catch (e) {
+      console.error(`Failed to request ${type} permission:`, e);
+    } finally {
+      setRequesting(null);
+    }
+  };
+
+  const micGranted = status?.microphone === "granted";
+  const screenGranted = status?.screen_recording === true;
+  const calGranted = status?.calendar === "granted";
+
+  return (
+    <div>
+      <h2 className="mb-2 text-2xl font-bold text-foreground">Permissions</h2>
+      <p className="mb-6 text-sm text-muted-foreground">
+        Nootle needs these permissions to record and transcribe your meetings.
+      </p>
+      <div className="space-y-3">
+        <PermissionRow
+          icon="🎙"
+          title="Microphone"
+          desc="Record your voice during meetings"
+          granted={micGranted}
+          onRequest={() => requestPermission("microphone")}
+          requesting={requesting === "microphone"}
+        />
+        <PermissionRow
+          icon="🖥"
+          title="Screen Recording"
+          desc="Capture system audio from meeting apps"
+          granted={screenGranted}
+          onRequest={() => requestPermission("screen_recording")}
+          requesting={requesting === "screen_recording"}
+          buttonLabel={screenGranted ? undefined : "Open System Settings"}
+        />
+        <PermissionRow
+          icon="📅"
+          title="Calendar"
+          desc="Auto-detect meetings from your calendar"
+          granted={calGranted}
+          onRequest={() => requestPermission("calendar")}
+          requesting={requesting === "calendar"}
+        />
+      </div>
+      {!allGranted && (
+        <p className="mt-4 text-xs text-muted-foreground">
+          Screen Recording requires toggling in System Settings. It will be detected automatically.
+        </p>
+      )}
+      <div className="mt-8 flex justify-end">
+        <Button onClick={onNext} disabled={!allGranted}>
+          Continue
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function PermissionRow({
   icon,
   title,
   desc,
+  granted,
+  onRequest,
+  requesting,
+  buttonLabel,
 }: {
   icon: string;
   title: string;
   desc: string;
+  granted: boolean;
+  onRequest: () => void;
+  requesting: boolean;
+  buttonLabel?: string;
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-border p-3">
+    <div className="flex items-center gap-3 rounded-lg border border-border p-3">
       <span className="text-xl">{icon}</span>
-      <div>
+      <div className="flex-1">
         <p className="font-medium text-foreground">{title}</p>
         <p className="text-sm text-muted-foreground">{desc}</p>
       </div>
+      {granted ? (
+        <Badge variant="secondary" className="bg-green-500/15 text-green-600 dark:text-green-400">
+          Granted
+        </Badge>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRequest}
+          disabled={requesting}
+        >
+          {requesting ? "..." : buttonLabel || "Grant"}
+        </Button>
+      )}
     </div>
   );
 }
