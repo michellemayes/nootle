@@ -1050,7 +1050,10 @@ impl Database {
             .conn
             .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
-        conn.execute("DELETE FROM api_keys WHERE provider = ?1", params![provider])?;
+        conn.execute(
+            "DELETE FROM api_keys WHERE provider = ?1",
+            params![provider],
+        )?;
         Ok(())
     }
 

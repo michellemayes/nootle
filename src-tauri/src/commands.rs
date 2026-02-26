@@ -430,7 +430,8 @@ pub async fn store_api_key(
         return Ok(());
     }
 
-    db.store_api_key(&provider, &key).map_err(|e| e.to_string())?;
+    db.store_api_key(&provider, &key)
+        .map_err(|e| e.to_string())?;
 
     // Hot-reload: register the provider in the LLM registry
     let mut registry = llm.write().await;
