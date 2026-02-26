@@ -59,7 +59,11 @@ impl NootleMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let meetings = self
             .db
-            .list_meetings(params.category_id.as_deref(), params.search.as_deref())
+            .list_meetings(
+                params.category_id.as_deref(),
+                params.search.as_deref(),
+                false,
+            )
             .map_err(|e| {
                 McpError::internal_error(format!("Failed to list meetings: {}", e), None)
             })?;
@@ -153,7 +157,7 @@ impl ServerHandler for NootleMcpServer {
         _ctx: rmcp::service::RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
         // List all meetings and create a resource entry for each transcript
-        let meetings = self.db.list_meetings(None, None).map_err(|e| {
+        let meetings = self.db.list_meetings(None, None, false).map_err(|e| {
             McpError::internal_error(format!("Failed to list meetings: {}", e), None)
         })?;
 

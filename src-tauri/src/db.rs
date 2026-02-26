@@ -555,6 +555,7 @@ impl Database {
         &self,
         category_id: Option<&str>,
         search: Option<&str>,
+        include_archived: bool,
     ) -> Result<Vec<Meeting>> {
         let conn = self
             .conn
@@ -567,6 +568,10 @@ impl Database {
         );
         let mut conditions: Vec<String> = Vec::new();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if !include_archived {
+            conditions.push("status != 'archived'".to_string());
+        }
 
         if let Some(cat_id) = category_id {
             conditions.push(format!("category_id = ?{}", param_values.len() + 1));
@@ -625,6 +630,21 @@ impl Database {
         conn.execute(
             "UPDATE meetings SET status = ?1, updated_at = ?2 WHERE id = ?3",
             params![status, now, id],
+        )?;
+
+        Ok(())
+    }
+
+    pub fn update_meeting_category(&self, id: &str, category_id: Option<&str>) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "UPDATE meetings SET category_id = ?1, updated_at = ?2 WHERE id = ?3",
+            params![category_id, now, id],
         )?;
 
         Ok(())

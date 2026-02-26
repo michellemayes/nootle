@@ -49,9 +49,14 @@ pub fn list_meetings(
     db: State<'_, DbState>,
     category_id: Option<String>,
     search: Option<String>,
+    include_archived: Option<bool>,
 ) -> Result<Vec<Meeting>, String> {
-    db.list_meetings(category_id.as_deref(), search.as_deref())
-        .map_err(|e| e.to_string())
+    db.list_meetings(
+        category_id.as_deref(),
+        search.as_deref(),
+        include_archived.unwrap_or(false),
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -75,6 +80,16 @@ pub fn update_meeting_status(
         return Err(format!("Invalid meeting status: {}", status));
     }
     db.update_meeting_status(&id, &status)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_meeting_category(
+    db: State<'_, DbState>,
+    id: String,
+    category_id: Option<String>,
+) -> Result<(), String> {
+    db.update_meeting_category(&id, category_id.as_deref())
         .map_err(|e| e.to_string())
 }
 
@@ -1052,7 +1067,9 @@ pub async fn embed_all_meetings(
     db: State<'_, DbState>,
     embedding_state: State<'_, EmbeddingState>,
 ) -> Result<(), String> {
-    let meetings = db.list_meetings(None, None).map_err(|e| e.to_string())?;
+    let meetings = db
+        .list_meetings(None, None, false)
+        .map_err(|e| e.to_string())?;
     let total = meetings.len();
 
     let mut engine_lock = embedding_state.lock().await;
