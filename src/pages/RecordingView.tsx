@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { Button } from "@/components/ui/button";
+import { motion, AnimatePresence } from "framer-motion";
+import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
 import type { TranscriptSegment } from "@/types";
 import { listen } from "@tauri-apps/api/event";
+import { Square } from "lucide-react";
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -22,15 +23,23 @@ function WaveformBar({ index }: { index: number }) {
   return (
     <motion.div
       className="w-1 rounded-full bg-primary"
+      initial={{ height: 0, opacity: 0 }}
       animate={{
         height: [8, 24 + Math.random() * 16, 8],
+        opacity: 1,
       }}
       transition={{
-        duration: 0.6 + Math.random() * 0.4,
-        repeat: Infinity,
-        repeatType: "reverse",
-        delay: index * 0.05,
-        ease: "easeInOut",
+        height: {
+          duration: 0.6 + Math.random() * 0.4,
+          repeat: Infinity,
+          repeatType: "reverse",
+          delay: 0.3 + index * 0.05,
+          ease: "easeInOut",
+        },
+        opacity: {
+          duration: 0.2,
+          delay: index * 0.03,
+        },
       }}
     />
   );
@@ -54,6 +63,7 @@ export function RecordingView() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
+  const [stopping, setStopping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Start recording on mount
@@ -84,6 +94,8 @@ export function RecordingView() {
   }, [segments]);
 
   const handleStop = useCallback(async () => {
+    setStopping(true);
+    await new Promise((r) => setTimeout(r, 400));
     try {
       const meeting = await stopRecording();
       navigate(`/meeting/${meeting.id}`);
@@ -146,7 +158,7 @@ export function RecordingView() {
           <div ref={scrollRef}>
             {segments.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">
-                Transcript will appear here as you speak...
+                Listening... your words will show up here
               </p>
             ) : (
               <div className="space-y-2">
@@ -165,14 +177,27 @@ export function RecordingView() {
       </div>
 
       {/* Stop button */}
-      <Button
-        size="lg"
-        variant="destructive"
-        className="h-14 px-10 text-lg"
-        onClick={handleStop}
-      >
-        {"\u23F9"} Stop Recording
-      </Button>
+      <div className="relative inline-flex">
+        <MotionButton
+          size="lg"
+          variant="destructive"
+          className="h-14 px-10 text-lg"
+          onClick={handleStop}
+          disabled={stopping}
+        >
+          <Square className="h-5 w-5" /> Stop Recording
+        </MotionButton>
+        <AnimatePresence>
+          {stopping && (
+            <motion.div
+              className="absolute inset-0 rounded-md border-2 border-destructive"
+              initial={{ scale: 1, opacity: 0.6 }}
+              animate={{ scale: 1.5, opacity: 0 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+            />
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

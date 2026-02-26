@@ -40,7 +40,7 @@ pub fn delete_api_key(provider: &str) -> anyhow::Result<()> {
 
 /// List which providers have API keys stored
 pub fn list_stored_providers() -> Vec<String> {
-    let providers = ["openai", "anthropic", "google", "groq", "linear"];
+    let providers = ["openai", "anthropic", "google", "groq"];
     providers
         .iter()
         .filter(|&&p| get_api_key(p).ok().flatten().is_some())

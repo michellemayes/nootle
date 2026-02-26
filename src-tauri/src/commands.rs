@@ -1,4 +1,4 @@
-use crate::audio::RecordingSession;
+use crate::audio::{run_audio_capture, validate_audio_devices, RecordingSession};
 use crate::db::*;
 use crate::diarization::DiarizationEngine;
 use crate::keychain;
@@ -151,6 +151,19 @@ pub fn delete_prompt(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_prompt(&id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn update_prompt(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    content: String,
+    is_favorite: bool,
+    is_auto_run: bool,
+) -> Result<Prompt, String> {
+    db.update_prompt(&id, &name, &content, is_favorite, is_auto_run)
+        .map_err(|e| e.to_string())
+}
+
 // Template commands
 #[tauri::command]
 pub fn create_template(
@@ -177,6 +190,25 @@ pub fn list_templates(db: State<'_, DbState>) -> Result<Vec<Template>, String> {
 #[tauri::command]
 pub fn delete_template(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_template(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_template(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    category_id: Option<String>,
+    sections: String,
+    auto_apply_rules: String,
+) -> Result<Template, String> {
+    db.update_template(
+        &id,
+        &name,
+        category_id.as_deref(),
+        &sections,
+        &auto_apply_rules,
+    )
+    .map_err(|e| e.to_string())
 }
 
 // Summary commands
@@ -220,7 +252,35 @@ pub async fn start_recording(
             return Err(e.to_string());
         }
     };
+
+    // Initialize audio capture on this thread to fail early if there are permission or device issues
+    let audio_tx = match session.take_audio_tx() {
+        Some(tx) => tx,
+        None => {
+            let _ = db.delete_meeting(&meeting.id);
+            return Err("Failed to initialize audio channel".to_string());
+        }
+    };
+
+    if let Err(e) = validate_audio_devices() {
+        let _ = db.delete_meeting(&meeting.id);
+        return Err(format!("Audio device validation failed: {e}"));
+    }
+
     session.start();
+
+    // Spawn audio capture loop on a dedicated thread
+    {
+        let is_active = session.is_active_flag();
+        let audio_path = session.audio_path().to_path_buf();
+
+        let handle = std::thread::spawn(move || {
+            if let Err(e) = run_audio_capture(audio_tx, is_active, audio_path) {
+                tracing::error!("Audio capture failed: {e}");
+            }
+        });
+        session.set_capture_handle(handle);
+    }
 
     // Spawn live transcription pipeline if models are available
     if let Some(audio_rx) = session.take_audio_rx() {
@@ -320,14 +380,25 @@ pub async fn stop_recording(
     db: State<'_, DbState>,
     recording: State<'_, RecordingState>,
 ) -> Result<Meeting, String> {
-    let mut session_lock = recording.lock().await;
-    let session = session_lock
-        .take()
-        .ok_or_else(|| "Not recording".to_string())?;
+    let mut session = {
+        let mut session_lock = recording.lock().await;
+        session_lock
+            .take()
+            .ok_or_else(|| "Not recording".to_string())?
+    };
 
     let meeting_id = session.meeting_id().to_string();
     let audio_path = session.audio_path().to_string_lossy().to_string();
     session.stop();
+
+    // Wait for the capture thread to finish writing the WAV file (outside the lock)
+    if let Some(handle) = session.take_capture_handle() {
+        match tokio::task::spawn_blocking(move || handle.join()).await {
+            Ok(Ok(())) => tracing::debug!("Audio capture thread joined cleanly"),
+            Ok(Err(_)) => tracing::error!("Audio capture thread panicked"),
+            Err(e) => tracing::error!("Failed to join audio capture thread: {e}"),
+        }
+    }
 
     // Finalize meeting with end time and audio path
     let end_time = chrono::Utc::now().to_rfc3339();
@@ -347,11 +418,19 @@ pub async fn is_recording(recording: State<'_, RecordingState>) -> Result<bool, 
 // Keychain commands
 #[tauri::command]
 pub async fn store_api_key(
+    db: State<'_, DbState>,
     llm: State<'_, LlmState>,
     provider: String,
     key: String,
 ) -> Result<(), String> {
     validate_provider(&provider)?;
+    // Linear keys are stored in the database alongside other Linear settings
+    if provider == "linear" {
+        db.set_linear_setting("api_key", &key)
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
     keychain::store_api_key(&provider, &key).map_err(|e| e.to_string())?;
 
     // Hot-reload: register the provider in the LLM registry
@@ -362,7 +441,7 @@ pub async fn store_api_key(
         "anthropic" => Box::new(crate::llm::AnthropicProvider::new(key)),
         "google" => Box::new(crate::llm::GoogleProvider::new(key)),
         "groq" => Box::new(crate::llm::GroqProvider::new(key)),
-        _ => return Ok(()), // Unknown provider — key stored but no runtime registration
+        _ => return Ok(()),
     };
     registry.register(new_provider);
 
@@ -370,16 +449,32 @@ pub async fn store_api_key(
 }
 
 #[tauri::command]
-pub fn has_api_key(provider: String) -> Result<bool, String> {
+pub fn has_api_key(db: State<'_, DbState>, provider: String) -> Result<bool, String> {
     validate_provider(&provider)?;
+    if provider == "linear" {
+        return db
+            .get_linear_setting("api_key")
+            .map(|opt| opt.is_some())
+            .map_err(|e| e.to_string());
+    }
     keychain::get_api_key(&provider)
         .map(|opt| opt.is_some())
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn delete_api_key(llm: State<'_, LlmState>, provider: String) -> Result<(), String> {
+pub async fn delete_api_key(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    provider: String,
+) -> Result<(), String> {
     validate_provider(&provider)?;
+    if provider == "linear" {
+        db.delete_linear_setting("api_key")
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
     keychain::delete_api_key(&provider).map_err(|e| e.to_string())?;
 
     // Hot-reload: remove the provider from the LLM registry
@@ -390,8 +485,15 @@ pub async fn delete_api_key(llm: State<'_, LlmState>, provider: String) -> Resul
 }
 
 #[tauri::command]
-pub fn list_stored_providers() -> Result<Vec<String>, String> {
-    Ok(keychain::list_stored_providers())
+pub fn list_stored_providers(db: State<'_, DbState>) -> Result<Vec<String>, String> {
+    let mut providers = keychain::list_stored_providers();
+    // Check if Linear API key is stored in the database
+    if let Ok(Some(key)) = db.get_linear_setting("api_key") {
+        if !key.is_empty() {
+            providers.push("linear".to_string());
+        }
+    }
+    Ok(providers)
 }
 
 // Summarization commands
@@ -530,9 +632,13 @@ pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
 
 // Linear commands
 #[tauri::command]
-pub async fn list_linear_teams() -> Result<Vec<crate::linear::LinearTeam>, String> {
-    let api_key = crate::keychain::get_api_key("linear")
+pub async fn list_linear_teams(
+    db: State<'_, DbState>,
+) -> Result<Vec<crate::linear::LinearTeam>, String> {
+    let api_key = db
+        .get_linear_setting("api_key")
         .map_err(|e| e.to_string())?
+        .filter(|k| !k.is_empty())
         .ok_or_else(|| "Linear API key not configured".to_string())?;
     crate::linear::list_teams(&api_key)
         .await
@@ -541,10 +647,13 @@ pub async fn list_linear_teams() -> Result<Vec<crate::linear::LinearTeam>, Strin
 
 #[tauri::command]
 pub async fn list_linear_projects(
+    db: State<'_, DbState>,
     team_id: String,
 ) -> Result<Vec<crate::linear::LinearProject>, String> {
-    let api_key = crate::keychain::get_api_key("linear")
+    let api_key = db
+        .get_linear_setting("api_key")
         .map_err(|e| e.to_string())?
+        .filter(|k| !k.is_empty())
         .ok_or_else(|| "Linear API key not configured".to_string())?;
     crate::linear::list_projects(&api_key, &team_id)
         .await
@@ -608,8 +717,10 @@ pub async fn create_linear_ticket(
     };
 
     // Get Linear API key and create issue
-    let api_key = crate::keychain::get_api_key("linear")
+    let api_key = db
+        .get_linear_setting("api_key")
         .map_err(|e| e.to_string())?
+        .filter(|k| !k.is_empty())
         .ok_or_else(|| "Linear API key not configured".to_string())?;
 
     let issue = crate::linear::create_issue(
@@ -659,7 +770,7 @@ pub fn set_linear_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
-    const ALLOWED_KEYS: &[&str] = &["default_team_id", "default_project_id"];
+    const ALLOWED_KEYS: &[&str] = &["default_team_id", "default_project_id", "api_key"];
     if !ALLOWED_KEYS.contains(&key.as_str()) {
         return Err(format!("Invalid setting key: {}", key));
     }

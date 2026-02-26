@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 const SAMPLE_RATE: u32 = 16000;
-const MODEL_DIR_NAME: &str = "parakeet-tdt-0.6b-v2";
+const MODEL_DIR_NAME: &str = "parakeet-tdt-0.6b-v3";
 
 /// A single transcription segment with timing.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -102,10 +102,16 @@ impl TranscriptionEngine {
             .commit_from_file(&decoder_path)
             .context("Failed to load decoder model")?;
 
-        // Load vocabulary
+        // Load vocabulary (format: "token id" per line — extract just the token)
         let vocab_text =
             std::fs::read_to_string(&vocab_path).context("Failed to load vocabulary file")?;
-        let vocab: Vec<String> = vocab_text.lines().map(|s| s.to_string()).collect();
+        let vocab: Vec<String> = vocab_text
+            .lines()
+            .map(|line| match line.rsplit_once(' ') {
+                Some((token, _id)) => token.to_string(),
+                None => line.to_string(),
+            })
+            .collect();
 
         tracing::info!(
             vocab_size = vocab.len(),
@@ -212,7 +218,7 @@ impl TranscriptionEngine {
             let id = id as usize;
             if id < self.vocab.len() {
                 let token = &self.vocab[id];
-                if token == "<blank>" || token == "<pad>" {
+                if token == "<unk>" || token == "<pad>" || token.starts_with("<|") {
                     continue;
                 }
                 // Handle SentencePiece underscore prefix (word boundary)

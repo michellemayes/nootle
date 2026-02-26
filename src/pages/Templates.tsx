@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,29 +17,45 @@ import {
 } from "@/components/ui/dialog";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useCategories } from "@/hooks/useCategories";
+import { FileText, Pencil, Trash2 } from "lucide-react";
+import type { Template } from "@/types";
 
 export function TemplatesPage() {
-  const { templates, loading, createTemplate, deleteTemplate } = useTemplates();
+  const { templates, loading, createTemplate, updateTemplate, deleteTemplate } = useTemplates();
   const { categories } = useCategories();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCategoryId, setNewCategoryId] = useState<string>("");
   const [newSections, setNewSections] = useState("");
   const [newAutoRules, setNewAutoRules] = useState("");
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
 
-  const handleCreate = async () => {
+  const handleSubmit = async () => {
     if (!newName.trim()) return;
-    await createTemplate(
-      newName,
-      newCategoryId || null,
-      newSections,
-      newAutoRules,
-    );
+    if (editingTemplate) {
+      await updateTemplate(editingTemplate.id, newName, newCategoryId || null, newSections, newAutoRules);
+    } else {
+      await createTemplate(newName, newCategoryId || null, newSections, newAutoRules);
+    }
+    resetForm();
+  };
+
+  const resetForm = () => {
     setNewName("");
     setNewCategoryId("");
     setNewSections("");
     setNewAutoRules("");
+    setEditingTemplate(null);
     setDialogOpen(false);
+  };
+
+  const startEditing = (template: Template) => {
+    setEditingTemplate(template);
+    setNewName(template.name);
+    setNewCategoryId(template.category_id ?? "");
+    setNewSections(template.sections);
+    setNewAutoRules(template.auto_apply_rules);
+    setDialogOpen(true);
   };
 
   const getCategoryName = (categoryId: string | null) => {
@@ -53,18 +70,23 @@ export function TemplatesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Templates</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage summary templates for different meeting types
+            Reusable section layouts that structure how summaries are organized
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          if (!open) resetForm();
+          else setDialogOpen(true);
+        }}>
           <DialogTrigger asChild>
             <Button>+ Add Template</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>New Template</DialogTitle>
+              <DialogTitle>{editingTemplate ? "Edit Template" : "New Template"}</DialogTitle>
               <DialogDescription>
-                Create a template for structured meeting summaries
+                {editingTemplate
+                  ? "Update this template's details"
+                  : "Define the sections and layout for a type of meeting"}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -119,12 +141,12 @@ export function TemplatesPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              <Button variant="outline" onClick={resetForm}>
                 Cancel
               </Button>
-              <Button onClick={handleCreate} disabled={!newName.trim()}>
-                Create
-              </Button>
+              <MotionButton onClick={handleSubmit} disabled={!newName.trim()}>
+                {editingTemplate ? "Save Changes" : "Create"}
+              </MotionButton>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -137,19 +159,22 @@ export function TemplatesPage() {
         <p className="text-sm text-muted-foreground">Loading templates...</p>
       ) : templates.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <span className="text-4xl">{"\uD83D\uDCC4"}</span>
+          <FileText className="h-10 w-10 text-muted-foreground" />
           <h2 className="text-lg font-medium">No templates yet</h2>
           <p className="text-sm text-muted-foreground">
-            Create a template to standardize meeting summaries
+            Give Nootle a format to follow
           </p>
         </div>
       ) : (
         <div className="space-y-3">
+          <AnimatePresence>
           {templates.map((template) => (
             <motion.div
               key={template.id}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+              layout
             >
               <Card>
                 <CardContent>
@@ -169,19 +194,32 @@ export function TemplatesPage() {
                         </p>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:text-destructive shrink-0"
-                      onClick={() => deleteTemplate(template.id)}
-                    >
-                      {"\uD83D\uDDD1"}
-                    </Button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => startEditing(template)}
+                        title="Edit"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => deleteTemplate(template.id)}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             </motion.div>
           ))}
+          </AnimatePresence>
         </div>
       )}
     </div>

@@ -51,5 +51,26 @@ export function useTemplates() {
     [refresh],
   );
 
-  return { templates, loading, error, refresh, createTemplate, deleteTemplate };
+  const updateTemplate = useCallback(
+    async (
+      id: string,
+      name: string,
+      categoryId: string | null,
+      sections: string,
+      autoApplyRules: string,
+    ) => {
+      const template = await invoke<Template>("update_template", {
+        id,
+        name,
+        categoryId,
+        sections,
+        autoApplyRules,
+      });
+      await refresh();
+      return template;
+    },
+    [refresh],
+  );
+
+  return { templates, loading, error, refresh, createTemplate, updateTemplate, deleteTemplate };
 }

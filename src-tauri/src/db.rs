@@ -717,6 +717,49 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_prompt(
+        &self,
+        id: &str,
+        name: &str,
+        content: &str,
+        is_favorite: bool,
+        is_auto_run: bool,
+    ) -> Result<Prompt> {
+        let conn = self.conn.lock().unwrap();
+        let is_fav = is_favorite as i32;
+        let is_auto = is_auto_run as i32;
+
+        conn.execute(
+            "UPDATE prompts SET name = ?1, content = ?2, is_favorite = ?3, is_auto_run = ?4 WHERE id = ?5",
+            params![name, content, is_fav, is_auto, id],
+        )?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, name, content, is_favorite, is_auto_run, created_at
+             FROM prompts WHERE id = ?1",
+        )?;
+
+        let prompt = stmt
+            .query_row(params![id], |row| {
+                Ok(Prompt {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    content: row.get(2)?,
+                    is_favorite: row.get::<_, i32>(3)? != 0,
+                    is_auto_run: row.get::<_, i32>(4)? != 0,
+                    created_at: row.get(5)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Prompt not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(prompt)
+    }
+
     // --- Templates ---
 
     pub fn create_template(&self, new: NewTemplate) -> Result<Template> {
@@ -783,6 +826,47 @@ impl Database {
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         conn.execute("DELETE FROM templates WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn update_template(
+        &self,
+        id: &str,
+        name: &str,
+        category_id: Option<&str>,
+        sections: &str,
+        auto_apply_rules: &str,
+    ) -> Result<Template> {
+        let conn = self.conn.lock().unwrap();
+
+        conn.execute(
+            "UPDATE templates SET name = ?1, category_id = ?2, sections = ?3, auto_apply_rules = ?4 WHERE id = ?5",
+            params![name, category_id, sections, auto_apply_rules, id],
+        )?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, name, category_id, sections, auto_apply_rules, created_at
+             FROM templates WHERE id = ?1",
+        )?;
+
+        let template = stmt
+            .query_row(params![id], |row| {
+                Ok(Template {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    category_id: row.get(2)?,
+                    sections: row.get(3)?,
+                    auto_apply_rules: row.get(4)?,
+                    created_at: row.get(5)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Template not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(template)
     }
 
     // --- Summaries ---
@@ -953,6 +1037,12 @@ impl Database {
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![key, value],
         )?;
+        Ok(())
+    }
+
+    pub fn delete_linear_setting(&self, key: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM linear_settings WHERE key = ?1", params![key])?;
         Ok(())
     }
 
