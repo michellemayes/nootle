@@ -253,6 +253,27 @@ pub async fn start_recording(
         }
     };
 
+    // Check microphone permission before proceeding
+    let mic_status = crate::permissions::check_microphone();
+    if mic_status == "denied" {
+        let _ = db.delete_meeting(&meeting.id);
+        return Err(
+            "Microphone access denied. Please grant microphone permission in System Settings."
+                .to_string(),
+        );
+    }
+    if mic_status == "undetermined" {
+        // Request permission — if user declines, the recording will fail
+        let granted = crate::permissions::request_microphone().await;
+        if !granted {
+            let _ = db.delete_meeting(&meeting.id);
+            return Err(
+                "Microphone access is required to record. Please grant permission and try again."
+                    .to_string(),
+            );
+        }
+    }
+
     // Initialize audio capture on this thread to fail early if there are permission or device issues
     let audio_tx = match session.take_audio_tx() {
         Some(tx) => tx,
@@ -315,6 +336,22 @@ async fn run_transcription_pipeline(
             None
         }
     };
+
+    // Notify frontend whether live transcription is available
+    if transcription_engine.is_some() {
+        let _ = app.emit(
+            "transcription-status",
+            serde_json::json!({ "available": true }),
+        );
+    } else {
+        let _ = app.emit(
+            "transcription-status",
+            serde_json::json!({
+                "available": false,
+                "reason": "Transcription models not downloaded. Recording audio only."
+            }),
+        );
+    }
 
     // Try to load diarization engine
     let mut diarization_engine = match DiarizationEngine::load() {

@@ -6,6 +6,7 @@ export function useRecording() {
   const [isRecording, setIsRecording] = useState(false);
   const [currentMeeting, setCurrentMeeting] = useState<Meeting | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const checkRecording = useCallback(async () => {
@@ -42,14 +43,21 @@ export function useRecording() {
 
   const startRecording = useCallback(
     async (title: string, categoryId?: string, calendarEventId?: string) => {
-      const meeting = await invoke<Meeting>("start_recording", {
-        title,
-        categoryId: categoryId ?? null,
-        calendarEventId: calendarEventId ?? null,
-      });
-      setCurrentMeeting(meeting);
-      setIsRecording(true);
-      return meeting;
+      setError(null);
+      try {
+        const meeting = await invoke<Meeting>("start_recording", {
+          title,
+          categoryId: categoryId ?? null,
+          calendarEventId: calendarEventId ?? null,
+        });
+        setCurrentMeeting(meeting);
+        setIsRecording(true);
+        return meeting;
+      } catch (err) {
+        const message = String(err);
+        setError(message);
+        throw err;
+      }
     },
     [],
   );
@@ -65,6 +73,7 @@ export function useRecording() {
     isRecording,
     currentMeeting,
     elapsed,
+    error,
     startRecording,
     stopRecording,
   };
