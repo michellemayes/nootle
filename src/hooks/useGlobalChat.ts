@@ -48,7 +48,7 @@ export function useGlobalChat() {
           "chat_with_transcripts",
           {
             message,
-            history: [...history, { role: "user", content: message }],
+            history,
             provider,
             model,
             categoryIds,

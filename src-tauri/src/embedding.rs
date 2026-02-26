@@ -71,7 +71,7 @@ impl EmbeddingEngine {
 
     pub fn is_available() -> bool {
         let dir = Self::model_dir();
-        dir.join("model.onnx").exists()
+        dir.join("model.onnx").exists() && dir.join("vocab.txt").exists()
     }
 
     pub fn load() -> anyhow::Result<Self> {
