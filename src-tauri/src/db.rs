@@ -152,6 +152,78 @@ pub struct TranscriptSearchResult {
     pub end_ms: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Insight {
+    pub id: String,
+    pub meeting_id: String,
+    #[serde(rename = "type")]
+    pub insight_type: String,
+    pub content: String,
+    pub context: Option<String>,
+    pub transcript_start_ms: Option<i64>,
+    pub transcript_end_ms: Option<i64>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewInsight {
+    pub meeting_id: String,
+    pub insight_type: String,
+    pub content: String,
+    pub context: Option<String>,
+    pub transcript_start_ms: Option<i64>,
+    pub transcript_end_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionItem {
+    pub id: String,
+    pub insight_id: String,
+    pub assignee: Option<String>,
+    pub due_date: Option<String>,
+    pub status: String,
+    pub linear_ticket_id: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewActionItem {
+    pub insight_id: String,
+    pub assignee: Option<String>,
+    pub due_date: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractionRun {
+    pub id: String,
+    pub meeting_id: String,
+    pub provider: String,
+    pub model: String,
+    pub status: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InsightWithActionItem {
+    pub id: String,
+    pub meeting_id: String,
+    #[serde(rename = "type")]
+    pub insight_type: String,
+    pub content: String,
+    pub context: Option<String>,
+    pub transcript_start_ms: Option<i64>,
+    pub transcript_end_ms: Option<i64>,
+    pub created_at: String,
+    pub action_item_id: Option<String>,
+    pub assignee: Option<String>,
+    pub due_date: Option<String>,
+    pub status: Option<String>,
+    pub linear_ticket_id: Option<String>,
+    pub action_item_updated_at: Option<String>,
+    pub meeting_title: Option<String>,
+    pub meeting_start_time: Option<String>,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -275,6 +347,47 @@ impl Database {
             END;
             CREATE TRIGGER IF NOT EXISTS summaries_ad AFTER DELETE ON summaries BEGIN
                 INSERT INTO summaries_fts(summaries_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+            END;
+
+            CREATE TABLE IF NOT EXISTS insights (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                context TEXT,
+                transcript_start_ms INTEGER,
+                transcript_end_ms INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS action_items (
+                id TEXT PRIMARY KEY,
+                insight_id TEXT NOT NULL UNIQUE REFERENCES insights(id) ON DELETE CASCADE,
+                assignee TEXT,
+                due_date TEXT,
+                status TEXT NOT NULL DEFAULT 'open',
+                linear_ticket_id TEXT,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS extraction_runs (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'running',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS insights_fts USING fts5(
+                content, content='insights', content_rowid='rowid'
+            );
+
+            CREATE TRIGGER IF NOT EXISTS insights_ai AFTER INSERT ON insights BEGIN
+                INSERT INTO insights_fts(rowid, content) VALUES (new.rowid, new.content);
+            END;
+            CREATE TRIGGER IF NOT EXISTS insights_ad AFTER DELETE ON insights BEGIN
+                INSERT INTO insights_fts(insights_fts, rowid, content) VALUES('delete', old.rowid, old.content);
             END;
             ",
         )?;
