@@ -97,6 +97,30 @@ export interface LinearProject {
   name: string;
 }
 
+export interface ChatSource {
+  meeting_id: string;
+  meeting_title: string;
+  start_ms: number;
+  end_ms: number;
+}
+
+export interface GlobalChatResponse {
+  response: string;
+  sources: ChatSource[];
+}
+
+export interface GlobalChatMessage {
+  role: string;
+  content: string;
+  sources?: ChatSource[];
+}
+
+export interface EmbeddingStatus {
+  embedded: number;
+  total: number;
+  model_available: boolean;
+}
+
 export interface InsightWithActionItem {
   id: string;
   meeting_id: string;

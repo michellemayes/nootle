@@ -132,7 +132,7 @@ pub async fn chat_with_transcript(
     provider.chat(messages, model).await
 }
 
-fn format_ms(ms: i64) -> String {
+pub fn format_ms(ms: i64) -> String {
     let total_seconds = ms / 1000;
     let minutes = total_seconds / 60;
     let seconds = total_seconds % 60;

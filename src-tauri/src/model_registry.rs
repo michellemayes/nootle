@@ -4,6 +4,7 @@ use serde::Serialize;
 pub enum ModelCategory {
     Transcription,
     Diarization,
+    Embedding,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -141,6 +142,30 @@ const DIARIZATION_VARIANTS: &[ModelVariant] = &[ModelVariant {
     total_size_bytes: 32_500_000,
 }];
 
+// ── Embedding (all-MiniLM-L6-v2) ───────────────────────────────────
+
+const EMBEDDING_FILES: &[ModelFile] = &[
+    ModelFile {
+        local_name: "model.onnx",
+        url: "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx",
+        size_bytes: 86_000_000,
+        sha256: "",
+    },
+    ModelFile {
+        local_name: "vocab.txt",
+        url: "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/vocab.txt",
+        size_bytes: 232_000,
+        sha256: "",
+    },
+];
+
+const EMBEDDING_VARIANTS: &[ModelVariant] = &[ModelVariant {
+    id: "default",
+    label: "Sentence Embeddings (≈86 MB)",
+    files: EMBEDDING_FILES,
+    total_size_bytes: 86_232_000,
+}];
+
 // ── Full Registry ──────────────────────────────────────────────────────
 
 pub const MODEL_REGISTRY: &[ModelDefinition] = &[
@@ -159,6 +184,14 @@ pub const MODEL_REGISTRY: &[ModelDefinition] = &[
         category: ModelCategory::Diarization,
         dir_name: "diarization",
         variants: DIARIZATION_VARIANTS,
+    },
+    ModelDefinition {
+        id: "embedding-minilm",
+        name: "Sentence Embeddings",
+        description: "all-MiniLM-L6-v2 for semantic search across transcripts",
+        category: ModelCategory::Embedding,
+        dir_name: "embedding-minilm",
+        variants: EMBEDDING_VARIANTS,
     },
 ];
 
@@ -204,8 +237,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_has_two_models() {
-        assert_eq!(MODEL_REGISTRY.len(), 2);
+    fn registry_has_three_models() {
+        assert_eq!(MODEL_REGISTRY.len(), 3);
     }
 
     #[test]
@@ -221,6 +254,13 @@ mod tests {
         let model = get_model("diarization").unwrap();
         assert_eq!(model.variants.len(), 1);
         assert_eq!(model.variants[0].id, "default");
+    }
+
+    #[test]
+    fn embedding_model_exists() {
+        let model = get_model("embedding-minilm").unwrap();
+        assert_eq!(model.variants.len(), 1);
+        assert_eq!(model.category, ModelCategory::Embedding);
     }
 
     #[test]

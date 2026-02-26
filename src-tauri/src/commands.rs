@@ -16,6 +16,7 @@ pub type RecordingState = Arc<TokioMutex<Option<RecordingSession>>>;
 pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
 pub type DetectorState = Arc<std::sync::Mutex<crate::detection::MeetingDetector>>;
 pub type DownloadManagerState = Arc<TokioMutex<DownloadManager>>;
+pub type EmbeddingState = Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>;
 
 const ALLOWED_PROVIDERS: &[&str] = &["openai", "anthropic", "google", "groq", "linear"];
 
@@ -239,6 +240,7 @@ pub async fn start_recording(
     app: tauri::AppHandle,
     db: State<'_, DbState>,
     recording: State<'_, RecordingState>,
+    embedding_state: State<'_, EmbeddingState>,
     title: String,
     category_id: Option<String>,
     calendar_event_id: Option<String>,
@@ -300,11 +302,13 @@ pub async fn start_recording(
     // Spawn live transcription pipeline if models are available
     if let Some(audio_rx) = session.take_audio_rx() {
         let db_clone = db.inner().clone();
+        let embedding_clone = embedding_state.inner().clone();
         let meeting_id = meeting.id.clone();
         let app_handle = app.clone();
 
         tokio::spawn(async move {
-            run_transcription_pipeline(audio_rx, db_clone, meeting_id, app_handle).await;
+            run_transcription_pipeline(audio_rx, db_clone, embedding_clone, meeting_id, app_handle)
+                .await;
         });
     }
 
@@ -317,6 +321,7 @@ pub async fn start_recording(
 async fn run_transcription_pipeline(
     mut audio_rx: tokio::sync::mpsc::Receiver<Vec<f32>>,
     db: Arc<Database>,
+    embedding_state: Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>,
     meeting_id: String,
     app: tauri::AppHandle,
 ) {
@@ -387,6 +392,15 @@ async fn run_transcription_pipeline(
         }
 
         offset_samples += chunk_len;
+    }
+
+    // After transcription completes, embed the meeting
+    let mut engine_lock = embedding_state.lock().await;
+    if let Some(ref mut engine) = *engine_lock {
+        match crate::chunking::embed_meeting(&db, engine, &meeting_id) {
+            Ok(count) => tracing::info!("Embedded {count} chunks for meeting {meeting_id}"),
+            Err(e) => tracing::warn!("Failed to embed meeting {meeting_id}: {e}"),
+        }
     }
 }
 
@@ -877,6 +891,162 @@ pub async fn delete_model(model_id: String) -> Result<(), String> {
     model_download::delete_model_files(model)
 }
 
+// Global chat commands
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn chat_with_transcripts(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    embedding_state: State<'_, EmbeddingState>,
+    message: String,
+    history: Vec<ChatMessage>,
+    provider: String,
+    model: String,
+    category_ids: Vec<String>,
+    date_from: Option<String>,
+    date_to: Option<String>,
+) -> Result<serde_json::Value, String> {
+    // Get embedding engine
+    let mut engine_lock = embedding_state.lock().await;
+    let engine = engine_lock
+        .as_mut()
+        .ok_or_else(|| "Embedding model not loaded. Please download it first.".to_string())?;
+
+    // Embed the query
+    let query_embedding = engine
+        .embed(&message)
+        .map_err(|e| format!("Failed to embed query: {e}"))?;
+    drop(engine_lock);
+
+    // Search for similar chunks
+    let results = db
+        .search_similar_chunks(
+            &query_embedding,
+            10,
+            &category_ids,
+            date_from.as_deref(),
+            date_to.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if results.is_empty() {
+        return Ok(serde_json::json!({
+            "response": "I couldn't find any relevant transcript passages for your question. Try adjusting your filters or asking a different question.",
+            "sources": []
+        }));
+    }
+
+    // Build context from retrieved chunks
+    let mut context_parts = Vec::new();
+    let mut sources = Vec::new();
+    for result in &results {
+        let timestamp = crate::summarization::format_ms(result.start_ms);
+        context_parts.push(format!(
+            "---\n[Meeting: \"{}\", {}]\n{}\n",
+            result.meeting_title, timestamp, result.chunk_text
+        ));
+        sources.push(serde_json::json!({
+            "meeting_id": result.meeting_id,
+            "meeting_title": result.meeting_title,
+            "start_ms": result.start_ms,
+            "end_ms": result.end_ms,
+        }));
+    }
+
+    let system_prompt = format!(
+        "You are Nootle, an AI assistant that answers questions about the user's meetings.\n\n\
+         Below are relevant excerpts from the user's meeting transcripts. Each excerpt \
+         includes the meeting title and timestamp. Use ONLY these excerpts to answer.\n\
+         When you reference information, cite the source as [Meeting Title, timestamp].\n\n\
+         {}\n\
+         Answer the user's question based on these excerpts. Be concise.",
+        context_parts.join("\n")
+    );
+
+    let mut messages = vec![ChatMessage {
+        role: "system".into(),
+        content: system_prompt,
+    }];
+    messages.extend(history);
+    messages.push(ChatMessage {
+        role: "user".into(),
+        content: message,
+    });
+
+    let llm = llm.read().await;
+    let llm_provider = llm
+        .get_provider(&provider)
+        .ok_or_else(|| format!("Provider '{}' not found", provider))?;
+    let response = llm_provider
+        .chat(messages, &model)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "response": response,
+        "sources": sources
+    }))
+}
+
+#[tauri::command]
+pub async fn embed_meeting_cmd(
+    db: State<'_, DbState>,
+    embedding_state: State<'_, EmbeddingState>,
+    meeting_id: String,
+) -> Result<usize, String> {
+    let mut engine_lock = embedding_state.lock().await;
+    let engine = engine_lock
+        .as_mut()
+        .ok_or_else(|| "Embedding model not loaded".to_string())?;
+    crate::chunking::embed_meeting(&db, engine, &meeting_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn embed_all_meetings(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    embedding_state: State<'_, EmbeddingState>,
+) -> Result<(), String> {
+    let meetings = db.list_meetings(None, None).map_err(|e| e.to_string())?;
+    let total = meetings.len();
+
+    let mut engine_lock = embedding_state.lock().await;
+    let engine = engine_lock
+        .as_mut()
+        .ok_or_else(|| "Embedding model not loaded".to_string())?;
+
+    for (i, meeting) in meetings.iter().enumerate() {
+        match crate::chunking::embed_meeting(&db, engine, &meeting.id) {
+            Ok(_) => {}
+            Err(e) => tracing::warn!("Failed to embed meeting {}: {e}", meeting.id),
+        }
+        let _ = app.emit(
+            "embedding-progress",
+            serde_json::json!({
+                "current": i + 1,
+                "total": total,
+            }),
+        );
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_embedding_status(
+    db: State<'_, DbState>,
+    embedding_state: State<'_, EmbeddingState>,
+) -> Result<serde_json::Value, String> {
+    let (embedded, total) = db.get_embedding_status().map_err(|e| e.to_string())?;
+    let engine_lock = embedding_state.lock().await;
+    let model_available = engine_lock.is_some();
+    Ok(serde_json::json!({
+        "embedded": embedded,
+        "total": total,
+        "model_available": model_available,
+    }))
+}
+
 // Insight commands
 #[tauri::command]
 pub fn get_insights(
@@ -948,5 +1118,12 @@ pub fn update_action_item(
     due_date: Option<String>,
 ) -> Result<(), String> {
     db.update_action_item(&id, assignee.as_deref(), due_date.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_exe_path() -> Result<String, String> {
+    std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
         .map_err(|e| e.to_string())
 }
