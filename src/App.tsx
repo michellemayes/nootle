@@ -10,12 +10,14 @@ import { PromptsPage } from "@/pages/Prompts";
 import { TemplatesPage } from "@/pages/Templates";
 import { SettingsPage } from "@/pages/Settings";
 import { HelpPage } from "@/pages/Help";
+import { GlobalChatPanel } from "@/components/GlobalChatPanel";
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar />
       <main className="flex flex-1 flex-col overflow-hidden">{children}</main>
+      <GlobalChatPanel />
     </div>
   );
 }
