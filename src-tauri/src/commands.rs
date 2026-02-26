@@ -1,7 +1,6 @@
 use crate::audio::{run_audio_capture, validate_audio_devices, RecordingSession};
 use crate::db::*;
 use crate::diarization::DiarizationEngine;
-use crate::keychain;
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::model_download::{self, DownloadManager};
 use crate::model_registry;
@@ -431,7 +430,7 @@ pub async fn store_api_key(
         return Ok(());
     }
 
-    keychain::store_api_key(&provider, &key).map_err(|e| e.to_string())?;
+    db.store_api_key(&provider, &key).map_err(|e| e.to_string())?;
 
     // Hot-reload: register the provider in the LLM registry
     let mut registry = llm.write().await;
@@ -457,7 +456,7 @@ pub fn has_api_key(db: State<'_, DbState>, provider: String) -> Result<bool, Str
             .map(|opt| opt.is_some())
             .map_err(|e| e.to_string());
     }
-    keychain::get_api_key(&provider)
+    db.get_api_key(&provider)
         .map(|opt| opt.is_some())
         .map_err(|e| e.to_string())
 }
@@ -475,7 +474,7 @@ pub async fn delete_api_key(
         return Ok(());
     }
 
-    keychain::delete_api_key(&provider).map_err(|e| e.to_string())?;
+    db.delete_api_key(&provider).map_err(|e| e.to_string())?;
 
     // Hot-reload: remove the provider from the LLM registry
     let mut registry = llm.write().await;
@@ -486,7 +485,7 @@ pub async fn delete_api_key(
 
 #[tauri::command]
 pub fn list_stored_providers(db: State<'_, DbState>) -> Result<Vec<String>, String> {
-    let mut providers = keychain::list_stored_providers();
+    let mut providers = db.list_api_key_providers().map_err(|e| e.to_string())?;
     // Check if Linear API key is stored in the database
     if let Ok(Some(key)) = db.get_linear_setting("api_key") {
         if !key.is_empty() {

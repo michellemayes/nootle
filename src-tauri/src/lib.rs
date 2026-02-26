@@ -4,7 +4,6 @@ pub mod db;
 pub mod detection;
 pub mod diarization;
 pub mod error;
-pub mod keychain;
 pub mod linear;
 pub mod llm;
 pub mod mcp;
@@ -38,16 +37,16 @@ pub fn run() {
     llm_registry.register(Box::new(OllamaProvider::new()));
 
     // Register providers with stored API keys
-    if let Ok(Some(key)) = keychain::get_api_key("openai") {
+    if let Ok(Some(key)) = db.get_api_key("openai") {
         llm_registry.register(Box::new(llm::OpenAiProvider::new(key)));
     }
-    if let Ok(Some(key)) = keychain::get_api_key("anthropic") {
+    if let Ok(Some(key)) = db.get_api_key("anthropic") {
         llm_registry.register(Box::new(llm::AnthropicProvider::new(key)));
     }
-    if let Ok(Some(key)) = keychain::get_api_key("google") {
+    if let Ok(Some(key)) = db.get_api_key("google") {
         llm_registry.register(Box::new(llm::GoogleProvider::new(key)));
     }
-    if let Ok(Some(key)) = keychain::get_api_key("groq") {
+    if let Ok(Some(key)) = db.get_api_key("groq") {
         llm_registry.register(Box::new(llm::GroqProvider::new(key)));
     }
 
