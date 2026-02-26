@@ -17,30 +17,45 @@ import {
 } from "@/components/ui/dialog";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useCategories } from "@/hooks/useCategories";
-import { FileText, Trash2 } from "lucide-react";
+import { FileText, Pencil, Trash2 } from "lucide-react";
+import type { Template } from "@/types";
 
 export function TemplatesPage() {
-  const { templates, loading, createTemplate, deleteTemplate } = useTemplates();
+  const { templates, loading, createTemplate, updateTemplate, deleteTemplate } = useTemplates();
   const { categories } = useCategories();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCategoryId, setNewCategoryId] = useState<string>("");
   const [newSections, setNewSections] = useState("");
   const [newAutoRules, setNewAutoRules] = useState("");
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
 
-  const handleCreate = async () => {
+  const handleSubmit = async () => {
     if (!newName.trim()) return;
-    await createTemplate(
-      newName,
-      newCategoryId || null,
-      newSections,
-      newAutoRules,
-    );
+    if (editingTemplate) {
+      await updateTemplate(editingTemplate.id, newName, newCategoryId || null, newSections, newAutoRules);
+    } else {
+      await createTemplate(newName, newCategoryId || null, newSections, newAutoRules);
+    }
+    resetForm();
+  };
+
+  const resetForm = () => {
     setNewName("");
     setNewCategoryId("");
     setNewSections("");
     setNewAutoRules("");
+    setEditingTemplate(null);
     setDialogOpen(false);
+  };
+
+  const startEditing = (template: Template) => {
+    setEditingTemplate(template);
+    setNewName(template.name);
+    setNewCategoryId(template.category_id ?? "");
+    setNewSections(template.sections);
+    setNewAutoRules(template.auto_apply_rules);
+    setDialogOpen(true);
   };
 
   const getCategoryName = (categoryId: string | null) => {
@@ -58,15 +73,20 @@ export function TemplatesPage() {
             Reusable section layouts that structure how summaries are organized
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          if (!open) resetForm();
+          else setDialogOpen(true);
+        }}>
           <DialogTrigger asChild>
             <Button>+ Add Template</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>New Template</DialogTitle>
+              <DialogTitle>{editingTemplate ? "Edit Template" : "New Template"}</DialogTitle>
               <DialogDescription>
-                Define the sections and layout for a type of meeting
+                {editingTemplate
+                  ? "Update this template's details"
+                  : "Define the sections and layout for a type of meeting"}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -121,11 +141,11 @@ export function TemplatesPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              <Button variant="outline" onClick={resetForm}>
                 Cancel
               </Button>
-              <MotionButton onClick={handleCreate} disabled={!newName.trim()}>
-                Create
+              <MotionButton onClick={handleSubmit} disabled={!newName.trim()}>
+                {editingTemplate ? "Save Changes" : "Create"}
               </MotionButton>
             </DialogFooter>
           </DialogContent>
@@ -174,14 +194,26 @@ export function TemplatesPage() {
                         </p>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:text-destructive shrink-0"
-                      onClick={() => deleteTemplate(template.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => startEditing(template)}
+                        title="Edit"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => deleteTemplate(template.id)}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

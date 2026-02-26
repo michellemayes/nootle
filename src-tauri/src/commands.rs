@@ -1,7 +1,7 @@
 use crate::audio::{run_audio_capture, validate_audio_devices, RecordingSession};
 use crate::db::*;
 use crate::diarization::DiarizationEngine;
-use crate::keychain;
+use crate::extraction;
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::model_download::{self, DownloadManager};
 use crate::model_registry;
@@ -17,6 +17,16 @@ pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
 pub type DetectorState = Arc<std::sync::Mutex<crate::detection::MeetingDetector>>;
 pub type DownloadManagerState = Arc<TokioMutex<DownloadManager>>;
 pub type EmbeddingState = Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>;
+
+const ALLOWED_PROVIDERS: &[&str] = &["openai", "anthropic", "google", "groq", "linear"];
+
+fn validate_provider(provider: &str) -> Result<(), String> {
+    if ALLOWED_PROVIDERS.contains(&provider) {
+        Ok(())
+    } else {
+        Err(format!("Invalid provider: {}", provider))
+    }
+}
 
 // Meeting commands
 #[tauri::command]
@@ -60,6 +70,10 @@ pub fn update_meeting_status(
     id: String,
     status: String,
 ) -> Result<(), String> {
+    const VALID_STATUSES: &[&str] = &["recording", "transcribing", "summarized", "archived"];
+    if !VALID_STATUSES.contains(&status.as_str()) {
+        return Err(format!("Invalid meeting status: {}", status));
+    }
     db.update_meeting_status(&id, &status)
         .map_err(|e| e.to_string())
 }
@@ -72,6 +86,13 @@ pub fn create_category(
     color: Option<String>,
     icon: Option<String>,
 ) -> Result<Category, String> {
+    if let Some(ref c) = color {
+        let valid =
+            c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+        if !valid {
+            return Err(format!("Invalid hex color: {}", c));
+        }
+    }
     db.create_category(NewCategory { name, color, icon })
         .map_err(|e| e.to_string())
 }
@@ -131,6 +152,19 @@ pub fn delete_prompt(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_prompt(&id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn update_prompt(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    content: String,
+    is_favorite: bool,
+    is_auto_run: bool,
+) -> Result<Prompt, String> {
+    db.update_prompt(&id, &name, &content, is_favorite, is_auto_run)
+        .map_err(|e| e.to_string())
+}
+
 // Template commands
 #[tauri::command]
 pub fn create_template(
@@ -157,6 +191,25 @@ pub fn list_templates(db: State<'_, DbState>) -> Result<Vec<Template>, String> {
 #[tauri::command]
 pub fn delete_template(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_template(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_template(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    category_id: Option<String>,
+    sections: String,
+    auto_apply_rules: String,
+) -> Result<Template, String> {
+    db.update_template(
+        &id,
+        &name,
+        category_id.as_deref(),
+        &sections,
+        &auto_apply_rules,
+    )
+    .map_err(|e| e.to_string())
 }
 
 // Summary commands
@@ -339,6 +392,7 @@ async fn run_transcription_pipeline(
 #[tauri::command]
 pub async fn stop_recording(
     db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
     recording: State<'_, RecordingState>,
 ) -> Result<Meeting, String> {
     let mut session = {
@@ -366,6 +420,37 @@ pub async fn stop_recording(
     db.finalize_meeting(&meeting_id, &end_time, Some(&audio_path), "transcribing")
         .map_err(|e| e.to_string())?;
 
+    // Auto-extract insights if an LLM provider is configured
+    {
+        let db_clone = db.inner().clone();
+        let llm_clone = llm.inner().clone();
+        let mid = meeting_id.clone();
+        tokio::spawn(async move {
+            let registry = llm_clone.read().await;
+            let providers = registry.provider_names();
+            if let Some(provider_name) = providers.first() {
+                let models = registry.all_models();
+                let provider_models: Vec<_> = models
+                    .iter()
+                    .filter(|m| m.provider == *provider_name)
+                    .collect();
+                if let Some(model) = provider_models.first() {
+                    if let Err(e) = crate::extraction::extract_insights(
+                        &db_clone,
+                        &registry,
+                        &mid,
+                        provider_name,
+                        &model.id,
+                    )
+                    .await
+                    {
+                        tracing::warn!("Auto-extraction failed: {e}");
+                    }
+                }
+            }
+        });
+    }
+
     // Return the updated meeting
     db.get_meeting(&meeting_id).map_err(|e| e.to_string())
 }
@@ -384,6 +469,7 @@ pub async fn store_api_key(
     provider: String,
     key: String,
 ) -> Result<(), String> {
+    validate_provider(&provider)?;
     // Linear keys are stored in the database alongside other Linear settings
     if provider == "linear" {
         db.set_linear_setting("api_key", &key)
@@ -391,7 +477,8 @@ pub async fn store_api_key(
         return Ok(());
     }
 
-    keychain::store_api_key(&provider, &key).map_err(|e| e.to_string())?;
+    db.store_api_key(&provider, &key)
+        .map_err(|e| e.to_string())?;
 
     // Hot-reload: register the provider in the LLM registry
     let mut registry = llm.write().await;
@@ -409,11 +496,17 @@ pub async fn store_api_key(
 }
 
 #[tauri::command]
-pub fn get_api_key(db: State<'_, DbState>, provider: String) -> Result<Option<String>, String> {
+pub fn has_api_key(db: State<'_, DbState>, provider: String) -> Result<bool, String> {
+    validate_provider(&provider)?;
     if provider == "linear" {
-        return db.get_linear_setting("api_key").map_err(|e| e.to_string());
+        return db
+            .get_linear_setting("api_key")
+            .map(|opt| opt.is_some())
+            .map_err(|e| e.to_string());
     }
-    keychain::get_api_key(&provider).map_err(|e| e.to_string())
+    db.get_api_key(&provider)
+        .map(|opt| opt.is_some())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -422,13 +515,14 @@ pub async fn delete_api_key(
     llm: State<'_, LlmState>,
     provider: String,
 ) -> Result<(), String> {
+    validate_provider(&provider)?;
     if provider == "linear" {
         db.delete_linear_setting("api_key")
             .map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    keychain::delete_api_key(&provider).map_err(|e| e.to_string())?;
+    db.delete_api_key(&provider).map_err(|e| e.to_string())?;
 
     // Hot-reload: remove the provider from the LLM registry
     let mut registry = llm.write().await;
@@ -439,7 +533,7 @@ pub async fn delete_api_key(
 
 #[tauri::command]
 pub fn list_stored_providers(db: State<'_, DbState>) -> Result<Vec<String>, String> {
-    let mut providers = keychain::list_stored_providers();
+    let mut providers = db.list_api_key_providers().map_err(|e| e.to_string())?;
     // Check if Linear API key is stored in the database
     if let Ok(Some(key)) = db.get_linear_setting("api_key") {
         if !key.is_empty() {
@@ -935,4 +1029,78 @@ pub async fn get_embedding_status(
         "total": total,
         "model_available": model_available,
     }))
+}
+
+// Insight commands
+#[tauri::command]
+pub fn get_insights(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<crate::db::InsightWithActionItem>, String> {
+    db.get_insights_for_meeting(&meeting_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_all_insights(
+    db: State<'_, DbState>,
+    insight_type: Option<String>,
+    status: Option<String>,
+    search: Option<String>,
+) -> Result<Vec<crate::db::InsightWithActionItem>, String> {
+    db.get_all_insights(
+        insight_type.as_deref(),
+        status.as_deref(),
+        search.as_deref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn extract_meeting_insights(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+) -> Result<(), String> {
+    let llm = llm.read().await;
+    extraction::extract_insights(&db, &llm, &meeting_id, &provider, &model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn re_extract_meeting_insights(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+) -> Result<(), String> {
+    let llm = llm.read().await;
+    extraction::re_extract_insights(&db, &llm, &meeting_id, &provider, &model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_action_item_status(
+    db: State<'_, DbState>,
+    id: String,
+    status: String,
+) -> Result<(), String> {
+    db.update_action_item_status(&id, &status)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_action_item(
+    db: State<'_, DbState>,
+    id: String,
+    assignee: Option<String>,
+    due_date: Option<String>,
+) -> Result<(), String> {
+    db.update_action_item(&id, assignee.as_deref(), due_date.as_deref())
+        .map_err(|e| e.to_string())
 }

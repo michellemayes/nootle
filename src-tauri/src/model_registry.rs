@@ -39,31 +39,34 @@ pub struct ModelDefinition {
 }
 
 // ── Parakeet TDT 0.6B v3 (Transcription) ──────────────────────────────
+// TODO(security): Populate sha256 fields below by downloading each model file
+// and running `shasum -a 256 <file>`. The verification logic in model_download.rs
+// is already implemented — it just needs non-empty hash values.
 
 const PARAKEET_INT8_FILES: &[ModelFile] = &[
     ModelFile {
         local_name: "encoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.int8.onnx",
         size_bytes: 652_000_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "decoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.int8.onnx",
         size_bytes: 18_200_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "vocab.txt",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt",
         size_bytes: 94_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "nemo128.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/nemo128.onnx",
         size_bytes: 140_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
 ];
 
@@ -72,31 +75,31 @@ const PARAKEET_FULL_FILES: &[ModelFile] = &[
         local_name: "encoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx",
         size_bytes: 41_800_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "encoder.onnx.data",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx.data",
         size_bytes: 2_440_000_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "decoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.onnx",
         size_bytes: 72_500_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "vocab.txt",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt",
         size_bytes: 94_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "nemo128.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/nemo128.onnx",
         size_bytes: 140_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
 ];
 
@@ -122,13 +125,13 @@ const DIARIZATION_FILES: &[ModelFile] = &[
         local_name: "segmentation.onnx",
         url: "https://huggingface.co/onnx-community/pyannote-segmentation-3.0/resolve/main/onnx/model.onnx",
         size_bytes: 6_000_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
     ModelFile {
         local_name: "embedding.onnx",
         url: "https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34-LM/resolve/main/voxceleb_resnet34_LM.onnx",
         size_bytes: 26_500_000,
-        sha256: "",
+        sha256: "", // TODO(security): compute hash
     },
 ];
 
@@ -216,13 +219,17 @@ pub fn model_dir(model: &ModelDefinition) -> std::path::PathBuf {
         .join(model.dir_name)
 }
 
-/// Check if all files for a variant are present on disk.
-pub fn is_variant_downloaded(model: &ModelDefinition, variant: &ModelVariant) -> bool {
-    let dir = model_dir(model);
+/// Check if all files for a variant are present in a given directory.
+fn is_variant_in_dir(dir: &std::path::Path, variant: &ModelVariant) -> bool {
     variant
         .files
         .iter()
         .all(|f| dir.join(f.local_name).exists())
+}
+
+/// Check if all files for a variant are present on disk.
+pub fn is_variant_downloaded(model: &ModelDefinition, variant: &ModelVariant) -> bool {
+    is_variant_in_dir(&model_dir(model), variant)
 }
 
 #[cfg(test)]
@@ -279,12 +286,11 @@ mod tests {
     }
 
     #[test]
-    fn is_variant_downloaded_is_consistent() {
+    fn variant_not_downloaded_in_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
         let model = get_model("parakeet-tdt-0.6b-v3").unwrap();
         let variant = &model.variants[0];
-        let dir = model_dir(model);
-        let all_exist = variant.files.iter().all(|f| dir.join(f.local_name).exists());
-        assert_eq!(is_variant_downloaded(model, variant), all_exist);
+        assert!(!is_variant_in_dir(tmp.path(), variant));
     }
 
     #[test]

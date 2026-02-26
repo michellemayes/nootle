@@ -6,11 +6,12 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
 import { Button } from "@/components/ui/button";
 import { MotionButton } from "@/components/MotionButton";
-import { Mic, FileText, Sparkles, Settings, HelpCircle, Circle, Moon, Sun } from "lucide-react";
+import { Mic, FileText, Sparkles, Settings, HelpCircle, Circle, Moon, Sun, Lightbulb } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 const navItems: { to: string; label: string; icon: LucideIcon }[] = [
   { to: "/", label: "Meetings", icon: Mic },
+  { to: "/insights", label: "Insights", icon: Lightbulb },
   { to: "/templates", label: "Templates", icon: FileText },
   { to: "/prompts", label: "Prompts", icon: Sparkles },
   { to: "/settings", label: "Settings", icon: Settings },

@@ -15,24 +15,44 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { usePrompts } from "@/hooks/usePrompts";
-import { Sparkles, Star, Trash2 } from "lucide-react";
+import { Pencil, Sparkles, Star, Trash2 } from "lucide-react";
+import type { Prompt } from "@/types";
 
 export function PromptsPage() {
-  const { prompts, loading, createPrompt, deletePrompt } = usePrompts();
+  const { prompts, loading, createPrompt, updatePrompt, deletePrompt } = usePrompts();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newContent, setNewContent] = useState("");
   const [newFavorite, setNewFavorite] = useState(false);
   const [newAutoRun, setNewAutoRun] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
 
-  const handleCreate = async () => {
+  const handleSubmit = async () => {
     if (!newName.trim() || !newContent.trim()) return;
-    await createPrompt(newName, newContent, newFavorite, newAutoRun);
+    if (editingPrompt) {
+      await updatePrompt(editingPrompt.id, newName, newContent, newFavorite, newAutoRun);
+    } else {
+      await createPrompt(newName, newContent, newFavorite, newAutoRun);
+    }
+    resetForm();
+  };
+
+  const resetForm = () => {
     setNewName("");
     setNewContent("");
     setNewFavorite(false);
     setNewAutoRun(false);
+    setEditingPrompt(null);
     setDialogOpen(false);
+  };
+
+  const startEditing = (prompt: Prompt) => {
+    setEditingPrompt(prompt);
+    setNewName(prompt.name);
+    setNewContent(prompt.content);
+    setNewFavorite(prompt.is_favorite);
+    setNewAutoRun(prompt.is_auto_run);
+    setDialogOpen(true);
   };
 
   return (
@@ -45,15 +65,20 @@ export function PromptsPage() {
             Instructions that tell the AI what to focus on and how to write
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          if (!open) resetForm();
+          else setDialogOpen(true);
+        }}>
           <DialogTrigger asChild>
             <Button>+ Add Prompt</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>New Prompt</DialogTitle>
+              <DialogTitle>{editingPrompt ? "Edit Prompt" : "New Prompt"}</DialogTitle>
               <DialogDescription>
-                Write instructions for the AI — what to extract, how detailed to be, what tone to use
+                {editingPrompt
+                  ? "Update this prompt's details"
+                  : "Write instructions for the AI \u2014 what to extract, how detailed to be, what tone to use"}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -99,14 +124,11 @@ export function PromptsPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setDialogOpen(false)}
-              >
+              <Button variant="outline" onClick={resetForm}>
                 Cancel
               </Button>
-              <MotionButton onClick={handleCreate} disabled={!newName.trim() || !newContent.trim()}>
-                Create
+              <MotionButton onClick={handleSubmit} disabled={!newName.trim() || !newContent.trim()}>
+                {editingPrompt ? "Save Changes" : "Create"}
               </MotionButton>
             </DialogFooter>
           </DialogContent>
@@ -159,14 +181,26 @@ export function PromptsPage() {
                         {prompt.content}
                       </p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:text-destructive shrink-0"
-                      onClick={() => deletePrompt(prompt.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => startEditing(prompt)}
+                        title="Edit"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => deletePrompt(prompt.id)}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

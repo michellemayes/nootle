@@ -120,3 +120,22 @@ export interface EmbeddingStatus {
   total: number;
   model_available: boolean;
 }
+
+export interface InsightWithActionItem {
+  id: string;
+  meeting_id: string;
+  type: string; // "decision" | "action_item" | "key_moment"
+  content: string;
+  context: string | null;
+  transcript_start_ms: number | null;
+  transcript_end_ms: number | null;
+  created_at: string;
+  action_item_id: string | null;
+  assignee: string | null;
+  due_date: string | null;
+  status: string | null; // "open" | "done"
+  linear_ticket_id: string | null;
+  action_item_updated_at: string | null;
+  meeting_title: string | null;
+  meeting_start_time: string | null;
+}
