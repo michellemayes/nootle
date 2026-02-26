@@ -1012,4 +1012,232 @@ impl Database {
 
         Ok(results)
     }
+
+    // --- Insights ---
+
+    pub fn create_insight(&self, new: NewInsight) -> Result<Insight> {
+        let conn = self.conn.lock().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO insights (id, meeting_id, type, content, context, transcript_start_ms, transcript_end_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![id, new.meeting_id, new.insight_type, new.content, new.context, new.transcript_start_ms, new.transcript_end_ms, now],
+        )?;
+        Ok(Insight {
+            id,
+            meeting_id: new.meeting_id,
+            insight_type: new.insight_type,
+            content: new.content,
+            context: new.context,
+            transcript_start_ms: new.transcript_start_ms,
+            transcript_end_ms: new.transcript_end_ms,
+            created_at: now,
+        })
+    }
+
+    pub fn get_insights_for_meeting(&self, meeting_id: &str) -> Result<Vec<InsightWithActionItem>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT i.id, i.meeting_id, i.type, i.content, i.context, i.transcript_start_ms, i.transcript_end_ms, i.created_at,
+                    a.id, a.assignee, a.due_date, a.status, a.linear_ticket_id, a.updated_at,
+                    m.title, m.start_time
+             FROM insights i
+             LEFT JOIN action_items a ON a.insight_id = i.id
+             LEFT JOIN meetings m ON m.id = i.meeting_id
+             WHERE i.meeting_id = ?1
+             ORDER BY i.transcript_start_ms ASC NULLS LAST, i.created_at ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok(InsightWithActionItem {
+                    id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    insight_type: row.get(2)?,
+                    content: row.get(3)?,
+                    context: row.get(4)?,
+                    transcript_start_ms: row.get(5)?,
+                    transcript_end_ms: row.get(6)?,
+                    created_at: row.get(7)?,
+                    action_item_id: row.get(8)?,
+                    assignee: row.get(9)?,
+                    due_date: row.get(10)?,
+                    status: row.get(11)?,
+                    linear_ticket_id: row.get(12)?,
+                    action_item_updated_at: row.get(13)?,
+                    meeting_title: row.get(14)?,
+                    meeting_start_time: row.get(15)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn get_all_insights(
+        &self,
+        insight_type: Option<&str>,
+        status: Option<&str>,
+        search: Option<&str>,
+    ) -> Result<Vec<InsightWithActionItem>> {
+        let conn = self.conn.lock().unwrap();
+        let mut sql = String::from(
+            "SELECT i.id, i.meeting_id, i.type, i.content, i.context, i.transcript_start_ms, i.transcript_end_ms, i.created_at,
+                    a.id, a.assignee, a.due_date, a.status, a.linear_ticket_id, a.updated_at,
+                    m.title, m.start_time
+             FROM insights i
+             LEFT JOIN action_items a ON a.insight_id = i.id
+             LEFT JOIN meetings m ON m.id = i.meeting_id",
+        );
+        let mut conditions: Vec<String> = Vec::new();
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(t) = insight_type {
+            conditions.push(format!("i.type = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(t.to_string()));
+        }
+        if let Some(s) = status {
+            conditions.push(format!("a.status = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(s.to_string()));
+        }
+        if let Some(q) = search {
+            conditions.push(format!(
+                "i.rowid IN (SELECT rowid FROM insights_fts WHERE insights_fts MATCH ?{})",
+                param_values.len() + 1
+            ));
+            param_values.push(Box::new(q.to_string()));
+        }
+        if !conditions.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&conditions.join(" AND "));
+        }
+        sql.push_str(" ORDER BY CASE WHEN a.status = 'open' THEN 0 ELSE 1 END, a.due_date ASC NULLS LAST, i.created_at DESC");
+
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                Ok(InsightWithActionItem {
+                    id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    insight_type: row.get(2)?,
+                    content: row.get(3)?,
+                    context: row.get(4)?,
+                    transcript_start_ms: row.get(5)?,
+                    transcript_end_ms: row.get(6)?,
+                    created_at: row.get(7)?,
+                    action_item_id: row.get(8)?,
+                    assignee: row.get(9)?,
+                    due_date: row.get(10)?,
+                    status: row.get(11)?,
+                    linear_ticket_id: row.get(12)?,
+                    action_item_updated_at: row.get(13)?,
+                    meeting_title: row.get(14)?,
+                    meeting_start_time: row.get(15)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn delete_insights_for_meeting(&self, meeting_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM insights WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn create_action_item(&self, new: NewActionItem) -> Result<ActionItem> {
+        let conn = self.conn.lock().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO action_items (id, insight_id, assignee, due_date, status, updated_at)
+             VALUES (?1, ?2, ?3, ?4, 'open', ?5)",
+            params![id, new.insight_id, new.assignee, new.due_date, now],
+        )?;
+        Ok(ActionItem {
+            id,
+            insight_id: new.insight_id,
+            assignee: new.assignee,
+            due_date: new.due_date,
+            status: "open".to_string(),
+            linear_ticket_id: None,
+            updated_at: now,
+        })
+    }
+
+    pub fn update_action_item_status(&self, id: &str, status: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE action_items SET status = ?1, updated_at = ?2 WHERE id = ?3",
+            params![status, now, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_action_item(
+        &self,
+        id: &str,
+        assignee: Option<&str>,
+        due_date: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE action_items SET assignee = ?1, due_date = ?2, updated_at = ?3 WHERE id = ?4",
+            params![assignee, due_date, now, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_action_item_linear_ticket(
+        &self,
+        id: &str,
+        linear_ticket_id: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE action_items SET linear_ticket_id = ?1, updated_at = ?2 WHERE id = ?3",
+            params![linear_ticket_id, now, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn create_extraction_run(
+        &self,
+        meeting_id: &str,
+        provider: &str,
+        model: &str,
+    ) -> Result<ExtractionRun> {
+        let conn = self.conn.lock().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO extraction_runs (id, meeting_id, provider, model, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, 'running', ?5)",
+            params![id, meeting_id, provider, model, now],
+        )?;
+        Ok(ExtractionRun {
+            id,
+            meeting_id: meeting_id.to_string(),
+            provider: provider.to_string(),
+            model: model.to_string(),
+            status: "running".to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn update_extraction_run_status(&self, id: &str, status: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE extraction_runs SET status = ?1 WHERE id = ?2",
+            params![status, id],
+        )?;
+        Ok(())
+    }
 }
