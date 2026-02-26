@@ -1056,13 +1056,8 @@ impl Database {
             param_values.push(Box::new(to.to_string()));
         }
 
-        sql.push_str(" ORDER BY ce.distance LIMIT ?");
-        // The final LIMIT to ensure we return at most `limit` results after filtering
         let limit_param_idx = param_values.len() + 1;
-        sql = sql.replace(
-            " ORDER BY ce.distance LIMIT ?",
-            &format!(" ORDER BY ce.distance LIMIT ?{}", limit_param_idx),
-        );
+        sql.push_str(&format!(" ORDER BY ce.distance LIMIT ?{}", limit_param_idx));
         param_values.push(Box::new(limit as i64));
 
         let mut stmt = conn.prepare(&sql)?;
@@ -1098,7 +1093,7 @@ impl Database {
         )?;
 
         let total_meetings: u32 = conn.query_row(
-            "SELECT COUNT(*) FROM meetings WHERE status = 'completed'",
+            "SELECT COUNT(*) FROM meetings WHERE status IN ('transcribing', 'summarized', 'archived')",
             [],
             |row| row.get(0),
         )?;
