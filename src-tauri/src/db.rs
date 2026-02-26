@@ -336,6 +336,8 @@ impl Database {
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            -- Dimension (384) must match the embedding model output (all-MiniLM-L6-v2).
+            -- Changing models requires recreating this table and re-embedding all chunks.
             CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(
                 chunk_id TEXT PRIMARY KEY,
                 embedding float[384]
@@ -1017,11 +1019,12 @@ impl Database {
 
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         param_values.push(Box::new(query_bytes));
-        // Request a larger k to account for post-filtering
+        // Over-fetch 4x when filters are active so post-filter still yields enough results.
+        // With strict filters on a small dataset, the caller may receive fewer than `limit` rows.
         let k = if category_ids.is_empty() && date_from.is_none() && date_to.is_none() {
             limit as i64
         } else {
-            (limit as i64) * 4 // over-fetch to allow for filtering
+            (limit as i64) * 4
         };
         param_values.push(Box::new(k));
 

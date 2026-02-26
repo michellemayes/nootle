@@ -390,8 +390,11 @@ mod tests {
     }
 
     #[test]
-    fn test_models_not_available() {
-        // Models won't exist in test environment
-        assert!(!DiarizationEngine::models_available());
+    fn test_models_available_is_consistent() {
+        let available = DiarizationEngine::models_available();
+        let dir = DiarizationEngine::model_dir();
+        let both_exist =
+            dir.join("segmentation.onnx").exists() && dir.join("embedding.onnx").exists();
+        assert_eq!(available, both_exist);
     }
 }

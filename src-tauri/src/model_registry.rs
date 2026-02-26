@@ -279,10 +279,12 @@ mod tests {
     }
 
     #[test]
-    fn variant_not_downloaded_by_default() {
+    fn is_variant_downloaded_is_consistent() {
         let model = get_model("parakeet-tdt-0.6b-v3").unwrap();
         let variant = &model.variants[0];
-        assert!(!is_variant_downloaded(model, variant));
+        let dir = model_dir(model);
+        let all_exist = variant.files.iter().all(|f| dir.join(f.local_name).exists());
+        assert_eq!(is_variant_downloaded(model, variant), all_exist);
     }
 
     #[test]

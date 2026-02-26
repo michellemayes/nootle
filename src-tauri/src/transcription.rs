@@ -280,9 +280,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_model_status_not_downloaded() {
+    fn test_model_status_is_consistent() {
         let status = TranscriptionEngine::check_status();
-        assert!(matches!(status, ModelStatus::NotDownloaded));
+        let dir = TranscriptionEngine::model_dir();
+        let all_exist = dir.join("encoder.onnx").exists()
+            && dir.join("decoder.onnx").exists()
+            && dir.join("vocab.txt").exists();
+        if all_exist {
+            assert!(matches!(status, ModelStatus::Ready));
+        } else {
+            assert!(matches!(status, ModelStatus::NotDownloaded));
+        }
     }
 
     #[test]
