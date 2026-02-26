@@ -49,7 +49,7 @@ fn test_list_meetings() {
     })
     .unwrap();
 
-    let meetings = db.list_meetings(None, None).unwrap();
+    let meetings = db.list_meetings(None, None, false).unwrap();
     assert_eq!(meetings.len(), 2);
 }
 
