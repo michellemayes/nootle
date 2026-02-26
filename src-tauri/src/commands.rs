@@ -1008,7 +1008,9 @@ pub async fn embed_all_meetings(
     db: State<'_, DbState>,
     embedding_state: State<'_, EmbeddingState>,
 ) -> Result<(), String> {
-    let meetings = db.list_meetings(None, None).map_err(|e| e.to_string())?;
+    let meetings = db
+        .list_meetings(None, None, false)
+        .map_err(|e| e.to_string())?;
     let total = meetings.len();
 
     let mut engine_lock = embedding_state.lock().await;
