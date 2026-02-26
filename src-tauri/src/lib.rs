@@ -4,6 +4,7 @@ pub mod db;
 pub mod detection;
 pub mod diarization;
 pub mod error;
+pub mod extraction;
 pub mod linear;
 pub mod llm;
 pub mod mcp;
@@ -249,6 +250,12 @@ pub fn run() {
             commands::download_model,
             commands::cancel_download,
             commands::delete_model,
+            commands::get_insights,
+            commands::get_all_insights,
+            commands::extract_meeting_insights,
+            commands::re_extract_meeting_insights,
+            commands::update_action_item_status,
+            commands::update_action_item,
             commands::check_permissions,
             commands::request_microphone_permission,
             commands::request_screen_recording_permission,
