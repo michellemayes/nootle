@@ -245,6 +245,11 @@ impl Database {
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS api_keys (
+                provider TEXT PRIMARY KEY,
+                key_value TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS linear_settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -1010,6 +1015,58 @@ impl Database {
             }
             other => NootleError::Database(other),
         })
+    }
+
+    // --- API Keys ---
+
+    pub fn store_api_key(&self, provider: &str, key: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "INSERT INTO api_keys (provider, key_value) VALUES (?1, ?2)
+             ON CONFLICT(provider) DO UPDATE SET key_value = excluded.key_value",
+            params![provider, key],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_api_key(&self, provider: &str) -> Result<Option<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare("SELECT key_value FROM api_keys WHERE provider = ?1")?;
+        match stmt.query_row(params![provider], |row| row.get::<_, String>(0)) {
+            Ok(value) => Ok(Some(value)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn delete_api_key(&self, provider: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "DELETE FROM api_keys WHERE provider = ?1",
+            params![provider],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_api_key_providers(&self) -> Result<Vec<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare("SELECT provider FROM api_keys ORDER BY provider ASC")?;
+        let providers = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(providers)
     }
 
     // --- Linear Settings ---
