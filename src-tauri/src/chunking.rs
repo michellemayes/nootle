@@ -54,8 +54,7 @@ pub fn chunk_segments(
             }
             overlap_start_idx = i;
 
-            for seg_idx in j..i {
-                let s = &segments[seg_idx];
+            for s in &segments[j..i] {
                 let t = format!("{}: {}\n", s.speaker_label, s.text);
                 current_tokens += token_count(&t);
                 current_text.push_str(&t);

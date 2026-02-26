@@ -879,6 +879,7 @@ pub async fn delete_model(model_id: String) -> Result<(), String> {
 // Global chat commands
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn chat_with_transcripts(
     db: State<'_, DbState>,
     llm: State<'_, LlmState>,

@@ -128,20 +128,20 @@ impl EmbeddingEngine {
         let data: Vec<f32> = output_data.to_vec();
         let mut pooled = vec![0f32; dim];
         for token_idx in 0..n_tokens {
-            for d in 0..dim {
-                pooled[d] += data[token_idx * dim + d];
+            for (p, &val) in pooled.iter_mut().zip(&data[token_idx * dim..]) {
+                *p += val;
             }
         }
         let n = n_tokens as f32;
-        for d in 0..dim {
-            pooled[d] /= n;
+        for p in &mut pooled {
+            *p /= n;
         }
 
         // L2 normalize
         let norm: f32 = pooled.iter().map(|x| x * x).sum::<f32>().sqrt();
         if norm > 0.0 {
-            for d in 0..dim {
-                pooled[d] /= norm;
+            for p in &mut pooled {
+                *p /= norm;
             }
         }
 
