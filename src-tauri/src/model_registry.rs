@@ -174,13 +174,17 @@ pub fn model_dir(model: &ModelDefinition) -> std::path::PathBuf {
         .join(model.dir_name)
 }
 
-/// Check if all files for a variant are present on disk.
-pub fn is_variant_downloaded(model: &ModelDefinition, variant: &ModelVariant) -> bool {
-    let dir = model_dir(model);
+/// Check if all files for a variant are present in a given directory.
+fn is_variant_in_dir(dir: &std::path::Path, variant: &ModelVariant) -> bool {
     variant
         .files
         .iter()
         .all(|f| dir.join(f.local_name).exists())
+}
+
+/// Check if all files for a variant are present on disk.
+pub fn is_variant_downloaded(model: &ModelDefinition, variant: &ModelVariant) -> bool {
+    is_variant_in_dir(&model_dir(model), variant)
 }
 
 #[cfg(test)]
@@ -230,10 +234,11 @@ mod tests {
     }
 
     #[test]
-    fn variant_not_downloaded_by_default() {
+    fn variant_not_downloaded_in_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
         let model = get_model("parakeet-tdt-0.6b-v2").unwrap();
         let variant = &model.variants[0];
-        assert!(!is_variant_downloaded(model, variant));
+        assert!(!is_variant_in_dir(tmp.path(), variant));
     }
 
     #[test]

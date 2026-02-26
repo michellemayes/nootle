@@ -11,7 +11,7 @@ use anyhow::{anyhow, Context};
 use ndarray::Array2;
 use ort::session::Session;
 use ort::value::Tensor;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -55,9 +55,8 @@ impl TranscriptionEngine {
             .join(MODEL_DIR_NAME)
     }
 
-    /// Check if models are downloaded and ready.
-    pub fn check_status() -> ModelStatus {
-        let dir = Self::model_dir();
+    /// Check if models are downloaded and ready in a given directory.
+    fn check_status_in(dir: &Path) -> ModelStatus {
         let encoder_path = dir.join("encoder.onnx");
         let decoder_path = dir.join("decoder.onnx");
         let vocab_path = dir.join("vocab.txt");
@@ -67,6 +66,11 @@ impl TranscriptionEngine {
         } else {
             ModelStatus::NotDownloaded
         }
+    }
+
+    /// Check if models are downloaded and ready.
+    pub fn check_status() -> ModelStatus {
+        Self::check_status_in(&Self::model_dir())
     }
 
     /// Load the transcription engine from pre-downloaded model files.
@@ -275,7 +279,8 @@ mod tests {
 
     #[test]
     fn test_model_status_not_downloaded() {
-        let status = TranscriptionEngine::check_status();
+        let tmp = tempfile::tempdir().unwrap();
+        let status = TranscriptionEngine::check_status_in(tmp.path());
         assert!(matches!(status, ModelStatus::NotDownloaded));
     }
 
