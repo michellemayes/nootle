@@ -256,6 +256,7 @@ pub fn run() {
             commands::re_extract_meeting_insights,
             commands::update_action_item_status,
             commands::update_action_item,
+            commands::get_exe_path,
             commands::check_permissions,
             commands::request_microphone_permission,
             commands::request_screen_recording_permission,

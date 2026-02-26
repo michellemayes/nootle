@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,14 +25,20 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-const MCP_CONFIG = `{
+function getMcpConfig(exePath: string) {
+  return `{
   "mcpServers": {
     "nootle": {
-      "command": "/path/to/nootle",
+      "command": "${exePath}",
       "args": ["--mcp"]
     }
   }
 }`;
+}
+
+function getClaudeCommand(exePath: string) {
+  return `claude mcp add nootle -- ${exePath} --mcp`;
+}
 
 function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
   provider: string;
@@ -186,13 +193,24 @@ export function SettingsPage() {
   const { storedProviders, storeKey, deleteKey } = useApiKeys();
   const { providers: llmProviders } = useLLM();
   const { theme, toggleTheme } = useTheme();
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"json" | "claude" | false>(false);
+  const [exePath, setExePath] = useState("/path/to/nootle");
 
-  const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(MCP_CONFIG);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  useEffect(() => {
+    invoke<string>("get_exe_path").then(setExePath).catch(() => {});
   }, []);
+
+  const handleCopyJson = useCallback(async () => {
+    await navigator.clipboard.writeText(getMcpConfig(exePath));
+    setCopied("json");
+    setTimeout(() => setCopied(false), 2000);
+  }, [exePath]);
+
+  const handleCopyClaude = useCallback(async () => {
+    await navigator.clipboard.writeText(getClaudeCommand(exePath));
+    setCopied("claude");
+    setTimeout(() => setCopied(false), 2000);
+  }, [exePath]);
 
   // Merge known providers with any discovered from LLM
   const allProviders = Array.from(
@@ -297,23 +315,50 @@ export function SettingsPage() {
               </p>
               <div className="relative">
                 <pre className="rounded-lg bg-muted p-4 text-xs font-mono overflow-x-auto">
-                  {MCP_CONFIG}
+                  {getMcpConfig(exePath)}
                 </pre>
                 <Button
                   variant="secondary"
                   size="xs"
                   className="absolute top-2 right-2"
-                  onClick={handleCopy}
+                  onClick={handleCopyJson}
                 >
                   <AnimatePresence mode="wait">
                     <motion.span
-                      key={copied ? "check" : "copy"}
+                      key={copied === "json" ? "check" : "copy"}
                       initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: copied ? [1, 1.2, 1] : 1 }}
+                      animate={{ opacity: 1, scale: copied === "json" ? [1, 1.2, 1] : 1 }}
                       exit={{ opacity: 0, scale: 0.8 }}
                       transition={{ duration: 0.15 }}
                     >
-                      {copied ? "\u2713 Copied" : "Copy"}
+                      {copied === "json" ? "\u2713 Copied" : "Copy"}
+                    </motion.span>
+                  </AnimatePresence>
+                </Button>
+              </div>
+              <h3 className="text-sm font-medium mt-4 mb-2">Claude Code</h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Or install directly with Claude Code:
+              </p>
+              <div className="relative">
+                <pre className="rounded-lg bg-muted p-4 text-xs font-mono overflow-x-auto">
+                  {getClaudeCommand(exePath)}
+                </pre>
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  className="absolute top-2 right-2"
+                  onClick={handleCopyClaude}
+                >
+                  <AnimatePresence mode="wait">
+                    <motion.span
+                      key={copied === "claude" ? "check" : "copy"}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: copied === "claude" ? [1, 1.2, 1] : 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      {copied === "claude" ? "\u2713 Copied" : "Copy"}
                     </motion.span>
                   </AnimatePresence>
                 </Button>

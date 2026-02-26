@@ -935,3 +935,10 @@ pub fn update_action_item(
     db.update_action_item(&id, assignee.as_deref(), due_date.as_deref())
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn get_exe_path() -> Result<String, String> {
+    std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| e.to_string())
+}
