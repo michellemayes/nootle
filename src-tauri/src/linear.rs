@@ -3,7 +3,14 @@ use std::sync::LazyLock;
 
 const LINEAR_API_URL: &str = "https://api.linear.app/graphql";
 
-static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    use std::time::Duration;
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap_or_default()
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearTeam {

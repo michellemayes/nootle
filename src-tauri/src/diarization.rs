@@ -10,7 +10,7 @@
 use anyhow::{anyhow, Context};
 use ort::session::Session;
 use ort::value::Tensor;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -54,10 +54,14 @@ impl DiarizationEngine {
             .join("diarization")
     }
 
+    /// Check if diarization models are available in a given directory.
+    fn models_available_in(dir: &Path) -> bool {
+        dir.join("segmentation.onnx").exists() && dir.join("embedding.onnx").exists()
+    }
+
     /// Check if diarization models are available.
     pub fn models_available() -> bool {
-        let dir = Self::model_dir();
-        dir.join("segmentation.onnx").exists() && dir.join("embedding.onnx").exists()
+        Self::models_available_in(&Self::model_dir())
     }
 
     /// Load the diarization engine from pre-downloaded ONNX models.
@@ -390,8 +394,8 @@ mod tests {
     }
 
     #[test]
-    fn test_models_not_available() {
-        // Models won't exist in test environment
-        assert!(!DiarizationEngine::models_available());
+    fn test_models_not_available_in_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(!DiarizationEngine::models_available_in(tmp.path()));
     }
 }

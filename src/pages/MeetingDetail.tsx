@@ -92,7 +92,8 @@ function CreateTicketButton({
   const filteredModels = models.filter((m) => m.provider === selectedProvider);
 
   if (existingTicket) {
-    return (
+    const isHttps = existingTicket.linear_issue_url.startsWith("https://");
+    return isHttps ? (
       <a
         href={existingTicket.linear_issue_url}
         target="_blank"
@@ -101,6 +102,10 @@ function CreateTicketButton({
       >
         {existingTicket.linear_identifier}
       </a>
+    ) : (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        {existingTicket.linear_identifier}
+      </span>
     );
   }
 

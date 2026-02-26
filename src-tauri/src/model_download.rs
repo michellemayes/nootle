@@ -87,7 +87,11 @@ pub async fn download_variant(
     let model_dir = model_registry::model_dir(model);
     std::fs::create_dir_all(&model_dir).map_err(|e| format!("Failed to create model dir: {e}"))?;
 
-    let client = Client::new();
+    let client = Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(600))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
     let total_bytes: u64 = variant.files.iter().map(|f| f.size_bytes).sum();
     let mut cumulative_bytes: u64 = 0;
 

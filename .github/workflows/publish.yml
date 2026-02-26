@@ -23,23 +23,23 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ env.RELEASE_TAG }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
         with:
           workspaces: "./src-tauri -> target"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
         with:
           version: 9
 
@@ -89,7 +89,7 @@ jobs:
             -s -k "$KEYCHAIN_PASSWORD" build.keychain
           rm certificate.p12
 
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@73fb865345c54760d875b94642314f8c0c894afa # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -108,6 +108,10 @@ jobs:
           includeUpdaterJson: true
           args: ${{ matrix.args }}
 
+      - name: Cleanup build keychain
+        if: always()
+        run: security delete-keychain build.keychain 2>/dev/null || true
+
       - name: Verify updater assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -123,7 +127,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
       - name: Add auto-generated release notes
