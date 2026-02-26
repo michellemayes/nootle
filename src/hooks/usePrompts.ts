@@ -51,5 +51,26 @@ export function usePrompts() {
     [refresh],
   );
 
-  return { prompts, loading, error, refresh, createPrompt, deletePrompt };
+  const updatePrompt = useCallback(
+    async (
+      id: string,
+      name: string,
+      content: string,
+      isFavorite: boolean,
+      isAutoRun: boolean,
+    ) => {
+      const prompt = await invoke<Prompt>("update_prompt", {
+        id,
+        name,
+        content,
+        isFavorite,
+        isAutoRun,
+      });
+      await refresh();
+      return prompt;
+    },
+    [refresh],
+  );
+
+  return { prompts, loading, error, refresh, createPrompt, updatePrompt, deletePrompt };
 }
