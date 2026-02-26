@@ -5,6 +5,7 @@ use crate::keychain;
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::model_download::{self, DownloadManager};
 use crate::model_registry;
+use crate::extraction;
 use crate::summarization;
 use crate::transcription::{self, TranscriptionEngine};
 use std::sync::Arc;
@@ -766,4 +767,78 @@ pub async fn delete_model(model_id: String) -> Result<(), String> {
     let model =
         model_registry::get_model(&model_id).ok_or_else(|| format!("Unknown model: {model_id}"))?;
     model_download::delete_model_files(model)
+}
+
+// Insight commands
+#[tauri::command]
+pub fn get_insights(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<crate::db::InsightWithActionItem>, String> {
+    db.get_insights_for_meeting(&meeting_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_all_insights(
+    db: State<'_, DbState>,
+    insight_type: Option<String>,
+    status: Option<String>,
+    search: Option<String>,
+) -> Result<Vec<crate::db::InsightWithActionItem>, String> {
+    db.get_all_insights(
+        insight_type.as_deref(),
+        status.as_deref(),
+        search.as_deref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn extract_meeting_insights(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+) -> Result<(), String> {
+    let llm = llm.read().await;
+    extraction::extract_insights(&db, &llm, &meeting_id, &provider, &model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn re_extract_meeting_insights(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+) -> Result<(), String> {
+    let llm = llm.read().await;
+    extraction::re_extract_insights(&db, &llm, &meeting_id, &provider, &model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_action_item_status(
+    db: State<'_, DbState>,
+    id: String,
+    status: String,
+) -> Result<(), String> {
+    db.update_action_item_status(&id, &status)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_action_item(
+    db: State<'_, DbState>,
+    id: String,
+    assignee: Option<String>,
+    due_date: Option<String>,
+) -> Result<(), String> {
+    db.update_action_item(&id, assignee.as_deref(), due_date.as_deref())
+        .map_err(|e| e.to_string())
 }
