@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { MotionButton } from "@/components/MotionButton";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
 import type { TranscriptSegment } from "@/types";
 import { listen } from "@tauri-apps/api/event";
-import { Square } from "lucide-react";
+import { Square, ArrowLeft } from "lucide-react";
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -55,15 +56,22 @@ function Waveform() {
   );
 }
 
+interface TranscriptionStatus {
+  available: boolean;
+  reason?: string;
+}
+
 export function RecordingView() {
   const navigate = useNavigate();
-  const { isRecording, elapsed, startRecording, stopRecording } =
+  const { isRecording, elapsed, error, startRecording, stopRecording } =
     useRecording();
   const [title, setTitle] = useState("Untitled Recording");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [stopping, setStopping] = useState(false);
+  const [transcriptionStatus, setTranscriptionStatus] =
+    useState<TranscriptionStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Start recording on mount
@@ -71,16 +79,32 @@ export function RecordingView() {
     if (!hasStarted) {
       setHasStarted(true);
       startRecording(title).catch(() => {
-        // If recording fails, navigate back
+        // Error is captured in useRecording's error state
       });
     }
   }, [hasStarted, startRecording, title]);
 
   // Listen for transcript updates
   useEffect(() => {
-    const unlisten = listen<TranscriptSegment[]>("transcript-update", (event) => {
-      setSegments(event.payload);
-    });
+    const unlisten = listen<TranscriptSegment[]>(
+      "transcript-update",
+      (event) => {
+        setSegments(event.payload);
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  // Listen for transcription status
+  useEffect(() => {
+    const unlisten = listen<TranscriptionStatus>(
+      "transcription-status",
+      (event) => {
+        setTranscriptionStatus(event.payload);
+      },
+    );
     return () => {
       unlisten.then((fn) => fn());
     };
@@ -103,6 +127,24 @@ export function RecordingView() {
       navigate("/");
     }
   }, [stopRecording, navigate]);
+
+  // Show error state if recording failed to start
+  if (error && !isRecording) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
+        <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-6 text-center max-w-md">
+          <h2 className="text-lg font-semibold text-foreground mb-2">
+            Recording Failed
+          </h2>
+          <p className="text-sm text-destructive mb-4">{error}</p>
+          <Button variant="outline" onClick={() => navigate("/")}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
@@ -157,9 +199,24 @@ export function RecordingView() {
         <ScrollArea className="h-48 rounded-lg border bg-card p-4">
           <div ref={scrollRef}>
             {segments.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                Listening... your words will show up here
-              </p>
+              transcriptionStatus?.available === false ? (
+                <div className="text-sm text-muted-foreground italic">
+                  <p>{transcriptionStatus.reason}</p>
+                  <p className="mt-2">
+                    <Link
+                      to="/settings"
+                      className="text-primary underline underline-offset-2"
+                    >
+                      Download models in Settings
+                    </Link>{" "}
+                    to enable live transcription.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">
+                  Listening... your words will show up here
+                </p>
+              )
             ) : (
               <div className="space-y-2">
                 {segments.map((seg) => (

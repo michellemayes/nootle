@@ -11,12 +11,25 @@ use anyhow::{anyhow, Context};
 use ndarray::Array2;
 use ort::session::Session;
 use ort::value::Tensor;
+use rustfft::num_complex::Complex;
+use rustfft::FftPlanner;
+use std::f32::consts::PI;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 const SAMPLE_RATE: u32 = 16000;
 const MODEL_DIR_NAME: &str = "parakeet-tdt-0.6b-v3";
+
+// Mel spectrogram parameters matching NeMo's AudioToMelSpectrogramPreprocessor
+const N_FFT: usize = 512;
+const HOP_LENGTH: usize = 160; // 10ms at 16kHz
+const WIN_LENGTH: usize = 400; // 25ms at 16kHz
+const N_MELS: usize = 128; // Parakeet 0.6B uses 128 mel bins
+const F_MIN: f32 = 0.0;
+const F_MAX: f32 = 8000.0; // Nyquist for 16kHz
+const PREEMPHASIS: f32 = 0.97;
+const LOG_ZERO_GUARD: f32 = 1e-10;
 
 /// A single transcription segment with timing.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -43,6 +56,7 @@ pub struct TranscriptionEngine {
     #[allow(dead_code)]
     model_dir: PathBuf,
     vocab: Vec<String>,
+    mel_filterbank: Array2<f32>,
 }
 
 impl TranscriptionEngine {
@@ -113,8 +127,35 @@ impl TranscriptionEngine {
             })
             .collect();
 
+        let mel_filterbank = create_mel_filterbank(N_FFT, N_MELS, SAMPLE_RATE, F_MIN, F_MAX);
+
+        // Log model input/output names for debugging
+        let encoder_inputs: Vec<_> = encoder
+            .inputs()
+            .iter()
+            .map(|i| i.name().to_string())
+            .collect();
+        let encoder_outputs: Vec<_> = encoder
+            .outputs()
+            .iter()
+            .map(|o| o.name().to_string())
+            .collect();
+        let decoder_inputs: Vec<_> = decoder
+            .inputs()
+            .iter()
+            .map(|i| i.name().to_string())
+            .collect();
+        let decoder_outputs: Vec<_> = decoder
+            .outputs()
+            .iter()
+            .map(|o| o.name().to_string())
+            .collect();
         tracing::info!(
             vocab_size = vocab.len(),
+            ?encoder_inputs,
+            ?encoder_outputs,
+            ?decoder_inputs,
+            ?decoder_outputs,
             "Transcription engine loaded with CoreML acceleration"
         );
 
@@ -123,54 +164,82 @@ impl TranscriptionEngine {
             decoder,
             model_dir,
             vocab,
+            mel_filterbank,
         })
     }
 
     /// Compute mel spectrogram from raw audio samples (16kHz mono f32).
     ///
-    /// Uses 80-channel mel filterbank with 25ms window and 10ms hop.
-    fn compute_mel_spectrogram(audio: &[f32]) -> Array2<f32> {
-        let hop_length = 160; // 10ms at 16kHz
-        let win_length = 400; // 25ms at 16kHz
-        let n_mels = 80;
+    /// Pipeline: preemphasis -> frame + Hann window -> FFT -> power spectrum
+    ///           -> mel filterbank -> log -> per-feature normalization
+    fn compute_mel_spectrogram(&self, audio: &[f32]) -> Array2<f32> {
+        // 1. Preemphasis: y[n] = x[n] - 0.97 * x[n-1]
+        let audio = apply_preemphasis(audio, PREEMPHASIS);
 
-        let n_frames = if audio.len() > win_length {
-            (audio.len() - win_length) / hop_length + 1
+        let n_frames = if audio.len() >= WIN_LENGTH {
+            (audio.len() - WIN_LENGTH) / HOP_LENGTH + 1
         } else {
-            1
+            return Array2::zeros((N_MELS, 1));
         };
 
-        let n_fft = 512;
-        let mut mel = Array2::zeros((n_mels, n_frames));
+        // Precompute Hann window
+        let hann: Vec<f32> = (0..WIN_LENGTH)
+            .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / WIN_LENGTH as f32).cos()))
+            .collect();
+
+        let mut planner = FftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(N_FFT);
+
+        // Number of unique FFT bins (real signal symmetry)
+        let n_freq = N_FFT / 2 + 1;
+        let mut mel = Array2::zeros((N_MELS, n_frames));
 
         for frame_idx in 0..n_frames {
-            let start = frame_idx * hop_length;
-            let end = (start + n_fft).min(audio.len());
+            let start = frame_idx * HOP_LENGTH;
 
-            let frame_len = end - start;
-            if frame_len == 0 {
-                continue;
+            // 2. Window the frame and zero-pad to N_FFT
+            let mut fft_buf: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); N_FFT];
+            for i in 0..WIN_LENGTH {
+                if start + i < audio.len() {
+                    fft_buf[i] = Complex::new(audio[start + i] * hann[i], 0.0);
+                }
             }
 
-            let energy: f32 =
-                audio[start..end].iter().map(|s| s * s).sum::<f32>() / frame_len as f32;
-            let log_energy = (energy.max(1e-10)).ln();
+            // 3. FFT
+            fft.process(&mut fft_buf);
 
-            for mel_idx in 0..n_mels {
-                let freq_ratio = mel_idx as f32 / n_mels as f32;
-                let band_start = (start as f32 + freq_ratio * frame_len as f32) as usize;
-                let band_end = (band_start + frame_len / n_mels).min(end);
+            // 4. Power spectrum: |FFT[k]|^2 / N_FFT
+            let power: Vec<f32> = fft_buf[..n_freq]
+                .iter()
+                .map(|c| (c.re * c.re + c.im * c.im) / N_FFT as f32)
+                .collect();
 
-                if band_start < end && band_end > band_start {
-                    let band_energy: f32 = audio[band_start..band_end]
-                        .iter()
-                        .map(|s| s * s)
-                        .sum::<f32>()
-                        / (band_end - band_start) as f32;
-                    mel[[mel_idx, frame_idx]] = (band_energy.max(1e-10)).ln();
-                } else {
-                    mel[[mel_idx, frame_idx]] = log_energy;
+            // 5. Apply mel filterbank and log
+            for mel_idx in 0..N_MELS {
+                let mut energy: f32 = 0.0;
+                for (k, &p) in power.iter().enumerate().take(n_freq) {
+                    energy += self.mel_filterbank[[mel_idx, k]] * p;
                 }
+                mel[[mel_idx, frame_idx]] = (energy + LOG_ZERO_GUARD).ln();
+            }
+        }
+
+        // 6. Per-feature normalization (mean=0, std=1 per mel bin)
+        for mel_idx in 0..N_MELS {
+            let mut sum = 0.0f64;
+            let mut sum_sq = 0.0f64;
+            for frame_idx in 0..n_frames {
+                let v = mel[[mel_idx, frame_idx]] as f64;
+                sum += v;
+                sum_sq += v * v;
+            }
+            let mean = sum / n_frames as f64;
+            let variance = (sum_sq / n_frames as f64) - mean * mean;
+            let std = variance.max(1e-10).sqrt();
+
+            for frame_idx in 0..n_frames {
+                mel[[mel_idx, frame_idx]] =
+                    ((mel[[mel_idx, frame_idx]] as f64 - mean) / std) as f32;
             }
         }
 
@@ -190,7 +259,7 @@ impl TranscriptionEngine {
         }
 
         // 1. Compute mel spectrogram
-        let mel = Self::compute_mel_spectrogram(audio);
+        let mel = self.compute_mel_spectrogram(audio);
         let (n_mels, n_frames) = mel.dim();
 
         // 2. Run encoder: mel [1, n_mels, n_frames] -> encoded [1, T, D]
@@ -210,15 +279,28 @@ impl TranscriptionEngine {
             "encoded_lengths" => &encoder_outputs[1],
         ])?;
 
-        // 4. Decode token IDs to text
-        let (_, token_data) = decoder_outputs[0].try_extract_tensor::<i64>()?;
+        // 4. Decode token IDs to text (try i64, fall back to i32)
+        let token_ids: Vec<i64> =
+            if let Ok((_, data)) = decoder_outputs[0].try_extract_tensor::<i64>() {
+                data.to_vec()
+            } else if let Ok((_, data)) = decoder_outputs[0].try_extract_tensor::<i32>() {
+                data.iter().map(|&x| x as i64).collect()
+            } else {
+                return Err(anyhow!("Decoder output is neither i64 nor i32"));
+            };
 
         let mut text = String::new();
-        for &id in token_data.iter() {
+        for &id in &token_ids {
             let id = id as usize;
             if id < self.vocab.len() {
                 let token = &self.vocab[id];
-                if token == "<unk>" || token == "<pad>" || token.starts_with("<|") {
+                if token == "<unk>"
+                    || token == "<pad>"
+                    || token == "<blank>"
+                    || token == "<s>"
+                    || token == "</s>"
+                    || token.starts_with("<|")
+                {
                     continue;
                 }
                 // Handle SentencePiece underscore prefix (word boundary)
@@ -248,6 +330,78 @@ impl TranscriptionEngine {
         }])
     }
 }
+
+// ── Mel spectrogram helpers ──────────────────────────────────────────────────
+
+/// Apply preemphasis filter: y[n] = x[n] - coeff * x[n-1]
+fn apply_preemphasis(audio: &[f32], coeff: f32) -> Vec<f32> {
+    if audio.is_empty() {
+        return vec![];
+    }
+    let mut out = Vec::with_capacity(audio.len());
+    out.push(audio[0]);
+    for i in 1..audio.len() {
+        out.push(audio[i] - coeff * audio[i - 1]);
+    }
+    out
+}
+
+/// Convert frequency in Hz to mel scale.
+fn hz_to_mel(hz: f32) -> f32 {
+    2595.0 * (1.0 + hz / 700.0).log10()
+}
+
+/// Convert mel scale value to Hz.
+fn mel_to_hz(mel: f32) -> f32 {
+    700.0 * (10.0_f32.powf(mel / 2595.0) - 1.0)
+}
+
+/// Create a mel filterbank matrix of shape [n_mels, n_fft/2 + 1].
+///
+/// Each row is a triangular filter centered on a mel-spaced frequency.
+fn create_mel_filterbank(
+    n_fft: usize,
+    n_mels: usize,
+    sample_rate: u32,
+    f_min: f32,
+    f_max: f32,
+) -> Array2<f32> {
+    let n_freq = n_fft / 2 + 1;
+    let mel_min = hz_to_mel(f_min);
+    let mel_max = hz_to_mel(f_max);
+
+    // n_mels + 2 points to define n_mels triangular filters
+    let mel_points: Vec<f32> = (0..=(n_mels + 1))
+        .map(|i| mel_min + (mel_max - mel_min) * i as f32 / (n_mels + 1) as f32)
+        .collect();
+
+    // Convert mel points to FFT bin indices
+    let bin_points: Vec<f32> = mel_points
+        .iter()
+        .map(|&m| mel_to_hz(m) * n_fft as f32 / sample_rate as f32)
+        .collect();
+
+    let mut filterbank = Array2::zeros((n_mels, n_freq));
+
+    for m in 0..n_mels {
+        let f_left = bin_points[m];
+        let f_center = bin_points[m + 1];
+        let f_right = bin_points[m + 2];
+
+        for k in 0..n_freq {
+            let freq = k as f32;
+            if freq >= f_left && freq <= f_center && f_center > f_left {
+                filterbank[[m, k]] = (freq - f_left) / (f_center - f_left);
+            } else if freq > f_center && freq <= f_right && f_right > f_center {
+                filterbank[[m, k]] = (f_right - freq) / (f_right - f_center);
+            }
+        }
+    }
+
+    filterbank
+}
+
+// ── Shared engine ────────────────────────────────────────────────────────────
 
 /// Thread-safe handle to the transcription engine for use across async tasks.
 pub type SharedTranscriptionEngine = Arc<Mutex<Option<TranscriptionEngine>>>;
@@ -308,11 +462,63 @@ mod tests {
     }
 
     #[test]
-    fn test_mel_spectrogram_dimensions() {
-        // 1 second of silence at 16kHz
-        let audio = vec![0.0f32; 16000];
-        let mel = TranscriptionEngine::compute_mel_spectrogram(&audio);
-        let (n_mels, _n_frames) = mel.dim();
-        assert_eq!(n_mels, 80);
+    fn test_mel_filterbank_shape() {
+        let fb = create_mel_filterbank(N_FFT, N_MELS, SAMPLE_RATE, F_MIN, F_MAX);
+        assert_eq!(fb.dim(), (N_MELS, N_FFT / 2 + 1));
+    }
+
+    #[test]
+    fn test_mel_filterbank_non_negative() {
+        let fb = create_mel_filterbank(N_FFT, N_MELS, SAMPLE_RATE, F_MIN, F_MAX);
+        for &v in fb.iter() {
+            assert!(v >= 0.0, "Filterbank values must be non-negative");
+        }
+    }
+
+    #[test]
+    fn test_mel_filterbank_speech_filters_nonzero() {
+        let fb = create_mel_filterbank(N_FFT, N_MELS, SAMPLE_RATE, F_MIN, F_MAX);
+        // Skip the lowest filters (< ~50 Hz) which may be all-zero because
+        // their triangles are narrower than one FFT bin. Speech energy is
+        // above 80 Hz so this is fine.
+        let mut nonzero_count = 0;
+        for m in 0..N_MELS {
+            let sum: f32 = (0..N_FFT / 2 + 1).map(|k| fb[[m, k]]).sum();
+            if sum > 0.0 {
+                nonzero_count += 1;
+            }
+        }
+        // At least 120 of 128 filters should have nonzero response
+        assert!(
+            nonzero_count >= 120,
+            "Only {nonzero_count}/128 filters have nonzero response"
+        );
+    }
+
+    #[test]
+    fn test_preemphasis() {
+        let audio = vec![1.0, 2.0, 3.0, 4.0];
+        let out = apply_preemphasis(&audio, 0.97);
+        assert_eq!(out.len(), 4);
+        assert!((out[0] - 1.0).abs() < 1e-6);
+        assert!((out[1] - (2.0 - 0.97)).abs() < 1e-6);
+        assert!((out[2] - (3.0 - 0.97 * 2.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_hz_mel_roundtrip() {
+        for hz in [0.0, 100.0, 440.0, 1000.0, 4000.0, 8000.0] {
+            let roundtrip = mel_to_hz(hz_to_mel(hz));
+            assert!(
+                (roundtrip - hz).abs() < 0.01,
+                "Roundtrip failed for {hz}: got {roundtrip}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_preemphasis_empty() {
+        let out = apply_preemphasis(&[], 0.97);
+        assert!(out.is_empty());
     }
 }

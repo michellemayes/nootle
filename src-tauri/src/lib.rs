@@ -243,6 +243,7 @@ pub fn run() {
             commands::start_recording,
             commands::stop_recording,
             commands::is_recording,
+            commands::get_audio_data,
             commands::store_api_key,
             commands::has_api_key,
             commands::delete_api_key,
