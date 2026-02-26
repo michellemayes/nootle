@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,8 @@ import { usePrompts } from "@/hooks/usePrompts";
 import { useLLM } from "@/hooks/useLLM";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import type { LinearTicket, LinearTeam, LinearProject, ModelInfo, InsightWithActionItem } from "@/types";
-import { ArrowLeft, MessageSquare, FileText, Play, Check, RotateCw, Lightbulb, ListChecks, Star } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star } from "lucide-react";
 
 const speakerColors = [
   "text-blue-400",
@@ -41,6 +42,13 @@ function formatDate(dateStr: string): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function formatPlayerTime(seconds: number): string {
+  if (!seconds || !isFinite(seconds)) return "00:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 function ActionItemRow({
@@ -589,6 +597,14 @@ export function MeetingDetail() {
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
 
+  // Audio player state
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
   // Default selections
   useEffect(() => {
     if (prompts.length > 0 && !selectedPrompt) {
@@ -612,6 +628,57 @@ export function MeetingDetail() {
       }
     }
   }, [selectedProvider, models, selectedModel]);
+
+  // Load audio data
+  useEffect(() => {
+    if (!id || !meeting?.audio_path) return;
+    setAudioLoading(true);
+    invoke<string | null>("get_audio_data", { meetingId: id })
+      .then((base64) => {
+        if (base64) {
+          setAudioSrc(`data:audio/wav;base64,${base64}`);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setAudioLoading(false));
+  }, [id, meeting?.audio_path]);
+
+  // Audio time update
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onDuration = () => setDuration(audio.duration);
+    const onEnded = () => setIsPlaying(false);
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("loadedmetadata", onDuration);
+    audio.addEventListener("ended", onEnded);
+    return () => {
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("loadedmetadata", onDuration);
+      audio.removeEventListener("ended", onEnded);
+    };
+  }, [audioSrc]);
+
+  const togglePlayback = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      audio.play();
+      setIsPlaying(true);
+    }
+  }, [isPlaying]);
+
+  const seekAudio = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    audio.currentTime = ratio * duration;
+  }, [duration]);
 
   // Speaker color map
   const speakerMap = new Map<string, string>();
@@ -852,21 +919,42 @@ export function MeetingDetail() {
         </div>
       </div>
 
-      {/* Audio player skeleton */}
+      {/* Audio player */}
       <div className="border-t px-8 py-3">
+        {audioSrc && <audio ref={audioRef} src={audioSrc} preload="metadata" />}
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon-sm" disabled>
-            <Play className="h-4 w-4" />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            disabled={!audioSrc || audioLoading}
+            onClick={togglePlayback}
+          >
+            {isPlaying ? (
+              <Pause className="h-4 w-4" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
           </Button>
-          <div className="flex-1">
+          <div
+            className="flex-1 cursor-pointer"
+            onClick={audioSrc ? seekAudio : undefined}
+          >
             <div className="h-1.5 rounded-full bg-muted">
-              <div className="h-1.5 w-0 rounded-full bg-primary" />
+              <div
+                className="h-1.5 rounded-full bg-primary transition-all duration-150"
+                style={{
+                  width: duration > 0 ? `${(currentTime / duration) * 100}%` : "0%",
+                }}
+              />
             </div>
           </div>
           <span className="text-xs font-mono text-muted-foreground tabular-nums">
-            00:00 / 00:00
+            {formatPlayerTime(currentTime)} / {formatPlayerTime(duration)}
           </span>
         </div>
+        {!audioSrc && !audioLoading && meeting?.audio_path && (
+          <p className="text-xs text-muted-foreground mt-1">Audio file not found</p>
+        )}
       </div>
 
       {/* Chat panel */}

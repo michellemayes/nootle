@@ -484,6 +484,26 @@ pub async fn is_recording(recording: State<'_, RecordingState>) -> Result<bool, 
     Ok(session.is_some())
 }
 
+/// Read an audio file and return it as base64-encoded WAV data.
+#[tauri::command]
+pub async fn get_audio_data(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Option<String>, String> {
+    let meeting = db.get_meeting(&meeting_id).map_err(|e| e.to_string())?;
+    let audio_path = match meeting.audio_path {
+        Some(p) if !p.is_empty() => p,
+        _ => return Ok(None),
+    };
+    let path = std::path::Path::new(&audio_path);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let data = std::fs::read(path).map_err(|e| format!("Failed to read audio file: {e}"))?;
+    use base64::Engine;
+    Ok(Some(base64::engine::general_purpose::STANDARD.encode(&data)))
+}
+
 // Keychain commands
 #[tauri::command]
 pub async fn store_api_key(

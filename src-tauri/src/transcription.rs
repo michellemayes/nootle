@@ -129,8 +129,33 @@ impl TranscriptionEngine {
 
         let mel_filterbank = create_mel_filterbank(N_FFT, N_MELS, SAMPLE_RATE, F_MIN, F_MAX);
 
+        // Log model input/output names for debugging
+        let encoder_inputs: Vec<_> = encoder
+            .inputs()
+            .iter()
+            .map(|i| i.name().to_string())
+            .collect();
+        let encoder_outputs: Vec<_> = encoder
+            .outputs()
+            .iter()
+            .map(|o| o.name().to_string())
+            .collect();
+        let decoder_inputs: Vec<_> = decoder
+            .inputs()
+            .iter()
+            .map(|i| i.name().to_string())
+            .collect();
+        let decoder_outputs: Vec<_> = decoder
+            .outputs()
+            .iter()
+            .map(|o| o.name().to_string())
+            .collect();
         tracing::info!(
             vocab_size = vocab.len(),
+            ?encoder_inputs,
+            ?encoder_outputs,
+            ?decoder_inputs,
+            ?decoder_outputs,
             "Transcription engine loaded with CoreML acceleration"
         );
 
@@ -254,15 +279,28 @@ impl TranscriptionEngine {
             "encoded_lengths" => &encoder_outputs[1],
         ])?;
 
-        // 4. Decode token IDs to text
-        let (_, token_data) = decoder_outputs[0].try_extract_tensor::<i64>()?;
+        // 4. Decode token IDs to text (try i64, fall back to i32)
+        let token_ids: Vec<i64> =
+            if let Ok((_, data)) = decoder_outputs[0].try_extract_tensor::<i64>() {
+                data.iter().copied().collect()
+            } else if let Ok((_, data)) = decoder_outputs[0].try_extract_tensor::<i32>() {
+                data.iter().map(|&x| x as i64).collect()
+            } else {
+                return Err(anyhow!("Decoder output is neither i64 nor i32"));
+            };
 
         let mut text = String::new();
-        for &id in token_data.iter() {
+        for &id in &token_ids {
             let id = id as usize;
             if id < self.vocab.len() {
                 let token = &self.vocab[id];
-                if token == "<unk>" || token == "<pad>" || token.starts_with("<|") {
+                if token == "<unk>"
+                    || token == "<pad>"
+                    || token == "<blank>"
+                    || token == "<s>"
+                    || token == "</s>"
+                    || token.starts_with("<|")
+                {
                     continue;
                 }
                 // Handle SentencePiece underscore prefix (word boundary)
