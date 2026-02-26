@@ -3,6 +3,7 @@ pub mod commands;
 pub mod db;
 pub mod detection;
 pub mod diarization;
+pub mod embedding;
 pub mod error;
 pub mod keychain;
 pub mod linear;
