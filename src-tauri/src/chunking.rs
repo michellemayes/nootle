@@ -49,8 +49,7 @@ pub fn chunk_segments(
             let mut j = i;
             while j > overlap_start_idx && overlap_tokens < OVERLAP_TOKENS {
                 let prev = &segments[j - 1];
-                overlap_tokens +=
-                    token_count(&format!("{}: {}", prev.speaker_label, prev.text));
+                overlap_tokens += token_count(&format!("{}: {}", prev.speaker_label, prev.text));
                 j -= 1;
             }
             overlap_start_idx = i;

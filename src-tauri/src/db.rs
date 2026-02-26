@@ -263,9 +263,7 @@ impl Database {
         use std::sync::Once;
         static INIT: Once = Once::new();
         INIT.call_once(|| unsafe {
-            sqlite3_auto_extension(Some(std::mem::transmute(
-                sqlite3_vec_init as *const (),
-            )));
+            sqlite3_auto_extension(Some(std::mem::transmute(sqlite3_vec_init as *const ())));
         });
     }
 
@@ -1394,18 +1392,12 @@ impl Database {
         }
 
         if let Some(from) = date_from {
-            sql.push_str(&format!(
-                " AND m.start_time >= ?{}",
-                param_values.len() + 1
-            ));
+            sql.push_str(&format!(" AND m.start_time >= ?{}", param_values.len() + 1));
             param_values.push(Box::new(from.to_string()));
         }
 
         if let Some(to) = date_to {
-            sql.push_str(&format!(
-                " AND m.start_time <= ?{}",
-                param_values.len() + 1
-            ));
+            sql.push_str(&format!(" AND m.start_time <= ?{}", param_values.len() + 1));
             param_values.push(Box::new(to.to_string()));
         }
 

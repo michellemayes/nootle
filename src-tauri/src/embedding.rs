@@ -118,10 +118,7 @@ impl EmbeddingEngine {
 
         let dims: Vec<usize> = shape.iter().map(|&d| d as usize).collect();
         if dims.len() < 3 {
-            return Err(anyhow!(
-                "Unexpected embedding output shape: {:?}",
-                dims
-            ));
+            return Err(anyhow!("Unexpected embedding output shape: {:?}", dims));
         }
 
         let n_tokens = dims[1];
