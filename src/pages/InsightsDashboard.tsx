@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
@@ -146,11 +146,11 @@ export function InsightsDashboard() {
     searchDebounced,
   );
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const handleSearchChange = (value: string) => {
     setSearch(value);
-    // Simple debounce via timeout
-    clearTimeout((window as Record<string, ReturnType<typeof setTimeout>>).__insightSearchTimeout);
-    (window as Record<string, ReturnType<typeof setTimeout>>).__insightSearchTimeout = setTimeout(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
       setSearchDebounced(value || undefined);
     }, 300);
   };

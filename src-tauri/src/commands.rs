@@ -326,6 +326,7 @@ async fn run_transcription_pipeline(
 #[tauri::command]
 pub async fn stop_recording(
     db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
     recording: State<'_, RecordingState>,
 ) -> Result<Meeting, String> {
     let mut session = {
@@ -352,6 +353,37 @@ pub async fn stop_recording(
     let end_time = chrono::Utc::now().to_rfc3339();
     db.finalize_meeting(&meeting_id, &end_time, Some(&audio_path), "transcribing")
         .map_err(|e| e.to_string())?;
+
+    // Auto-extract insights if an LLM provider is configured
+    {
+        let db_clone = db.inner().clone();
+        let llm_clone = llm.inner().clone();
+        let mid = meeting_id.clone();
+        tokio::spawn(async move {
+            let registry = llm_clone.read().await;
+            let providers = registry.provider_names();
+            if let Some(provider_name) = providers.first() {
+                let models = registry.all_models();
+                let provider_models: Vec<_> = models
+                    .iter()
+                    .filter(|m| m.provider == *provider_name)
+                    .collect();
+                if let Some(model) = provider_models.first() {
+                    if let Err(e) = crate::extraction::extract_insights(
+                        &db_clone,
+                        &registry,
+                        &mid,
+                        provider_name,
+                        &model.id,
+                    )
+                    .await
+                    {
+                        tracing::warn!("Auto-extraction failed: {e}");
+                    }
+                }
+            }
+        });
+    }
 
     // Return the updated meeting
     db.get_meeting(&meeting_id).map_err(|e| e.to_string())
