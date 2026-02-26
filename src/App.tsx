@@ -10,6 +10,7 @@ import { PromptsPage } from "@/pages/Prompts";
 import { TemplatesPage } from "@/pages/Templates";
 import { SettingsPage } from "@/pages/Settings";
 import { HelpPage } from "@/pages/Help";
+import { InsightsDashboard } from "@/pages/InsightsDashboard";
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -42,6 +43,14 @@ function App() {
             element={
               <Layout>
                 <MeetingLibrary />
+              </Layout>
+            }
+          />
+          <Route
+            path="/insights"
+            element={
+              <Layout>
+                <InsightsDashboard />
               </Layout>
             }
           />
