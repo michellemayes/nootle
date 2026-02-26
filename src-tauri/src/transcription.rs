@@ -217,8 +217,8 @@ impl TranscriptionEngine {
             // 5. Apply mel filterbank and log
             for mel_idx in 0..N_MELS {
                 let mut energy: f32 = 0.0;
-                for k in 0..n_freq {
-                    energy += self.mel_filterbank[[mel_idx, k]] * power[k];
+                for (k, &p) in power.iter().enumerate().take(n_freq) {
+                    energy += self.mel_filterbank[[mel_idx, k]] * p;
                 }
                 mel[[mel_idx, frame_idx]] = (energy + LOG_ZERO_GUARD).ln();
             }
@@ -282,7 +282,7 @@ impl TranscriptionEngine {
         // 4. Decode token IDs to text (try i64, fall back to i32)
         let token_ids: Vec<i64> =
             if let Ok((_, data)) = decoder_outputs[0].try_extract_tensor::<i64>() {
-                data.iter().copied().collect()
+                data.to_vec()
             } else if let Ok((_, data)) = decoder_outputs[0].try_extract_tensor::<i32>() {
                 data.iter().map(|&x| x as i64).collect()
             } else {
