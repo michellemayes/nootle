@@ -59,7 +59,11 @@ impl NootleMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let meetings = self
             .db
-            .list_meetings(params.category_id.as_deref(), params.search.as_deref(), false)
+            .list_meetings(
+                params.category_id.as_deref(),
+                params.search.as_deref(),
+                false,
+            )
             .map_err(|e| {
                 McpError::internal_error(format!("Failed to list meetings: {}", e), None)
             })?;

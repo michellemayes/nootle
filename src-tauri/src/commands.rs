@@ -50,8 +50,12 @@ pub fn list_meetings(
     search: Option<String>,
     include_archived: Option<bool>,
 ) -> Result<Vec<Meeting>, String> {
-    db.list_meetings(category_id.as_deref(), search.as_deref(), include_archived.unwrap_or(false))
-        .map_err(|e| e.to_string())
+    db.list_meetings(
+        category_id.as_deref(),
+        search.as_deref(),
+        include_archived.unwrap_or(false),
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
