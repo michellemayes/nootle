@@ -48,8 +48,9 @@ pub fn list_meetings(
     db: State<'_, DbState>,
     category_id: Option<String>,
     search: Option<String>,
+    include_archived: Option<bool>,
 ) -> Result<Vec<Meeting>, String> {
-    db.list_meetings(category_id.as_deref(), search.as_deref())
+    db.list_meetings(category_id.as_deref(), search.as_deref(), include_archived.unwrap_or(false))
         .map_err(|e| e.to_string())
 }
 

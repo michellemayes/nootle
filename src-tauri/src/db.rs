@@ -484,6 +484,7 @@ impl Database {
         &self,
         category_id: Option<&str>,
         search: Option<&str>,
+        include_archived: bool,
     ) -> Result<Vec<Meeting>> {
         let conn = self
             .conn
@@ -496,6 +497,10 @@ impl Database {
         );
         let mut conditions: Vec<String> = Vec::new();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if !include_archived {
+            conditions.push("status != 'archived'".to_string());
+        }
 
         if let Some(cat_id) = category_id {
             conditions.push(format!("category_id = ?{}", param_values.len() + 1));
