@@ -42,6 +42,7 @@ hound = "3.5"
 cidre = { version = "0.14", features = ["av"], optional = true }
 ort = { version = "2.0.0-rc.11", features = ["coreml", "ndarray"] }
 ndarray = "0.16"
+rustfft = "6"
 block2 = "0.6"
 objc2 = "0.6"
 sysinfo = "0.32"
