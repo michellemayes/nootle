@@ -1,0 +1,436 @@
+import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { MotionButton } from "@/components/MotionButton";
+import { ThinkingDots } from "@/components/ThinkingDots";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Markdown } from "@/components/Markdown";
+import { useGlobalChat } from "@/hooks/useGlobalChat";
+import { useCategories } from "@/hooks/useCategories";
+import { useLLM } from "@/hooks/useLLM";
+import type { ChatSource } from "@/types";
+import {
+  X,
+  MessageSquare,
+  GripHorizontal,
+} from "lucide-react";
+
+const DATE_PRESETS = [
+  { label: "Last 7 days", days: 7 },
+  { label: "Last 30 days", days: 30 },
+  { label: "Last 90 days", days: 90 },
+  { label: "All time", days: null },
+] as const;
+
+function formatTimestamp(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function SourceCitation({
+  source,
+  onClick,
+}: {
+  source: ChatSource;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20 transition-colors"
+    >
+      {source.meeting_title}, {formatTimestamp(source.start_ms)}
+    </button>
+  );
+}
+
+export function GlobalChatPanel() {
+  const [open, setOpen] = useState(false);
+  const {
+    messages,
+    loading,
+    error,
+    sendMessage,
+    clearMessages,
+    categoryIds,
+    setFilters,
+    embeddingStatus,
+    embedAllMeetings,
+  } = useGlobalChat();
+  const { categories } = useCategories();
+  const { models, providers } = useLLM();
+  const navigate = useNavigate();
+
+  const [input, setInput] = useState("");
+  const [selectedProvider, setSelectedProvider] = useState("");
+  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedDatePreset, setSelectedDatePreset] = useState(3); // "All time"
+  const [embedding, setEmbedding] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Dragging state
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
+
+  // Default provider/model
+  useEffect(() => {
+    if (providers.length > 0 && !selectedProvider) {
+      setSelectedProvider(providers[0]);
+    }
+  }, [providers, selectedProvider]);
+
+  useEffect(() => {
+    if (selectedProvider && models.length > 0 && !selectedModel) {
+      const providerModels = models.filter(
+        (m) => m.provider === selectedProvider
+      );
+      if (providerModels.length > 0) {
+        setSelectedModel(providerModels[0].id);
+      }
+    }
+  }, [selectedProvider, models, selectedModel]);
+
+  // Auto-scroll
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const handleSend = async () => {
+    if (!input.trim() || !selectedProvider || !selectedModel) return;
+    const msg = input;
+    setInput("");
+    await sendMessage(msg, selectedProvider, selectedModel);
+  };
+
+  const handleDatePresetChange = (idx: number) => {
+    setSelectedDatePreset(idx);
+    const preset = DATE_PRESETS[idx];
+    const dateFrom = preset.days
+      ? new Date(Date.now() - preset.days * 86400000).toISOString()
+      : null;
+    setFilters(categoryIds, dateFrom, null);
+  };
+
+  const handleEmbedAll = async () => {
+    setEmbedding(true);
+    await embedAllMeetings();
+    setEmbedding(false);
+  };
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      posX: position.x,
+      posY: position.y,
+    };
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const handleMove = (e: MouseEvent) => {
+      setPosition({
+        x: dragStartRef.current.posX + (e.clientX - dragStartRef.current.x),
+        y: dragStartRef.current.posY + (e.clientY - dragStartRef.current.y),
+      });
+    };
+    const handleUp = () => setIsDragging(false);
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [isDragging]);
+
+  const filteredModels = models.filter(
+    (m) => m.provider === selectedProvider
+  );
+
+  const modelNotReady =
+    embeddingStatus && !embeddingStatus.model_available;
+  const needsBackfill =
+    embeddingStatus &&
+    embeddingStatus.model_available &&
+    embeddingStatus.embedded < embeddingStatus.total;
+
+  return (
+    <>
+      {/* Floating Action Button */}
+      <AnimatePresence>
+        {!open && (
+          <motion.button
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            exit={{ scale: 0 }}
+            onClick={() => setOpen(true)}
+            className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-shadow"
+            title="Ask across meetings"
+          >
+            <MessageSquare className="h-5 w-5" />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* Chat Panel */}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            style={{
+              transform: `translate(${position.x}px, ${position.y}px)`,
+            }}
+            className="fixed bottom-6 right-6 z-50 flex w-[400px] h-[600px] flex-col rounded-xl border bg-background shadow-2xl"
+          >
+            {/* Header */}
+            <div
+              onMouseDown={handleDragStart}
+              className="flex items-center justify-between px-4 py-3 border-b cursor-grab active:cursor-grabbing select-none"
+            >
+              <div className="flex items-center gap-2">
+                <GripHorizontal className="h-4 w-4 text-muted-foreground" />
+                <h3 className="font-semibold text-sm">
+                  Ask across meetings
+                </h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-col gap-2 px-4 py-2 border-b">
+              <div className="flex items-center gap-2">
+                <select
+                  multiple
+                  value={categoryIds}
+                  onChange={(e) => {
+                    const selected = Array.from(
+                      e.target.selectedOptions,
+                      (o) => o.value
+                    );
+                    const preset = DATE_PRESETS[selectedDatePreset];
+                    const dateFrom = preset.days
+                      ? new Date(
+                          Date.now() - preset.days * 86400000
+                        ).toISOString()
+                      : null;
+                    setFilters(selected, dateFrom, null);
+                  }}
+                  className="h-7 w-full rounded-md border bg-transparent px-2 text-xs"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedDatePreset}
+                  onChange={(e) =>
+                    handleDatePresetChange(Number(e.target.value))
+                  }
+                  className="h-7 rounded-md border bg-transparent px-2 text-xs"
+                >
+                  {DATE_PRESETS.map((preset, i) => (
+                    <option key={i} value={i}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {embeddingStatus && (
+                <p className="text-xs text-muted-foreground">
+                  {embeddingStatus.embedded} of {embeddingStatus.total}{" "}
+                  meetings indexed
+                </p>
+              )}
+            </div>
+
+            {/* Messages */}
+            <ScrollArea className="flex-1">
+              <div
+                ref={scrollRef}
+                className="flex flex-col gap-3 p-4"
+              >
+                {modelNotReady && (
+                  <div className="rounded-lg bg-muted p-4 text-center text-sm text-muted-foreground">
+                    <p className="mb-2">
+                      Download the embedding model in Settings to
+                      search across meetings.
+                    </p>
+                  </div>
+                )}
+
+                {!modelNotReady && needsBackfill && (
+                  <div className="rounded-lg bg-muted p-4 text-center text-sm">
+                    <p className="mb-2 text-muted-foreground">
+                      {embeddingStatus!.total -
+                        embeddingStatus!.embedded}{" "}
+                      meetings need indexing for search.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={handleEmbedAll}
+                      disabled={embedding}
+                    >
+                      {embedding ? "Indexing..." : "Index All"}
+                    </Button>
+                  </div>
+                )}
+
+                {messages.length === 0 &&
+                  !modelNotReady &&
+                  !needsBackfill && (
+                    <p className="text-center text-sm text-muted-foreground py-8">
+                      Ask anything about your meetings
+                    </p>
+                  )}
+
+                {messages.map((msg, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                        msg.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-foreground"
+                      }`}
+                    >
+                      {msg.role === "assistant" ? (
+                        <Markdown content={msg.content} />
+                      ) : (
+                        msg.content
+                      )}
+                      {msg.sources && msg.sources.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {msg.sources.map((source, j) => (
+                            <SourceCitation
+                              key={j}
+                              source={source}
+                              onClick={() => {
+                                setOpen(false);
+                                navigate(
+                                  `/meeting/${source.meeting_id}`
+                                );
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
+
+                {loading && (
+                  <div className="flex justify-start">
+                    <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+                      <ThinkingDots />
+                    </div>
+                  </div>
+                )}
+
+                {error && (
+                  <p className="text-xs text-destructive text-center">
+                    {error}
+                  </p>
+                )}
+              </div>
+            </ScrollArea>
+
+            <Separator />
+
+            {/* Provider/Model selector */}
+            <div className="flex items-center gap-2 px-4 py-2 border-b">
+              <select
+                value={selectedProvider}
+                onChange={(e) => {
+                  setSelectedProvider(e.target.value);
+                  setSelectedModel("");
+                }}
+                className="h-7 flex-1 rounded-md border bg-transparent px-2 text-xs"
+              >
+                <option value="">Provider</option>
+                {providers.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="h-7 flex-1 rounded-md border bg-transparent px-2 text-xs"
+              >
+                <option value="">Model</option>
+                {filteredModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Input */}
+            <div className="flex items-center gap-2 p-3">
+              <Input
+                placeholder="Ask about your meetings..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                disabled={loading || !!modelNotReady}
+                className="flex-1"
+              />
+              <MotionButton
+                size="sm"
+                onClick={handleSend}
+                disabled={loading || !input.trim() || !!modelNotReady}
+              >
+                Ask
+              </MotionButton>
+            </div>
+
+            {/* Clear button */}
+            <div className="px-3 pb-3">
+              <Button
+                variant="ghost"
+                size="xs"
+                className="w-full text-muted-foreground"
+                onClick={clearMessages}
+              >
+                Clear conversation
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
