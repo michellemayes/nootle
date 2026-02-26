@@ -210,6 +210,7 @@ pub fn run() {
             commands::get_meeting,
             commands::delete_meeting,
             commands::update_meeting_status,
+            commands::update_meeting_category,
             commands::create_category,
             commands::list_categories,
             commands::delete_category,

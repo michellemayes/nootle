@@ -559,6 +559,21 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_meeting_category(&self, id: &str, category_id: Option<&str>) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "UPDATE meetings SET category_id = ?1, updated_at = ?2 WHERE id = ?3",
+            params![category_id, now, id],
+        )?;
+
+        Ok(())
+    }
+
     pub fn finalize_meeting(
         &self,
         id: &str,

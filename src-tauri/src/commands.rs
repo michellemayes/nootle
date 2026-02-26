@@ -77,6 +77,16 @@ pub fn update_meeting_status(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn update_meeting_category(
+    db: State<'_, DbState>,
+    id: String,
+    category_id: Option<String>,
+) -> Result<(), String> {
+    db.update_meeting_category(&id, category_id.as_deref())
+        .map_err(|e| e.to_string())
+}
+
 // Category commands
 #[tauri::command]
 pub fn create_category(
