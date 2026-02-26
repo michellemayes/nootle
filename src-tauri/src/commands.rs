@@ -501,7 +501,9 @@ pub async fn get_audio_data(
     }
     let data = std::fs::read(path).map_err(|e| format!("Failed to read audio file: {e}"))?;
     use base64::Engine;
-    Ok(Some(base64::engine::general_purpose::STANDARD.encode(&data)))
+    Ok(Some(
+        base64::engine::general_purpose::STANDARD.encode(&data),
+    ))
 }
 
 // Keychain commands
