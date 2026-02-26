@@ -1,6 +1,7 @@
 use crate::error::{NootleError, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{ffi::sqlite3_auto_extension, params, Connection};
 use serde::{Deserialize, Serialize};
+use sqlite_vec::sqlite3_vec_init;
 use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,12 +153,52 @@ pub struct TranscriptSearchResult {
     pub end_ms: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptChunk {
+    pub id: String,
+    pub meeting_id: String,
+    pub chunk_index: i32,
+    pub text: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub speaker_labels: String, // JSON array
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChunkSearchResult {
+    pub chunk_id: String,
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub chunk_text: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub speaker_labels: String,
+    pub distance: f64,
+}
+
+/// Convert a f32 slice to a little-endian byte vector for sqlite-vec.
+fn f32_slice_to_bytes(v: &[f32]) -> Vec<u8> {
+    v.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
 
 impl Database {
+    /// Register sqlite-vec as an auto-extension so every new connection loads it.
+    fn ensure_vec_extension() {
+        use std::sync::Once;
+        static INIT: Once = Once::new();
+        INIT.call_once(|| unsafe {
+            sqlite3_auto_extension(Some(std::mem::transmute(
+                sqlite3_vec_init as *const (),
+            )));
+        });
+    }
+
     pub fn new(path: &str) -> Result<Self> {
+        Self::ensure_vec_extension();
         let conn = Connection::open(path)?;
         let db = Self {
             conn: Mutex::new(conn),
@@ -167,6 +208,7 @@ impl Database {
     }
 
     pub fn new_in_memory() -> Result<Self> {
+        Self::ensure_vec_extension();
         let conn = Connection::open_in_memory()?;
         let db = Self {
             conn: Mutex::new(conn),
@@ -276,6 +318,28 @@ impl Database {
             CREATE TRIGGER IF NOT EXISTS summaries_ad AFTER DELETE ON summaries BEGIN
                 INSERT INTO summaries_fts(summaries_fts, rowid, content) VALUES('delete', old.rowid, old.content);
             END;
+
+            CREATE TABLE IF NOT EXISTS transcript_chunks (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                chunk_index INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                start_ms INTEGER NOT NULL,
+                end_ms INTEGER NOT NULL,
+                speaker_labels TEXT NOT NULL DEFAULT '[]'
+            );
+
+            CREATE TABLE IF NOT EXISTS embedding_config (
+                id TEXT PRIMARY KEY,
+                model_name TEXT NOT NULL,
+                dimensions INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(
+                chunk_id TEXT PRIMARY KEY,
+                embedding float[384]
+            );
             ",
         )?;
         Ok(())
@@ -898,5 +962,173 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(results)
+    }
+
+    // --- Transcript Chunks & Embeddings ---
+
+    pub fn insert_chunk(&self, chunk: &TranscriptChunk) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO transcript_chunks (id, meeting_id, chunk_index, text, start_ms, end_ms, speaker_labels)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                chunk.id,
+                chunk.meeting_id,
+                chunk.chunk_index,
+                chunk.text,
+                chunk.start_ms,
+                chunk.end_ms,
+                chunk.speaker_labels
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_chunk_embedding(&self, chunk_id: &str, embedding: &[f32]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let bytes = f32_slice_to_bytes(embedding);
+        conn.execute(
+            "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (?1, ?2)",
+            params![chunk_id, bytes],
+        )?;
+        Ok(())
+    }
+
+    pub fn search_similar_chunks(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+        category_ids: &[String],
+        date_from: Option<&str>,
+        date_to: Option<&str>,
+    ) -> Result<Vec<ChunkSearchResult>> {
+        let conn = self.conn.lock().unwrap();
+        let query_bytes = f32_slice_to_bytes(query_embedding);
+
+        // First get KNN results from vec0, then join with metadata and apply filters.
+        let mut sql = String::from(
+            "SELECT ce.chunk_id, tc.meeting_id, m.title, tc.text, tc.start_ms, tc.end_ms, tc.speaker_labels, ce.distance
+             FROM chunk_embeddings ce
+             JOIN transcript_chunks tc ON tc.id = ce.chunk_id
+             JOIN meetings m ON m.id = tc.meeting_id
+             WHERE ce.embedding MATCH ?1
+             AND ce.k = ?2",
+        );
+
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        param_values.push(Box::new(query_bytes));
+        // Request a larger k to account for post-filtering
+        let k = if category_ids.is_empty() && date_from.is_none() && date_to.is_none() {
+            limit as i64
+        } else {
+            (limit as i64) * 4 // over-fetch to allow for filtering
+        };
+        param_values.push(Box::new(k));
+
+        if !category_ids.is_empty() {
+            let placeholders: Vec<String> = category_ids
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", param_values.len() + i + 1))
+                .collect();
+            sql.push_str(&format!(
+                " AND m.category_id IN ({})",
+                placeholders.join(", ")
+            ));
+            for cat_id in category_ids {
+                param_values.push(Box::new(cat_id.clone()));
+            }
+        }
+
+        if let Some(from) = date_from {
+            sql.push_str(&format!(
+                " AND m.start_time >= ?{}",
+                param_values.len() + 1
+            ));
+            param_values.push(Box::new(from.to_string()));
+        }
+
+        if let Some(to) = date_to {
+            sql.push_str(&format!(
+                " AND m.start_time <= ?{}",
+                param_values.len() + 1
+            ));
+            param_values.push(Box::new(to.to_string()));
+        }
+
+        sql.push_str(" ORDER BY ce.distance LIMIT ?");
+        // The final LIMIT to ensure we return at most `limit` results after filtering
+        let limit_param_idx = param_values.len() + 1;
+        sql = sql.replace(
+            " ORDER BY ce.distance LIMIT ?",
+            &format!(" ORDER BY ce.distance LIMIT ?{}", limit_param_idx),
+        );
+        param_values.push(Box::new(limit as i64));
+
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+
+        let results = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                Ok(ChunkSearchResult {
+                    chunk_id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    meeting_title: row.get(2)?,
+                    chunk_text: row.get(3)?,
+                    start_ms: row.get(4)?,
+                    end_ms: row.get(5)?,
+                    speaker_labels: row.get(6)?,
+                    distance: row.get(7)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(results)
+    }
+
+    pub fn get_embedding_status(&self) -> Result<(u32, u32)> {
+        let conn = self.conn.lock().unwrap();
+
+        let embedded_count: u32 = conn.query_row(
+            "SELECT COUNT(DISTINCT tc.meeting_id) FROM transcript_chunks tc
+             JOIN chunk_embeddings ce ON ce.chunk_id = tc.id",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let total_meetings: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM meetings WHERE status = 'completed'",
+            [],
+            |row| row.get(0),
+        )?;
+
+        Ok((embedded_count, total_meetings))
+    }
+
+    pub fn has_meeting_chunks(&self, meeting_id: &str) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let count: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM transcript_chunks WHERE meeting_id = ?1",
+            params![meeting_id],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn delete_meeting_chunks(&self, meeting_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        // Delete embeddings first (referencing chunks), then chunks
+        conn.execute(
+            "DELETE FROM chunk_embeddings WHERE chunk_id IN (
+                SELECT id FROM transcript_chunks WHERE meeting_id = ?1
+            )",
+            params![meeting_id],
+        )?;
+        conn.execute(
+            "DELETE FROM transcript_chunks WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
+        Ok(())
     }
 }
