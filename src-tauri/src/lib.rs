@@ -4,6 +4,7 @@ pub mod db;
 pub mod detection;
 pub mod diarization;
 pub mod error;
+pub mod extraction;
 pub mod keychain;
 pub mod linear;
 pub mod llm;
