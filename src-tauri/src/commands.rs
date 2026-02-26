@@ -1,11 +1,11 @@
 use crate::audio::{run_audio_capture, validate_audio_devices, RecordingSession};
 use crate::db::*;
 use crate::diarization::DiarizationEngine;
+use crate::extraction;
 use crate::keychain;
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::model_download::{self, DownloadManager};
 use crate::model_registry;
-use crate::extraction;
 use crate::summarization;
 use crate::transcription::{self, TranscriptionEngine};
 use std::sync::Arc;

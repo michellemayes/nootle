@@ -105,10 +105,7 @@ pub async fn extract_insights(
         },
         ChatMessage {
             role: "user".into(),
-            content: format!(
-                "Here is the meeting transcript:\n\n{}",
-                transcript_text
-            ),
+            content: format!("Here is the meeting transcript:\n\n{}", transcript_text),
         },
     ];
 

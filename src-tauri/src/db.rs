@@ -1194,11 +1194,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn set_action_item_linear_ticket(
-        &self,
-        id: &str,
-        linear_ticket_id: &str,
-    ) -> Result<()> {
+    pub fn set_action_item_linear_ticket(&self, id: &str, linear_ticket_id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
