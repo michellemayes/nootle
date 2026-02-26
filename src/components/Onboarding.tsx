@@ -87,6 +87,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           await invoke("store_api_key", { provider, key: key.trim() });
         }
       }
+      setApiKeys({});
       // Seed default prompts
       await invoke("seed_default_prompts");
       // Mark complete
@@ -94,6 +95,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
       onComplete();
     } catch (e) {
       console.error("Onboarding error:", e);
+      setApiKeys({});
       // Still complete even if seeding fails
       localStorage.setItem("onboarding_complete", "true");
       onComplete();

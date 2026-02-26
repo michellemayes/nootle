@@ -39,9 +39,9 @@ export function useApiKeys() {
     [refresh],
   );
 
-  const getKey = useCallback(async (provider: string) => {
-    return invoke<string | null>("get_api_key", { provider });
+  const hasKey = useCallback(async (provider: string) => {
+    return invoke<boolean>("has_api_key", { provider });
   }, []);
 
-  return { storedProviders, loading, error, refresh, storeKey, deleteKey, getKey };
+  return { storedProviders, loading, error, refresh, storeKey, deleteKey, hasKey };
 }

@@ -7,10 +7,13 @@ pub struct GoogleProvider {
 
 impl GoogleProvider {
     pub fn new(api_key: String) -> Self {
-        Self {
-            api_key,
-            client: reqwest::Client::new(),
-        }
+        use std::time::Duration;
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(120))
+            .build()
+            .unwrap_or_default();
+        Self { api_key, client }
     }
 }
 
@@ -67,11 +70,17 @@ impl LlmProvider for GoogleProvider {
         }
 
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            model, self.api_key
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+            model
         );
 
-        let resp = self.client.post(&url).json(&body).send().await?;
+        let resp = self
+            .client
+            .post(&url)
+            .header("x-goog-api-key", &self.api_key)
+            .json(&body)
+            .send()
+            .await?;
         let status = resp.status();
         let body: serde_json::Value = resp.json().await?;
 

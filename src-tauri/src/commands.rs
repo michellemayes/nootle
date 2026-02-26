@@ -2,7 +2,6 @@ use crate::audio::{run_audio_capture, validate_audio_devices, RecordingSession};
 use crate::db::*;
 use crate::diarization::DiarizationEngine;
 use crate::extraction;
-use crate::keychain;
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::model_download::{self, DownloadManager};
 use crate::model_registry;
@@ -17,6 +16,16 @@ pub type RecordingState = Arc<TokioMutex<Option<RecordingSession>>>;
 pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
 pub type DetectorState = Arc<std::sync::Mutex<crate::detection::MeetingDetector>>;
 pub type DownloadManagerState = Arc<TokioMutex<DownloadManager>>;
+
+const ALLOWED_PROVIDERS: &[&str] = &["openai", "anthropic", "google", "groq", "linear"];
+
+fn validate_provider(provider: &str) -> Result<(), String> {
+    if ALLOWED_PROVIDERS.contains(&provider) {
+        Ok(())
+    } else {
+        Err(format!("Invalid provider: {}", provider))
+    }
+}
 
 // Meeting commands
 #[tauri::command]
@@ -60,6 +69,10 @@ pub fn update_meeting_status(
     id: String,
     status: String,
 ) -> Result<(), String> {
+    const VALID_STATUSES: &[&str] = &["recording", "transcribing", "summarized", "archived"];
+    if !VALID_STATUSES.contains(&status.as_str()) {
+        return Err(format!("Invalid meeting status: {}", status));
+    }
     db.update_meeting_status(&id, &status)
         .map_err(|e| e.to_string())
 }
@@ -72,6 +85,13 @@ pub fn create_category(
     color: Option<String>,
     icon: Option<String>,
 ) -> Result<Category, String> {
+    if let Some(ref c) = color {
+        let valid =
+            c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+        if !valid {
+            return Err(format!("Invalid hex color: {}", c));
+        }
+    }
     db.create_category(NewCategory { name, color, icon })
         .map_err(|e| e.to_string())
 }
@@ -131,6 +151,19 @@ pub fn delete_prompt(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_prompt(&id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn update_prompt(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    content: String,
+    is_favorite: bool,
+    is_auto_run: bool,
+) -> Result<Prompt, String> {
+    db.update_prompt(&id, &name, &content, is_favorite, is_auto_run)
+        .map_err(|e| e.to_string())
+}
+
 // Template commands
 #[tauri::command]
 pub fn create_template(
@@ -157,6 +190,25 @@ pub fn list_templates(db: State<'_, DbState>) -> Result<Vec<Template>, String> {
 #[tauri::command]
 pub fn delete_template(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_template(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_template(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    category_id: Option<String>,
+    sections: String,
+    auto_apply_rules: String,
+) -> Result<Template, String> {
+    db.update_template(
+        &id,
+        &name,
+        category_id.as_deref(),
+        &sections,
+        &auto_apply_rules,
+    )
+    .map_err(|e| e.to_string())
 }
 
 // Summary commands
@@ -403,6 +455,7 @@ pub async fn store_api_key(
     provider: String,
     key: String,
 ) -> Result<(), String> {
+    validate_provider(&provider)?;
     // Linear keys are stored in the database alongside other Linear settings
     if provider == "linear" {
         db.set_linear_setting("api_key", &key)
@@ -410,7 +463,8 @@ pub async fn store_api_key(
         return Ok(());
     }
 
-    keychain::store_api_key(&provider, &key).map_err(|e| e.to_string())?;
+    db.store_api_key(&provider, &key)
+        .map_err(|e| e.to_string())?;
 
     // Hot-reload: register the provider in the LLM registry
     let mut registry = llm.write().await;
@@ -428,11 +482,17 @@ pub async fn store_api_key(
 }
 
 #[tauri::command]
-pub fn get_api_key(db: State<'_, DbState>, provider: String) -> Result<Option<String>, String> {
+pub fn has_api_key(db: State<'_, DbState>, provider: String) -> Result<bool, String> {
+    validate_provider(&provider)?;
     if provider == "linear" {
-        return db.get_linear_setting("api_key").map_err(|e| e.to_string());
+        return db
+            .get_linear_setting("api_key")
+            .map(|opt| opt.is_some())
+            .map_err(|e| e.to_string());
     }
-    keychain::get_api_key(&provider).map_err(|e| e.to_string())
+    db.get_api_key(&provider)
+        .map(|opt| opt.is_some())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -441,13 +501,14 @@ pub async fn delete_api_key(
     llm: State<'_, LlmState>,
     provider: String,
 ) -> Result<(), String> {
+    validate_provider(&provider)?;
     if provider == "linear" {
         db.delete_linear_setting("api_key")
             .map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    keychain::delete_api_key(&provider).map_err(|e| e.to_string())?;
+    db.delete_api_key(&provider).map_err(|e| e.to_string())?;
 
     // Hot-reload: remove the provider from the LLM registry
     let mut registry = llm.write().await;
@@ -458,7 +519,7 @@ pub async fn delete_api_key(
 
 #[tauri::command]
 pub fn list_stored_providers(db: State<'_, DbState>) -> Result<Vec<String>, String> {
-    let mut providers = keychain::list_stored_providers();
+    let mut providers = db.list_api_key_providers().map_err(|e| e.to_string())?;
     // Check if Linear API key is stored in the database
     if let Ok(Some(key)) = db.get_linear_setting("api_key") {
         if !key.is_empty() {

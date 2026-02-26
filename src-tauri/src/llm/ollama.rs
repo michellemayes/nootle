@@ -12,18 +12,35 @@ impl Default for OllamaProvider {
 }
 
 impl OllamaProvider {
+    fn build_client() -> reqwest::Client {
+        use std::time::Duration;
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(120))
+            .build()
+            .unwrap_or_default()
+    }
+
     pub fn new() -> Self {
         Self {
             base_url: "http://localhost:11434".to_string(),
-            client: reqwest::Client::new(),
+            client: Self::build_client(),
         }
     }
 
-    pub fn with_base_url(base_url: String) -> Self {
-        Self {
-            base_url,
-            client: reqwest::Client::new(),
+    pub fn with_base_url(base_url: String) -> Result<Self, String> {
+        // Only allow localhost URLs to prevent SSRF
+        let lower = base_url.to_lowercase();
+        let is_local = lower.starts_with("http://localhost")
+            || lower.starts_with("http://127.0.0.1")
+            || lower.starts_with("http://[::1]");
+        if !is_local {
+            return Err("Ollama URL must be localhost".to_string());
         }
+        Ok(Self {
+            base_url,
+            client: Self::build_client(),
+        })
     }
 }
 

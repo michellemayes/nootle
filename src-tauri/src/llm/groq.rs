@@ -7,10 +7,13 @@ pub struct GroqProvider {
 
 impl GroqProvider {
     pub fn new(api_key: String) -> Self {
-        Self {
-            api_key,
-            client: reqwest::Client::new(),
-        }
+        use std::time::Duration;
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(120))
+            .build()
+            .unwrap_or_default();
+        Self { api_key, client }
     }
 }
 
