@@ -16,7 +16,7 @@ pub mod permissions;
 pub mod summarization;
 pub mod transcription;
 
-use commands::{DetectorState, DownloadManagerState, LlmState, RecordingState};
+use commands::{DetectorState, DownloadManagerState, EmbeddingState, LlmState, RecordingState};
 use detection::MeetingDetector;
 use llm::{LlmRegistry, OllamaProvider};
 use model_download::DownloadManager;
@@ -58,6 +58,19 @@ pub fn run() {
     let detector = Arc::new(std::sync::Mutex::new(MeetingDetector::new()));
     let detector_state: DetectorState = detector.clone();
     let download_manager: DownloadManagerState = Arc::new(TokioMutex::new(DownloadManager::new()));
+
+    let embedding_engine = if crate::embedding::EmbeddingEngine::is_available() {
+        match crate::embedding::EmbeddingEngine::load() {
+            Ok(e) => Some(e),
+            Err(err) => {
+                tracing::warn!("Failed to load embedding engine: {err}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let embedding_state: EmbeddingState = Arc::new(TokioMutex::new(embedding_engine));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -175,6 +188,7 @@ pub fn run() {
         .manage(llm_state)
         .manage(detector_state)
         .manage(download_manager)
+        .manage(embedding_state)
         .setup(move |app| {
             let app_handle = app.handle().clone();
             let update_handle = app_handle.clone();
@@ -250,6 +264,10 @@ pub fn run() {
             commands::download_model,
             commands::cancel_download,
             commands::delete_model,
+            commands::chat_with_transcripts,
+            commands::embed_meeting_cmd,
+            commands::embed_all_meetings,
+            commands::get_embedding_status,
             commands::check_permissions,
             commands::request_microphone_permission,
             commands::request_screen_recording_permission,
