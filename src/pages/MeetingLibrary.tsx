@@ -343,8 +343,9 @@ export function MeetingLibrary() {
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
-                                className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 hover:bg-accent"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-accent"
                                 onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
                               >
                                 <MoreVertical className="h-4 w-4 text-muted-foreground" />
                               </button>
@@ -413,8 +414,9 @@ export function MeetingLibrary() {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
-                        className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 hover:bg-accent"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-accent"
                         onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
                       >
                         <MoreVertical className="h-4 w-4 text-muted-foreground" />
                       </button>
