@@ -8,16 +8,19 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChatPanel } from "@/components/ChatPanel";
-import { useMeeting } from "@/hooks/useMeetings";
+import { useMeeting, updateMeetingTitle } from "@/hooks/useMeetings";
 import { useTranscript } from "@/hooks/useTranscripts";
 import { useSummaries } from "@/hooks/useSummaries";
 import { useInsights } from "@/hooks/useInsights";
 import { usePrompts } from "@/hooks/usePrompts";
 import { useLLM } from "@/hooks/useLLM";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
+import { useApiKeys } from "@/hooks/useApiKeys";
 import type { LinearTicket, LinearTeam, LinearProject, ModelInfo, InsightWithActionItem } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List } from "lucide-react";
 
 const speakerColors = [
   "text-blue-400",
@@ -49,6 +52,16 @@ function formatPlayerTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case "summarized": return "Done";
+    case "recording": return "Recording";
+    case "transcribing": return "Transcribing";
+    case "idle": return "Idle";
+    default: return status.charAt(0).toUpperCase() + status.slice(1);
+  }
 }
 
 function ActionItemRow({
@@ -205,10 +218,11 @@ function InsightsPanel({
   models: ModelInfo[];
 }) {
   const {
-    decisions,
-    actionItems,
-    keyMoments,
+    insights,
+    insightTypes,
+    groupedByType,
     loading,
+    error: insightsError,
     extractInsights,
     reExtractInsights,
     toggleActionItem,
@@ -218,6 +232,7 @@ function InsightsPanel({
   const [selectedProvider, setSelectedProvider] = useState(providers[0] ?? "");
   const [selectedModel, setSelectedModel] = useState("");
   const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
 
   useEffect(() => {
     if (providers.length > 0 && !selectedProvider) {
@@ -235,17 +250,20 @@ function InsightsPanel({
   }, [selectedProvider, models, selectedModel]);
 
   const filteredModels = models.filter((m) => m.provider === selectedProvider);
-  const hasInsights = decisions.length > 0 || actionItems.length > 0 || keyMoments.length > 0;
+  const hasInsights = insights.length > 0;
 
   const handleExtract = async (reExtract: boolean) => {
     if (!selectedProvider || !selectedModel) return;
     setExtracting(true);
+    setExtractError(null);
     try {
       if (reExtract) {
         await reExtractInsights(selectedProvider, selectedModel);
       } else {
         await extractInsights(selectedProvider, selectedModel);
       }
+    } catch (err) {
+      setExtractError(String(err));
     } finally {
       setExtracting(false);
     }
@@ -300,58 +318,53 @@ function InsightsPanel({
           >
             {extracting ? "Extracting..." : "Extract Insights"}
           </Button>
+          {(extractError || insightsError) && (
+            <p className="text-xs text-destructive text-center">{extractError || insightsError}</p>
+          )}
         </div>
       </div>
     );
   }
 
+  const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+    lightbulb: Lightbulb,
+    "list-checks": ListChecks,
+    star: Star,
+  };
+
   return (
     <ScrollArea className="flex-1">
       <div className="space-y-6 p-4">
-        <InsightSection
-          title="Decisions"
-          icon={Lightbulb}
-          items={decisions}
-          renderItem={(item) => (
-            <div className="rounded-md border p-3 space-y-1">
-              <p className="text-sm leading-relaxed">{item.content}</p>
-              {item.transcript_start_ms != null && (
-                <span className="text-[10px] font-mono text-muted-foreground">
-                  {formatMs(item.transcript_start_ms)}
-                </span>
-              )}
-            </div>
-          )}
-        />
-
-        <InsightSection
-          title="Action Items"
-          icon={ListChecks}
-          items={actionItems}
-          renderItem={(item) => (
-            <ActionItemRow
-              item={item}
-              onToggle={toggleActionItem}
-              onUpdate={updateActionItem}
+        {insightTypes.map((t) => {
+          const items = groupedByType[t.slug] ?? [];
+          const Icon = iconMap[t.icon] ?? Lightbulb;
+          return (
+            <InsightSection
+              key={t.slug}
+              title={t.name + "s"}
+              icon={Icon}
+              items={items}
+              renderItem={(item) =>
+                t.has_action_fields ? (
+                  <ActionItemRow
+                    item={item}
+                    onToggle={toggleActionItem}
+                    onUpdate={updateActionItem}
+                  />
+                ) : (
+                  <div className="rounded-md border p-3 space-y-1">
+                    <p className="text-sm leading-relaxed">{item.content}</p>
+                    {item.transcript_start_ms != null && (
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        {formatMs(item.transcript_start_ms)}
+                      </span>
+                    )}
+                  </div>
+                )
+              }
             />
-          )}
-        />
-
-        <InsightSection
-          title="Key Moments"
-          icon={Star}
-          items={keyMoments}
-          renderItem={(item) => (
-            <div className="rounded-md border p-3 space-y-1">
-              <p className="text-sm leading-relaxed">{item.content}</p>
-              {item.transcript_start_ms != null && (
-                <span className="text-[10px] font-mono text-muted-foreground">
-                  {formatMs(item.transcript_start_ms)}
-                </span>
-              )}
-            </div>
-          )}
-        />
+          );
+        })}
 
         {/* Re-extract */}
         <div className="border-t pt-4 space-y-2">
@@ -580,22 +593,27 @@ function CreateTicketButton({
 export function MeetingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { meeting, loading: meetingLoading } = useMeeting(id!);
+  const { meeting, loading: meetingLoading, refresh: refreshMeeting } = useMeeting(id!);
   const { segments, loading: transcriptLoading } = useTranscript(id!);
   const { summaries, generateSummary } = useSummaries(id!);
   const { prompts } = usePrompts();
   const { models, providers } = useLLM();
+  const { storedProviders: storedApiProviders } = useApiKeys();
+  const hasLinear = storedApiProviders.includes("linear");
   const { tickets, createTicket } = useLinearTickets(id!);
   const { teams, fetchTeams } = useLinearTeams();
   const { defaultTeamId, defaultProjectId } = useLinearSettings();
   const [linearTeamId, setLinearTeamId] = useState<string | null>(null);
   const { projects: linearProjects } = useLinearProjects(linearTeamId);
   const [chatOpen, setChatOpen] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
   const [generating, setGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
+  const [compactTranscript, setCompactTranscript] = useState(false);
 
   // Audio player state
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -628,6 +646,24 @@ export function MeetingDetail() {
       }
     }
   }, [selectedProvider, models, selectedModel]);
+
+  // Listen for auto-generated title updates from the backend
+  useEffect(() => {
+    const unlisten = listen("meeting-updated", () => {
+      refreshMeeting();
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [refreshMeeting]);
+
+  const handleTitleSave = useCallback(async () => {
+    if (!meeting || !titleDraft.trim() || titleDraft.trim() === meeting.title) {
+      setEditingTitle(false);
+      return;
+    }
+    await updateMeetingTitle(meeting.id, titleDraft.trim());
+    await refreshMeeting();
+    setEditingTitle(false);
+  }, [meeting, titleDraft, refreshMeeting]);
 
   // Load audio data
   useEffect(() => {
@@ -679,6 +715,16 @@ export function MeetingDetail() {
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     audio.currentTime = ratio * duration;
   }, [duration]);
+
+  const seekToMs = useCallback((ms: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = ms / 1000;
+    if (!isPlaying) {
+      audio.play();
+      setIsPlaying(true);
+    }
+  }, [isPlaying]);
 
   // Speaker color map
   const speakerMap = new Map<string, string>();
@@ -741,12 +787,35 @@ export function MeetingDetail() {
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
           <div>
-            <h1 className="text-xl font-bold">{meeting.title}</h1>
+            {editingTitle ? (
+              <Input
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={handleTitleSave}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleTitleSave();
+                  if (e.key === "Escape") setEditingTitle(false);
+                }}
+                className="text-xl font-bold h-auto py-0 border-none bg-transparent"
+                autoFocus
+              />
+            ) : (
+              <h1
+                className="text-xl font-bold cursor-pointer group/title flex items-center gap-2 hover:text-muted-foreground transition-colors"
+                onClick={() => {
+                  setTitleDraft(meeting.title);
+                  setEditingTitle(true);
+                }}
+              >
+                {meeting.title}
+                <Pencil className="h-3.5 w-3.5 opacity-0 group-hover/title:opacity-50 transition-opacity" />
+              </h1>
+            )}
             <p className="text-sm text-muted-foreground">
               {formatDate(meeting.start_time)}
             </p>
           </div>
-          <Badge variant="outline">{meeting.status}</Badge>
+          <Badge variant="outline">{statusLabel(meeting.status)}</Badge>
         </div>
         <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
           <MessageSquare className="h-4 w-4" /> Ask Nootle
@@ -757,13 +826,21 @@ export function MeetingDetail() {
       <div className="flex flex-1 overflow-hidden">
         {/* Transcript - left column */}
         <div className="flex flex-1 flex-col border-r">
-          <div className="px-6 py-3 border-b">
+          <div className="flex items-center justify-between px-8 border-b h-12">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
               Transcript
             </h2>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setCompactTranscript((v) => !v)}
+              title={compactTranscript ? "Spacious view" : "Compact view"}
+            >
+              {compactTranscript ? <AlignJustify className="h-4 w-4" /> : <List className="h-4 w-4" />}
+            </Button>
           </div>
           <ScrollArea className="flex-1">
-            <div className="p-6 space-y-4">
+            <div className={`px-8 py-4 ${compactTranscript ? "space-y-1" : "space-y-4"}`}>
               {transcriptLoading ? (
                 <p className="text-sm text-muted-foreground">
                   Loading transcript...
@@ -774,20 +851,21 @@ export function MeetingDetail() {
                 </p>
               ) : (
                 segments.map((seg) => (
-                  <div key={seg.id} className="group flex gap-3">
-                    <span className="shrink-0 pt-0.5 text-xs text-muted-foreground font-mono tabular-nums w-12">
+                  <div key={seg.id} className={`group flex gap-3 ${compactTranscript ? "items-baseline" : ""}`}>
+                    <button
+                      onClick={() => seekToMs(seg.start_ms)}
+                      className="shrink-0 pt-0.5 text-xs text-muted-foreground font-mono tabular-nums w-12 text-left hover:text-primary transition-colors"
+                    >
                       {formatMs(seg.start_ms)}
-                    </span>
-                    <div className="min-w-0">
+                    </button>
+                    <p className="min-w-0 text-sm text-foreground leading-relaxed">
                       <span
-                        className={`text-sm font-semibold ${speakerMap.get(seg.speaker_label) ?? "text-foreground"}`}
+                        className={`font-semibold ${speakerMap.get(seg.speaker_label) ?? "text-foreground"} mr-1.5`}
                       >
-                        {seg.speaker_label}
+                        {seg.speaker_label}:
                       </span>
-                      <p className="text-sm text-foreground leading-relaxed">
-                        {seg.text}
-                      </p>
-                    </div>
+                      {seg.text}
+                    </p>
                   </div>
                 ))
               )}
@@ -798,7 +876,7 @@ export function MeetingDetail() {
         {/* Right column - Summaries & Insights */}
         <div className="flex w-96 flex-col">
           <Tabs defaultValue="summaries" className="flex flex-1 flex-col">
-            <div className="px-4 py-2 border-b">
+            <div className="px-4 border-b flex items-center h-12">
               <TabsList className="w-full">
                 <TabsTrigger value="summaries" className="flex-1">Summaries</TabsTrigger>
                 <TabsTrigger value="insights" className="flex-1">Insights</TabsTrigger>
@@ -875,11 +953,16 @@ export function MeetingDetail() {
                 ) : (
                   <Tabs defaultValue={summaries[0]?.id} className="p-4">
                     <TabsList className="w-full">
-                      {summaries.map((s, i) => (
-                        <TabsTrigger key={s.id} value={s.id}>
-                          Summary {i + 1}
-                        </TabsTrigger>
-                      ))}
+                      {summaries.map((s) => {
+                        const prompt = s.prompt_id
+                          ? prompts.find((p) => p.id === s.prompt_id)
+                          : null;
+                        return (
+                          <TabsTrigger key={s.id} value={s.id}>
+                            {prompt?.name ?? "Summary"}
+                          </TabsTrigger>
+                        );
+                      })}
                     </TabsList>
                     {summaries.map((s) => (
                       <TabsContent key={s.id} value={s.id}>
@@ -890,6 +973,7 @@ export function MeetingDetail() {
                           <div className="prose prose-sm prose-invert max-w-none text-sm leading-relaxed text-foreground whitespace-pre-wrap">
                             {s.content}
                           </div>
+                          {hasLinear && (
                           <div className="mt-3 flex items-center gap-2">
                             <CreateTicketButton
                               summaryId={s.id}
@@ -905,6 +989,7 @@ export function MeetingDetail() {
                               onCreate={createTicket}
                             />
                           </div>
+                          )}
                         </div>
                       </TabsContent>
                     ))}
