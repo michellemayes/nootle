@@ -1,11 +1,12 @@
 // Parakeet v3 transcription engine via ONNX Runtime with CoreML EP.
 //
-// Pipeline: audio -> mel spectrogram -> FastConformer encoder -> TDT decoder -> text
+// Pipeline: audio -> nemo128 preprocessor -> FastConformer encoder -> TDT decoder -> text
 //
 // Model files are downloaded on first use and cached in the app data dir.
-// Two ONNX models are needed:
-//   1. encoder.onnx - FastConformer acoustic encoder
-//   2. decoder.onnx - TDT (Token-and-Duration Transducer) decoder
+// Three ONNX models are needed:
+//   1. nemo128.onnx - NeMo mel spectrogram preprocessor (audio -> features)
+//   2. encoder.onnx - FastConformer acoustic encoder
+//   3. decoder.onnx - TDT (Token-and-Duration Transducer) decoder
 
 use anyhow::{anyhow, Context};
 use ndarray::Array2;
@@ -52,6 +53,9 @@ pub enum ModelStatus {
 
 /// Transcription engine using Parakeet v3 ONNX models with CoreML acceleration.
 pub struct TranscriptionEngine {
+    /// NeMo mel spectrogram preprocessor (nemo128.onnx). When present, used
+    /// instead of the Rust mel computation to guarantee feature compatibility.
+    preprocessor: Option<Session>,
     encoder: Session,
     decoder: Session,
     #[allow(dead_code)]
@@ -104,9 +108,31 @@ impl TranscriptionEngine {
             ));
         }
 
+        let preprocessor_path = model_dir.join("nemo128.onnx");
         let encoder_path = model_dir.join("encoder.onnx");
         let decoder_path = model_dir.join("decoder.onnx");
         let vocab_path = model_dir.join("vocab.txt");
+
+        // Load ONNX preprocessor (nemo128.onnx) — CPU is fine for this tiny model
+        let preprocessor = if preprocessor_path.exists() {
+            match Session::builder()?.commit_from_file(&preprocessor_path) {
+                Ok(session) => {
+                    tracing::info!("Loaded nemo128 preprocessor (ONNX mel spectrogram)");
+                    Some(session)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load nemo128 preprocessor, falling back to Rust mel: {e}"
+                    );
+                    None
+                }
+            }
+        } else {
+            tracing::info!(
+                "nemo128.onnx not found, using Rust mel spectrogram (may reduce accuracy)"
+            );
+            None
+        };
 
         // Load ONNX sessions with CoreML EP for Apple Silicon acceleration
         let encoder = Session::builder()?
@@ -181,6 +207,7 @@ impl TranscriptionEngine {
         );
 
         Ok(Self {
+            preprocessor,
             encoder,
             decoder,
             model_dir,
@@ -271,6 +298,37 @@ impl TranscriptionEngine {
         mel
     }
 
+    /// Run the ONNX nemo128 preprocessor: raw audio [1, samples] → mel [1, 128, T].
+    /// Returns (mel_data, n_mels, n_frames).
+    fn preprocess_audio(
+        preprocessor: &mut Session,
+        audio: &[f32],
+    ) -> anyhow::Result<(Vec<f32>, usize, usize)> {
+        let n_samples = audio.len();
+        let audio_tensor = Tensor::from_array(([1_usize, n_samples], audio.to_vec()))?;
+        let length_tensor = Tensor::from_array(([1_usize], vec![n_samples as i64]))?;
+
+        let prep_inputs: Vec<_> = preprocessor
+            .inputs()
+            .iter()
+            .map(|i| i.name().to_string())
+            .collect();
+
+        let outputs = preprocessor.run(ort::inputs![
+            prep_inputs[0].as_str() => audio_tensor,
+            prep_inputs[1].as_str() => length_tensor,
+        ])?;
+
+        let (feat_shape, feat_data) = outputs[0]
+            .try_extract_tensor::<f32>()
+            .context("Failed to extract preprocessor features")?;
+        let feat_dims: Vec<usize> = feat_shape.iter().map(|&d| d as usize).collect();
+        let n_mels = feat_dims[1];
+        let n_frames = feat_dims[2];
+
+        Ok((feat_data.to_vec(), n_mels, n_frames))
+    }
+
     /// Transcribe a chunk of audio (16kHz mono f32 samples).
     ///
     /// Returns transcription segments with timing information.
@@ -283,12 +341,22 @@ impl TranscriptionEngine {
             return Ok(vec![]);
         }
 
-        // 1. Compute mel spectrogram
-        let mel = self.compute_mel_spectrogram(audio);
-        let (n_mels, n_frames) = mel.dim();
+        // 1. Compute mel spectrogram — prefer ONNX preprocessor for accuracy
+        let (mel_data, n_mels, n_frames) = if let Some(ref mut preprocessor) = self.preprocessor {
+            Self::preprocess_audio(preprocessor, audio)?
+        } else {
+            let mel = self.compute_mel_spectrogram(audio);
+            let (nm, nf) = mel.dim();
+            (mel.into_raw_vec_and_offset().0, nm, nf)
+        };
+        tracing::debug!(
+            n_mels,
+            n_frames,
+            audio_len = audio.len(),
+            "Mel spectrogram computed"
+        );
 
-        // 2. Run encoder: mel [1, n_mels, n_frames] -> encoded [1, D, T]
-        let mel_data: Vec<f32> = mel.into_raw_vec_and_offset().0;
+        // 2. Run encoder: mel [1, n_mels, n_frames] -> encoded [1, T, D]
         let mel_tensor = Tensor::from_array(([1, n_mels, n_frames], mel_data))?;
         let length_tensor = Tensor::from_array(([1_usize], vec![n_frames as i64]))?;
 
@@ -297,28 +365,26 @@ impl TranscriptionEngine {
             "length" => length_tensor,
         ])?;
 
-        // 3. Extract encoder output [1, D, T] and transpose to [T, D]
+        // 3. Extract encoder output — shape is [1, T, D] (time first, features second)
+        //    The ONNX FastConformer encoder outputs (batch, time, features).
         let (enc_shape, enc_data) = encoder_outputs[0]
             .try_extract_tensor::<f32>()
             .context("Failed to extract encoder output")?;
         let enc_dims: Vec<usize> = enc_shape.iter().map(|&d| d as usize).collect();
-        let d_model = enc_dims[1]; // feature dimension
-        let t_enc = enc_dims[2]; // time frames
+        let t_enc = enc_dims[1]; // time frames (dimension 1)
+        let d_model = enc_dims[2]; // feature dimension (dimension 2)
+        tracing::debug!(t_enc, d_model, ?enc_dims, "Encoder output shape [1, T, D]");
 
-        // Transpose [1, D, T] row-major to [T, D]: element[0,d,t] = data[d*T+t]
+        // Data is already [T, D] in row-major order (ignoring batch dim) — no transpose needed.
+        // Frame t starts at offset t * d_model in the flat array.
         let enc_flat: Vec<f32> = enc_data.to_vec();
-        let mut transposed = vec![0.0f32; t_enc * d_model];
-        for d in 0..d_model {
-            for t in 0..t_enc {
-                transposed[t * d_model + d] = enc_flat[d * t_enc + t];
-            }
-        }
 
         // Get encoded length (clamp to actual tensor size)
         let (_, enc_len_data) = encoder_outputs[1]
             .try_extract_tensor::<i64>()
             .context("Failed to extract encoded lengths")?;
         let encoded_len = (enc_len_data[0] as usize).min(t_enc);
+        tracing::debug!(encoded_len, "Encoded length");
 
         // 4. TDT greedy search: call decoder step-by-step over encoder frames
         let mut state1 =
@@ -331,9 +397,9 @@ impl TranscriptionEngine {
         let mut emitted_tokens: usize = 0;
 
         while t < encoded_len {
-            // Encoder frame t → shape [1, D, 1]
+            // Encoder frame t → shape [1, D, 1] (features-first for decoder)
             let frame_start = t * d_model;
-            let frame_data: Vec<f32> = transposed[frame_start..frame_start + d_model].to_vec();
+            let frame_data: Vec<f32> = enc_flat[frame_start..frame_start + d_model].to_vec();
             let encoder_frame = Tensor::from_array(([1, d_model, 1], frame_data))?;
 
             // Previous token (or blank if nothing emitted yet)
@@ -405,6 +471,11 @@ impl TranscriptionEngine {
         }
 
         // 5. Convert token IDs to text
+        tracing::debug!(
+            token_count = tokens.len(),
+            encoded_len,
+            "TDT decode complete"
+        );
         let mut text = String::new();
         for &id in &tokens {
             if id < self.vocab.len() {
@@ -431,6 +502,7 @@ impl TranscriptionEngine {
         }
 
         let text = text.trim().to_string();
+        tracing::info!(text_len = text.len(), "Transcription result: {:?}", text);
         if text.is_empty() {
             return Ok(vec![]);
         }
@@ -464,12 +536,21 @@ fn extract_state_dims(session: &Session, name: &str) -> anyhow::Result<[usize; 3
                     shape.len()
                 ));
             }
-            // Dynamic dims come as -1; use 1 as fallback
-            Ok([
+            // Dynamic dims come as -1; use 1 as fallback but warn
+            let dims = [
                 shape[0].max(1) as usize,
                 1, // batch dim is always 1
                 shape[2].max(1) as usize,
-            ])
+            ];
+            if shape[0] < 0 || shape[2] < 0 {
+                tracing::warn!(
+                    ?shape,
+                    ?dims,
+                    "State '{name}' has dynamic dims — using fallback. \
+                     This may cause incorrect LSTM state sizes."
+                );
+            }
+            Ok(dims)
         }
         other => Err(anyhow!("Expected Tensor type for '{name}', got {other:?}")),
     }
