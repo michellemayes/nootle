@@ -5,16 +5,29 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
 import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import { useModelDownload } from "@/hooks/useModelDownload";
 import { useTheme } from "@/hooks/useTheme";
+import { useCategories } from "@/hooks/useCategories";
+import { useInsightTypes } from "@/hooks/useInsightTypes";
 import { AccentColorPicker } from "@/components/AccentColorPicker";
-import { EyeOff, Eye, Moon, Sun } from "lucide-react";
+import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus } from "lucide-react";
 
-const PROVIDERS = ["openai", "anthropic", "google", "groq", "ollama"];
+const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter"];
+
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google",
+  groq: "Groq",
+  openrouter: "OpenRouter",
+  ollama: "Ollama",
+  linear: "Linear",
+  asana: "Asana",
+};
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -66,7 +79,7 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
   return (
     <div className="flex items-center gap-3 py-3">
       <div className="flex items-center gap-2 w-32 shrink-0">
-        <span className="text-sm font-medium capitalize">{provider}</span>
+        <span className="text-sm font-medium">{PROVIDER_DISPLAY_NAMES[provider] ?? provider}</span>
         {isStored && (
           <Badge variant="secondary" className="text-[10px]">
             Saved
@@ -189,6 +202,321 @@ function LinearDefaults() {
   );
 }
 
+function InsightTypesManager() {
+  const { types, createInsightType, updateInsightType, deleteInsightType } = useInsightTypes();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editPrompt, setEditPrompt] = useState("");
+  const [editIcon, setEditIcon] = useState("");
+  const [editHasAction, setEditHasAction] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newSlug, setNewSlug] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [newPrompt, setNewPrompt] = useState("");
+  const [newIcon, setNewIcon] = useState("lightbulb");
+  const [newHasAction, setNewHasAction] = useState(false);
+
+  const startEditing = (t: typeof types[0]) => {
+    setEditingId(t.id);
+    setEditName(t.name);
+    setEditDesc(t.description ?? "");
+    setEditPrompt(t.extraction_prompt);
+    setEditIcon(t.icon);
+    setEditHasAction(t.has_action_fields);
+  };
+
+  const handleSaveEdit = async (id: string) => {
+    await updateInsightType(
+      id,
+      editName,
+      editDesc || null,
+      editPrompt,
+      editIcon,
+      editHasAction,
+    );
+    setEditingId(null);
+  };
+
+  const handleCreate = async () => {
+    if (!newName.trim() || !newSlug.trim() || !newPrompt.trim()) return;
+    await createInsightType(newName, newSlug, newDesc || null, newPrompt, newIcon, newHasAction);
+    setAdding(false);
+    setNewName("");
+    setNewSlug("");
+    setNewDesc("");
+    setNewPrompt("");
+    setNewIcon("lightbulb");
+    setNewHasAction(false);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Insight Types</CardTitle>
+        <CardDescription>
+          Configure what types of insights to extract from meetings and customize the extraction prompts
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {types.map((t) => (
+          <div key={t.id} className="border rounded-lg p-4 space-y-3">
+            {editingId === t.id ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="h-8 flex-1"
+                    placeholder="Name"
+                  />
+                  <Input
+                    value={editIcon}
+                    onChange={(e) => setEditIcon(e.target.value)}
+                    className="h-8 w-32"
+                    placeholder="Icon"
+                  />
+                </div>
+                <Input
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  className="h-8"
+                  placeholder="Description"
+                />
+                <textarea
+                  value={editPrompt}
+                  onChange={(e) => setEditPrompt(e.target.value)}
+                  className="w-full min-h-[80px] rounded-md border bg-transparent px-3 py-2 text-sm"
+                  placeholder="Extraction prompt"
+                />
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={editHasAction}
+                      onChange={(e) => setEditHasAction(e.target.checked)}
+                      className="accent-primary"
+                    />
+                    Has action fields (assignee, due date)
+                  </label>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => handleSaveEdit(t.id)}>Save</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>Cancel</Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">{t.name}</span>
+                    <Badge variant="secondary" className="text-[10px]">{t.slug}</Badge>
+                    {t.is_builtin && <Badge variant="outline" className="text-[10px]">Built-in</Badge>}
+                    {t.has_action_fields && <Badge variant="outline" className="text-[10px]">Action fields</Badge>}
+                  </div>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="icon-sm" onClick={() => startEditing(t)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    {!t.is_builtin && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => deleteInsightType(t.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {t.description && (
+                  <p className="text-xs text-muted-foreground">{t.description}</p>
+                )}
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                    Extraction prompt
+                  </summary>
+                  <pre className="mt-1 whitespace-pre-wrap rounded bg-muted p-2 text-xs">
+                    {t.extraction_prompt}
+                  </pre>
+                </details>
+              </>
+            )}
+          </div>
+        ))}
+
+        {adding ? (
+          <div className="border rounded-lg p-4 space-y-3 border-dashed">
+            <div className="flex gap-2">
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="h-8 flex-1"
+                placeholder="Name (e.g. Risk)"
+              />
+              <Input
+                value={newSlug}
+                onChange={(e) => setNewSlug(e.target.value)}
+                className="h-8 w-40"
+                placeholder="Slug (e.g. risk)"
+              />
+              <Input
+                value={newIcon}
+                onChange={(e) => setNewIcon(e.target.value)}
+                className="h-8 w-32"
+                placeholder="Icon"
+              />
+            </div>
+            <Input
+              value={newDesc}
+              onChange={(e) => setNewDesc(e.target.value)}
+              className="h-8"
+              placeholder="Description (optional)"
+            />
+            <textarea
+              value={newPrompt}
+              onChange={(e) => setNewPrompt(e.target.value)}
+              className="w-full min-h-[80px] rounded-md border bg-transparent px-3 py-2 text-sm"
+              placeholder="Extraction prompt — tell the LLM how to identify this type"
+            />
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={newHasAction}
+                  onChange={(e) => setNewHasAction(e.target.checked)}
+                  className="accent-primary"
+                />
+                Has action fields (assignee, due date)
+              </label>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleCreate} disabled={!newName.trim() || !newSlug.trim() || !newPrompt.trim()}>
+                Create
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>Cancel</Button>
+            </div>
+          </div>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Add Custom Type
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CategoriesManager() {
+  const { categories, createCategory, updateCategory, deleteCategory } = useCategories();
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState("#6366f1");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editColor, setEditColor] = useState("");
+
+  const handleCreate = async () => {
+    if (!newName.trim()) return;
+    await createCategory(newName.trim(), newColor);
+    setNewName("");
+    setNewColor("#6366f1");
+  };
+
+  const startEditing = (cat: { id: string; name: string; color: string }) => {
+    setEditingId(cat.id);
+    setEditName(cat.name);
+    setEditColor(cat.color);
+  };
+
+  const handleSaveEdit = async (id: string, icon: string) => {
+    if (!editName.trim()) return;
+    await updateCategory(id, editName.trim(), editColor, icon);
+    setEditingId(null);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Categories</CardTitle>
+        <CardDescription>Organize meetings into categories with colors</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="divide-y">
+          {categories.map((cat) => (
+            <div key={cat.id} className="flex items-center gap-3 py-3">
+              {editingId === cat.id ? (
+                <>
+                  <input
+                    type="color"
+                    value={editColor}
+                    onChange={(e) => setEditColor(e.target.value)}
+                    className="h-6 w-6 rounded border-0 cursor-pointer"
+                  />
+                  <Input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="h-8 flex-1"
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveEdit(cat.id, cat.icon)}
+                  />
+                  <Button size="sm" onClick={() => handleSaveEdit(cat.id, cat.icon)}>
+                    Save
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div
+                    className="h-4 w-4 rounded-full shrink-0"
+                    style={{ backgroundColor: cat.color }}
+                  />
+                  <span className="flex-1 text-sm">{cat.name}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => startEditing(cat)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => deleteCategory(cat.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 pt-2 border-t">
+          <input
+            type="color"
+            value={newColor}
+            onChange={(e) => setNewColor(e.target.value)}
+            className="h-6 w-6 rounded border-0 cursor-pointer"
+          />
+          <Input
+            placeholder="New category name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            className="h-8 flex-1"
+            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+          />
+          <Button size="sm" onClick={handleCreate} disabled={!newName.trim()}>
+            <Plus className="h-4 w-4 mr-1" /> Add
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SettingsPage() {
   const { storedProviders, storeKey, deleteKey } = useApiKeys();
   const { providers: llmProviders } = useLLM();
@@ -212,162 +540,303 @@ export function SettingsPage() {
     setTimeout(() => setCopied(false), 2000);
   }, [exePath]);
 
-  // Merge known providers with any discovered from LLM
+  // Merge known providers with any discovered from LLM, excluding Ollama
+  // (Ollama is auto-detected and doesn't need an API key)
   const allProviders = Array.from(
     new Set([...PROVIDERS, ...llmProviders]),
-  );
+  ).filter((p) => p !== "ollama");
 
   return (
-    <ScrollArea className="flex-1 min-h-0">
-      <div className="flex flex-col gap-8 p-8 max-w-3xl">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Configure API keys and application settings
-          </p>
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="border-b px-8 py-4">
+        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Configure API keys and application settings
+        </p>
+      </div>
+
+      <Tabs defaultValue="general" className="flex flex-1 flex-col overflow-hidden">
+        <div className="border-b px-8">
+          <TabsList className="h-10">
+            <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="api-keys">API Keys</TabsTrigger>
+            <TabsTrigger value="integrations">Integrations</TabsTrigger>
+            <TabsTrigger value="models">Models</TabsTrigger>
+            <TabsTrigger value="categories">Categories</TabsTrigger>
+            <TabsTrigger value="insight-types">Insight Types</TabsTrigger>
+            <TabsTrigger value="about">About / MCP</TabsTrigger>
+          </TabsList>
         </div>
 
-        {/* Appearance */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Appearance</CardTitle>
-            <CardDescription>Choose your preferred color scheme</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Theme</p>
-                <p className="text-sm text-muted-foreground">
-                  {theme === "light" ? "Light mode" : "Dark mode"}
-                </p>
-              </div>
-              <Button variant="outline" size="sm" onClick={toggleTheme}>
-                {theme === "light" ? <><Moon className="h-4 w-4" /> Dark</> : <><Sun className="h-4 w-4" /> Light</>}
-              </Button>
-            </div>
-            <AccentColorPicker />
-          </CardContent>
-        </Card>
+        <TabsContent value="general" className="flex-1 mt-0 overflow-auto">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+            <Card>
+              <CardHeader>
+                <CardTitle>Appearance</CardTitle>
+                <CardDescription>Choose your preferred color scheme</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Theme</p>
+                    <p className="text-sm text-muted-foreground">
+                      {theme === "light" ? "Light mode" : "Dark mode"}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={toggleTheme}>
+                    {theme === "light" ? <><Moon className="h-4 w-4" /> Dark</> : <><Sun className="h-4 w-4" /> Light</>}
+                  </Button>
+                </div>
+                <AccentColorPicker />
+              </CardContent>
+            </Card>
+            <PermissionsCard />
+          </div>
+        </TabsContent>
 
-        {/* API Keys */}
-        <Card>
-          <CardHeader>
-            <CardTitle>API Keys</CardTitle>
-            <CardDescription>
-              Configure API keys for LLM providers. Keys are stored securely in the
-              macOS Keychain.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="divide-y">
-              {allProviders.map((provider) => (
+        <TabsContent value="api-keys" className="flex-1 mt-0 overflow-auto">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+            <Card>
+              <CardHeader>
+                <CardTitle>API Keys</CardTitle>
+                <CardDescription>
+                  Configure API keys for LLM providers. Using Ollama? No key needed
+                  — Nootle auto-detects it when running.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="divide-y">
+                  {allProviders.map((provider) => (
+                    <ApiKeyRow
+                      key={provider}
+                      provider={provider}
+                      isStored={storedProviders.includes(provider)}
+                      onSave={(key) => storeKey(provider, key)}
+                      onDelete={() => deleteKey(provider)}
+                    />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="integrations" className="flex-1 mt-0 overflow-auto">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+            <Card>
+              <CardHeader>
+                <CardTitle>Project Management</CardTitle>
+                <CardDescription>
+                  Connect to Linear or Asana to create tickets from meeting action items.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <ApiKeyRow
-                  key={provider}
-                  provider={provider}
-                  isStored={storedProviders.includes(provider)}
-                  onSave={(key) => storeKey(provider, key)}
-                  onDelete={() => deleteKey(provider)}
+                  provider="linear"
+                  isStored={storedProviders.includes("linear")}
+                  onSave={(key) => storeKey("linear", key)}
+                  onDelete={() => deleteKey("linear")}
                 />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                {storedProviders.includes("linear") && (
+                  <LinearDefaults />
+                )}
+                <ApiKeyRow
+                  provider="asana"
+                  isStored={storedProviders.includes("asana")}
+                  onSave={(key) => storeKey("asana", key)}
+                  onDelete={() => deleteKey("asana")}
+                />
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
 
-        {/* Linear */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Linear</CardTitle>
-            <CardDescription>
-              Connect to Linear to create tickets from meeting summaries.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <ApiKeyRow
-              provider="linear"
-              isStored={storedProviders.includes("linear")}
-              onSave={(key) => storeKey("linear", key)}
-              onDelete={() => deleteKey("linear")}
-            />
-            {storedProviders.includes("linear") && (
-              <LinearDefaults />
-            )}
-          </CardContent>
-        </Card>
+        <TabsContent value="models" className="flex-1 mt-0 overflow-auto">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+            <ModelManagementCard />
+          </div>
+        </TabsContent>
 
-        {/* AI Models */}
-        <ModelManagementCard />
+        <TabsContent value="categories" className="flex-1 mt-0 overflow-auto">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+            <CategoriesManager />
+          </div>
+        </TabsContent>
 
-        {/* About */}
-        <Card>
-          <CardHeader>
-            <CardTitle>About</CardTitle>
-            <CardDescription>
-              Nootle v0.1.0 — Your meetings, transcribed and summarized with a twist
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <h3 className="text-sm font-medium mb-2">MCP Server Configuration</h3>
-              <p className="text-xs text-muted-foreground mb-3">
-                Add this to your MCP client configuration to use Nootle as an MCP
-                server:
-              </p>
-              <div className="relative">
-                <pre className="rounded-lg bg-muted p-4 text-xs font-mono overflow-x-auto">
-                  {getMcpConfig(exePath)}
-                </pre>
-                <Button
-                  variant="secondary"
-                  size="xs"
-                  className="absolute top-2 right-2"
-                  onClick={handleCopyJson}
-                >
-                  <AnimatePresence mode="wait">
-                    <motion.span
-                      key={copied === "json" ? "check" : "copy"}
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: copied === "json" ? [1, 1.2, 1] : 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      transition={{ duration: 0.15 }}
+        <TabsContent value="insight-types" className="flex-1 mt-0 overflow-auto">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+            <InsightTypesManager />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="about" className="flex-1 mt-0 overflow-auto">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+            <Card>
+              <CardHeader>
+                <CardTitle>About</CardTitle>
+                <CardDescription>
+                  Nootle v0.1.0 — Your meetings, transcribed and summarized with a twist
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-medium mb-2">MCP Server Configuration</h3>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Add this to your MCP client configuration to use Nootle as an MCP
+                    server:
+                  </p>
+                  <div className="relative">
+                    <pre className="rounded-lg bg-muted p-4 text-xs font-mono overflow-x-auto">
+                      {getMcpConfig(exePath)}
+                    </pre>
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      className="absolute top-2 right-2"
+                      onClick={handleCopyJson}
                     >
-                      {copied === "json" ? "\u2713 Copied" : "Copy"}
-                    </motion.span>
-                  </AnimatePresence>
-                </Button>
-              </div>
-              <h3 className="text-sm font-medium mt-4 mb-2">Claude Code</h3>
-              <p className="text-xs text-muted-foreground mb-3">
-                Or install directly with Claude Code:
-              </p>
-              <div className="relative">
-                <pre className="rounded-lg bg-muted p-4 text-xs font-mono overflow-x-auto">
-                  {getClaudeCommand(exePath)}
-                </pre>
-                <Button
-                  variant="secondary"
-                  size="xs"
-                  className="absolute top-2 right-2"
-                  onClick={handleCopyClaude}
-                >
-                  <AnimatePresence mode="wait">
-                    <motion.span
-                      key={copied === "claude" ? "check" : "copy"}
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: copied === "claude" ? [1, 1.2, 1] : 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      transition={{ duration: 0.15 }}
+                      <AnimatePresence mode="wait">
+                        <motion.span
+                          key={copied === "json" ? "check" : "copy"}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: copied === "json" ? [1, 1.2, 1] : 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          transition={{ duration: 0.15 }}
+                        >
+                          {copied === "json" ? "\u2713 Copied" : "Copy"}
+                        </motion.span>
+                      </AnimatePresence>
+                    </Button>
+                  </div>
+                  <h3 className="text-sm font-medium mt-4 mb-2">Claude Code</h3>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Or install directly with Claude Code:
+                  </p>
+                  <div className="relative">
+                    <pre className="rounded-lg bg-muted p-4 text-xs font-mono overflow-x-auto">
+                      {getClaudeCommand(exePath)}
+                    </pre>
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      className="absolute top-2 right-2"
+                      onClick={handleCopyClaude}
                     >
-                      {copied === "claude" ? "\u2713 Copied" : "Copy"}
-                    </motion.span>
-                  </AnimatePresence>
-                </Button>
+                      <AnimatePresence mode="wait">
+                        <motion.span
+                          key={copied === "claude" ? "check" : "copy"}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: copied === "claude" ? [1, 1.2, 1] : 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          transition={{ duration: 0.15 }}
+                        >
+                          {copied === "claude" ? "\u2713 Copied" : "Copy"}
+                        </motion.span>
+                      </AnimatePresence>
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function PermissionsCard() {
+  const [permissions, setPermissions] = useState<{
+    microphone: string;
+    screen_recording: boolean;
+    calendar: string;
+  } | null>(null);
+  const [requesting, setRequesting] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const status = await invoke<{
+        microphone: string;
+        screen_recording: boolean;
+        calendar: string;
+      }>("check_permissions");
+      setPermissions(status);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const handleRequest = useCallback(async (type: "microphone" | "screen_recording" | "calendar") => {
+    setRequesting(type);
+    try {
+      if (type === "microphone") {
+        await invoke("request_microphone_permission");
+      } else if (type === "screen_recording") {
+        await invoke("request_screen_recording_permission");
+      } else {
+        await invoke("request_calendar_permission");
+      }
+      await refresh();
+    } finally {
+      setRequesting(null);
+    }
+  }, [refresh]);
+
+  const statusBadge = (granted: boolean) => (
+    <Badge
+      variant="secondary"
+      className={granted ? "bg-green-500/15 text-green-500 text-[10px]" : "text-[10px]"}
+    >
+      {granted ? "Granted" : "Not Granted"}
+    </Badge>
+  );
+
+  const rows: { label: string; key: "microphone" | "screen_recording" | "calendar"; granted: boolean; description: string }[] = permissions ? [
+    { label: "Microphone", key: "microphone", granted: permissions.microphone === "granted", description: "Required for recording audio" },
+    { label: "Screen Recording", key: "screen_recording", granted: permissions.screen_recording, description: "Required for system audio capture" },
+    { label: "Calendar", key: "calendar", granted: permissions.calendar === "granted", description: "Auto-detect meetings from your calendar" },
+  ] : [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Permissions</CardTitle>
+        <CardDescription>
+          Manage macOS permissions for recording and calendar access
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!permissions ? (
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        ) : (
+          <div className="divide-y">
+            {rows.map((row) => (
+              <div key={row.key} className="flex items-center gap-3 py-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{row.label}</span>
+                    {statusBadge(row.granted)}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">{row.description}</p>
+                </div>
+                {!row.granted && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRequest(row.key)}
+                    disabled={requesting !== null}
+                  >
+                    {requesting === row.key ? "..." : "Grant"}
+                  </Button>
+                )}
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </ScrollArea>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

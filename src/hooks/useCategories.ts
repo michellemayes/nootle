@@ -37,6 +37,20 @@ export function useCategories() {
     [refresh],
   );
 
+  const updateCategory = useCallback(
+    async (id: string, name: string, color: string, icon: string) => {
+      const category = await invoke<Category>("update_category", {
+        id,
+        name,
+        color,
+        icon,
+      });
+      await refresh();
+      return category;
+    },
+    [refresh],
+  );
+
   const deleteCategory = useCallback(
     async (id: string) => {
       await invoke("delete_category", { id });
@@ -45,5 +59,5 @@ export function useCategories() {
     [refresh],
   );
 
-  return { categories, loading, error, refresh, createCategory, deleteCategory };
+  return { categories, loading, error, refresh, createCategory, updateCategory, deleteCategory };
 }
