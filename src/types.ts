@@ -121,6 +121,35 @@ export interface EmbeddingStatus {
   model_available: boolean;
 }
 
+export interface InsightType {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  extraction_prompt: string;
+  icon: string;
+  has_action_fields: boolean;
+  is_builtin: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface ChatConversation {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessageRecord {
+  id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  sources_json: string | null;
+  created_at: string;
+}
+
 export interface InsightWithActionItem {
   id: string;
   meeting_id: string;

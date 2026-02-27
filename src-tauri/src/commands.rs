@@ -18,7 +18,7 @@ pub type DetectorState = Arc<std::sync::Mutex<crate::detection::MeetingDetector>
 pub type DownloadManagerState = Arc<TokioMutex<DownloadManager>>;
 pub type EmbeddingState = Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>;
 
-const ALLOWED_PROVIDERS: &[&str] = &["openai", "anthropic", "google", "groq", "linear"];
+const ALLOWED_PROVIDERS: &[&str] = &["openai", "anthropic", "google", "groq", "openrouter", "linear", "asana"];
 
 fn validate_provider(provider: &str) -> Result<(), String> {
     if ALLOWED_PROVIDERS.contains(&provider) {
@@ -84,6 +84,16 @@ pub fn update_meeting_status(
 }
 
 #[tauri::command]
+pub fn update_meeting_title(
+    db: State<'_, DbState>,
+    id: String,
+    title: String,
+) -> Result<(), String> {
+    db.update_meeting_title(&id, &title)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn update_meeting_category(
     db: State<'_, DbState>,
     id: String,
@@ -115,6 +125,23 @@ pub fn create_category(
 #[tauri::command]
 pub fn list_categories(db: State<'_, DbState>) -> Result<Vec<Category>, String> {
     db.list_categories().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_category(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    color: String,
+    icon: String,
+) -> Result<Category, String> {
+    let valid =
+        color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+    if !valid {
+        return Err(format!("Invalid hex color: {}", color));
+    }
+    db.update_category(&id, &name, &color, &icon)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -239,6 +266,7 @@ pub fn get_summaries(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<S
 pub async fn start_recording(
     app: tauri::AppHandle,
     db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
     recording: State<'_, RecordingState>,
     embedding_state: State<'_, EmbeddingState>,
     title: String,
@@ -323,12 +351,13 @@ pub async fn start_recording(
     // Spawn live transcription pipeline if models are available
     if let Some(audio_rx) = session.take_audio_rx() {
         let db_clone = db.inner().clone();
+        let llm_clone = llm.inner().clone();
         let embedding_clone = embedding_state.inner().clone();
         let meeting_id = meeting.id.clone();
         let app_handle = app.clone();
 
         tokio::spawn(async move {
-            run_transcription_pipeline(audio_rx, db_clone, embedding_clone, meeting_id, app_handle)
+            run_transcription_pipeline(audio_rx, db_clone, llm_clone, embedding_clone, meeting_id, app_handle)
                 .await;
         });
     }
@@ -342,17 +371,20 @@ pub async fn start_recording(
 async fn run_transcription_pipeline(
     mut audio_rx: tokio::sync::mpsc::Receiver<Vec<f32>>,
     db: Arc<Database>,
+    llm_state: LlmState,
     embedding_state: Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>,
     meeting_id: String,
     app: tauri::AppHandle,
 ) {
     // Try to load transcription engine
+    tracing::info!("[DIAG] Transcription pipeline started, loading engine...");
     let mut transcription_engine = match TranscriptionEngine::load() {
-        Ok(e) => Some(e),
+        Ok(e) => {
+            tracing::info!("[DIAG] Transcription engine loaded successfully");
+            Some(e)
+        }
         Err(err) => {
-            tracing::info!(
-                "Transcription models not available, skipping live transcription: {err}"
-            );
+            tracing::error!("[DIAG] Transcription engine FAILED to load: {err:#}");
             None
         }
     };
@@ -364,11 +396,19 @@ async fn run_transcription_pipeline(
             serde_json::json!({ "available": true }),
         );
     } else {
+        let reason = match TranscriptionEngine::check_status() {
+            transcription::ModelStatus::NotDownloaded => {
+                "Transcription model not downloaded. Recording audio only.".to_string()
+            }
+            _ => {
+                "Transcription model failed to load. The model files may be corrupted — try deleting and re-downloading in Settings.".to_string()
+            }
+        };
         let _ = app.emit(
             "transcription-status",
             serde_json::json!({
                 "available": false,
-                "reason": "Transcription models not downloaded. Recording audio only."
+                "reason": reason,
             }),
         );
     }
@@ -385,15 +425,27 @@ async fn run_transcription_pipeline(
     let mut offset_samples: u64 = 0;
     let sample_rate: u64 = 16000;
 
+    let mut chunk_count: u64 = 0;
+    tracing::info!("[DIAG] Entering audio chunk loop, engine={}, diarization={}",
+        transcription_engine.is_some(), diarization_engine.is_some());
+
     while let Some(chunk) = audio_rx.recv().await {
         let offset_ms = offset_samples * 1000 / sample_rate;
         let chunk_len = chunk.len() as u64;
+        chunk_count += 1;
+
+        // Log every chunk received
+        let rms = (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt();
+        tracing::info!("[DIAG] Chunk #{chunk_count}: {chunk_len} samples, offset={offset_ms}ms, RMS={rms:.6}");
 
         // Run transcription
         if let Some(ref mut engine) = transcription_engine {
             match engine.transcribe(&chunk, offset_ms) {
                 Ok(segments) => {
+                    tracing::info!("[DIAG] Chunk #{chunk_count}: transcribe() returned {} segments", segments.len());
                     for seg in &segments {
+                        tracing::info!("[DIAG] Segment: {:?}", seg.text);
+
                         // Run diarization to get speaker label
                         let speaker = if let Some(ref mut diar) = diarization_engine {
                             match diar.diarize(&chunk, offset_ms) {
@@ -407,28 +459,95 @@ async fn run_transcription_pipeline(
                             "Speaker".to_string()
                         };
 
-                        let _ = db.create_transcript_segment(NewTranscriptSegment {
+                        match db.create_transcript_segment(NewTranscriptSegment {
                             meeting_id: meeting_id.clone(),
                             speaker_label: speaker,
                             text: seg.text.clone(),
                             start_ms: seg.start_ms as i64,
                             end_ms: seg.end_ms as i64,
                             confidence: 0.9,
-                        });
+                        }) {
+                            Ok(_) => tracing::info!("[DIAG] DB insert succeeded"),
+                            Err(e) => tracing::error!("[DIAG] DB insert FAILED: {e}"),
+                        }
                     }
 
                     // Emit updated transcript to frontend
-                    if let Ok(all_segments) = db.get_transcript(&meeting_id) {
-                        let _ = app.emit("transcript-update", &all_segments);
+                    match db.get_transcript(&meeting_id) {
+                        Ok(all_segments) => {
+                            tracing::info!("[DIAG] Emitting transcript-update with {} segments", all_segments.len());
+                            match app.emit("transcript-update", &all_segments) {
+                                Ok(_) => tracing::info!("[DIAG] Emit succeeded"),
+                                Err(e) => tracing::error!("[DIAG] Emit FAILED: {e}"),
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("[DIAG] get_transcript FAILED: {e}");
+                        }
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Transcription failed for chunk: {e}");
+                    tracing::error!("[DIAG] Chunk #{chunk_count}: transcribe() FAILED: {e:#}");
                 }
+            }
+        } else {
+            if chunk_count == 1 {
+                tracing::warn!("[DIAG] No transcription engine — chunks will not be transcribed");
             }
         }
 
         offset_samples += chunk_len;
+    }
+
+    tracing::info!("[DIAG] Audio channel closed after {chunk_count} chunks");
+
+    // Auto-generate title from transcript content
+    if let Ok(segments) = db.get_transcript(&meeting_id) {
+        let full_text: String = segments.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
+        if !full_text.trim().is_empty() {
+            // Use first ~60 chars, breaking at a word boundary
+            let title = if full_text.len() <= 60 {
+                full_text.trim().to_string()
+            } else {
+                let truncated = &full_text[..60];
+                match truncated.rfind(' ') {
+                    Some(pos) => format!("{}...", &truncated[..pos]),
+                    None => format!("{}...", truncated),
+                }
+            };
+            if let Err(e) = db.update_meeting_title(&meeting_id, &title) {
+                tracing::warn!("Failed to auto-generate title: {e}");
+            } else {
+                // Notify frontend of the updated meeting
+                if let Ok(meeting) = db.get_meeting(&meeting_id) {
+                    let _ = app.emit("meeting-updated", &meeting);
+                }
+            }
+        }
+    }
+
+    // Run auto-run prompts (summaries) if any are configured
+    {
+        let llm = llm_state.read().await;
+        if let Some(first_model) = llm.all_models().first().cloned() {
+            match summarization::run_auto_prompts(
+                &db, &llm, &meeting_id, &first_model.provider, &first_model.id,
+            ).await {
+                Ok(summaries) if !summaries.is_empty() => {
+                    tracing::info!("Auto-run produced {} summaries for {meeting_id}", summaries.len());
+                    let _ = app.emit("summaries-updated", &meeting_id);
+                }
+                Ok(_) => tracing::info!("No auto-run prompts configured"),
+                Err(e) => tracing::warn!("Auto-run prompts failed: {e}"),
+            }
+        } else {
+            tracing::info!("No LLM providers configured, skipping auto-run prompts");
+        }
+    }
+
+    // Mark meeting as done transcribing
+    if let Err(e) = db.update_meeting_status(&meeting_id, "summarized") {
+        tracing::warn!("Failed to update meeting status to summarized: {e}");
     }
 
     // After transcription completes, embed the meeting
@@ -562,6 +681,7 @@ pub async fn store_api_key(
         "anthropic" => Box::new(crate::llm::AnthropicProvider::new(key)),
         "google" => Box::new(crate::llm::GoogleProvider::new(key)),
         "groq" => Box::new(crate::llm::GroqProvider::new(key)),
+        "openrouter" => Box::new(crate::llm::OpenRouterProvider::new(key)),
         _ => return Ok(()),
     };
     registry.register(new_provider);
@@ -872,6 +992,101 @@ pub async fn create_linear_ticket(
 }
 
 #[tauri::command]
+pub async fn create_ticket_from_action_item(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    action_item_id: String,
+    team_id: String,
+    project_id: Option<String>,
+    provider: String,
+    model: String,
+) -> Result<serde_json::Value, String> {
+    let item = db
+        .get_insight_by_action_item(&action_item_id)
+        .map_err(|e| e.to_string())?;
+
+    if let Some(ref existing) = item.linear_ticket_id {
+        return Err(format!("Action item already has a ticket: {}", existing));
+    }
+
+    let meeting_title = item.meeting_title.as_deref().unwrap_or("Meeting");
+
+    // Use LLM to generate ticket title and description
+    let llm_registry = llm.read().await;
+    let llm_provider = llm_registry
+        .get_provider(&provider)
+        .ok_or_else(|| format!("Provider '{}' not found", provider))?;
+
+    let messages = vec![
+        crate::llm::ChatMessage {
+            role: "system".into(),
+            content: "You are a helpful assistant that creates Linear tickets from meeting action items. Return valid JSON with exactly two fields: \"title\" (concise, under 80 characters) and \"description\" (markdown-formatted with context). Return ONLY the JSON object, no other text.".into(),
+        },
+        crate::llm::ChatMessage {
+            role: "user".into(),
+            content: format!(
+                "Meeting: {}\n\nAction Item: {}\nAssignee: {}\nDue Date: {}\nContext: {}",
+                meeting_title,
+                item.content,
+                item.assignee.as_deref().unwrap_or("Unassigned"),
+                item.due_date.as_deref().unwrap_or("None"),
+                item.context.as_deref().unwrap_or("None"),
+            ),
+        },
+    ];
+
+    let llm_response = llm_provider
+        .chat(messages, &model)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let cleaned = crate::extraction::strip_code_fences_pub(&llm_response);
+    let (title, description) = match serde_json::from_str::<serde_json::Value>(cleaned) {
+        Ok(json) => {
+            let title = json
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&item.content)
+                .to_string();
+            let desc = json
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&item.content)
+                .to_string();
+            (title, desc)
+        }
+        Err(_) => (item.content.clone(), item.content.clone()),
+    };
+
+    // Get Linear API key and create issue
+    let api_key = db
+        .get_linear_setting("api_key")
+        .map_err(|e| e.to_string())?
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| "Linear API key not configured".to_string())?;
+
+    let issue = crate::linear::create_issue(
+        &api_key,
+        &team_id,
+        project_id.as_deref(),
+        &title,
+        &description,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Update the action item with the ticket ID
+    db.set_action_item_linear_ticket(&action_item_id, &issue.identifier)
+        .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "identifier": issue.identifier,
+        "url": issue.url,
+        "title": issue.title,
+    }))
+}
+
+#[tauri::command]
 pub fn get_linear_tickets(
     db: State<'_, DbState>,
     meeting_id: String,
@@ -952,51 +1167,46 @@ pub async fn delete_model(model_id: String) -> Result<(), String> {
 
 // Global chat commands
 
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn chat_with_transcripts(
-    db: State<'_, DbState>,
-    llm: State<'_, LlmState>,
-    embedding_state: State<'_, EmbeddingState>,
-    message: String,
+/// Shared RAG helper: embed query, search chunks, call LLM with retrieved context.
+async fn rag_chat(
+    db: &Database,
+    llm: &LlmRegistry,
+    embedding_state: &EmbeddingState,
+    message: &str,
     history: Vec<ChatMessage>,
-    provider: String,
-    model: String,
-    category_ids: Vec<String>,
-    date_from: Option<String>,
-    date_to: Option<String>,
-) -> Result<serde_json::Value, String> {
-    // Get embedding engine
+    provider: &str,
+    model: &str,
+    category_ids: &[String],
+    date_from: Option<&str>,
+    date_to: Option<&str>,
+) -> Result<(String, Vec<serde_json::Value>), String> {
     let mut engine_lock = embedding_state.lock().await;
     let engine = engine_lock
         .as_mut()
         .ok_or_else(|| "Embedding model not loaded. Please download it first.".to_string())?;
 
-    // Embed the query
     let query_embedding = engine
-        .embed(&message)
+        .embed(message)
         .map_err(|e| format!("Failed to embed query: {e}"))?;
     drop(engine_lock);
 
-    // Search for similar chunks
     let results = db
         .search_similar_chunks(
             &query_embedding,
             10,
-            &category_ids,
-            date_from.as_deref(),
-            date_to.as_deref(),
+            category_ids,
+            date_from,
+            date_to,
         )
         .map_err(|e| e.to_string())?;
 
     if results.is_empty() {
-        return Ok(serde_json::json!({
-            "response": "I couldn't find any relevant transcript passages for your question. Try adjusting your filters or asking a different question.",
-            "sources": []
-        }));
+        return Ok((
+            "I couldn't find any relevant transcript passages for your question. Try adjusting your filters or asking a different question.".into(),
+            Vec::new(),
+        ));
     }
 
-    // Build context from retrieved chunks
     let mut context_parts = Vec::new();
     let mut sources = Vec::new();
     for result in &results {
@@ -1030,17 +1240,48 @@ pub async fn chat_with_transcripts(
     messages.extend(history);
     messages.push(ChatMessage {
         role: "user".into(),
-        content: message,
+        content: message.to_string(),
     });
 
-    let llm = llm.read().await;
     let llm_provider = llm
-        .get_provider(&provider)
+        .get_provider(provider)
         .ok_or_else(|| format!("Provider '{}' not found", provider))?;
     let response = llm_provider
-        .chat(messages, &model)
+        .chat(messages, model)
         .await
         .map_err(|e| e.to_string())?;
+
+    Ok((response, sources))
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn chat_with_transcripts(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    embedding_state: State<'_, EmbeddingState>,
+    message: String,
+    history: Vec<ChatMessage>,
+    provider: String,
+    model: String,
+    category_ids: Vec<String>,
+    date_from: Option<String>,
+    date_to: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let llm = llm.read().await;
+    let (response, sources) = rag_chat(
+        &db,
+        &llm,
+        &embedding_state,
+        &message,
+        history,
+        &provider,
+        &model,
+        &category_ids,
+        date_from.as_deref(),
+        date_to.as_deref(),
+    )
+    .await?;
 
     Ok(serde_json::json!({
         "response": response,
@@ -1108,6 +1349,45 @@ pub async fn get_embedding_status(
     }))
 }
 
+// Insight Type commands
+#[tauri::command]
+pub fn list_insight_types(db: State<'_, DbState>) -> Result<Vec<crate::db::InsightType>, String> {
+    db.list_insight_types().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_insight_type(
+    db: State<'_, DbState>,
+    name: String,
+    slug: String,
+    description: Option<String>,
+    extraction_prompt: String,
+    icon: String,
+    has_action_fields: bool,
+) -> Result<crate::db::InsightType, String> {
+    db.create_insight_type(&name, &slug, description.as_deref(), &extraction_prompt, &icon, has_action_fields)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_insight_type(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    description: Option<String>,
+    extraction_prompt: String,
+    icon: String,
+    has_action_fields: bool,
+) -> Result<crate::db::InsightType, String> {
+    db.update_insight_type(&id, &name, description.as_deref(), &extraction_prompt, &icon, has_action_fields)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_insight_type(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_insight_type(&id).map_err(|e| e.to_string())
+}
+
 // Insight commands
 #[tauri::command]
 pub fn get_insights(
@@ -1135,20 +1415,33 @@ pub fn get_all_insights(
 
 #[tauri::command]
 pub async fn extract_meeting_insights(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
     llm: State<'_, LlmState>,
     meeting_id: String,
     provider: String,
     model: String,
 ) -> Result<(), String> {
+    tracing::info!("[DIAG] extract_meeting_insights called: meeting={meeting_id}, provider={provider}, model={model}");
     let llm = llm.read().await;
-    extraction::extract_insights(&db, &llm, &meeting_id, &provider, &model)
-        .await
-        .map_err(|e| e.to_string())
+    let available = llm.provider_names();
+    tracing::info!("[DIAG] Available providers: {available:?}");
+    match extraction::extract_insights(&db, &llm, &meeting_id, &provider, &model).await {
+        Ok(()) => {
+            tracing::info!("[DIAG] Extraction succeeded for {meeting_id}");
+            let _ = app.emit("insights-updated", &meeting_id);
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!("[DIAG] Extraction FAILED for {meeting_id}: {e:#}");
+            Err(e.to_string())
+        }
+    }
 }
 
 #[tauri::command]
 pub async fn re_extract_meeting_insights(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
     llm: State<'_, LlmState>,
     meeting_id: String,
@@ -1158,7 +1451,9 @@ pub async fn re_extract_meeting_insights(
     let llm = llm.read().await;
     extraction::re_extract_insights(&db, &llm, &meeting_id, &provider, &model)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit("insights-updated", &meeting_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1187,4 +1482,109 @@ pub fn get_exe_path() -> Result<String, String> {
     std::env::current_exe()
         .map(|p| p.to_string_lossy().into_owned())
         .map_err(|e| e.to_string())
+}
+
+// Chat conversation commands
+
+#[tauri::command]
+pub fn create_chat_conversation(db: State<'_, DbState>) -> Result<ChatConversation, String> {
+    db.create_chat_conversation().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_chat_conversations(db: State<'_, DbState>) -> Result<Vec<ChatConversation>, String> {
+    db.list_chat_conversations().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_chat_conversation(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_chat_conversation(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_chat_messages(
+    db: State<'_, DbState>,
+    conversation_id: String,
+) -> Result<Vec<crate::db::ChatMessage>, String> {
+    db.list_chat_messages(&conversation_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn send_chat_message(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    embedding_state: State<'_, EmbeddingState>,
+    conversation_id: String,
+    message: String,
+    provider: String,
+    model: String,
+    category_ids: Vec<String>,
+    date_from: Option<String>,
+    date_to: Option<String>,
+) -> Result<serde_json::Value, String> {
+    // Save user message
+    db.create_chat_message(&conversation_id, "user", &message, None)
+        .map_err(|e| e.to_string())?;
+
+    // Load conversation history
+    let db_messages = db
+        .list_chat_messages(&conversation_id)
+        .map_err(|e| e.to_string())?;
+
+    // Build history for LLM (excluding the last user message we just added — rag_chat appends it)
+    let history: Vec<ChatMessage> = db_messages
+        .iter()
+        .rev()
+        .skip(1) // skip the user msg we just saved
+        .rev()
+        .map(|m| ChatMessage {
+            role: m.role.clone(),
+            content: m.content.clone(),
+        })
+        .collect();
+
+    let llm = llm.read().await;
+    let (response, sources) = rag_chat(
+        &db,
+        &llm,
+        &embedding_state,
+        &message,
+        history,
+        &provider,
+        &model,
+        &category_ids,
+        date_from.as_deref(),
+        date_to.as_deref(),
+    )
+    .await?;
+
+    // Save assistant response
+    let sources_json = serde_json::to_string(&sources).ok();
+    db.create_chat_message(
+        &conversation_id,
+        "assistant",
+        &response,
+        sources_json.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Auto-title on first message
+    if db_messages.len() <= 1 {
+        let title = if message.len() > 50 {
+            format!("{}...", &message[..47])
+        } else {
+            message.clone()
+        };
+        let _ = db.update_chat_conversation_title(&conversation_id, &title);
+    }
+
+    db.touch_chat_conversation(&conversation_id)
+        .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "response": response,
+        "sources": sources
+    }))
 }

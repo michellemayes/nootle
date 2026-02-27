@@ -182,6 +182,20 @@ fn f32_slice_to_bytes(v: &[f32]) -> Vec<u8> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InsightType {
+    pub id: String,
+    pub name: String,
+    pub slug: String,
+    pub description: Option<String>,
+    pub extraction_prompt: String,
+    pub icon: String,
+    pub has_action_fields: bool,
+    pub is_builtin: bool,
+    pub sort_order: i32,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Insight {
     pub id: String,
     pub meeting_id: String,
@@ -251,6 +265,24 @@ pub struct InsightWithActionItem {
     pub action_item_updated_at: Option<String>,
     pub meeting_title: Option<String>,
     pub meeting_start_time: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatConversation {
+    pub id: String,
+    pub title: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub id: String,
+    pub conversation_id: String,
+    pub role: String,
+    pub content: String,
+    pub sources_json: Option<String>,
+    pub created_at: String,
 }
 
 pub struct Database {
@@ -468,8 +500,65 @@ impl Database {
             CREATE TRIGGER IF NOT EXISTS insights_ad AFTER DELETE ON insights BEGIN
                 INSERT INTO insights_fts(insights_fts, rowid, content) VALUES('delete', old.rowid, old.content);
             END;
+
+            CREATE TABLE IF NOT EXISTS insight_types (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                slug TEXT NOT NULL UNIQUE,
+                description TEXT,
+                extraction_prompt TEXT NOT NULL,
+                icon TEXT DEFAULT 'lightbulb',
+                has_action_fields INTEGER DEFAULT 0,
+                is_builtin INTEGER DEFAULT 0,
+                sort_order INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS chat_conversations (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT 'New Conversation',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                sources_json TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             ",
         )?;
+        self.seed_default_insight_types()?;
+        Ok(())
+    }
+
+    fn seed_default_insight_types(&self) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM insight_types", [], |row| row.get(0))?;
+        if count > 0 {
+            return Ok(());
+        }
+        let now = chrono::Utc::now().to_rfc3339();
+        let defaults = [
+            ("decision", "Decision", "Decisions made during the meeting", "Extract clear decisions that were agreed upon. Each decision should be a definitive statement of what was decided.", "lightbulb", false, true, 0),
+            ("action_item", "Action Item", "Tasks assigned to team members", "Extract action items — tasks that someone needs to do. Include who is responsible (assignee) and any deadline mentioned.", "list-checks", true, true, 1),
+            ("key_moment", "Key Moment", "Important moments worth remembering", "Extract key moments — important statements, revelations, or turning points in the discussion that are worth remembering.", "star", false, true, 2),
+        ];
+        for (slug, name, desc, prompt, icon, has_action, is_builtin, sort) in defaults {
+            let id = uuid::Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO insight_types (id, name, slug, description, extraction_prompt, icon, has_action_fields, is_builtin, sort_order, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![id, name, slug, desc, prompt, icon, has_action as i32, is_builtin as i32, sort, now],
+            )?;
+        }
         Ok(())
     }
 
@@ -635,6 +724,21 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_meeting_title(&self, id: &str, title: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "UPDATE meetings SET title = ?1, updated_at = ?2 WHERE id = ?3",
+            params![title, now, id],
+        )?;
+
+        Ok(())
+    }
+
     pub fn update_meeting_category(&self, id: &str, category_id: Option<&str>) -> Result<()> {
         let conn = self
             .conn
@@ -669,6 +773,23 @@ impl Database {
         )?;
 
         Ok(())
+    }
+
+    /// Fix any meetings stuck in "recording" or "transcribing" status from a previous crash.
+    /// Sets them to "summarized" with end_time = now so they appear as completed.
+    pub fn cleanup_stale_recordings(&self) -> Result<usize> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let count = conn.execute(
+            "UPDATE meetings SET status = 'summarized', end_time = COALESCE(end_time, ?1), updated_at = ?1 WHERE status IN ('recording', 'transcribing')",
+            params![now],
+        )?;
+
+        Ok(count)
     }
 
     pub fn delete_meeting(&self, id: &str) -> Result<()> {
@@ -731,6 +852,43 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(categories)
+    }
+
+    pub fn update_category(
+        &self,
+        id: &str,
+        name: &str,
+        color: &str,
+        icon: &str,
+    ) -> Result<Category> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "UPDATE categories SET name = ?1, color = ?2, icon = ?3 WHERE id = ?4",
+            params![name, color, icon, id],
+        )?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, color, icon, created_at FROM categories WHERE id = ?1",
+        )?;
+        let category = stmt
+            .query_row(params![id], |row| {
+                Ok(Category {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    icon: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Category not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+        Ok(category)
     }
 
     pub fn delete_category(&self, id: &str) -> Result<()> {
@@ -1626,6 +1784,47 @@ impl Database {
         Ok(rows)
     }
 
+    pub fn get_insight_by_action_item(&self, action_item_id: &str) -> Result<InsightWithActionItem> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT i.id, i.meeting_id, i.type, i.content, i.context, i.transcript_start_ms, i.transcript_end_ms, i.created_at,
+                    a.id, a.assignee, a.due_date, a.status, a.linear_ticket_id, a.updated_at,
+                    m.title, m.start_time
+             FROM action_items a
+             JOIN insights i ON i.id = a.insight_id
+             LEFT JOIN meetings m ON m.id = i.meeting_id
+             WHERE a.id = ?1",
+        )?;
+        let row = stmt
+            .query_row(params![action_item_id], |row| {
+                Ok(InsightWithActionItem {
+                    id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    insight_type: row.get(2)?,
+                    content: row.get(3)?,
+                    context: row.get(4)?,
+                    transcript_start_ms: row.get(5)?,
+                    transcript_end_ms: row.get(6)?,
+                    created_at: row.get(7)?,
+                    action_item_id: row.get(8)?,
+                    assignee: row.get(9)?,
+                    due_date: row.get(10)?,
+                    status: row.get(11)?,
+                    linear_ticket_id: row.get(12)?,
+                    action_item_updated_at: row.get(13)?,
+                    meeting_title: row.get(14)?,
+                    meeting_start_time: row.get(15)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Action item not found: {}", action_item_id))
+                }
+                other => NootleError::Database(other),
+            })?;
+        Ok(row)
+    }
+
     pub fn delete_insights_for_meeting(&self, meeting_id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -1721,5 +1920,221 @@ impl Database {
             params![status, id],
         )?;
         Ok(())
+    }
+
+    // --- Insight Types ---
+
+    pub fn list_insight_types(&self) -> Result<Vec<InsightType>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, slug, description, extraction_prompt, icon, has_action_fields, is_builtin, sort_order, created_at
+             FROM insight_types ORDER BY sort_order ASC, created_at ASC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(InsightType {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    slug: row.get(2)?,
+                    description: row.get(3)?,
+                    extraction_prompt: row.get(4)?,
+                    icon: row.get(5)?,
+                    has_action_fields: row.get::<_, i32>(6)? != 0,
+                    is_builtin: row.get::<_, i32>(7)? != 0,
+                    sort_order: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn create_insight_type(
+        &self,
+        name: &str,
+        slug: &str,
+        description: Option<&str>,
+        extraction_prompt: &str,
+        icon: &str,
+        has_action_fields: bool,
+    ) -> Result<InsightType> {
+        let conn = self.conn.lock().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        let max_sort: i32 = conn
+            .query_row("SELECT COALESCE(MAX(sort_order), 0) FROM insight_types", [], |row| row.get(0))?;
+        conn.execute(
+            "INSERT INTO insight_types (id, name, slug, description, extraction_prompt, icon, has_action_fields, is_builtin, sort_order, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9)",
+            params![id, name, slug, description, extraction_prompt, icon, has_action_fields as i32, max_sort + 1, now],
+        )?;
+        Ok(InsightType {
+            id,
+            name: name.to_string(),
+            slug: slug.to_string(),
+            description: description.map(|s| s.to_string()),
+            extraction_prompt: extraction_prompt.to_string(),
+            icon: icon.to_string(),
+            has_action_fields,
+            is_builtin: false,
+            sort_order: max_sort + 1,
+            created_at: now,
+        })
+    }
+
+    pub fn update_insight_type(
+        &self,
+        id: &str,
+        name: &str,
+        description: Option<&str>,
+        extraction_prompt: &str,
+        icon: &str,
+        has_action_fields: bool,
+    ) -> Result<InsightType> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE insight_types SET name = ?1, description = ?2, extraction_prompt = ?3, icon = ?4, has_action_fields = ?5 WHERE id = ?6",
+            params![name, description, extraction_prompt, icon, has_action_fields as i32, id],
+        )?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, slug, description, extraction_prompt, icon, has_action_fields, is_builtin, sort_order, created_at
+             FROM insight_types WHERE id = ?1",
+        )?;
+        let it = stmt.query_row(params![id], |row| {
+            Ok(InsightType {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                slug: row.get(2)?,
+                description: row.get(3)?,
+                extraction_prompt: row.get(4)?,
+                icon: row.get(5)?,
+                has_action_fields: row.get::<_, i32>(6)? != 0,
+                is_builtin: row.get::<_, i32>(7)? != 0,
+                sort_order: row.get(8)?,
+                created_at: row.get(9)?,
+            })
+        })?;
+        Ok(it)
+    }
+
+    pub fn delete_insight_type(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let is_builtin: i32 = conn
+            .query_row(
+                "SELECT is_builtin FROM insight_types WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|_| NootleError::Other(format!("Insight type not found: {}", id)))?;
+        if is_builtin != 0 {
+            return Err(NootleError::Other("Cannot delete built-in insight types".into()));
+        }
+        conn.execute("DELETE FROM insight_types WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // --- Chat Conversations ---
+
+    pub fn create_chat_conversation(&self) -> Result<ChatConversation> {
+        let conn = self.conn.lock().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO chat_conversations (id, title, created_at, updated_at) VALUES (?1, 'New Conversation', ?2, ?2)",
+            params![id, now],
+        )?;
+        Ok(ChatConversation {
+            id,
+            title: "New Conversation".into(),
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    pub fn list_chat_conversations(&self) -> Result<Vec<ChatConversation>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, created_at, updated_at FROM chat_conversations ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(ChatConversation {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    created_at: row.get(2)?,
+                    updated_at: row.get(3)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn update_chat_conversation_title(&self, id: &str, title: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE chat_conversations SET title = ?1 WHERE id = ?2",
+            params![title, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn touch_chat_conversation(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE chat_conversations SET updated_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_chat_conversation(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM chat_conversations WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn create_chat_message(
+        &self,
+        conversation_id: &str,
+        role: &str,
+        content: &str,
+        sources_json: Option<&str>,
+    ) -> Result<ChatMessage> {
+        let conn = self.conn.lock().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO chat_messages (id, conversation_id, role, content, sources_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, conversation_id, role, content, sources_json, now],
+        )?;
+        Ok(ChatMessage {
+            id,
+            conversation_id: conversation_id.to_string(),
+            role: role.to_string(),
+            content: content.to_string(),
+            sources_json: sources_json.map(|s| s.to_string()),
+            created_at: now,
+        })
+    }
+
+    pub fn list_chat_messages(&self, conversation_id: &str) -> Result<Vec<ChatMessage>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, conversation_id, role, content, sources_json, created_at FROM chat_messages WHERE conversation_id = ?1 ORDER BY created_at ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![conversation_id], |row| {
+                Ok(ChatMessage {
+                    id: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    role: row.get(2)?,
+                    content: row.get(3)?,
+                    sources_json: row.get(4)?,
+                    created_at: row.get(5)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 }

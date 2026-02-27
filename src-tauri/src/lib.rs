@@ -26,18 +26,36 @@ use tokio::sync::Mutex as TokioMutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
     let app_dir = dirs::data_dir().unwrap().join("Nootle");
     std::fs::create_dir_all(&app_dir).unwrap();
     let db_path = app_dir.join("nootle.db");
     let db = std::sync::Arc::new(db::Database::new(db_path.to_str().unwrap()).unwrap());
+
+    // Fix any meetings stuck in "recording" or "transcribing" from a previous crash
+    match db.cleanup_stale_recordings() {
+        Ok(0) => {}
+        Ok(n) => tracing::info!("Cleaned up {n} stale recording(s) from previous session"),
+        Err(e) => tracing::warn!("Failed to clean up stale recordings: {e}"),
+    }
 
     let recording_state: RecordingState = Arc::new(TokioMutex::new(None));
 
     // Initialize LLM registry with available providers
     let mut llm_registry = LlmRegistry::new();
 
-    // Always register Ollama (no API key needed)
-    llm_registry.register(Box::new(OllamaProvider::new()));
+    // Register Ollama only if it's reachable locally
+    if std::net::TcpStream::connect_timeout(
+        &"127.0.0.1:11434".parse().unwrap(),
+        std::time::Duration::from_millis(500),
+    )
+    .is_ok()
+    {
+        llm_registry.register(Box::new(OllamaProvider::new()));
+    }
 
     // Register providers with stored API keys
     if let Ok(Some(key)) = db.get_api_key("openai") {
@@ -51,6 +69,9 @@ pub fn run() {
     }
     if let Ok(Some(key)) = db.get_api_key("groq") {
         llm_registry.register(Box::new(llm::GroqProvider::new(key)));
+    }
+    if let Ok(Some(key)) = db.get_api_key("openrouter") {
+        llm_registry.register(Box::new(llm::OpenRouterProvider::new(key)));
     }
 
     let llm_state: LlmState = Arc::new(tokio::sync::RwLock::new(llm_registry));
@@ -226,9 +247,11 @@ pub fn run() {
             commands::get_meeting,
             commands::delete_meeting,
             commands::update_meeting_status,
+            commands::update_meeting_title,
             commands::update_meeting_category,
             commands::create_category,
             commands::list_categories,
+            commands::update_category,
             commands::delete_category,
             commands::get_transcript,
             commands::search_transcripts,
@@ -260,6 +283,7 @@ pub fn run() {
             commands::list_linear_teams,
             commands::list_linear_projects,
             commands::create_linear_ticket,
+            commands::create_ticket_from_action_item,
             commands::get_linear_tickets,
             commands::get_linear_setting,
             commands::set_linear_setting,
@@ -272,6 +296,10 @@ pub fn run() {
             commands::embed_meeting_cmd,
             commands::embed_all_meetings,
             commands::get_embedding_status,
+            commands::list_insight_types,
+            commands::create_insight_type,
+            commands::update_insight_type,
+            commands::delete_insight_type,
             commands::get_insights,
             commands::get_all_insights,
             commands::extract_meeting_insights,
@@ -283,6 +311,11 @@ pub fn run() {
             commands::request_microphone_permission,
             commands::request_screen_recording_permission,
             commands::request_calendar_permission,
+            commands::create_chat_conversation,
+            commands::list_chat_conversations,
+            commands::delete_chat_conversation,
+            commands::list_chat_messages,
+            commands::send_chat_message,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,20 +1,25 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { InsightWithActionItem } from "@/types";
+import { listen } from "@tauri-apps/api/event";
+import type { InsightWithActionItem, InsightType } from "@/types";
 
 export function useInsights(meetingId: string) {
   const [insights, setInsights] = useState<InsightWithActionItem[]>([]);
+  const [insightTypes, setInsightTypes] = useState<InsightType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  // Core fetch — quiet=true skips the loading spinner (used after extraction)
+  const fetchInsights = useCallback(async (quiet: boolean) => {
     try {
-      setLoading(true);
+      if (!quiet) setLoading(true);
       setError(null);
-      const result = await invoke<InsightWithActionItem[]>("get_insights", {
-        meetingId,
-      });
+      const [result, types] = await Promise.all([
+        invoke<InsightWithActionItem[]>("get_insights", { meetingId }),
+        invoke<InsightType[]>("list_insight_types"),
+      ]);
       setInsights(result);
+      setInsightTypes(types);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -22,13 +27,39 @@ export function useInsights(meetingId: string) {
     }
   }, [meetingId]);
 
+  const refresh = useCallback(() => fetchInsights(false), [fetchInsights]);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  const decisions = insights.filter((i) => i.type === "decision");
-  const actionItems = insights.filter((i) => i.type === "action_item");
-  const keyMoments = insights.filter((i) => i.type === "key_moment");
+  // Listen for backend event after extraction completes
+  useEffect(() => {
+    const unlisten = listen<string>("insights-updated", (event) => {
+      if (event.payload === meetingId) {
+        fetchInsights(true);
+      }
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [meetingId, fetchInsights]);
+
+  // Group insights by type dynamically
+  const groupedByType = useMemo(() => {
+    const map: Record<string, InsightWithActionItem[]> = {};
+    for (const t of insightTypes) {
+      map[t.slug] = [];
+    }
+    for (const i of insights) {
+      if (!map[i.type]) map[i.type] = [];
+      map[i.type].push(i);
+    }
+    return map;
+  }, [insights, insightTypes]);
+
+  // Keep backward-compatible accessors
+  const decisions = groupedByType["decision"] ?? [];
+  const actionItems = groupedByType["action_item"] ?? [];
+  const keyMoments = groupedByType["key_moment"] ?? [];
 
   const extractInsights = useCallback(
     async (provider: string, model: string) => {
@@ -37,9 +68,10 @@ export function useInsights(meetingId: string) {
         provider,
         model,
       });
-      await refresh();
+      // Quiet refresh — don't flash loading spinner, data should be ready
+      await fetchInsights(true);
     },
-    [meetingId, refresh],
+    [meetingId, fetchInsights],
   );
 
   const reExtractInsights = useCallback(
@@ -49,9 +81,9 @@ export function useInsights(meetingId: string) {
         provider,
         model,
       });
-      await refresh();
+      await fetchInsights(true);
     },
-    [meetingId, refresh],
+    [meetingId, fetchInsights],
   );
 
   const toggleActionItem = useCallback(
@@ -84,6 +116,8 @@ export function useInsights(meetingId: string) {
 
   return {
     insights,
+    insightTypes,
+    groupedByType,
     decisions,
     actionItems,
     keyMoments,
@@ -103,6 +137,7 @@ export function useAllInsights(
   search?: string,
 ) {
   const [insights, setInsights] = useState<InsightWithActionItem[]>([]);
+  const [insightTypes, setInsightTypes] = useState<InsightType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,12 +145,16 @@ export function useAllInsights(
     try {
       setLoading(true);
       setError(null);
-      const result = await invoke<InsightWithActionItem[]>("get_all_insights", {
-        insightType,
-        status,
-        search,
-      });
+      const [result, types] = await Promise.all([
+        invoke<InsightWithActionItem[]>("get_all_insights", {
+          insightType,
+          status,
+          search,
+        }),
+        invoke<InsightType[]>("list_insight_types"),
+      ]);
       setInsights(result);
+      setInsightTypes(types);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -127,9 +166,22 @@ export function useAllInsights(
     refresh();
   }, [refresh]);
 
-  const decisions = insights.filter((i) => i.type === "decision");
-  const actionItems = insights.filter((i) => i.type === "action_item");
-  const keyMoments = insights.filter((i) => i.type === "key_moment");
+  // Group insights by type dynamically
+  const groupedByType = useMemo(() => {
+    const map: Record<string, InsightWithActionItem[]> = {};
+    for (const t of insightTypes) {
+      map[t.slug] = [];
+    }
+    for (const i of insights) {
+      if (!map[i.type]) map[i.type] = [];
+      map[i.type].push(i);
+    }
+    return map;
+  }, [insights, insightTypes]);
+
+  const decisions = groupedByType["decision"] ?? [];
+  const actionItems = groupedByType["action_item"] ?? [];
+  const keyMoments = groupedByType["key_moment"] ?? [];
 
   const toggleActionItem = useCallback(
     async (actionItemId: string, currentStatus: string) => {
@@ -145,6 +197,8 @@ export function useAllInsights(
 
   return {
     insights,
+    insightTypes,
+    groupedByType,
     decisions,
     actionItems,
     keyMoments,
