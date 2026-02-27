@@ -26,13 +26,23 @@ impl LlmProvider for GoogleProvider {
     fn available_models(&self) -> Vec<ModelInfo> {
         vec![
             ModelInfo {
-                id: "gemini-2.0-flash".into(),
-                name: "Gemini 2.0 Flash".into(),
+                id: "gemini-2.5-flash".into(),
+                name: "Gemini 2.5 Flash".into(),
                 provider: "google".into(),
             },
             ModelInfo {
-                id: "gemini-2.0-pro".into(),
-                name: "Gemini 2.0 Pro".into(),
+                id: "gemini-2.5-pro".into(),
+                name: "Gemini 2.5 Pro".into(),
+                provider: "google".into(),
+            },
+            ModelInfo {
+                id: "gemini-2.5-flash-lite".into(),
+                name: "Gemini 2.5 Flash Lite".into(),
+                provider: "google".into(),
+            },
+            ModelInfo {
+                id: "gemini-3.1-pro-preview".into(),
+                name: "Gemini 3.1 Pro (Preview)".into(),
                 provider: "google".into(),
             },
         ]

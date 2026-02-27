@@ -31,13 +31,18 @@ impl LlmProvider for GroqProvider {
                 provider: "groq".into(),
             },
             ModelInfo {
-                id: "mixtral-8x7b-32768".into(),
-                name: "Mixtral 8x7B".into(),
+                id: "llama-3.1-8b-instant".into(),
+                name: "Llama 3.1 8B".into(),
                 provider: "groq".into(),
             },
             ModelInfo {
-                id: "gemma2-9b-it".into(),
-                name: "Gemma 2 9B".into(),
+                id: "meta-llama/llama-4-scout-17b-16e-instruct".into(),
+                name: "Llama 4 Scout".into(),
+                provider: "groq".into(),
+            },
+            ModelInfo {
+                id: "qwen/qwen3-32b".into(),
+                name: "Qwen 3 32B".into(),
                 provider: "groq".into(),
             },
         ]

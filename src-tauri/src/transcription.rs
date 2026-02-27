@@ -349,14 +349,9 @@ impl TranscriptionEngine {
             let (nm, nf) = mel.dim();
             (mel.into_raw_vec_and_offset().0, nm, nf)
         };
-        tracing::debug!(
-            n_mels,
-            n_frames,
-            audio_len = audio.len(),
-            "Mel spectrogram computed"
-        );
+        tracing::info!("[DIAG] Mel: n_mels={n_mels}, n_frames={n_frames}, audio_len={}", audio.len());
 
-        // 2. Run encoder: mel [1, n_mels, n_frames] -> encoded [1, T, D]
+        // 2. Run encoder: mel [1, n_mels, n_frames] -> encoded [1, D, T]
         let mel_tensor = Tensor::from_array(([1, n_mels, n_frames], mel_data))?;
         let length_tensor = Tensor::from_array(([1_usize], vec![n_frames as i64]))?;
 
@@ -365,26 +360,32 @@ impl TranscriptionEngine {
             "length" => length_tensor,
         ])?;
 
-        // 3. Extract encoder output — shape is [1, T, D] (time first, features second)
-        //    The ONNX FastConformer encoder outputs (batch, time, features).
+        // 3. Extract encoder output — shape is [1, D, T] (features first, time second)
+        //    The ONNX FastConformer encoder outputs (batch, features=1024, time).
         let (enc_shape, enc_data) = encoder_outputs[0]
             .try_extract_tensor::<f32>()
             .context("Failed to extract encoder output")?;
         let enc_dims: Vec<usize> = enc_shape.iter().map(|&d| d as usize).collect();
-        let t_enc = enc_dims[1]; // time frames (dimension 1)
-        let d_model = enc_dims[2]; // feature dimension (dimension 2)
-        tracing::debug!(t_enc, d_model, ?enc_dims, "Encoder output shape [1, T, D]");
+        let d_model = enc_dims[1]; // feature dimension (1024)
+        let t_enc = enc_dims[2]; // time frames
+        tracing::info!("[DIAG] Encoder output: enc_dims={enc_dims:?}, d_model={d_model}, t_enc={t_enc}");
 
-        // Data is already [T, D] in row-major order (ignoring batch dim) — no transpose needed.
-        // Frame t starts at offset t * d_model in the flat array.
-        let enc_flat: Vec<f32> = enc_data.to_vec();
+        // Transpose from [D, T] to [T, D] so frame t is a contiguous slice at t * d_model.
+        // Source layout (row-major, ignoring batch): element [d, t] = data[d * t_enc + t]
+        let enc_src: Vec<f32> = enc_data.to_vec();
+        let mut enc_flat = vec![0.0f32; d_model * t_enc];
+        for d in 0..d_model {
+            for t in 0..t_enc {
+                enc_flat[t * d_model + d] = enc_src[d * t_enc + t];
+            }
+        }
 
         // Get encoded length (clamp to actual tensor size)
         let (_, enc_len_data) = encoder_outputs[1]
             .try_extract_tensor::<i64>()
             .context("Failed to extract encoded lengths")?;
         let encoded_len = (enc_len_data[0] as usize).min(t_enc);
-        tracing::debug!(encoded_len, "Encoded length");
+        tracing::info!("[DIAG] Encoded length={encoded_len}, state1_dims={:?}, state2_dims={:?}", self.state1_dims, self.state2_dims);
 
         // 4. TDT greedy search: call decoder step-by-step over encoder frames
         let mut state1 =
@@ -403,9 +404,9 @@ impl TranscriptionEngine {
             let encoder_frame = Tensor::from_array(([1, d_model, 1], frame_data))?;
 
             // Previous token (or blank if nothing emitted yet)
-            let prev_token = tokens.last().copied().unwrap_or(self.blank_idx) as i64;
+            let prev_token = tokens.last().copied().unwrap_or(self.blank_idx) as i32;
             let targets = Tensor::from_array(([1_usize, 1], vec![prev_token]))?;
-            let target_length = Tensor::from_array(([1_usize], vec![1_i64]))?;
+            let target_length = Tensor::from_array(([1_usize], vec![1_i32]))?;
 
             let state1_tensor = Tensor::from_array((self.state1_dims, state1.clone()))?;
             let state2_tensor = Tensor::from_array((self.state2_dims, state2.clone()))?;
@@ -419,12 +420,21 @@ impl TranscriptionEngine {
             ])?;
 
             // Output 0 = logits (float), outputs 1 & 2 = new LSTM states
-            let (_, output_data) = decoder_out[0]
+            let (logit_shape, output_data) = decoder_out[0]
                 .try_extract_tensor::<f32>()
                 .context("Failed to extract decoder logits")?;
             let logits: Vec<f32> = output_data.to_vec();
 
+            if t == 0 {
+                let logit_dims: Vec<usize> = logit_shape.iter().map(|&d| d as usize).collect();
+                tracing::info!("[DIAG] Decoder output shape: {logit_dims:?}, total logits={}, vocab_size={}", logits.len(), self.vocab_size);
+            }
+
             // TDT: split into vocab logits and duration logits
+            if logits.len() < self.vocab_size {
+                tracing::error!("[DIAG] Decoder output too small: {} < vocab_size {}", logits.len(), self.vocab_size);
+                return Err(anyhow!("Decoder output size {} smaller than vocab size {}", logits.len(), self.vocab_size));
+            }
             let vocab_logits = &logits[..self.vocab_size];
             let duration_logits = &logits[self.vocab_size..];
 
@@ -448,11 +458,12 @@ impl TranscriptionEngine {
 
             if token != self.blank_idx {
                 // Update LSTM states only on non-blank emission
-                let (_, s1) = decoder_out[1]
+                // Decoder outputs: [0]=logits, [1]=prednet_lengths, [2]=output_states_1, [3]=output_states_2
+                let (_, s1) = decoder_out[2]
                     .try_extract_tensor::<f32>()
                     .context("Failed to extract output_states_1")?;
                 state1 = s1.to_vec();
-                let (_, s2) = decoder_out[2]
+                let (_, s2) = decoder_out[3]
                     .try_extract_tensor::<f32>()
                     .context("Failed to extract output_states_2")?;
                 state2 = s2.to_vec();
@@ -471,11 +482,14 @@ impl TranscriptionEngine {
         }
 
         // 5. Convert token IDs to text
-        tracing::debug!(
-            token_count = tokens.len(),
-            encoded_len,
-            "TDT decode complete"
-        );
+        tracing::info!("[DIAG] TDT decode: {}/{encoded_len} frames processed, {} tokens emitted, blank_idx={}",
+            t, tokens.len(), self.blank_idx);
+        if !tokens.is_empty() {
+            let sample: Vec<_> = tokens.iter().take(10).map(|&id| {
+                if id < self.vocab.len() { self.vocab[id].clone() } else { format!("?{id}") }
+            }).collect();
+            tracing::info!("[DIAG] First tokens: {sample:?}");
+        }
         let mut text = String::new();
         for &id in &tokens {
             if id < self.vocab.len() {
@@ -502,7 +516,7 @@ impl TranscriptionEngine {
         }
 
         let text = text.trim().to_string();
-        tracing::info!(text_len = text.len(), "Transcription result: {:?}", text);
+        tracing::info!("[DIAG] Final text ({} chars): {:?}", text.len(), text);
         if text.is_empty() {
             return Ok(vec![]);
         }

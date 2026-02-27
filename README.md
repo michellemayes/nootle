@@ -27,10 +27,12 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Live transcription** — speech-to-text powered by Parakeet via ONNX Runtime
 - **Speaker identification** — know who said what with automatic diarization
 - **AI summaries and chat** — ask questions about your meetings using your preferred LLM
-- **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, or local Ollama
+- **Insight extraction** — automatically extract decisions, action items, and key moments
+- **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, or local Ollama
 - **Meeting detection** — auto-detects active meeting apps and calendar events
 - **MCP server** — integrate with Claude Code and other MCP-compatible tools
-- **Customizable** — editable prompts and templates for summaries
+- **Customizable** — editable prompts for summaries
+- **Auto-titling** — meetings are automatically titled from transcript content
 
 ## Install
 

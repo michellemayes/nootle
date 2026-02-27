@@ -68,6 +68,13 @@ export async function unarchiveMeeting(id: string): Promise<void> {
   await invoke("update_meeting_status", { id, status: "summarized" });
 }
 
+export async function updateMeetingTitle(
+  id: string,
+  title: string,
+): Promise<void> {
+  await invoke("update_meeting_title", { id, title });
+}
+
 export async function updateMeetingCategory(
   id: string,
   categoryId: string | null,

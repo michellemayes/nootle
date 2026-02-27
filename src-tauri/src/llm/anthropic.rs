@@ -26,18 +26,23 @@ impl LlmProvider for AnthropicProvider {
     fn available_models(&self) -> Vec<ModelInfo> {
         vec![
             ModelInfo {
-                id: "claude-sonnet-4-20250514".into(),
-                name: "Claude Sonnet 4".into(),
+                id: "claude-sonnet-4-6".into(),
+                name: "Claude Sonnet 4.6".into(),
                 provider: "anthropic".into(),
             },
             ModelInfo {
-                id: "claude-haiku-4-20250414".into(),
-                name: "Claude Haiku 4".into(),
+                id: "claude-opus-4-6".into(),
+                name: "Claude Opus 4.6".into(),
                 provider: "anthropic".into(),
             },
             ModelInfo {
-                id: "claude-opus-4-20250514".into(),
-                name: "Claude Opus 4".into(),
+                id: "claude-haiku-4-5".into(),
+                name: "Claude Haiku 4.5".into(),
+                provider: "anthropic".into(),
+            },
+            ModelInfo {
+                id: "claude-sonnet-4-5".into(),
+                name: "Claude Sonnet 4.5".into(),
                 provider: "anthropic".into(),
             },
         ]

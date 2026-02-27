@@ -57,7 +57,6 @@ export function GlobalChatPanel() {
     error,
     sendMessage,
     clearMessages,
-    categoryIds,
     setFilters,
     embeddingStatus,
     embedAllMeetings,
@@ -69,14 +68,15 @@ export function GlobalChatPanel() {
   const [input, setInput] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState(""); // "" = all
   const [selectedDatePreset, setSelectedDatePreset] = useState(3); // "All time"
   const [embedding, setEmbedding] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Dragging state
-  const [position, setPosition] = useState({ x: 0, y: 0 });
+  // Dragging state – use right/bottom offsets so framer-motion's transform doesn't conflict
+  const [offset, setOffset] = useState({ right: 24, bottom: 24 });
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
+  const dragStartRef = useRef({ x: 0, y: 0, right: 0, bottom: 0 });
 
   // Default provider/model
   useEffect(() => {
@@ -110,13 +110,25 @@ export function GlobalChatPanel() {
     await sendMessage(msg, selectedProvider, selectedModel);
   };
 
+  const currentDateFrom = () => {
+    const preset = DATE_PRESETS[selectedDatePreset];
+    return preset.days
+      ? new Date(Date.now() - preset.days * 86400000).toISOString()
+      : null;
+  };
+
   const handleDatePresetChange = (idx: number) => {
     setSelectedDatePreset(idx);
     const preset = DATE_PRESETS[idx];
     const dateFrom = preset.days
       ? new Date(Date.now() - preset.days * 86400000).toISOString()
       : null;
-    setFilters(categoryIds, dateFrom, null);
+    setFilters(selectedCategory ? [selectedCategory] : [], dateFrom, null);
+  };
+
+  const handleCategoryChange = (catId: string) => {
+    setSelectedCategory(catId);
+    setFilters(catId ? [catId] : [], currentDateFrom(), null);
   };
 
   const handleEmbedAll = async () => {
@@ -130,17 +142,17 @@ export function GlobalChatPanel() {
     dragStartRef.current = {
       x: e.clientX,
       y: e.clientY,
-      posX: position.x,
-      posY: position.y,
+      right: offset.right,
+      bottom: offset.bottom,
     };
   };
 
   useEffect(() => {
     if (!isDragging) return;
     const handleMove = (e: MouseEvent) => {
-      setPosition({
-        x: dragStartRef.current.posX + (e.clientX - dragStartRef.current.x),
-        y: dragStartRef.current.posY + (e.clientY - dragStartRef.current.y),
+      setOffset({
+        right: dragStartRef.current.right - (e.clientX - dragStartRef.current.x),
+        bottom: dragStartRef.current.bottom - (e.clientY - dragStartRef.current.y),
       });
     };
     const handleUp = () => setIsDragging(false);
@@ -185,14 +197,15 @@ export function GlobalChatPanel() {
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
             style={{
-              transform: `translate(${position.x}px, ${position.y}px)`,
+              right: offset.right,
+              bottom: offset.bottom,
             }}
-            className="fixed bottom-6 right-6 z-50 flex w-[400px] h-[600px] flex-col rounded-xl border bg-background shadow-2xl"
+            className="fixed z-50 flex w-[400px] h-[600px] flex-col rounded-xl border bg-background shadow-2xl"
           >
             {/* Header */}
             <div
@@ -218,23 +231,11 @@ export function GlobalChatPanel() {
             <div className="flex flex-col gap-2 px-4 py-2 border-b">
               <div className="flex items-center gap-2">
                 <select
-                  multiple
-                  value={categoryIds}
-                  onChange={(e) => {
-                    const selected = Array.from(
-                      e.target.selectedOptions,
-                      (o) => o.value
-                    );
-                    const preset = DATE_PRESETS[selectedDatePreset];
-                    const dateFrom = preset.days
-                      ? new Date(
-                          Date.now() - preset.days * 86400000
-                        ).toISOString()
-                      : null;
-                    setFilters(selected, dateFrom, null);
-                  }}
-                  className="h-7 w-full rounded-md border bg-transparent px-2 text-xs"
+                  value={selectedCategory}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
+                  className="h-7 flex-1 rounded-md border bg-transparent px-2 text-xs"
                 >
+                  <option value="">All Categories</option>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name}
@@ -257,10 +258,22 @@ export function GlobalChatPanel() {
               </div>
 
               {embeddingStatus && (
-                <p className="text-xs text-muted-foreground">
-                  {embeddingStatus.embedded} of {embeddingStatus.total}{" "}
-                  meetings indexed
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    {embeddingStatus.embedded} of {embeddingStatus.total}{" "}
+                    meetings indexed
+                  </p>
+                  {!modelNotReady && needsBackfill && (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={handleEmbedAll}
+                      disabled={embedding}
+                    >
+                      {embedding ? "Indexing..." : `Index ${embeddingStatus.total - embeddingStatus.embedded} meetings`}
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
 
@@ -279,26 +292,8 @@ export function GlobalChatPanel() {
                   </div>
                 )}
 
-                {!modelNotReady && needsBackfill && (
-                  <div className="rounded-lg bg-muted p-4 text-center text-sm">
-                    <p className="mb-2 text-muted-foreground">
-                      {embeddingStatus!.total -
-                        embeddingStatus!.embedded}{" "}
-                      meetings need indexing for search.
-                    </p>
-                    <Button
-                      size="sm"
-                      onClick={handleEmbedAll}
-                      disabled={embedding}
-                    >
-                      {embedding ? "Indexing..." : "Index All"}
-                    </Button>
-                  </div>
-                )}
-
                 {messages.length === 0 &&
-                  !modelNotReady &&
-                  !needsBackfill && (
+                  !modelNotReady && (
                     <p className="text-center text-sm text-muted-foreground py-8">
                       Ask anything about your meetings
                     </p>

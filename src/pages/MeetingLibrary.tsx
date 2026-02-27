@@ -86,6 +86,21 @@ function statusColor(
   }
 }
 
+function statusLabel(status: string): string {
+  switch (status) {
+    case "recording":
+      return "Recording";
+    case "transcribing":
+      return "Transcribing";
+    case "summarized":
+      return "Done";
+    case "archived":
+      return "Archived";
+    default:
+      return status;
+  }
+}
+
 export function MeetingLibrary() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -338,22 +353,22 @@ export function MeetingLibrary() {
                           <Badge
                             variant={statusColor(meeting.status)}
                           >
-                            {meeting.status}
+                            {statusLabel(meeting.status)}
                           </Badge>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-accent"
-                                onClick={(e) => e.stopPropagation()}
-                                onPointerDown={(e) => e.stopPropagation()}
-                              >
-                                <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {renderMenuItems(meeting, dropdownPrimitives)}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-accent"
+                                >
+                                  <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {renderMenuItems(meeting, dropdownPrimitives)}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -409,22 +424,22 @@ export function MeetingLibrary() {
                     {formatDuration(meeting.start_time, meeting.end_time)}
                   </span>
                   <Badge variant={statusColor(meeting.status)} className="shrink-0">
-                    {meeting.status}
+                    {statusLabel(meeting.status)}
                   </Badge>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-accent"
-                        onClick={(e) => e.stopPropagation()}
-                        onPointerDown={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {renderMenuItems(meeting, dropdownPrimitives)}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-accent"
+                        >
+                          <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {renderMenuItems(meeting, dropdownPrimitives)}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               </ContextMenuTrigger>
               <ContextMenuContent>

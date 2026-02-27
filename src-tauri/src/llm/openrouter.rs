@@ -1,11 +1,11 @@
 use super::types::{ChatMessage, LlmProvider, ModelInfo};
 
-pub struct OpenAiProvider {
+pub struct OpenRouterProvider {
     api_key: String,
     client: reqwest::Client,
 }
 
-impl OpenAiProvider {
+impl OpenRouterProvider {
     pub fn new(api_key: String) -> Self {
         use std::time::Duration;
         let client = reqwest::Client::builder()
@@ -18,42 +18,42 @@ impl OpenAiProvider {
 }
 
 #[async_trait::async_trait]
-impl LlmProvider for OpenAiProvider {
+impl LlmProvider for OpenRouterProvider {
     fn provider_name(&self) -> &str {
-        "openai"
+        "openrouter"
     }
 
     fn available_models(&self) -> Vec<ModelInfo> {
         vec![
             ModelInfo {
-                id: "gpt-5".into(),
+                id: "anthropic/claude-sonnet-4.6".into(),
+                name: "Claude Sonnet 4.6".into(),
+                provider: "openrouter".into(),
+            },
+            ModelInfo {
+                id: "anthropic/claude-haiku-4.5".into(),
+                name: "Claude Haiku 4.5".into(),
+                provider: "openrouter".into(),
+            },
+            ModelInfo {
+                id: "openai/gpt-5".into(),
                 name: "GPT-5".into(),
-                provider: "openai".into(),
+                provider: "openrouter".into(),
             },
             ModelInfo {
-                id: "gpt-5-mini".into(),
-                name: "GPT-5 Mini".into(),
-                provider: "openai".into(),
-            },
-            ModelInfo {
-                id: "gpt-4.1".into(),
+                id: "openai/gpt-4.1".into(),
                 name: "GPT-4.1".into(),
-                provider: "openai".into(),
+                provider: "openrouter".into(),
             },
             ModelInfo {
-                id: "gpt-4.1-mini".into(),
-                name: "GPT-4.1 Mini".into(),
-                provider: "openai".into(),
+                id: "google/gemini-2.5-flash".into(),
+                name: "Gemini 2.5 Flash".into(),
+                provider: "openrouter".into(),
             },
             ModelInfo {
-                id: "gpt-4.1-nano".into(),
-                name: "GPT-4.1 Nano".into(),
-                provider: "openai".into(),
-            },
-            ModelInfo {
-                id: "o4-mini".into(),
-                name: "o4 Mini".into(),
-                provider: "openai".into(),
+                id: "meta-llama/llama-3.3-70b-instruct".into(),
+                name: "Llama 3.3 70B".into(),
+                provider: "openrouter".into(),
             },
         ]
     }
@@ -61,8 +61,10 @@ impl LlmProvider for OpenAiProvider {
     async fn chat(&self, messages: Vec<ChatMessage>, model: &str) -> anyhow::Result<String> {
         let resp = self
             .client
-            .post("https://api.openai.com/v1/chat/completions")
+            .post("https://openrouter.ai/api/v1/chat/completions")
             .bearer_auth(&self.api_key)
+            .header("HTTP-Referer", "https://nootle.app")
+            .header("X-Title", "Nootle")
             .json(&serde_json::json!({
                 "model": model,
                 "messages": messages,
@@ -77,7 +79,7 @@ impl LlmProvider for OpenAiProvider {
             let error_msg = body["error"]["message"]
                 .as_str()
                 .unwrap_or("Unknown API error");
-            anyhow::bail!("OpenAI API error ({}): {}", status, error_msg);
+            anyhow::bail!("OpenRouter API error ({}): {}", status, error_msg);
         }
 
         Ok(body["choices"][0]["message"]["content"]

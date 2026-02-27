@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { Summary } from "@/types";
 
 export function useSummaries(meetingId: string) {
@@ -23,6 +24,16 @@ export function useSummaries(meetingId: string) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Listen for auto-run summary completions
+  useEffect(() => {
+    const unlisten = listen<string>("summaries-updated", (event) => {
+      if (event.payload === meetingId) {
+        refresh();
+      }
+    });
+    return () => { unlisten.then((f) => f()); };
+  }, [meetingId, refresh]);
 
   const generateSummary = useCallback(
     async (promptId: string, provider: string, model: string) => {

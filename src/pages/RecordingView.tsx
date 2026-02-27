@@ -74,16 +74,6 @@ export function RecordingView() {
     useState<TranscriptionStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Start recording on mount
-  useEffect(() => {
-    if (!hasStarted) {
-      setHasStarted(true);
-      startRecording(title).catch(() => {
-        // Error is captured in useRecording's error state
-      });
-    }
-  }, [hasStarted, startRecording, title]);
-
   // Listen for transcript updates
   useEffect(() => {
     const unlisten = listen<TranscriptSegment[]>(
@@ -109,6 +99,17 @@ export function RecordingView() {
       unlisten.then((fn) => fn());
     };
   }, []);
+
+  // Start recording on mount — after event listeners are registered above
+  // so we don't miss the transcription-status event from the backend
+  useEffect(() => {
+    if (!hasStarted) {
+      setHasStarted(true);
+      startRecording(title).catch(() => {
+        // Error is captured in useRecording's error state
+      });
+    }
+  }, [hasStarted, startRecording, title]);
 
   // Auto-scroll transcript
   useEffect(() => {

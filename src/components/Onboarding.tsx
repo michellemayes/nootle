@@ -19,6 +19,7 @@ const PROVIDERS = [
   { id: "anthropic", name: "Anthropic", placeholder: "sk-ant-..." },
   { id: "google", name: "Google Gemini", placeholder: "AIza..." },
   { id: "groq", name: "Groq", placeholder: "gsk_..." },
+  { id: "openrouter", name: "OpenRouter", placeholder: "sk-or-..." },
 ] as const;
 
 function SparkleShower() {
@@ -155,8 +156,8 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                 </h2>
                 <p className="mb-6 text-sm text-muted-foreground">
                   Add API keys for AI-powered summaries and chat. You can skip
-                  this and add them later in Settings. Keys are stored securely
-                  in your macOS Keychain.
+                  this and add them later in Settings. Using Ollama? No key
+                  needed — Nootle auto-detects it.
                 </p>
                 <div className="space-y-4">
                   {PROVIDERS.map((p) => (

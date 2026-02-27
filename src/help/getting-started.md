@@ -29,7 +29,20 @@ Open any meeting from the library to see:
 - **Summary** — click **Generate Summary** to create an AI-powered summary using your configured LLM provider. You can customize the summary style under **Prompts**.
 - **Chat** — ask follow-up questions about the meeting. For example: "What action items were discussed?" or "Summarize what Alice said about the budget."
 
+## Insights
+
+Open any meeting and switch to the **Insights** tab to extract structured information:
+
+- **Decisions** — key decisions made during the meeting
+- **Action Items** — tasks assigned with optional assignee and due date
+- **Key Moments** — important highlights from the conversation
+
+Select your LLM provider and model, then click **Extract Insights**.
+
 ## Customizing Summaries
 
 - **Prompts** (sidebar → Prompts) — control *what the AI focuses on* and *how it writes*. A prompt is a set of instructions like "extract action items, keep it concise, use bullet points." Different prompts produce different styles of summary from the same meeting.
-- **Templates** (sidebar → Templates) — control *which sections appear* in the summary and in what order. For example, a standup template might have "Yesterday / Today / Blockers" sections, while a 1:1 template might have "Discussion / Action Items / Follow-ups."
+
+## Auto-Titling
+
+After a recording ends, Nootle automatically generates a title from the transcript content. You can click the title on any meeting detail page to rename it.

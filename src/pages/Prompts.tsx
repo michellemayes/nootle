@@ -103,23 +103,29 @@ export function PromptsPage() {
                 />
               </div>
               <div className="flex items-center gap-6">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={newFavorite}
-                    onChange={(e) => setNewFavorite(e.target.checked)}
-                    className="rounded"
-                  />
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={newFavorite}
+                    onClick={() => setNewFavorite(!newFavorite)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${newFavorite ? "bg-primary" : "bg-muted"}`}
+                  >
+                    <span className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${newFavorite ? "translate-x-4" : "translate-x-0"}`} />
+                  </button>
                   Favorite
                 </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={newAutoRun}
-                    onChange={(e) => setNewAutoRun(e.target.checked)}
-                    className="rounded"
-                  />
-                  Auto-run
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={newAutoRun}
+                    onClick={() => setNewAutoRun(!newAutoRun)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${newAutoRun ? "bg-primary" : "bg-muted"}`}
+                  >
+                    <span className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${newAutoRun ? "translate-x-4" : "translate-x-0"}`} />
+                  </button>
+                  Auto-run after recording
                 </label>
               </div>
             </div>
