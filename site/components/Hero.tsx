@@ -24,14 +24,15 @@ export function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <Image
-            src="/nootle-logo.png"
-            alt="Nootle"
-            width={180}
-            height={180}
-            className="mx-auto mb-8 rounded-[2.5rem] shadow-2xl"
-            priority
-          />
+          <div className="mx-auto mb-8 w-[180px] h-[180px] rounded-[2.5rem] overflow-hidden shadow-2xl">
+            <Image
+              src="/nootle-logo.png"
+              alt="Nootle"
+              width={180}
+              height={180}
+              priority
+            />
+          </div>
         </motion.div>
 
         <motion.h1
