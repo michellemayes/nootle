@@ -10,7 +10,7 @@
 use anyhow::{anyhow, Context};
 use ndarray::Array2;
 use ort::session::Session;
-use ort::value::Tensor;
+use ort::value::{Tensor, ValueType};
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
 use std::f32::consts::PI;
@@ -30,6 +30,7 @@ const F_MIN: f32 = 0.0;
 const F_MAX: f32 = 8000.0; // Nyquist for 16kHz
 const PREEMPHASIS: f32 = 0.97;
 const LOG_ZERO_GUARD: f32 = 1e-10;
+const MAX_TOKENS_PER_STEP: usize = 10;
 
 /// A single transcription segment with timing.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -57,6 +58,12 @@ pub struct TranscriptionEngine {
     model_dir: PathBuf,
     vocab: Vec<String>,
     mel_filterbank: Array2<f32>,
+    blank_idx: usize,
+    vocab_size: usize,
+    /// LSTM state shape [layers, 1, hidden] for decoder input_states_1
+    state1_dims: [usize; 3],
+    /// LSTM state shape [layers, 1, hidden] for decoder input_states_2
+    state2_dims: [usize; 3],
 }
 
 impl TranscriptionEngine {
@@ -127,6 +134,17 @@ impl TranscriptionEngine {
             })
             .collect();
 
+        // Find the blank token index ("<blk>" in Parakeet TDT vocab)
+        let blank_idx = vocab
+            .iter()
+            .position(|t| t == "<blk>")
+            .ok_or_else(|| anyhow!("Vocab does not contain <blk> blank token"))?;
+        let vocab_size = vocab.len();
+
+        // Extract LSTM state dimensions from decoder input metadata
+        let state1_dims = extract_state_dims(&decoder, "input_states_1")?;
+        let state2_dims = extract_state_dims(&decoder, "input_states_2")?;
+
         let mel_filterbank = create_mel_filterbank(N_FFT, N_MELS, SAMPLE_RATE, F_MIN, F_MAX);
 
         // Log model input/output names for debugging
@@ -151,7 +169,10 @@ impl TranscriptionEngine {
             .map(|o| o.name().to_string())
             .collect();
         tracing::info!(
-            vocab_size = vocab.len(),
+            vocab_size,
+            blank_idx,
+            ?state1_dims,
+            ?state2_dims,
             ?encoder_inputs,
             ?encoder_outputs,
             ?decoder_inputs,
@@ -165,6 +186,10 @@ impl TranscriptionEngine {
             model_dir,
             vocab,
             mel_filterbank,
+            blank_idx,
+            vocab_size,
+            state1_dims,
+            state2_dims,
         })
     }
 
@@ -262,8 +287,7 @@ impl TranscriptionEngine {
         let mel = self.compute_mel_spectrogram(audio);
         let (n_mels, n_frames) = mel.dim();
 
-        // 2. Run encoder: mel [1, n_mels, n_frames] -> encoded [1, T, D]
-        // Use (shape, vec) tuple form for ort compatibility
+        // 2. Run encoder: mel [1, n_mels, n_frames] -> encoded [1, D, T]
         let mel_data: Vec<f32> = mel.into_raw_vec_and_offset().0;
         let mel_tensor = Tensor::from_array(([1, n_mels, n_frames], mel_data))?;
         let length_tensor = Tensor::from_array(([1_usize], vec![n_frames as i64]))?;
@@ -273,30 +297,121 @@ impl TranscriptionEngine {
             "length" => length_tensor,
         ])?;
 
-        // 3. Run decoder on encoder output
-        let decoder_outputs = self.decoder.run(ort::inputs![
-            "encoder_output" => &encoder_outputs[0],
-            "encoded_lengths" => &encoder_outputs[1],
-        ])?;
+        // 3. Extract encoder output [1, D, T] and transpose to [T, D]
+        let (enc_shape, enc_data) = encoder_outputs[0]
+            .try_extract_tensor::<f32>()
+            .context("Failed to extract encoder output")?;
+        let enc_dims: Vec<usize> = enc_shape.iter().map(|&d| d as usize).collect();
+        let d_model = enc_dims[1]; // feature dimension
+        let t_enc = enc_dims[2]; // time frames
 
-        // 4. Decode token IDs to text (try i64, fall back to i32)
-        let token_ids: Vec<i64> =
-            if let Ok((_, data)) = decoder_outputs[0].try_extract_tensor::<i64>() {
-                data.to_vec()
-            } else if let Ok((_, data)) = decoder_outputs[0].try_extract_tensor::<i32>() {
-                data.iter().map(|&x| x as i64).collect()
+        // Transpose [1, D, T] row-major to [T, D]: element[0,d,t] = data[d*T+t]
+        let enc_flat: Vec<f32> = enc_data.to_vec();
+        let mut transposed = vec![0.0f32; t_enc * d_model];
+        for d in 0..d_model {
+            for t in 0..t_enc {
+                transposed[t * d_model + d] = enc_flat[d * t_enc + t];
+            }
+        }
+
+        // Get encoded length (clamp to actual tensor size)
+        let (_, enc_len_data) = encoder_outputs[1]
+            .try_extract_tensor::<i64>()
+            .context("Failed to extract encoded lengths")?;
+        let encoded_len = (enc_len_data[0] as usize).min(t_enc);
+
+        // 4. TDT greedy search: call decoder step-by-step over encoder frames
+        let mut state1 =
+            vec![0.0f32; self.state1_dims[0] * self.state1_dims[1] * self.state1_dims[2]];
+        let mut state2 =
+            vec![0.0f32; self.state2_dims[0] * self.state2_dims[1] * self.state2_dims[2]];
+
+        let mut tokens: Vec<usize> = Vec::new();
+        let mut t: usize = 0;
+        let mut emitted_tokens: usize = 0;
+
+        while t < encoded_len {
+            // Encoder frame t → shape [1, D, 1]
+            let frame_start = t * d_model;
+            let frame_data: Vec<f32> = transposed[frame_start..frame_start + d_model].to_vec();
+            let encoder_frame = Tensor::from_array(([1, d_model, 1], frame_data))?;
+
+            // Previous token (or blank if nothing emitted yet)
+            let prev_token = tokens.last().copied().unwrap_or(self.blank_idx) as i64;
+            let targets = Tensor::from_array(([1_usize, 1], vec![prev_token]))?;
+            let target_length = Tensor::from_array(([1_usize], vec![1_i64]))?;
+
+            let state1_tensor = Tensor::from_array((self.state1_dims, state1.clone()))?;
+            let state2_tensor = Tensor::from_array((self.state2_dims, state2.clone()))?;
+
+            let decoder_out = self.decoder.run(ort::inputs![
+                "encoder_outputs" => encoder_frame,
+                "targets" => targets,
+                "target_length" => target_length,
+                "input_states_1" => state1_tensor,
+                "input_states_2" => state2_tensor,
+            ])?;
+
+            // Output 0 = logits (float), outputs 1 & 2 = new LSTM states
+            let (_, output_data) = decoder_out[0]
+                .try_extract_tensor::<f32>()
+                .context("Failed to extract decoder logits")?;
+            let logits: Vec<f32> = output_data.to_vec();
+
+            // TDT: split into vocab logits and duration logits
+            let vocab_logits = &logits[..self.vocab_size];
+            let duration_logits = &logits[self.vocab_size..];
+
+            let token = vocab_logits
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(idx, _)| idx)
+                .unwrap_or(self.blank_idx);
+
+            let step: usize = if duration_logits.is_empty() {
+                0
             } else {
-                return Err(anyhow!("Decoder output is neither i64 nor i32"));
+                duration_logits
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0)
             };
 
+            if token != self.blank_idx {
+                // Update LSTM states only on non-blank emission
+                let (_, s1) = decoder_out[1]
+                    .try_extract_tensor::<f32>()
+                    .context("Failed to extract output_states_1")?;
+                state1 = s1.to_vec();
+                let (_, s2) = decoder_out[2]
+                    .try_extract_tensor::<f32>()
+                    .context("Failed to extract output_states_2")?;
+                state2 = s2.to_vec();
+
+                tokens.push(token);
+                emitted_tokens += 1;
+            }
+
+            if step > 0 {
+                t += step;
+                emitted_tokens = 0;
+            } else if token == self.blank_idx || emitted_tokens >= MAX_TOKENS_PER_STEP {
+                t += 1;
+                emitted_tokens = 0;
+            }
+        }
+
+        // 5. Convert token IDs to text
         let mut text = String::new();
-        for &id in &token_ids {
-            let id = id as usize;
+        for &id in &tokens {
             if id < self.vocab.len() {
                 let token = &self.vocab[id];
                 if token == "<unk>"
                     || token == "<pad>"
-                    || token == "<blank>"
+                    || token == "<blk>"
                     || token == "<s>"
                     || token == "</s>"
                     || token.starts_with("<|")
@@ -328,6 +443,35 @@ impl TranscriptionEngine {
             end_ms: offset_ms + duration_ms,
             speaker_id: None,
         }])
+    }
+}
+
+// ── Decoder state helpers ────────────────────────────────────────────────────
+
+/// Extract LSTM state dimensions [layers, 1, hidden] from a decoder input by name.
+fn extract_state_dims(session: &Session, name: &str) -> anyhow::Result<[usize; 3]> {
+    let input = session
+        .inputs()
+        .iter()
+        .find(|i| i.name() == name)
+        .ok_or_else(|| anyhow!("Decoder missing input '{name}'"))?;
+
+    match input.dtype() {
+        ValueType::Tensor { shape, .. } => {
+            if shape.len() != 3 {
+                return Err(anyhow!(
+                    "Expected 3-D shape for '{name}', got {}-D",
+                    shape.len()
+                ));
+            }
+            // Dynamic dims come as -1; use 1 as fallback
+            Ok([
+                shape[0].max(1) as usize,
+                1, // batch dim is always 1
+                shape[2].max(1) as usize,
+            ])
+        }
+        other => Err(anyhow!("Expected Tensor type for '{name}', got {other:?}")),
     }
 }
 
