@@ -2,6 +2,7 @@ pub mod audio;
 pub mod chunking;
 pub mod commands;
 pub mod db;
+pub mod denoise;
 pub mod detection;
 pub mod diarization;
 pub mod embedding;
@@ -15,6 +16,7 @@ pub mod model_registry;
 pub mod permissions;
 pub mod summarization;
 pub mod transcription;
+pub mod vad;
 
 use commands::{DetectorState, DownloadManagerState, EmbeddingState, LlmState, RecordingState};
 use detection::MeetingDetector;
