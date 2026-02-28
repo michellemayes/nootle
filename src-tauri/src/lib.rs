@@ -357,6 +357,9 @@ pub fn run() {
             commands::save_meeting_notes,
             commands::save_enriched_notes,
             commands::enrich_meeting_notes,
+            commands::compute_meeting_analytics,
+            commands::compute_meeting_sentiment,
+            commands::get_meeting_analytics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

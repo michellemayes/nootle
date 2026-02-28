@@ -1796,3 +1796,64 @@ pub async fn enrich_meeting_notes(
 
     Ok(enriched)
 }
+
+#[tauri::command]
+pub async fn compute_meeting_analytics(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<(), String> {
+    let speaker_analytics = crate::analytics::compute_speaker_analytics(&db, &meeting_id)
+        .map_err(|e| e.to_string())?;
+
+    db.save_speaker_analytics(&speaker_analytics)
+        .map_err(|e| e.to_string())?;
+
+    let transcripts = db.get_transcript(&meeting_id).map_err(|e| e.to_string())?;
+    let texts: Vec<String> = transcripts.iter().map(|t| t.text.clone()).collect();
+    let engagement = crate::analytics::compute_engagement(&meeting_id, &speaker_analytics, &texts);
+
+    db.save_engagement(&engagement)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn compute_meeting_sentiment(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+) -> Result<(), String> {
+    let registry = llm.read().await;
+    let segments =
+        crate::analytics::analyze_sentiment(&db, &registry, &meeting_id, &provider, &model)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    db.save_sentiment_segments(&segments)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_meeting_analytics(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<serde_json::Value, String> {
+    let speakers = db
+        .get_speaker_analytics(&meeting_id)
+        .map_err(|e| e.to_string())?;
+    let sentiment = db
+        .get_sentiment_segments(&meeting_id)
+        .map_err(|e| e.to_string())?;
+    let engagement = db.get_engagement(&meeting_id).map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "speakers": speakers,
+        "sentiment": sentiment,
+        "engagement": engagement,
+    }))
+}
