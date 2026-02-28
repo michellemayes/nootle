@@ -358,7 +358,23 @@ pub async fn start_recording(
         let audio_path = session.audio_path().to_path_buf();
 
         let handle = std::thread::spawn(move || {
-            if let Err(e) = run_audio_capture(audio_tx, is_active, audio_path) {
+            // Create denoise engine inside the thread (Session may not be Send)
+            let mut denoise_engine = if crate::denoise::DenoiseEngine::is_available() {
+                match crate::denoise::DenoiseEngine::load() {
+                    Ok(e) => {
+                        tracing::info!("Denoising enabled");
+                        Some(e)
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to load denoise engine: {e}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            if let Err(e) = run_audio_capture(audio_tx, is_active, audio_path, denoise_engine.as_mut()) {
                 tracing::error!("Audio capture failed: {e}");
             }
         });
