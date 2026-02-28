@@ -13,8 +13,11 @@ import { HelpPage } from "@/pages/Help";
 import { GlobalChatPanel } from "@/components/GlobalChatPanel";
 import { InsightsDashboard } from "@/pages/InsightsDashboard";
 import { ChatPage } from "@/pages/ChatPage";
+import { useMeetingDetection } from "@/hooks/useMeetingDetection";
 
 function Layout({ children }: { children: React.ReactNode }) {
+  useMeetingDetection();
+
   return (
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar />
