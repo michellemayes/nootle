@@ -13,6 +13,7 @@ import { useModelDownload } from "@/hooks/useModelDownload";
 import { useTheme } from "@/hooks/useTheme";
 import { useCategories } from "@/hooks/useCategories";
 import { useInsightTypes } from "@/hooks/useInsightTypes";
+import { useAppVersion } from "@/hooks/useAppVersion";
 import { AccentColorPicker } from "@/components/AccentColorPicker";
 import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus } from "lucide-react";
 
@@ -521,6 +522,7 @@ export function SettingsPage() {
   const { storedProviders, storeKey, deleteKey } = useApiKeys();
   const { providers: llmProviders } = useLLM();
   const { theme, toggleTheme } = useTheme();
+  const version = useAppVersion();
   const [copied, setCopied] = useState<"json" | "claude" | false>(false);
   const [exePath, setExePath] = useState("/path/to/nootle");
   const [denoiseEnabled, setDenoiseEnabled] = useState(true);
@@ -751,7 +753,7 @@ export function SettingsPage() {
               <CardHeader>
                 <CardTitle>About</CardTitle>
                 <CardDescription>
-                  Nootle v0.1.0 — Your meetings, transcribed and summarized with a twist
+                  Nootle v{version} — Your meetings, transcribed and summarized with a twist
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">

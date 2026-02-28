@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
+import { useAppVersion } from "@/hooks/useAppVersion";
 import { Button } from "@/components/ui/button";
 import { MotionButton } from "@/components/MotionButton";
 import { Mic, Sparkles, Settings, HelpCircle, Circle, Moon, Sun, Lightbulb, MessageSquare } from "lucide-react";
@@ -21,6 +22,7 @@ const navItems: { to: string; label: string; icon: LucideIcon }[] = [
 export function Sidebar() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+  const version = useAppVersion();
   const [wiggleSidebar, setWiggleSidebar] = useState(false);
   const clickCountRef = useRef(0);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -119,7 +121,7 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="flex items-center justify-between px-5 py-4">
-        <p className="text-xs text-muted-foreground">Nootle v0.1.0</p>
+        <p className="text-xs text-muted-foreground">Nootle v{version}</p>
         <Button
           variant="ghost"
           size="sm"
