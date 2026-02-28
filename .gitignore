@@ -26,5 +26,8 @@ dist-ssr
 *.sln
 *.sw?
 
+# Plans/design docs
+docs/plans/
+
 # Lock files (project uses pnpm)
 package-lock.json
