@@ -352,13 +352,34 @@ pub async fn start_recording(
 
     session.start();
 
+    let denoise_enabled = db.get_setting("denoise_enabled")
+        .unwrap_or(None)
+        .map(|v| v != "false")
+        .unwrap_or(true); // default on
+
     // Spawn audio capture loop on a dedicated thread
     {
         let is_active = session.is_active_flag();
         let audio_path = session.audio_path().to_path_buf();
 
         let handle = std::thread::spawn(move || {
-            if let Err(e) = run_audio_capture(audio_tx, is_active, audio_path) {
+            // Create denoise engine inside the thread (Session may not be Send)
+            let mut denoise_engine = if denoise_enabled && crate::denoise::DenoiseEngine::is_available() {
+                match crate::denoise::DenoiseEngine::load() {
+                    Ok(e) => {
+                        tracing::info!("Denoising enabled");
+                        Some(e)
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to load denoise engine: {e}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            if let Err(e) = run_audio_capture(audio_tx, is_active, audio_path, denoise_engine.as_mut()) {
                 tracing::error!("Audio capture failed: {e}");
             }
         });
@@ -615,6 +636,7 @@ async fn run_transcription_pipeline(
 
 #[tauri::command]
 pub async fn stop_recording(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
     llm: State<'_, LlmState>,
     recording: State<'_, RecordingState>,
@@ -671,6 +693,35 @@ pub async fn stop_recording(
                         tracing::warn!("Auto-extraction failed: {e}");
                     }
                 }
+            }
+        });
+    }
+
+    {
+        let db_analytics = db.inner().clone();
+        let app_analytics = app.clone();
+        let meeting_id_analytics = meeting_id.clone();
+
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = (|| -> std::result::Result<(), Box<dyn std::error::Error>> {
+                let speaker_analytics =
+                    crate::analytics::compute_speaker_analytics(&db_analytics, &meeting_id_analytics)?;
+                db_analytics.save_speaker_analytics(&speaker_analytics)?;
+
+                let transcripts = db_analytics.get_transcript(&meeting_id_analytics)?;
+                let texts: Vec<String> = transcripts.iter().map(|t| t.text.clone()).collect();
+                let engagement = crate::analytics::compute_engagement(
+                    &meeting_id_analytics,
+                    &speaker_analytics,
+                    &texts,
+                );
+                db_analytics.save_engagement(&engagement)?;
+
+                let _ = app_analytics.emit("analytics-ready", &meeting_id_analytics);
+                tracing::info!("Analytics computed for meeting {}", meeting_id_analytics);
+                Ok(())
+            })() {
+                tracing::warn!("Failed to compute analytics: {e}");
             }
         });
     }
@@ -1537,6 +1588,23 @@ pub fn get_exe_path() -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn get_app_setting(
+    db: State<'_, DbState>,
+    key: String,
+) -> Result<Option<String>, String> {
+    db.get_setting(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_app_setting(
+    db: State<'_, DbState>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    db.set_setting(&key, &value).map_err(|e| e.to_string())
+}
+
 // Chat conversation commands
 
 #[tauri::command]
@@ -1754,4 +1822,65 @@ pub async fn enrich_meeting_notes(
         .map_err(|e| e.to_string())?;
 
     Ok(enriched)
+}
+
+#[tauri::command]
+pub async fn compute_meeting_analytics(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<(), String> {
+    let speaker_analytics = crate::analytics::compute_speaker_analytics(&db, &meeting_id)
+        .map_err(|e| e.to_string())?;
+
+    db.save_speaker_analytics(&speaker_analytics)
+        .map_err(|e| e.to_string())?;
+
+    let transcripts = db.get_transcript(&meeting_id).map_err(|e| e.to_string())?;
+    let texts: Vec<String> = transcripts.iter().map(|t| t.text.clone()).collect();
+    let engagement = crate::analytics::compute_engagement(&meeting_id, &speaker_analytics, &texts);
+
+    db.save_engagement(&engagement)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn compute_meeting_sentiment(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+) -> Result<(), String> {
+    let registry = llm.read().await;
+    let segments =
+        crate::analytics::analyze_sentiment(&db, &registry, &meeting_id, &provider, &model)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    db.save_sentiment_segments(&segments)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_meeting_analytics(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<serde_json::Value, String> {
+    let speakers = db
+        .get_speaker_analytics(&meeting_id)
+        .map_err(|e| e.to_string())?;
+    let sentiment = db
+        .get_sentiment_segments(&meeting_id)
+        .map_err(|e| e.to_string())?;
+    let engagement = db.get_engagement(&meeting_id).map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "speakers": speakers,
+        "sentiment": sentiment,
+        "engagement": engagement,
+    }))
 }

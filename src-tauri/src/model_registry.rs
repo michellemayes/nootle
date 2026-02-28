@@ -5,6 +5,8 @@ pub enum ModelCategory {
     Transcription,
     Diarization,
     Embedding,
+    Denoising,
+    VoiceActivity,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -166,6 +168,46 @@ const EMBEDDING_VARIANTS: &[ModelVariant] = &[ModelVariant {
     total_size_bytes: 86_232_000,
 }];
 
+// ── Denoising (DeepFilterNet3) ──────────────────────────────────────
+
+const DENOISE_FILES: &[ModelFile] = &[
+    ModelFile {
+        local_name: "deepfilternet3.onnx",
+        url: "https://huggingface.co/deepfilternet/DeepFilterNet3/resolve/main/DeepFilterNet3_onnx/enc.onnx",
+        size_bytes: 1_800_000,
+        sha256: "",
+    },
+    ModelFile {
+        local_name: "deepfilternet3_dec.onnx",
+        url: "https://huggingface.co/deepfilternet/DeepFilterNet3/resolve/main/DeepFilterNet3_onnx/dec.onnx",
+        size_bytes: 1_200_000,
+        sha256: "",
+    },
+];
+
+const DENOISE_VARIANTS: &[ModelVariant] = &[ModelVariant {
+    id: "default",
+    label: "Noise Cancellation (≈3 MB)",
+    files: DENOISE_FILES,
+    total_size_bytes: 3_000_000,
+}];
+
+// ── VAD (NeMo MarbleNet) ────────────────────────────────────────────
+
+const VAD_FILES: &[ModelFile] = &[ModelFile {
+    local_name: "marblenet.onnx",
+    url: "https://huggingface.co/nvidia/vad_marblenet/resolve/main/vad_marblenet.onnx",
+    size_bytes: 5_000_000,
+    sha256: "",
+}];
+
+const VAD_VARIANTS: &[ModelVariant] = &[ModelVariant {
+    id: "default",
+    label: "Voice Activity Detection (≈5 MB)",
+    files: VAD_FILES,
+    total_size_bytes: 5_000_000,
+}];
+
 // ── Full Registry ──────────────────────────────────────────────────────
 
 pub const MODEL_REGISTRY: &[ModelDefinition] = &[
@@ -192,6 +234,22 @@ pub const MODEL_REGISTRY: &[ModelDefinition] = &[
         category: ModelCategory::Embedding,
         dir_name: "embedding-minilm",
         variants: EMBEDDING_VARIANTS,
+    },
+    ModelDefinition {
+        id: "deepfilternet3",
+        name: "Noise Cancellation",
+        description: "DeepFilterNet3 for real-time audio denoising before transcription",
+        category: ModelCategory::Denoising,
+        dir_name: "deepfilternet3",
+        variants: DENOISE_VARIANTS,
+    },
+    ModelDefinition {
+        id: "vad-marblenet",
+        name: "Voice Activity Detection",
+        description: "NeMo MarbleNet for detecting speech in audio",
+        category: ModelCategory::VoiceActivity,
+        dir_name: "vad-marblenet",
+        variants: VAD_VARIANTS,
     },
 ];
 
@@ -237,8 +295,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_has_three_models() {
-        assert_eq!(MODEL_REGISTRY.len(), 3);
+    fn registry_has_five_models() {
+        assert_eq!(MODEL_REGISTRY.len(), 5);
     }
 
     #[test]
@@ -261,6 +319,20 @@ mod tests {
         let model = get_model("embedding-minilm").unwrap();
         assert_eq!(model.variants.len(), 1);
         assert_eq!(model.category, ModelCategory::Embedding);
+    }
+
+    #[test]
+    fn denoise_model_exists() {
+        let model = get_model("deepfilternet3").unwrap();
+        assert_eq!(model.variants.len(), 1);
+        assert_eq!(model.category, ModelCategory::Denoising);
+    }
+
+    #[test]
+    fn vad_model_exists() {
+        let model = get_model("vad-marblenet").unwrap();
+        assert_eq!(model.variants.len(), 1);
+        assert_eq!(model.category, ModelCategory::VoiceActivity);
     }
 
     #[test]

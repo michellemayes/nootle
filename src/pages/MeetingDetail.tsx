@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChatPanel } from "@/components/ChatPanel";
 import { Markdown } from "@/components/Markdown";
 import { NotesEditor } from "@/components/NotesEditor";
+import { AnalyticsPanel } from "@/components/AnalyticsPanel";
 import { useMeeting, updateMeetingTitle } from "@/hooks/useMeetings";
 import { useTranscript } from "@/hooks/useTranscripts";
 import { useSummaries } from "@/hooks/useSummaries";
@@ -1085,6 +1086,7 @@ export function MeetingDetail() {
                 <TabsTrigger value="notes">Notes</TabsTrigger>
                 <TabsTrigger value="summaries">Summaries</TabsTrigger>
                 <TabsTrigger value="insights">Insights</TabsTrigger>
+                <TabsTrigger value="analytics">Analytics</TabsTrigger>
               </TabsList>
             </div>
             <TabsContent value="notes" className="flex flex-1 flex-col mt-0">
@@ -1205,6 +1207,9 @@ export function MeetingDetail() {
             </TabsContent>
             <TabsContent value="insights" className="flex flex-1 flex-col mt-0">
               <InsightsPanel meetingId={id!} providers={providers} models={models} />
+            </TabsContent>
+            <TabsContent value="analytics" className="flex flex-1 flex-col mt-0">
+              <AnalyticsPanel meetingId={id!} providers={providers} models={models} />
             </TabsContent>
           </Tabs>
         </div>

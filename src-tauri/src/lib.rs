@@ -1,7 +1,9 @@
+pub mod analytics;
 pub mod audio;
 pub mod chunking;
 pub mod commands;
 pub mod db;
+pub mod denoise;
 pub mod detection;
 pub mod diarization;
 pub mod embedding;
@@ -15,13 +17,14 @@ pub mod model_registry;
 pub mod permissions;
 pub mod summarization;
 pub mod transcription;
+pub mod vad;
 
 use commands::{DetectorState, DownloadManagerState, EmbeddingState, LlmState, RecordingState};
 use detection::MeetingDetector;
 use llm::{LlmRegistry, OllamaProvider};
 use model_download::DownloadManager;
 use std::sync::Arc;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tokio::sync::Mutex as TokioMutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -214,16 +217,45 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let update_handle = app_handle.clone();
             let detector = detector.clone();
+            let db_for_detection = app.state::<Arc<db::Database>>().inner().clone();
 
             // Spawn polling task for meeting detection
             tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    let detected = {
+
+                    let detection_enabled = db_for_detection
+                        .get_setting("detection_enabled")
+                        .unwrap_or(None)
+                        .map(|v| v != "false")
+                        .unwrap_or(true);
+
+                    if !detection_enabled {
+                        continue;
+                    }
+
+                    let (newly_detected, should_notify) = {
                         let mut d = detector.lock().unwrap();
-                        d.check()
+                        let newly_detected = d.check();
+                        let has_app = d.has_active_meeting_app();
+
+                        // Use process detection as speech proxy for now.
+                        // Full VAD with audio sampling will be added later.
+                        let has_speech = has_app;
+
+                        let should_notify = d.should_notify(has_app, has_speech);
+                        d.reset_session();
+                        (newly_detected, should_notify)
                     };
-                    for meeting in detected {
+
+                    if should_notify {
+                        let _ = app_handle.emit("meeting-detected-notify", serde_json::json!({
+                            "title": "Meeting Detected",
+                            "body": "It looks like you're in a meeting. Start recording?",
+                        }));
+                    }
+
+                    for meeting in newly_detected {
                         let _ = app_handle.emit("meeting-detected", &meeting);
                     }
                 }
@@ -311,6 +343,8 @@ pub fn run() {
             commands::request_microphone_permission,
             commands::request_screen_recording_permission,
             commands::request_calendar_permission,
+            commands::get_app_setting,
+            commands::set_app_setting,
             commands::create_chat_conversation,
             commands::list_chat_conversations,
             commands::delete_chat_conversation,
@@ -320,6 +354,9 @@ pub fn run() {
             commands::save_meeting_notes,
             commands::save_enriched_notes,
             commands::enrich_meeting_notes,
+            commands::compute_meeting_analytics,
+            commands::compute_meeting_sentiment,
+            commands::get_meeting_analytics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

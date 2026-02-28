@@ -287,6 +287,38 @@ pub struct ChatMessage {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpeakerAnalytics {
+    pub id: String,
+    pub meeting_id: String,
+    pub speaker_label: String,
+    pub talk_time_ms: i64,
+    pub turn_count: i64,
+    pub interruption_count: i64,
+    pub avg_turn_length_ms: i64,
+    pub longest_monologue_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SentimentSegment {
+    pub id: String,
+    pub meeting_id: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub sentiment: String,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeetingEngagement {
+    pub id: String,
+    pub meeting_id: String,
+    pub engagement_level: String,
+    pub participation_balance: f64,
+    pub question_count: i64,
+    pub back_and_forth_ratio: f64,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -530,6 +562,41 @@ impl Database {
                 content TEXT NOT NULL,
                 sources_json TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS meeting_analytics (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                speaker_label TEXT NOT NULL,
+                talk_time_ms INTEGER NOT NULL DEFAULT 0,
+                turn_count INTEGER NOT NULL DEFAULT 0,
+                interruption_count INTEGER NOT NULL DEFAULT 0,
+                avg_turn_length_ms INTEGER NOT NULL DEFAULT 0,
+                longest_monologue_ms INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS sentiment_segments (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                start_ms INTEGER NOT NULL,
+                end_ms INTEGER NOT NULL,
+                sentiment TEXT NOT NULL,
+                score REAL NOT NULL DEFAULT 0.0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS meeting_engagement (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL UNIQUE REFERENCES meetings(id) ON DELETE CASCADE,
+                engagement_level TEXT NOT NULL DEFAULT 'medium',
+                participation_balance REAL NOT NULL DEFAULT 0.0,
+                question_count INTEGER NOT NULL DEFAULT 0,
+                back_and_forth_ratio REAL NOT NULL DEFAULT 0.0
             );
             ",
         )?;
@@ -2068,6 +2135,30 @@ impl Database {
         Ok(())
     }
 
+    // --- App Settings ---
+
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare("SELECT value FROM app_settings WHERE key = ?1")?;
+        let result = stmt.query_row(params![key], |row| row.get::<_, String>(0));
+        match result {
+            Ok(val) => Ok(Some(val)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.conn.lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
     // --- Chat Conversations ---
 
     pub fn create_chat_conversation(&self) -> Result<ChatConversation> {
@@ -2171,5 +2262,104 @@ impl Database {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    // --- Meeting Analytics ---
+
+    pub fn save_speaker_analytics(&self, analytics: &[SpeakerAnalytics]) -> Result<()> {
+        let conn = self.conn.lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        for a in analytics {
+            conn.execute(
+                "INSERT OR REPLACE INTO meeting_analytics (id, meeting_id, speaker_label, talk_time_ms, turn_count, interruption_count, avg_turn_length_ms, longest_monologue_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![a.id, a.meeting_id, a.speaker_label, a.talk_time_ms, a.turn_count, a.interruption_count, a.avg_turn_length_ms, a.longest_monologue_ms],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn get_speaker_analytics(&self, meeting_id: &str) -> Result<Vec<SpeakerAnalytics>> {
+        let conn = self.conn.lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, meeting_id, speaker_label, talk_time_ms, turn_count, interruption_count, avg_turn_length_ms, longest_monologue_ms FROM meeting_analytics WHERE meeting_id = ?1"
+        )?;
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            Ok(SpeakerAnalytics {
+                id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                speaker_label: row.get(2)?,
+                talk_time_ms: row.get(3)?,
+                turn_count: row.get(4)?,
+                interruption_count: row.get(5)?,
+                avg_turn_length_ms: row.get(6)?,
+                longest_monologue_ms: row.get(7)?,
+            })
+        })?.collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn save_sentiment_segments(&self, segments: &[SentimentSegment]) -> Result<()> {
+        let conn = self.conn.lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        for s in segments {
+            conn.execute(
+                "INSERT OR REPLACE INTO sentiment_segments (id, meeting_id, start_ms, end_ms, sentiment, score) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![s.id, s.meeting_id, s.start_ms, s.end_ms, s.sentiment, s.score],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn get_sentiment_segments(&self, meeting_id: &str) -> Result<Vec<SentimentSegment>> {
+        let conn = self.conn.lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, meeting_id, start_ms, end_ms, sentiment, score FROM sentiment_segments WHERE meeting_id = ?1 ORDER BY start_ms"
+        )?;
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            Ok(SentimentSegment {
+                id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                start_ms: row.get(2)?,
+                end_ms: row.get(3)?,
+                sentiment: row.get(4)?,
+                score: row.get(5)?,
+            })
+        })?.collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn save_engagement(&self, engagement: &MeetingEngagement) -> Result<()> {
+        let conn = self.conn.lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO meeting_engagement (id, meeting_id, engagement_level, participation_balance, question_count, back_and_forth_ratio) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![engagement.id, engagement.meeting_id, engagement.engagement_level, engagement.participation_balance, engagement.question_count, engagement.back_and_forth_ratio],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_engagement(&self, meeting_id: &str) -> Result<Option<MeetingEngagement>> {
+        let conn = self.conn.lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, meeting_id, engagement_level, participation_balance, question_count, back_and_forth_ratio FROM meeting_engagement WHERE meeting_id = ?1"
+        )?;
+        let result = stmt.query_row(params![meeting_id], |row| {
+            Ok(MeetingEngagement {
+                id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                engagement_level: row.get(2)?,
+                participation_balance: row.get(3)?,
+                question_count: row.get(4)?,
+                back_and_forth_ratio: row.get(5)?,
+            })
+        });
+        match result {
+            Ok(e) => Ok(Some(e)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 }

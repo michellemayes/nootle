@@ -20,6 +20,7 @@ pub fn run_audio_capture(
     audio_tx: tokio::sync::mpsc::Sender<Vec<f32>>,
     is_active: Arc<AtomicBool>,
     audio_path: std::path::PathBuf,
+    denoise: Option<&mut crate::denoise::DenoiseEngine>,
 ) -> anyhow::Result<()> {
     const TARGET_RATE: u32 = 16_000;
     const POLL_MS: u64 = 50;
@@ -71,6 +72,7 @@ pub fn run_audio_capture(
         &mut sys_buf,
         &mut accumulator,
         &audio_tx,
+        denoise,
     );
 
     // Cleanup always runs regardless of how the loop exited
@@ -97,6 +99,7 @@ fn capture_loop(
     sys_buf: &mut [f32],
     accumulator: &mut Vec<f32>,
     audio_tx: &tokio::sync::mpsc::Sender<Vec<f32>>,
+    mut denoise: Option<&mut crate::denoise::DenoiseEngine>,
 ) -> anyhow::Result<()> {
     const TARGET_RATE: u32 = 16_000;
     const POLL_MS: u64 = 50;
@@ -124,7 +127,7 @@ fn capture_loop(
         };
 
         // Mix (or pass through mic-only)
-        let mixed = if sys_16k.is_empty() {
+        let mut mixed = if sys_16k.is_empty() {
             mic_16k
         } else {
             let len = mic_16k.len().max(sys_16k.len());
@@ -136,6 +139,11 @@ fn capture_loop(
         };
 
         if !mixed.is_empty() {
+            if let Some(ref mut engine) = denoise {
+                if let Err(e) = engine.process(&mut mixed) {
+                    tracing::warn!("Denoising failed, using raw audio: {e}");
+                }
+            }
             writer.write_samples(&mixed)?;
             accumulator.extend_from_slice(&mixed);
         }
