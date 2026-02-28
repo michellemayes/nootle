@@ -637,6 +637,7 @@ async fn run_transcription_pipeline(
 
 #[tauri::command]
 pub async fn stop_recording(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
     llm: State<'_, LlmState>,
     recording: State<'_, RecordingState>,
@@ -693,6 +694,36 @@ pub async fn stop_recording(
                         tracing::warn!("Auto-extraction failed: {e}");
                     }
                 }
+            }
+        });
+    }
+
+    // Auto-compute talk-time analytics
+    {
+        let db_analytics = db.inner().clone();
+        let app_analytics = app.clone();
+        let meeting_id_analytics = meeting_id.clone();
+
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = (|| -> std::result::Result<(), Box<dyn std::error::Error>> {
+                let speaker_analytics =
+                    crate::analytics::compute_speaker_analytics(&db_analytics, &meeting_id_analytics)?;
+                db_analytics.save_speaker_analytics(&speaker_analytics)?;
+
+                let transcripts = db_analytics.get_transcript(&meeting_id_analytics)?;
+                let texts: Vec<String> = transcripts.iter().map(|t| t.text.clone()).collect();
+                let engagement = crate::analytics::compute_engagement(
+                    &meeting_id_analytics,
+                    &speaker_analytics,
+                    &texts,
+                );
+                db_analytics.save_engagement(&engagement)?;
+
+                let _ = app_analytics.emit("analytics-ready", &meeting_id_analytics);
+                tracing::info!("Analytics computed for meeting {}", meeting_id_analytics);
+                Ok(())
+            })() {
+                tracing::warn!("Failed to compute analytics: {e}");
             }
         });
     }
