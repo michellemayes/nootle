@@ -352,6 +352,12 @@ pub async fn start_recording(
 
     session.start();
 
+    // Check denoise setting before spawning capture thread
+    let denoise_enabled = db.get_setting("denoise_enabled")
+        .unwrap_or(None)
+        .map(|v| v != "false")
+        .unwrap_or(true); // default on
+
     // Spawn audio capture loop on a dedicated thread
     {
         let is_active = session.is_active_flag();
@@ -359,7 +365,7 @@ pub async fn start_recording(
 
         let handle = std::thread::spawn(move || {
             // Create denoise engine inside the thread (Session may not be Send)
-            let mut denoise_engine = if crate::denoise::DenoiseEngine::is_available() {
+            let mut denoise_engine = if denoise_enabled && crate::denoise::DenoiseEngine::is_available() {
                 match crate::denoise::DenoiseEngine::load() {
                     Ok(e) => {
                         tracing::info!("Denoising enabled");
@@ -1551,6 +1557,25 @@ pub fn get_exe_path() -> Result<String, String> {
     std::env::current_exe()
         .map(|p| p.to_string_lossy().into_owned())
         .map_err(|e| e.to_string())
+}
+
+// App Settings commands
+
+#[tauri::command]
+pub async fn get_app_setting(
+    db: State<'_, DbState>,
+    key: String,
+) -> Result<Option<String>, String> {
+    db.get_setting(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_app_setting(
+    db: State<'_, DbState>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    db.set_setting(&key, &value).map_err(|e| e.to_string())
 }
 
 // Chat conversation commands

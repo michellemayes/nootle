@@ -523,10 +523,22 @@ export function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const [copied, setCopied] = useState<"json" | "claude" | false>(false);
   const [exePath, setExePath] = useState("/path/to/nootle");
+  const [denoiseEnabled, setDenoiseEnabled] = useState(true);
 
   useEffect(() => {
     invoke<string>("get_exe_path").then(setExePath).catch(() => {});
+    invoke<string | null>("get_app_setting", { key: "denoise_enabled" })
+      .then((val) => setDenoiseEnabled(val !== "false"))
+      .catch(() => {});
   }, []);
+
+  const toggleDenoise = async (enabled: boolean) => {
+    setDenoiseEnabled(enabled);
+    await invoke("set_app_setting", {
+      key: "denoise_enabled",
+      value: String(enabled),
+    });
+  };
 
   const handleCopyJson = useCallback(async () => {
     await navigator.clipboard.writeText(getMcpConfig(exePath));
@@ -588,6 +600,36 @@ export function SettingsPage() {
                   </Button>
                 </div>
                 <AccentColorPicker />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Recording</CardTitle>
+                <CardDescription>Configure audio recording behavior</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Noise cancellation</p>
+                    <p className="text-sm text-muted-foreground">
+                      Clean up audio before transcription for better accuracy
+                    </p>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={denoiseEnabled}
+                    onClick={() => toggleDenoise(!denoiseEnabled)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                      denoiseEnabled ? "bg-primary" : "bg-input"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        denoiseEnabled ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
               </CardContent>
             </Card>
             <PermissionsCard />

@@ -531,6 +531,11 @@ impl Database {
                 sources_json TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             ",
         )?;
         Self::seed_default_insight_types(&conn)?;
@@ -2065,6 +2070,30 @@ impl Database {
             return Err(NootleError::Other("Cannot delete built-in insight types".into()));
         }
         conn.execute("DELETE FROM insight_types WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // --- App Settings ---
+
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare("SELECT value FROM app_settings WHERE key = ?1")?;
+        let result = stmt.query_row(params![key], |row| row.get::<_, String>(0));
+        match result {
+            Ok(val) => Ok(Some(val)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.conn.lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        )?;
         Ok(())
     }
 

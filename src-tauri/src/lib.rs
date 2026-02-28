@@ -331,6 +331,8 @@ pub fn run() {
             commands::request_microphone_permission,
             commands::request_screen_recording_permission,
             commands::request_calendar_permission,
+            commands::get_app_setting,
+            commands::set_app_setting,
             commands::create_chat_conversation,
             commands::list_chat_conversations,
             commands::delete_chat_conversation,
