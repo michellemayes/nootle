@@ -221,11 +221,29 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    let detected = {
+
+                    let (newly_detected, should_notify) = {
                         let mut d = detector.lock().unwrap();
-                        d.check()
+                        let newly_detected = d.check();
+                        let has_app = d.has_active_meeting_app();
+
+                        // Use process detection as speech proxy for now.
+                        // Full VAD with audio sampling will be added later.
+                        let has_speech = has_app;
+
+                        let should_notify = d.should_notify(has_app, has_speech);
+                        d.reset_session();
+                        (newly_detected, should_notify)
                     };
-                    for meeting in detected {
+
+                    if should_notify {
+                        let _ = app_handle.emit("meeting-detected-notify", serde_json::json!({
+                            "title": "Meeting Detected",
+                            "body": "It looks like you're in a meeting. Start recording?",
+                        }));
+                    }
+
+                    for meeting in newly_detected {
                         let _ = app_handle.emit("meeting-detected", &meeting);
                     }
                 }
