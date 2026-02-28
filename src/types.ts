@@ -7,6 +7,8 @@ export interface Meeting {
   audio_path: string | null;
   status: string; // "recording" | "transcribing" | "summarized" | "archived"
   calendar_event_id: string | null;
+  raw_notes: string | null;
+  enriched_notes: string | null;
   created_at: string;
   updated_at: string;
 }

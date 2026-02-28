@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Markdown } from "@/components/Markdown";
 
 import gettingStartedMd from "@/help/getting-started.md?raw";
@@ -28,62 +28,76 @@ function McpQuickStart() {
   }, []);
 
   return (
-    <div className="rounded-lg border bg-card p-4 mb-6">
-      <h3 className="text-sm font-medium mb-2">Quick Start — MCP Config</h3>
-      <p className="text-xs text-muted-foreground mb-3">
-        Add this to your Claude Code config to connect Nootle:
-      </p>
-      <div className="relative">
-        <pre className="rounded-lg bg-muted p-4 text-xs font-mono overflow-x-auto">
-          {MCP_CONFIG}
-        </pre>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="absolute top-2 right-2 text-xs"
-          onClick={handleCopy}
-        >
-          {copied ? "Copied!" : "Copy"}
-        </Button>
-      </div>
-    </div>
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle>Quick Start — MCP Config</CardTitle>
+        <CardDescription>
+          Add this to your Claude Code config to connect Nootle:
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="relative">
+          <pre className="rounded-lg bg-muted p-4 text-xs font-mono overflow-x-auto">
+            {MCP_CONFIG}
+          </pre>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="absolute top-2 right-2 text-xs"
+            onClick={handleCopy}
+          >
+            {copied ? "Copied!" : "Copy"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
 const tabs = [
-  { value: "getting-started", label: "Getting Started", content: gettingStartedMd },
-  { value: "mcp-server", label: "MCP Server", content: mcpServerMd, quickStart: true },
-  { value: "llm-providers", label: "LLM Providers", content: llmProvidersMd },
-  { value: "troubleshooting", label: "Troubleshooting", content: troubleshootingMd },
+  { value: "getting-started", label: "Getting Started", content: gettingStartedMd, description: "Learn the basics of using Nootle" },
+  { value: "mcp-server", label: "MCP Server", content: mcpServerMd, quickStart: true, description: "Connect Nootle to Claude Code and other MCP clients" },
+  { value: "llm-providers", label: "LLM Providers", content: llmProvidersMd, description: "Configure AI providers for transcription and summaries" },
+  { value: "troubleshooting", label: "Troubleshooting", content: troubleshootingMd, description: "Common issues and how to fix them" },
 ] as const;
 
 export function HelpPage() {
   return (
-    <div className="flex flex-1 flex-col p-8 max-w-3xl overflow-hidden">
-      <div className="mb-6">
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="border-b px-8 py-4">
         <h1 className="text-2xl font-bold tracking-tight">Help</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Learn how to use Nootle and get the most out of your meetings
         </p>
       </div>
 
-      <Tabs defaultValue="getting-started" className="flex-1 flex flex-col overflow-hidden">
-        <TabsList>
-          {tabs.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value}>
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      <Tabs defaultValue="getting-started" className="flex flex-1 flex-col overflow-hidden">
+        <div className="border-b px-8">
+          <TabsList className="h-10">
+            {tabs.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
         {tabs.map((tab) => (
-          <TabsContent key={tab.value} value={tab.value} className="overflow-hidden">
-            <ScrollArea className="h-full">
-              <div className="pr-4 pb-8">
-                {"quickStart" in tab && tab.quickStart && <McpQuickStart />}
-                <Markdown content={tab.content} />
-              </div>
-            </ScrollArea>
+          <TabsContent key={tab.value} value={tab.value} className="flex-1 mt-0 overflow-auto">
+            <div className="flex flex-col gap-8 p-8 max-w-3xl">
+              {"quickStart" in tab && tab.quickStart && <McpQuickStart />}
+              <Card>
+                <CardHeader>
+                  <CardTitle>{tab.label}</CardTitle>
+                  <CardDescription>{tab.description}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <Markdown content={tab.content} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         ))}
       </Tabs>

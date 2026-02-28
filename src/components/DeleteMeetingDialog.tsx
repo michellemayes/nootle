@@ -29,7 +29,7 @@ export function DeleteMeetingDialog({
           <DialogDescription>
             Are you sure? This will permanently delete{" "}
             <span className="font-medium text-foreground">{meetingTitle}</span>{" "}
-            and all its transcripts, summaries, and insights.
+            and all its transcripts, summaries, insights, and recording audio.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

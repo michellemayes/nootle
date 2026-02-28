@@ -36,7 +36,15 @@ export function useChatConversations() {
     [refresh],
   );
 
-  return { conversations, loading, refresh, createConversation, deleteConversation };
+  const updateTitle = useCallback(
+    async (id: string, title: string) => {
+      await invoke("update_chat_conversation_title", { id, title });
+      await refresh();
+    },
+    [refresh],
+  );
+
+  return { conversations, loading, refresh, createConversation, deleteConversation, updateTitle };
 }
 
 export function useChatMessages(conversationId: string | null) {

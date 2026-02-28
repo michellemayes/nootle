@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -12,13 +12,6 @@ import { useCategories } from "@/hooks/useCategories";
 import { useLLM } from "@/hooks/useLLM";
 import type { ChatSource, GlobalChatResponse } from "@/types";
 import { Plus, Trash2, MessageSquare, Send } from "lucide-react";
-
-const DATE_PRESETS = [
-  { label: "Last 7 days", days: 7 },
-  { label: "Last 30 days", days: 30 },
-  { label: "Last 90 days", days: 90 },
-  { label: "All time", days: null },
-] as const;
 
 function formatTimestamp(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
@@ -46,19 +39,22 @@ function SourceCitation({
 
 export function ChatPage() {
   const navigate = useNavigate();
-  const { conversations, refresh: refreshConvos, createConversation, deleteConversation } =
+  const { conversations, refresh: refreshConvos, createConversation, deleteConversation, updateTitle } =
     useChatConversations();
   const [activeId, setActiveId] = useState<string | null>(null);
   const { messages: dbMessages, refresh: refreshMessages } = useChatMessages(activeId);
   const { categories } = useCategories();
   const { models, providers } = useLLM();
 
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  const [titleDraft, setTitleDraft] = useState("");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedDatePreset, setSelectedDatePreset] = useState(3);
+  const [dateFromValue, setDateFromValue] = useState("");
+  const [dateToValue, setDateToValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Default provider/model
@@ -93,12 +89,8 @@ export function ChatPage() {
 
   const filteredModels = models.filter((m) => m.provider === selectedProvider);
 
-  const dateFrom = useCallback(() => {
-    const preset = DATE_PRESETS[selectedDatePreset];
-    return preset.days
-      ? new Date(Date.now() - preset.days * 86400000).toISOString()
-      : null;
-  }, [selectedDatePreset]);
+  const getDateFrom = () => dateFromValue ? new Date(dateFromValue).toISOString() : null;
+  const getDateTo = () => dateToValue ? new Date(dateToValue + "T23:59:59").toISOString() : null;
 
   const handleNewConversation = async () => {
     const conv = await createConversation();
@@ -110,6 +102,16 @@ export function ChatPage() {
     if (activeId === id) {
       setActiveId(null);
     }
+  };
+
+  const handleTitleSave = async (id: string) => {
+    const conv = conversations.find((c) => c.id === id);
+    if (!titleDraft.trim() || titleDraft.trim() === conv?.title) {
+      setEditingTitleId(null);
+      return;
+    }
+    await updateTitle(id, titleDraft.trim());
+    setEditingTitleId(null);
   };
 
   const handleSend = async () => {
@@ -124,8 +126,8 @@ export function ChatPage() {
         provider: selectedProvider,
         model: selectedModel,
         categoryIds: selectedCategory ? [selectedCategory] : [],
-        dateFrom: dateFrom(),
-        dateTo: null,
+        dateFrom: getDateFrom(),
+        dateTo: getDateTo(),
       });
       await refreshMessages();
       await refreshConvos();
@@ -172,7 +174,31 @@ export function ChatPage() {
                 onClick={() => setActiveId(conv.id)}
               >
                 <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-                <span className="flex-1 truncate text-sm">{conv.title}</span>
+                {editingTitleId === conv.id ? (
+                  <input
+                    autoFocus
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={() => handleTitleSave(conv.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleTitleSave(conv.id);
+                      if (e.key === "Escape") setEditingTitleId(null);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex-1 min-w-0 bg-transparent text-sm border-none outline-none"
+                  />
+                ) : (
+                  <span
+                    className="flex-1 truncate text-sm"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setTitleDraft(conv.title);
+                      setEditingTitleId(conv.id);
+                    }}
+                  >
+                    {conv.title}
+                  </span>
+                )}
                 <button
                   className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                   onClick={(e) => {
@@ -202,15 +228,21 @@ export function ChatPage() {
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
-          <select
-            value={selectedDatePreset}
-            onChange={(e) => setSelectedDatePreset(Number(e.target.value))}
+          <input
+            type="date"
+            value={dateFromValue}
+            onChange={(e) => setDateFromValue(e.target.value)}
             className="h-7 rounded-md border bg-transparent px-2 text-xs"
-          >
-            {DATE_PRESETS.map((p, i) => (
-              <option key={i} value={i}>{p.label}</option>
-            ))}
-          </select>
+            title="From date"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <input
+            type="date"
+            value={dateToValue}
+            onChange={(e) => setDateToValue(e.target.value)}
+            className="h-7 rounded-md border bg-transparent px-2 text-xs"
+            title="To date"
+          />
           <select
             value={selectedProvider}
             onChange={(e) => {

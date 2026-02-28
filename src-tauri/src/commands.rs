@@ -66,7 +66,24 @@ pub fn get_meeting(db: State<'_, DbState>, id: String) -> Result<Meeting, String
 
 #[tauri::command]
 pub fn delete_meeting(db: State<'_, DbState>, id: String) -> Result<(), String> {
-    db.delete_meeting(&id).map_err(|e| e.to_string())
+    // Get meeting to find audio path before deleting
+    let audio_path = db
+        .get_meeting(&id)
+        .ok()
+        .and_then(|m| m.audio_path.clone());
+
+    // Delete vec0 embeddings (not cascade-aware)
+    let _ = db.delete_meeting_chunks(&id);
+
+    // Delete meeting (cascades transcripts, summaries, insights)
+    db.delete_meeting(&id).map_err(|e| e.to_string())?;
+
+    // Clean up audio file from disk
+    if let Some(path) = audio_path {
+        let _ = std::fs::remove_file(&path);
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -501,24 +518,60 @@ async fn run_transcription_pipeline(
 
     tracing::info!("[DIAG] Audio channel closed after {chunk_count} chunks");
 
-    // Auto-generate title from transcript content
+    // Auto-generate title from transcript content using LLM
     if let Ok(segments) = db.get_transcript(&meeting_id) {
         let full_text: String = segments.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
         if !full_text.trim().is_empty() {
-            // Use first ~60 chars, breaking at a word boundary
-            let title = if full_text.len() <= 60 {
+            // Take up to ~500 chars of transcript for the LLM to summarize
+            let snippet = if full_text.len() <= 500 {
                 full_text.trim().to_string()
             } else {
-                let truncated = &full_text[..60];
+                let truncated = &full_text[..500];
                 match truncated.rfind(' ') {
-                    Some(pos) => format!("{}...", &truncated[..pos]),
-                    None => format!("{}...", truncated),
+                    Some(pos) => truncated[..pos].to_string(),
+                    None => truncated.to_string(),
                 }
             };
+
+            let llm = llm_state.read().await;
+            let fallback_title = || -> String {
+                if full_text.len() <= 60 { full_text.trim().to_string() }
+                else {
+                    let t = &full_text[..60];
+                    match t.rfind(' ') { Some(p) => format!("{}...", &t[..p]), None => format!("{t}...") }
+                }
+            };
+            let title = if let Some(model) = llm.all_models().first().cloned() {
+                if let Some(provider) = llm.get_provider(&model.provider) {
+                    let prompt = format!(
+                        "Generate a short, descriptive title (max 8 words) for this meeting based on the transcript below. \
+                         Return ONLY the title, nothing else. No quotes, no punctuation at the end.\n\n{snippet}"
+                    );
+                    let messages = vec![crate::llm::ChatMessage {
+                        role: "user".into(),
+                        content: prompt,
+                    }];
+                    match provider.chat(messages, &model.id).await {
+                        Ok(resp) => {
+                            let t = resp.trim().trim_matches('"').trim().to_string();
+                            if t.is_empty() || t.len() > 100 { fallback_title() } else { t }
+                        }
+                        Err(e) => {
+                            tracing::warn!("LLM title generation failed, using fallback: {e}");
+                            fallback_title()
+                        }
+                    }
+                } else {
+                    fallback_title()
+                }
+            } else {
+                fallback_title()
+            };
+            drop(llm);
+
             if let Err(e) = db.update_meeting_title(&meeting_id, &title) {
                 tracing::warn!("Failed to auto-generate title: {e}");
             } else {
-                // Notify frontend of the updated meeting
                 if let Ok(meeting) = db.get_meeting(&meeting_id) {
                     let _ = app.emit("meeting-updated", &meeting);
                 }
@@ -1570,13 +1623,34 @@ pub async fn send_chat_message(
     )
     .map_err(|e| e.to_string())?;
 
-    // Auto-title on first message
+    // Auto-title on first message using LLM
     if db_messages.len() <= 1 {
-        let title = if message.len() > 50 {
+        let fallback = if message.len() > 50 {
             format!("{}...", &message[..47])
         } else {
             message.clone()
         };
+
+        let title = if let Some(llm_provider) = llm.get_provider(&provider) {
+            let prompt = format!(
+                "Generate a short title (max 6 words) for a conversation that starts with this message. \
+                 Return ONLY the title, nothing else. No quotes, no punctuation at the end.\n\n{message}"
+            );
+            let title_messages = vec![crate::llm::ChatMessage {
+                role: "user".into(),
+                content: prompt,
+            }];
+            match llm_provider.chat(title_messages, &model).await {
+                Ok(resp) => {
+                    let t = resp.trim().trim_matches('"').trim().to_string();
+                    if t.is_empty() || t.len() > 100 { fallback } else { t }
+                }
+                Err(_) => fallback,
+            }
+        } else {
+            fallback
+        };
+
         let _ = db.update_chat_conversation_title(&conversation_id, &title);
     }
 
@@ -1587,4 +1661,97 @@ pub async fn send_chat_message(
         "response": response,
         "sources": sources
     }))
+}
+
+#[tauri::command]
+pub fn update_chat_conversation_title(
+    db: State<'_, DbState>,
+    id: String,
+    title: String,
+) -> Result<(), String> {
+    db.update_chat_conversation_title(&id, &title)
+        .map_err(|e| e.to_string())
+}
+
+// Meeting notes commands
+
+#[tauri::command]
+pub fn save_meeting_notes(
+    db: State<'_, DbState>,
+    id: String,
+    raw_notes: String,
+) -> Result<(), String> {
+    db.update_meeting_notes(&id, &raw_notes)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_enriched_notes(
+    db: State<'_, DbState>,
+    id: String,
+    enriched_notes: String,
+) -> Result<(), String> {
+    db.update_meeting_enriched_notes(&id, &enriched_notes)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn enrich_meeting_notes(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+) -> Result<String, String> {
+    validate_provider(&provider)?;
+
+    let meeting = db.get_meeting(&meeting_id).map_err(|e| e.to_string())?;
+    let raw_notes = meeting
+        .raw_notes
+        .ok_or_else(|| "No notes to enrich".to_string())?;
+
+    // Get transcript text
+    let segments = db.get_transcript(&meeting_id).map_err(|e| e.to_string())?;
+    let transcript_text: String = segments
+        .iter()
+        .map(|s| format!("{}: {}", s.speaker_label, s.text))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let system_prompt = format!(
+        "You are enriching meeting notes using the full transcript into a single merged document. \
+         Output in markdown format. Keep the user's original notes as the backbone structure. \
+         Wrap the user's original note content in [[highlight]]...[[/highlight]] markers so it stands out. \
+         Expand each note point with details, context, and supporting information from the transcript. \
+         The result should read as one cohesive document — not two separate sections. \
+         Maintain the same topic order as the original notes.\n\n\
+         TRANSCRIPT:\n{}\n\n\
+         USER'S NOTES:\n{}",
+        transcript_text, raw_notes
+    );
+
+    let messages = vec![
+        ChatMessage {
+            role: "system".into(),
+            content: system_prompt,
+        },
+        ChatMessage {
+            role: "user".into(),
+            content: "Enrich my notes into a single merged markdown document. Highlight my original notes with [[highlight]]...[[/highlight]] markers and weave in transcript details around them.".into(),
+        },
+    ];
+
+    let llm = llm.read().await;
+    let llm_provider = llm
+        .get_provider(&provider)
+        .ok_or_else(|| format!("Provider '{}' not found", provider))?;
+    let enriched = llm_provider
+        .chat(messages, &model)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    db.update_meeting_enriched_notes(&meeting_id, &enriched)
+        .map_err(|e| e.to_string())?;
+
+    Ok(enriched)
 }

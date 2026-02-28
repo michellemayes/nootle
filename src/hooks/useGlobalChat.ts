@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  ChatMessage,
+  ChatConversation,
   GlobalChatMessage,
   GlobalChatResponse,
   EmbeddingStatus,
@@ -16,6 +16,7 @@ export function useGlobalChat() {
   const [dateTo, setDateTo] = useState<string | null>(null);
   const [embeddingStatus, setEmbeddingStatus] =
     useState<EmbeddingStatus | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
 
   const refreshEmbeddingStatus = useCallback(async () => {
     try {
@@ -38,24 +39,23 @@ export function useGlobalChat() {
       setError(null);
 
       try {
-        // Build history from previous messages (without sources, as ChatMessage)
-        const history: ChatMessage[] = messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
+        // Create a conversation on first message
+        if (!conversationIdRef.current) {
+          const conv = await invoke<ChatConversation>(
+            "create_chat_conversation",
+          );
+          conversationIdRef.current = conv.id;
+        }
 
-        const result = await invoke<GlobalChatResponse>(
-          "chat_with_transcripts",
-          {
-            message,
-            history,
-            provider,
-            model,
-            categoryIds,
-            dateFrom,
-            dateTo,
-          },
-        );
+        const result = await invoke<GlobalChatResponse>("send_chat_message", {
+          conversationId: conversationIdRef.current,
+          message,
+          provider,
+          model,
+          categoryIds,
+          dateFrom,
+          dateTo,
+        });
 
         const assistantMsg: GlobalChatMessage = {
           role: "assistant",
@@ -71,10 +71,11 @@ export function useGlobalChat() {
         setLoading(false);
       }
     },
-    [messages, categoryIds, dateFrom, dateTo],
+    [categoryIds, dateFrom, dateTo],
   );
 
   const clearMessages = useCallback(() => {
+    conversationIdRef.current = null;
     setMessages([]);
     setError(null);
   }, []);
@@ -85,6 +86,7 @@ export function useGlobalChat() {
       setDateFrom(from);
       setDateTo(to);
       // Clear conversation when filters change
+      conversationIdRef.current = null;
       setMessages([]);
       setError(null);
     },

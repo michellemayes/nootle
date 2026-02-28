@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChatPanel } from "@/components/ChatPanel";
+import { Markdown } from "@/components/Markdown";
+import { NotesEditor } from "@/components/NotesEditor";
 import { useMeeting, updateMeetingTitle } from "@/hooks/useMeetings";
 import { useTranscript } from "@/hooks/useTranscripts";
 import { useSummaries } from "@/hooks/useSummaries";
@@ -20,7 +22,25 @@ import type { LinearTicket, LinearTeam, LinearProject, ModelInfo, InsightWithAct
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List } from "lucide-react";
+import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List, StickyNote, Sparkles, PanelLeftClose, PanelLeftOpen, Copy, CheckCheck } from "lucide-react";
+
+function CopyButton({ text, className = "" }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      className={`inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors ${className}`}
+      title="Copy to clipboard"
+    >
+      {copied ? <CheckCheck className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
 
 const speakerColors = [
   "text-blue-400",
@@ -94,7 +114,7 @@ function ActionItemRow({
   };
 
   return (
-    <div className="flex items-start gap-2 rounded-md border p-3">
+    <div className="flex items-start gap-2 rounded-md border p-3 group/action">
       <button
         onClick={() => item.action_item_id && onToggle(item.action_item_id, item.status ?? "open")}
         className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
@@ -106,9 +126,12 @@ function ActionItemRow({
         {isDone && <Check className="h-3 w-3" />}
       </button>
       <div className="min-w-0 flex-1 space-y-1">
-        <p className={`text-sm leading-relaxed ${isDone ? "line-through text-muted-foreground" : "text-foreground"}`}>
-          {item.content}
-        </p>
+        <div className="flex items-start gap-2">
+          <p className={`text-sm leading-relaxed flex-1 ${isDone ? "line-through text-muted-foreground" : "text-foreground"}`}>
+            {item.content}
+          </p>
+          <CopyButton text={item.content} className="opacity-0 group-hover/action:opacity-100 shrink-0 mt-0.5" />
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={isDone ? "secondary" : "outline"} className="text-[10px]">
             {isDone ? "Done" : "Open"}
@@ -277,54 +300,7 @@ function InsightsPanel({
     );
   }
 
-  if (!hasInsights) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
-        <Lightbulb className="h-8 w-8 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground text-center">
-          No insights yet. Extract decisions, action items, and key moments from this meeting.
-        </p>
-        <div className="w-full max-w-xs space-y-2">
-          <div className="flex gap-2">
-            <select
-              value={selectedProvider}
-              onChange={(e) => {
-                setSelectedProvider(e.target.value);
-                setSelectedModel("");
-              }}
-              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Provider</option>
-              {providers.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Model</option>
-              {filteredModels.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </div>
-          <Button
-            size="sm"
-            className="w-full"
-            onClick={() => handleExtract(false)}
-            disabled={extracting || !selectedProvider || !selectedModel}
-          >
-            {extracting ? "Extracting..." : "Extract Insights"}
-          </Button>
-          {(extractError || insightsError) && (
-            <p className="text-xs text-destructive text-center">{extractError || insightsError}</p>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const noProviders = providers.length === 0;
 
   const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
     lightbulb: Lightbulb,
@@ -333,79 +309,105 @@ function InsightsPanel({
   };
 
   return (
-    <ScrollArea className="flex-1">
-      <div className="space-y-6 p-4">
-        {insightTypes.map((t) => {
-          const items = groupedByType[t.slug] ?? [];
-          const Icon = iconMap[t.icon] ?? Lightbulb;
-          return (
-            <InsightSection
-              key={t.slug}
-              title={t.name + "s"}
-              icon={Icon}
-              items={items}
-              renderItem={(item) =>
-                t.has_action_fields ? (
-                  <ActionItemRow
-                    item={item}
-                    onToggle={toggleActionItem}
-                    onUpdate={updateActionItem}
-                  />
-                ) : (
-                  <div className="rounded-md border p-3 space-y-1">
-                    <p className="text-sm leading-relaxed">{item.content}</p>
-                    {item.transcript_start_ms != null && (
-                      <span className="text-[10px] font-mono text-muted-foreground">
-                        {formatMs(item.transcript_start_ms)}
-                      </span>
-                    )}
-                  </div>
-                )
-              }
-            />
-          );
-        })}
-
-        {/* Re-extract */}
-        <div className="border-t pt-4 space-y-2">
-          <div className="flex gap-2">
-            <select
-              value={selectedProvider}
-              onChange={(e) => {
-                setSelectedProvider(e.target.value);
-                setSelectedModel("");
-              }}
-              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Provider</option>
-              {providers.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Model</option>
-              {filteredModels.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={() => handleExtract(true)}
-            disabled={extracting || !selectedProvider || !selectedModel}
-          >
-            <RotateCw className={`h-3 w-3 mr-1 ${extracting ? "animate-spin" : ""}`} />
-            {extracting ? "Re-extracting..." : "Re-extract Insights"}
-          </Button>
-        </div>
+    <div className="flex flex-1 flex-col min-h-0">
+      {/* Toolbar — always visible at top */}
+      <div className="flex items-center gap-2 border-b px-5 py-2 flex-wrap">
+        <select
+          value={selectedProvider}
+          onChange={(e) => {
+            setSelectedProvider(e.target.value);
+            setSelectedModel("");
+          }}
+          className="h-7 rounded-md border bg-transparent px-2 text-xs"
+        >
+          <option value="">Provider</option>
+          {providers.map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+        <select
+          value={selectedModel}
+          onChange={(e) => setSelectedModel(e.target.value)}
+          className="h-7 rounded-md border bg-transparent px-2 text-xs"
+        >
+          <option value="">Model</option>
+          {filteredModels.map((m) => (
+            <option key={m.id} value={m.id}>{m.name}</option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs"
+          onClick={() => handleExtract(hasInsights)}
+          disabled={extracting || !selectedProvider || !selectedModel}
+        >
+          {hasInsights ? (
+            <>
+              <RotateCw className={`h-3 w-3 mr-1 ${extracting ? "animate-spin" : ""}`} />
+              {extracting ? "Re-extracting..." : "Re-extract"}
+            </>
+          ) : (
+            <>
+              <Lightbulb className={`h-3 w-3 mr-1 ${extracting ? "animate-pulse" : ""}`} />
+              {extracting ? "Extracting..." : "Extract Insights"}
+            </>
+          )}
+        </Button>
+        {(extractError || insightsError) && (
+          <span className="text-xs text-destructive">{extractError || insightsError}</span>
+        )}
       </div>
-    </ScrollArea>
+
+      <ScrollArea className="flex-1">
+        {!hasInsights ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8">
+            <Lightbulb className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground text-center">
+              {noProviders
+                ? "Add an LLM provider in Settings to extract insights."
+                : "No insights yet. Select a provider and model above to extract them."}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-6 p-5">
+            {insightTypes.map((t) => {
+              const items = groupedByType[t.slug] ?? [];
+              const Icon = iconMap[t.icon] ?? Lightbulb;
+              return (
+                <InsightSection
+                  key={t.slug}
+                  title={t.name + "s"}
+                  icon={Icon}
+                  items={items}
+                  renderItem={(item) =>
+                    t.has_action_fields ? (
+                      <ActionItemRow
+                        item={item}
+                        onToggle={toggleActionItem}
+                        onUpdate={updateActionItem}
+                      />
+                    ) : (
+                      <div className="rounded-md border p-3 space-y-1 group/insight">
+                        <div className="flex items-start gap-2">
+                          <p className="text-sm leading-relaxed flex-1">{item.content}</p>
+                          <CopyButton text={item.content} className="opacity-0 group-hover/insight:opacity-100 shrink-0 mt-0.5" />
+                        </div>
+                        {item.transcript_start_ms != null && (
+                          <span className="text-[10px] font-mono text-muted-foreground">
+                            {formatMs(item.transcript_start_ms)}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
+      </ScrollArea>
+    </div>
   );
 }
 
@@ -590,6 +592,194 @@ function CreateTicketButton({
   );
 }
 
+
+function NotesPanel({
+  meetingId,
+  rawNotes,
+  enrichedNotes,
+  providers,
+  models,
+  onRefresh,
+}: {
+  meetingId: string;
+  rawNotes: string | null;
+  enrichedNotes: string | null;
+  providers: string[];
+  models: ModelInfo[];
+  onRefresh: () => void;
+}) {
+  const [selectedProvider, setSelectedProvider] = useState(providers[0] ?? "");
+  const [selectedModel, setSelectedModel] = useState("");
+  const [enriching, setEnriching] = useState(false);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"original" | "enriched">("enriched");
+  const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (providers.length > 0 && !selectedProvider) {
+      setSelectedProvider(providers[0]);
+    }
+  }, [providers, selectedProvider]);
+
+  useEffect(() => {
+    if (selectedProvider && models.length > 0 && !selectedModel) {
+      const providerModels = models.filter((m) => m.provider === selectedProvider);
+      if (providerModels.length > 0) {
+        setSelectedModel(providerModels[0].id);
+      }
+    }
+  }, [selectedProvider, models, selectedModel]);
+
+  const filteredModels = models.filter((m) => m.provider === selectedProvider);
+
+  const handleEnrich = async () => {
+    if (!selectedProvider || !selectedModel) return;
+    setEnriching(true);
+    setEnrichError(null);
+    try {
+      await invoke("enrich_meeting_notes", {
+        meetingId,
+        provider: selectedProvider,
+        model: selectedModel,
+      });
+      setViewMode("enriched");
+      onRefresh();
+    } catch (err) {
+      setEnrichError(String(err));
+    } finally {
+      setEnriching(false);
+    }
+  };
+
+  const handleNotesChange = useCallback((value: string) => {
+    if (saveRef.current) clearTimeout(saveRef.current);
+    saveRef.current = setTimeout(async () => {
+      try {
+        await invoke("save_enriched_notes", { id: meetingId, enrichedNotes: value });
+      } catch {
+        // silent
+      }
+    }, 600);
+  }, [meetingId]);
+
+  if (!rawNotes) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8">
+        <StickyNote className="h-8 w-8 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground text-center">
+          No notes for this meeting. Take notes during recording to see them here.
+        </p>
+      </div>
+    );
+  }
+
+  const displayContent = enrichedNotes ?? rawNotes;
+  const hasEnriched = !!enrichedNotes;
+
+  return (
+    <div className="flex flex-1 flex-col min-h-0">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 border-b px-5 py-2">
+        {!hasEnriched && (
+          <>
+            <select
+              value={selectedProvider}
+              onChange={(e) => {
+                setSelectedProvider(e.target.value);
+                setSelectedModel("");
+              }}
+              className="h-7 rounded-md border bg-transparent px-2 text-xs"
+            >
+              <option value="">Provider</option>
+              {providers.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="h-7 rounded-md border bg-transparent px-2 text-xs"
+            >
+              <option value="">Model</option>
+              {filteredModels.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={handleEnrich}
+              disabled={enriching || !selectedProvider || !selectedModel}
+            >
+              <Sparkles className={`h-3 w-3 mr-1 ${enriching ? "animate-pulse" : ""}`} />
+              {enriching ? "Enriching..." : "Enrich with AI"}
+            </Button>
+            {enrichError && (
+              <span className="text-xs text-destructive">{enrichError}</span>
+            )}
+          </>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <CopyButton text={displayContent} />
+          {hasEnriched && rawNotes && (
+            <div className="flex rounded-md border text-xs overflow-hidden">
+              <button
+                onClick={() => setViewMode("original")}
+                className={`px-3 py-1 transition-colors ${viewMode === "original" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Original
+              </button>
+              <button
+                onClick={() => setViewMode("enriched")}
+                className={`px-3 py-1 transition-colors ${viewMode === "enriched" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Enriched
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <ScrollArea className="flex-1">
+        <div className="p-5">
+          <div className="relative">
+            {/* Enriched — always mounted so TipTap doesn't reinitialize */}
+            <motion.div
+              animate={{
+                opacity: viewMode === "enriched" || !hasEnriched ? 1 : 0,
+                filter: viewMode === "enriched" || !hasEnriched ? "blur(0px)" : "blur(4px)",
+              }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+              className={viewMode === "original" && hasEnriched ? "pointer-events-none" : ""}
+            >
+              <NotesEditor
+                content={displayContent}
+                hasHighlights={hasEnriched}
+                onChange={handleNotesChange}
+              />
+            </motion.div>
+
+            {/* Original — overlaid on top when active */}
+            {hasEnriched && rawNotes && (
+              <motion.div
+                className="absolute inset-0"
+                animate={{
+                  opacity: viewMode === "original" ? 1 : 0,
+                }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
+                style={{ pointerEvents: viewMode === "original" ? "auto" : "none" }}
+              >
+                <Markdown content={rawNotes} />
+              </motion.div>
+            )}
+          </div>
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
 export function MeetingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -614,6 +804,7 @@ export function MeetingDetail() {
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [compactTranscript, setCompactTranscript] = useState(false);
+  const [transcriptCollapsed, setTranscriptCollapsed] = useState(true);
 
   // Audio player state
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -824,116 +1015,136 @@ export function MeetingDetail() {
 
       {/* Two-column layout */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Transcript - left column */}
-        <div className="flex flex-1 flex-col border-r">
-          <div className="flex items-center justify-between px-8 border-b h-12">
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              Transcript
-            </h2>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setCompactTranscript((v) => !v)}
-              title={compactTranscript ? "Spacious view" : "Compact view"}
-            >
-              {compactTranscript ? <AlignJustify className="h-4 w-4" /> : <List className="h-4 w-4" />}
-            </Button>
-          </div>
-          <ScrollArea className="flex-1">
-            <div className={`px-8 py-4 ${compactTranscript ? "space-y-1" : "space-y-4"}`}>
-              {transcriptLoading ? (
-                <p className="text-sm text-muted-foreground">
-                  Loading transcript...
-                </p>
-              ) : segments.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic">
-                  No transcript here — this one's a mystery
-                </p>
-              ) : (
-                segments.map((seg) => (
-                  <div key={seg.id} className={`group flex gap-3 ${compactTranscript ? "items-baseline" : ""}`}>
-                    <button
-                      onClick={() => seekToMs(seg.start_ms)}
-                      className="shrink-0 pt-0.5 text-xs text-muted-foreground font-mono tabular-nums w-12 text-left hover:text-primary transition-colors"
-                    >
-                      {formatMs(seg.start_ms)}
-                    </button>
-                    <p className="min-w-0 text-sm text-foreground leading-relaxed">
-                      <span
-                        className={`font-semibold ${speakerMap.get(seg.speaker_label) ?? "text-foreground"} mr-1.5`}
-                      >
-                        {seg.speaker_label}:
-                      </span>
-                      {seg.text}
-                    </p>
-                  </div>
-                ))
-              )}
+        {/* Transcript - collapsible left column */}
+        {!transcriptCollapsed && (
+          <div className="flex w-1/2 max-w-[50%] flex-col border-r">
+            <div className="flex items-center justify-between px-8 border-b h-12">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                Transcript
+              </h2>
+              <div className="flex items-center gap-1">
+                <CopyButton
+                  text={segments.map((s) => `${s.speaker_label}: ${s.text}`).join("\n")}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setCompactTranscript((v) => !v)}
+                  title={compactTranscript ? "Spacious view" : "Compact view"}
+                >
+                  {compactTranscript ? <AlignJustify className="h-4 w-4" /> : <List className="h-4 w-4" />}
+                </Button>
+              </div>
             </div>
-          </ScrollArea>
-        </div>
+            <ScrollArea className="flex-1">
+              <div className={`px-8 py-4 ${compactTranscript ? "space-y-1" : "space-y-4"}`}>
+                {transcriptLoading ? (
+                  <p className="text-sm text-muted-foreground">
+                    Loading transcript...
+                  </p>
+                ) : segments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic">
+                    No transcript here — this one's a mystery
+                  </p>
+                ) : (
+                  segments.map((seg) => (
+                    <div key={seg.id} className={`group flex gap-3 ${compactTranscript ? "items-baseline" : ""}`}>
+                      <button
+                        onClick={() => seekToMs(seg.start_ms)}
+                        className="shrink-0 pt-0.5 text-xs text-muted-foreground font-mono tabular-nums w-12 text-left hover:text-primary transition-colors"
+                      >
+                        {formatMs(seg.start_ms)}
+                      </button>
+                      <p className="min-w-0 text-sm text-foreground leading-relaxed">
+                        <span
+                          className={`font-semibold ${speakerMap.get(seg.speaker_label) ?? "text-foreground"} mr-1.5`}
+                        >
+                          {seg.speaker_label}:
+                        </span>
+                        {seg.text}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        )}
 
-        {/* Right column - Summaries & Insights */}
-        <div className="flex w-96 flex-col">
-          <Tabs defaultValue="summaries" className="flex flex-1 flex-col">
-            <div className="px-4 border-b flex items-center h-12">
-              <TabsList className="w-full">
-                <TabsTrigger value="summaries" className="flex-1">Summaries</TabsTrigger>
-                <TabsTrigger value="insights" className="flex-1">Insights</TabsTrigger>
+        {/* Right column - Summaries, Insights & Notes */}
+        <div className={`flex flex-col min-w-0 ${transcriptCollapsed ? "flex-1" : "w-96"}`}>
+          <Tabs defaultValue="notes" className="flex flex-1 flex-col">
+            <div className="px-4 border-b flex items-center h-12 gap-2">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setTranscriptCollapsed((v) => !v)}
+                title={transcriptCollapsed ? "Show transcript" : "Hide transcript"}
+              >
+                {transcriptCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              </Button>
+              <TabsList>
+                <TabsTrigger value="notes">Notes</TabsTrigger>
+                <TabsTrigger value="summaries">Summaries</TabsTrigger>
+                <TabsTrigger value="insights">Insights</TabsTrigger>
               </TabsList>
             </div>
+            <TabsContent value="notes" className="flex flex-1 flex-col mt-0">
+              <NotesPanel
+                meetingId={id!}
+                rawNotes={meeting.raw_notes}
+                enrichedNotes={meeting.enriched_notes}
+                providers={providers}
+                models={models}
+                onRefresh={refreshMeeting}
+              />
+            </TabsContent>
             <TabsContent value="summaries" className="flex flex-1 flex-col mt-0">
-              {/* Generate controls */}
-              <div className="space-y-2 p-4 border-b">
+              {/* Compact generate toolbar */}
+              <div className="flex items-center gap-2 border-b px-5 py-2 flex-wrap">
                 <select
                   value={selectedPrompt}
                   onChange={(e) => setSelectedPrompt(e.target.value)}
-                  className="h-8 w-full rounded-md border bg-transparent px-2 text-sm"
+                  className="h-7 rounded-md border bg-transparent px-2 text-xs"
                 >
-                  <option value="">Select prompt</option>
+                  <option value="">Prompt</option>
                   {prompts.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
+                    <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
-                <div className="flex gap-2">
-                  <select
-                    value={selectedProvider}
-                    onChange={(e) => {
-                      setSelectedProvider(e.target.value);
-                      setSelectedModel("");
-                    }}
-                    className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-                  >
-                    <option value="">Provider</option>
-                    {providers.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-                  >
-                    <option value="">Model</option>
-                    {filteredModels.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="relative flex items-center justify-center">
+                <select
+                  value={selectedProvider}
+                  onChange={(e) => {
+                    setSelectedProvider(e.target.value);
+                    setSelectedModel("");
+                  }}
+                  className="h-7 rounded-md border bg-transparent px-2 text-xs"
+                >
+                  <option value="">Provider</option>
+                  {providers.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="h-7 rounded-md border bg-transparent px-2 text-xs"
+                >
+                  <option value="">Model</option>
+                  {filteredModels.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+                <div className="relative">
                   <MotionButton
                     size="sm"
-                    className="w-full"
+                    variant="ghost"
+                    className="h-7 text-xs"
                     onClick={handleGenerate}
                     disabled={generating || !selectedPrompt || !selectedProvider || !selectedModel}
                   >
-                    {generating ? "Cooking..." : "Cook Up a Summary"}
+                    <Sparkles className={`h-3 w-3 mr-1 ${generating ? "animate-pulse" : ""}`} />
+                    {generating ? "Generating..." : "Generate"}
                   </MotionButton>
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <SparkleEffect trigger={justGenerated} />
@@ -941,59 +1152,56 @@ export function MeetingDetail() {
                 </div>
               </div>
 
-              {/* Summary tabs */}
               <ScrollArea className="flex-1">
                 {summaries.length === 0 ? (
                   <div className="flex flex-col items-center justify-center p-8 gap-2">
                     <FileText className="h-8 w-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground text-center">
-                      Nothing cooked up yet. Pick a prompt and let it rip.
+                      No summaries yet. Select a prompt and generate one.
                     </p>
                   </div>
                 ) : (
-                  <Tabs defaultValue={summaries[0]?.id} className="p-4">
-                    <TabsList className="w-full">
-                      {summaries.map((s) => {
-                        const prompt = s.prompt_id
-                          ? prompts.find((p) => p.id === s.prompt_id)
-                          : null;
-                        return (
-                          <TabsTrigger key={s.id} value={s.id}>
-                            {prompt?.name ?? "Summary"}
-                          </TabsTrigger>
-                        );
-                      })}
-                    </TabsList>
-                    {summaries.map((s) => (
-                      <TabsContent key={s.id} value={s.id}>
-                        <div className="mt-3 space-y-2">
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>{s.provider}/{s.model}</span>
+                  <div className="p-5 space-y-6">
+                    {summaries.map((s) => {
+                      const prompt = s.prompt_id
+                        ? prompts.find((p) => p.id === s.prompt_id)
+                        : null;
+                      return (
+                        <div key={s.id}>
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-xs font-medium text-foreground">
+                              {prompt?.name ?? "Summary"}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {s.provider}/{s.model}
+                            </span>
+                            <CopyButton text={s.content} className="ml-auto" />
                           </div>
-                          <div className="prose prose-sm prose-invert max-w-none text-sm leading-relaxed text-foreground whitespace-pre-wrap">
-                            {s.content}
-                          </div>
+                          <Markdown content={s.content} />
                           {hasLinear && (
-                          <div className="mt-3 flex items-center gap-2">
-                            <CreateTicketButton
-                              summaryId={s.id}
-                              existingTicket={tickets.find((t) => t.summary_id === s.id)}
-                              teams={teams}
-                              projects={linearProjects}
-                              defaultTeamId={defaultTeamId}
-                              defaultProjectId={defaultProjectId}
-                              providers={providers}
-                              models={models}
-                              onFetchTeams={fetchTeams}
-                              onTeamChange={setLinearTeamId}
-                              onCreate={createTicket}
-                            />
-                          </div>
+                            <div className="mt-3">
+                              <CreateTicketButton
+                                summaryId={s.id}
+                                existingTicket={tickets.find((t) => t.summary_id === s.id)}
+                                teams={teams}
+                                projects={linearProjects}
+                                defaultTeamId={defaultTeamId}
+                                defaultProjectId={defaultProjectId}
+                                providers={providers}
+                                models={models}
+                                onFetchTeams={fetchTeams}
+                                onTeamChange={setLinearTeamId}
+                                onCreate={createTicket}
+                              />
+                            </div>
+                          )}
+                          {summaries.indexOf(s) < summaries.length - 1 && (
+                            <hr className="mt-6 border-border" />
                           )}
                         </div>
-                      </TabsContent>
-                    ))}
-                  </Tabs>
+                      );
+                    })}
+                  </div>
                 )}
               </ScrollArea>
             </TabsContent>

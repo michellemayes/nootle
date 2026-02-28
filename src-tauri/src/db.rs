@@ -14,6 +14,8 @@ pub struct Meeting {
     pub audio_path: Option<String>,
     pub status: String,
     pub calendar_event_id: Option<String>,
+    pub raw_notes: Option<String>,
+    pub enriched_notes: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -531,15 +533,16 @@ impl Database {
             );
             ",
         )?;
-        self.seed_default_insight_types()?;
+        Self::seed_default_insight_types(&conn)?;
+
+        // Migrations: add notes columns to meetings
+        let _ = conn.execute("ALTER TABLE meetings ADD COLUMN raw_notes TEXT", []);
+        let _ = conn.execute("ALTER TABLE meetings ADD COLUMN enriched_notes TEXT", []);
+
         Ok(())
     }
 
-    fn seed_default_insight_types(&self) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+    fn seed_default_insight_types(conn: &rusqlite::Connection) -> Result<()> {
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM insight_types", [], |row| row.get(0))?;
         if count > 0 {
@@ -600,6 +603,8 @@ impl Database {
             audio_path: None,
             status: status.to_string(),
             calendar_event_id: new.calendar_event_id,
+            raw_notes: None,
+            enriched_notes: None,
             created_at: now.clone(),
             updated_at: now,
         })
@@ -611,7 +616,7 @@ impl Database {
             .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         let mut stmt = conn.prepare(
-            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, created_at, updated_at
+            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, created_at, updated_at
              FROM meetings WHERE id = ?1",
         )?;
 
@@ -626,8 +631,10 @@ impl Database {
                     audio_path: row.get(5)?,
                     status: row.get(6)?,
                     calendar_event_id: row.get(7)?,
-                    created_at: row.get(8)?,
-                    updated_at: row.get(9)?,
+                    raw_notes: row.get(8)?,
+                    enriched_notes: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
                 })
             })
             .map_err(|e| match e {
@@ -652,7 +659,7 @@ impl Database {
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
 
         let mut sql = String::from(
-            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, created_at, updated_at
+            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, created_at, updated_at
              FROM meetings"
         );
         let mut conditions: Vec<String> = Vec::new();
@@ -700,8 +707,10 @@ impl Database {
                     audio_path: row.get(5)?,
                     status: row.get(6)?,
                     calendar_event_id: row.get(7)?,
-                    created_at: row.get(8)?,
-                    updated_at: row.get(9)?,
+                    raw_notes: row.get(8)?,
+                    enriched_notes: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -751,6 +760,32 @@ impl Database {
             params![category_id, now, id],
         )?;
 
+        Ok(())
+    }
+
+    pub fn update_meeting_notes(&self, id: &str, raw_notes: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE meetings SET raw_notes = ?1, updated_at = ?2 WHERE id = ?3",
+            params![raw_notes, now, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_meeting_enriched_notes(&self, id: &str, enriched_notes: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE meetings SET enriched_notes = ?1, updated_at = ?2 WHERE id = ?3",
+            params![enriched_notes, now, id],
+        )?;
         Ok(())
     }
 

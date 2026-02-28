@@ -316,6 +316,10 @@ pub fn run() {
             commands::delete_chat_conversation,
             commands::list_chat_messages,
             commands::send_chat_message,
+            commands::update_chat_conversation_title,
+            commands::save_meeting_notes,
+            commands::save_enriched_notes,
+            commands::enrich_meeting_notes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { MotionButton } from "@/components/MotionButton";
@@ -64,6 +64,8 @@ export function GlobalChatPanel() {
   const { categories } = useCategories();
   const { models, providers } = useLLM();
   const navigate = useNavigate();
+  const location = useLocation();
+  const onChatPage = location.pathname === "/chat";
 
   const [input, setInput] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("");
@@ -174,6 +176,8 @@ export function GlobalChatPanel() {
     embeddingStatus &&
     embeddingStatus.model_available &&
     embeddingStatus.embedded < embeddingStatus.total;
+
+  if (onChatPage) return null;
 
   return (
     <>
