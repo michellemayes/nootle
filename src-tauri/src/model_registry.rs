@@ -5,6 +5,7 @@ pub enum ModelCategory {
     Transcription,
     Diarization,
     Embedding,
+    Denoising,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -166,6 +167,30 @@ const EMBEDDING_VARIANTS: &[ModelVariant] = &[ModelVariant {
     total_size_bytes: 86_232_000,
 }];
 
+// ── Denoising (DeepFilterNet3) ──────────────────────────────────────
+
+const DENOISE_FILES: &[ModelFile] = &[
+    ModelFile {
+        local_name: "deepfilternet3.onnx",
+        url: "https://huggingface.co/deepfilternet/DeepFilterNet3/resolve/main/DeepFilterNet3_onnx/enc.onnx",
+        size_bytes: 1_800_000,
+        sha256: "",
+    },
+    ModelFile {
+        local_name: "deepfilternet3_dec.onnx",
+        url: "https://huggingface.co/deepfilternet/DeepFilterNet3/resolve/main/DeepFilterNet3_onnx/dec.onnx",
+        size_bytes: 1_200_000,
+        sha256: "",
+    },
+];
+
+const DENOISE_VARIANTS: &[ModelVariant] = &[ModelVariant {
+    id: "default",
+    label: "Noise Cancellation (≈3 MB)",
+    files: DENOISE_FILES,
+    total_size_bytes: 3_000_000,
+}];
+
 // ── Full Registry ──────────────────────────────────────────────────────
 
 pub const MODEL_REGISTRY: &[ModelDefinition] = &[
@@ -192,6 +217,14 @@ pub const MODEL_REGISTRY: &[ModelDefinition] = &[
         category: ModelCategory::Embedding,
         dir_name: "embedding-minilm",
         variants: EMBEDDING_VARIANTS,
+    },
+    ModelDefinition {
+        id: "deepfilternet3",
+        name: "Noise Cancellation",
+        description: "DeepFilterNet3 for real-time audio denoising before transcription",
+        category: ModelCategory::Denoising,
+        dir_name: "deepfilternet3",
+        variants: DENOISE_VARIANTS,
     },
 ];
 
@@ -237,8 +270,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_has_three_models() {
-        assert_eq!(MODEL_REGISTRY.len(), 3);
+    fn registry_has_four_models() {
+        assert_eq!(MODEL_REGISTRY.len(), 4);
     }
 
     #[test]
@@ -261,6 +294,13 @@ mod tests {
         let model = get_model("embedding-minilm").unwrap();
         assert_eq!(model.variants.len(), 1);
         assert_eq!(model.category, ModelCategory::Embedding);
+    }
+
+    #[test]
+    fn denoise_model_exists() {
+        let model = get_model("deepfilternet3").unwrap();
+        assert_eq!(model.variants.len(), 1);
+        assert_eq!(model.category, ModelCategory::Denoising);
     }
 
     #[test]
