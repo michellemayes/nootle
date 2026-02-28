@@ -720,25 +720,23 @@ function NotesPanel({
             )}
           </>
         )}
-        <div className="ml-auto flex items-center gap-2">
-          <CopyButton text={displayContent} />
-          {hasEnriched && rawNotes && (
-            <div className="flex rounded-md border text-xs overflow-hidden">
-              <button
-                onClick={() => setViewMode("original")}
-                className={`px-3 py-1 transition-colors ${viewMode === "original" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                Original
-              </button>
-              <button
-                onClick={() => setViewMode("enriched")}
-                className={`px-3 py-1 transition-colors ${viewMode === "enriched" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                Enriched
-              </button>
+        {hasEnriched && rawNotes && (
+          <div className="flex rounded-md border text-xs overflow-hidden">
+            <button
+              onClick={() => setViewMode("original")}
+              className={`px-3 py-1 transition-colors ${viewMode === "original" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              Original
+            </button>
+            <button
+              onClick={() => setViewMode("enriched")}
+              className={`px-3 py-1 transition-colors ${viewMode === "enriched" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              AI Enhanced
+            </button>
             </div>
           )}
-        </div>
+          <CopyButton text={displayContent} className="ml-auto" />
       </div>
 
       <ScrollArea className="flex-1">
