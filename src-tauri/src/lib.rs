@@ -224,14 +224,11 @@ pub fn run() {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-                    let detection_enabled = {
-                        let enabled = db_for_detection
-                            .get_setting("detection_enabled")
-                            .unwrap_or(None)
-                            .map(|v| v != "false")
-                            .unwrap_or(true);
-                        enabled
-                    };
+                    let detection_enabled = db_for_detection
+                        .get_setting("detection_enabled")
+                        .unwrap_or(None)
+                        .map(|v| v != "false")
+                        .unwrap_or(true);
 
                     if !detection_enabled {
                         continue;

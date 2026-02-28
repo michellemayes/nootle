@@ -102,7 +102,6 @@ export function AnalyticsPanel({
     );
   }
 
-  // Empty state: no analytics data at all
   if (!hasSpeakers && !engagement) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
@@ -127,7 +126,6 @@ export function AnalyticsPanel({
   return (
     <ScrollArea className="flex-1">
       <div className="space-y-6 p-4">
-        {/* Talk-time bar chart */}
         {hasSpeakers && (
           <div className="space-y-3">
             <h3 className="text-sm font-semibold">Talk Time</h3>
@@ -156,7 +154,6 @@ export function AnalyticsPanel({
           </div>
         )}
 
-        {/* Stats cards */}
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-lg border p-3 space-y-1">
             <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -188,7 +185,6 @@ export function AnalyticsPanel({
           </div>
         </div>
 
-        {/* Engagement badge */}
         {engagement && (
           <div className="space-y-2">
             <h3 className="text-sm font-semibold">Engagement</h3>
@@ -213,7 +209,6 @@ export function AnalyticsPanel({
           </div>
         )}
 
-        {/* Sentiment timeline */}
         {hasSentiment && (
           <div className="space-y-2">
             <h3 className="text-sm font-semibold">Sentiment Timeline</h3>
@@ -255,7 +250,6 @@ export function AnalyticsPanel({
           </div>
         )}
 
-        {/* Sentiment analysis controls */}
         <div className="border-t pt-4 space-y-2">
           <h3 className="text-sm font-semibold">Sentiment Analysis</h3>
           <div className="flex gap-2">
@@ -299,7 +293,6 @@ export function AnalyticsPanel({
           </Button>
         </div>
 
-        {/* Re-compute analytics */}
         {hasSpeakers && (
           <div className="border-t pt-4">
             <Button
@@ -315,7 +308,6 @@ export function AnalyticsPanel({
           </div>
         )}
 
-        {/* Error display */}
         {(actionError || error) && (
           <p className="text-xs text-destructive text-center">{actionError || error}</p>
         )}

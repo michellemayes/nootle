@@ -352,7 +352,6 @@ pub async fn start_recording(
 
     session.start();
 
-    // Check denoise setting before spawning capture thread
     let denoise_enabled = db.get_setting("denoise_enabled")
         .unwrap_or(None)
         .map(|v| v != "false")
@@ -698,7 +697,6 @@ pub async fn stop_recording(
         });
     }
 
-    // Auto-compute talk-time analytics
     {
         let db_analytics = db.inner().clone();
         let app_analytics = app.clone();
@@ -1589,8 +1587,6 @@ pub fn get_exe_path() -> Result<String, String> {
         .map(|p| p.to_string_lossy().into_owned())
         .map_err(|e| e.to_string())
 }
-
-// App Settings commands
 
 #[tauri::command]
 pub async fn get_app_setting(

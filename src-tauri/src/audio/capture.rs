@@ -139,7 +139,6 @@ fn capture_loop(
         };
 
         if !mixed.is_empty() {
-            // Denoise if engine is available
             if let Some(ref mut engine) = denoise {
                 if let Err(e) = engine.process(&mut mixed) {
                     tracing::warn!("Denoising failed, using raw audio: {e}");
