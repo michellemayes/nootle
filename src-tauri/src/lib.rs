@@ -23,7 +23,7 @@ use detection::MeetingDetector;
 use llm::{LlmRegistry, OllamaProvider};
 use model_download::DownloadManager;
 use std::sync::Arc;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tokio::sync::Mutex as TokioMutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -216,11 +216,25 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let update_handle = app_handle.clone();
             let detector = detector.clone();
+            let db_for_detection = app.state::<Arc<db::Database>>().inner().clone();
 
             // Spawn polling task for meeting detection
             tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+                    let detection_enabled = {
+                        let enabled = db_for_detection
+                            .get_setting("detection_enabled")
+                            .unwrap_or(None)
+                            .map(|v| v != "false")
+                            .unwrap_or(true);
+                        enabled
+                    };
+
+                    if !detection_enabled {
+                        continue;
+                    }
 
                     let (newly_detected, should_notify) = {
                         let mut d = detector.lock().unwrap();
