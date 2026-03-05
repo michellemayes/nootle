@@ -32,6 +32,21 @@ pub async fn summarize_meeting(
         .collect::<Vec<_>>()
         .join("\n");
 
+    // Fetch scratch notes and format them if present
+    let scratch_notes = db.get_scratch_notes(meeting_id).unwrap_or_default();
+    let notes_section = if scratch_notes.is_empty() {
+        String::new()
+    } else {
+        let formatted: Vec<String> = scratch_notes
+            .iter()
+            .map(|n| format!("- [{}] \"{}\"", format_ms(n.timestamp_ms), n.content))
+            .collect();
+        format!(
+            "\n\nThe user highlighted these moments during the meeting:\n{}\n\nGive extra attention to these highlighted topics in your summary.",
+            formatted.join("\n")
+        )
+    };
+
     // Build messages
     let messages = vec![
         ChatMessage {
@@ -40,7 +55,10 @@ pub async fn summarize_meeting(
         },
         ChatMessage {
             role: "user".into(),
-            content: format!("Here is the meeting transcript:\n\n{}", transcript_text),
+            content: format!(
+                "Here is the meeting transcript:\n\n{}{}",
+                transcript_text, notes_section
+            ),
         },
     ];
 

@@ -20,6 +20,7 @@ import { useLLM } from "@/hooks/useLLM";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useTags } from "@/hooks/useTags";
+import { useScratchPad } from "@/hooks/useScratchPad";
 import type { LinearTicket, LinearTeam, LinearProject, ModelInfo, InsightWithActionItem, Tag } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -933,6 +934,7 @@ export function MeetingDetail() {
   const { models, providers } = useLLM();
   const { storedProviders: storedApiProviders } = useApiKeys();
   const { tags: allTags, getMeetingTags, addMeetingTag, removeMeetingTag, createTag } = useTags();
+  const { notes: scratchNotes } = useScratchPad(id ?? null);
   const [meetingTags, setMeetingTags] = useState<Tag[]>([]);
   const hasLinear = storedApiProviders.includes("linear");
   const { tickets, createTicket } = useLinearTickets(id!);
@@ -1258,6 +1260,7 @@ export function MeetingDetail() {
                 <TabsTrigger value="notes">Notes</TabsTrigger>
                 <TabsTrigger value="summaries">Summaries</TabsTrigger>
                 <TabsTrigger value="insights">Insights</TabsTrigger>
+                {scratchNotes.length > 0 && <TabsTrigger value="highlights">Highlights</TabsTrigger>}
                 <TabsTrigger value="analytics">Analytics</TabsTrigger>
               </TabsList>
             </div>
@@ -1271,6 +1274,34 @@ export function MeetingDetail() {
                 onRefresh={refreshMeeting}
               />
             </TabsContent>
+            {scratchNotes.length > 0 && (
+              <TabsContent value="highlights" className="flex flex-1 flex-col mt-0">
+                <ScrollArea className="flex-1">
+                  <div className="p-5 space-y-2">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
+                      <StickyNote className="h-4 w-4 text-amber-500" />
+                      Your Highlights
+                    </h3>
+                    {scratchNotes.map((note) => {
+                      const totalSec = Math.floor(note.timestamp_ms / 1000);
+                      const mm = String(Math.floor(totalSec / 60)).padStart(2, "0");
+                      const ss = String(totalSec % 60).padStart(2, "0");
+                      return (
+                        <div
+                          key={note.id}
+                          className="rounded-lg bg-amber-500/5 border border-amber-500/10 px-4 py-3 flex items-start gap-3"
+                        >
+                          <span className="font-mono text-xs text-amber-600 dark:text-amber-400 mt-0.5 shrink-0">
+                            {mm}:{ss}
+                          </span>
+                          <span className="text-sm text-foreground leading-relaxed">{note.content}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+            )}
             <TabsContent value="summaries" className="flex flex-1 flex-col mt-0">
               {/* Compact generate toolbar */}
               <div className="flex items-center gap-2 border-b px-5 py-2 flex-wrap">

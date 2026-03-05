@@ -463,3 +463,29 @@ fn test_get_all_meeting_tags() {
     let all = db.get_all_meeting_tags().unwrap();
     assert_eq!(all.len(), 2);
 }
+
+#[test]
+fn test_scratch_notes() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Test".into(),
+            category_id: None,
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+
+    let note = db
+        .add_scratch_note(&meeting.id, "Important pricing discussion", 323000)
+        .unwrap();
+    assert_eq!(note.content, "Important pricing discussion");
+    assert_eq!(note.timestamp_ms, 323000);
+
+    let notes = db.get_scratch_notes(&meeting.id).unwrap();
+    assert_eq!(notes.len(), 1);
+
+    db.delete_scratch_note(&note.id).unwrap();
+    let notes = db.get_scratch_notes(&meeting.id).unwrap();
+    assert_eq!(notes.len(), 0);
+}

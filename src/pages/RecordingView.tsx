@@ -10,6 +10,7 @@ import { useTemplates } from "@/hooks/useTemplates";
 import type { TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { ScratchPad } from "@/components/ScratchPad";
 import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText } from "lucide-react";
 
 function formatTime(seconds: number): string {
@@ -55,7 +56,7 @@ interface TranscriptionStatus {
 
 export function RecordingView() {
   const navigate = useNavigate();
-  const { isRecording, elapsed, error, startRecording, stopRecording } =
+  const { isRecording, currentMeeting, elapsed, error, startRecording, stopRecording } =
     useRecording();
   const { templates } = useTemplates();
   const [title, setTitle] = useState("Untitled Recording");
@@ -242,6 +243,9 @@ export function RecordingView() {
           autoFocus
         />
       </div>
+
+      {/* Scratch pad for timestamped highlights */}
+      <ScratchPad meetingId={currentMeeting?.id ?? null} elapsedMs={elapsed * 1000} />
 
       {/* Collapsible live transcript */}
       <div className="border-t">

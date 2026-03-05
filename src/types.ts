@@ -168,6 +168,14 @@ export interface ChatMessageRecord {
   created_at: string;
 }
 
+export interface ScratchNote {
+  id: string;
+  meeting_id: string;
+  content: string;
+  timestamp_ms: number;
+  created_at: string;
+}
+
 export interface InsightWithActionItem {
   id: string;
   meeting_id: string;

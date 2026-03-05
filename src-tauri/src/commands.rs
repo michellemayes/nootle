@@ -258,6 +258,32 @@ pub fn get_all_meeting_tags(
         .map_err(|e| e.to_string())
 }
 
+// Scratch note commands
+#[tauri::command]
+pub fn add_scratch_note(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    content: String,
+    timestamp_ms: i64,
+) -> Result<ScratchNote, String> {
+    db.add_scratch_note(&meeting_id, &content, timestamp_ms)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_scratch_notes(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<ScratchNote>, String> {
+    db.get_scratch_notes(&meeting_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_scratch_note(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_scratch_note(&id).map_err(|e| e.to_string())
+}
+
 // Transcript commands
 #[tauri::command]
 pub fn get_transcript(

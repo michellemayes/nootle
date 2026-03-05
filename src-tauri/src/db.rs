@@ -334,6 +334,15 @@ pub struct MeetingEngagement {
     pub back_and_forth_ratio: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScratchNote {
+    pub id: String,
+    pub meeting_id: String,
+    pub content: String,
+    pub timestamp_ms: i64,
+    pub created_at: String,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -625,6 +634,14 @@ impl Database {
                 meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
                 tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
                 PRIMARY KEY (meeting_id, tag_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS scratch_notes (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                content TEXT NOT NULL,
+                timestamp_ms INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
             ",
         )?;
@@ -1319,6 +1336,71 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(results)
+    }
+
+    // --- Scratch Notes ---
+
+    pub fn add_scratch_note(
+        &self,
+        meeting_id: &str,
+        content: &str,
+        timestamp_ms: i64,
+    ) -> Result<ScratchNote> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO scratch_notes (id, meeting_id, content, timestamp_ms, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, meeting_id, content, timestamp_ms, now],
+        )?;
+
+        Ok(ScratchNote {
+            id,
+            meeting_id: meeting_id.to_string(),
+            content: content.to_string(),
+            timestamp_ms,
+            created_at: now,
+        })
+    }
+
+    pub fn get_scratch_notes(&self, meeting_id: &str) -> Result<Vec<ScratchNote>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, meeting_id, content, timestamp_ms, created_at
+             FROM scratch_notes
+             WHERE meeting_id = ?1
+             ORDER BY timestamp_ms ASC",
+        )?;
+
+        let notes = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok(ScratchNote {
+                    id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    content: row.get(2)?,
+                    timestamp_ms: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(notes)
+    }
+
+    pub fn delete_scratch_note(&self, id: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute("DELETE FROM scratch_notes WHERE id = ?1", params![id])?;
+        Ok(())
     }
 
     // --- Transcript Segments ---
