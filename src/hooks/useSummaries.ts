@@ -36,10 +36,10 @@ export function useSummaries(meetingId: string) {
   }, [meetingId, refresh]);
 
   const generateSummary = useCallback(
-    async (promptId: string, provider: string, model: string) => {
+    async (templateId: string, provider: string, model: string) => {
       const summary = await invoke<Summary>("generate_summary", {
         meetingId,
-        promptId,
+        templateId,
         provider,
         model,
       });

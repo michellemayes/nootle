@@ -48,10 +48,10 @@ enum Commands {
         #[command(subcommand)]
         action: CategoriesAction,
     },
-    /// List and query prompts
-    Prompts {
+    /// List and query templates
+    Templates {
         #[command(subcommand)]
-        action: PromptsAction,
+        action: TemplatesAction,
     },
     /// Show embedding status
     Embeddings {
@@ -140,12 +140,12 @@ enum CategoriesAction {
 }
 
 #[derive(Subcommand)]
-enum PromptsAction {
-    /// List all prompts
+enum TemplatesAction {
+    /// List all templates
     List,
-    /// Get a prompt by ID
+    /// Get a template by ID
     Get {
-        /// Prompt ID
+        /// Template ID
         id: String,
     },
 }
@@ -284,14 +284,14 @@ fn run_command(
                 print_json(&categories, pretty);
             }
         },
-        Commands::Prompts { action } => match action {
-            PromptsAction::List => {
-                let prompts = db.list_prompts()?;
-                print_json(&prompts, pretty);
+        Commands::Templates { action } => match action {
+            TemplatesAction::List => {
+                let templates = db.list_templates()?;
+                print_json(&templates, pretty);
             }
-            PromptsAction::Get { id } => {
-                let prompt = db.get_prompt(id)?;
-                print_json(&prompt, pretty);
+            TemplatesAction::Get { id } => {
+                let template = db.get_template(id)?;
+                print_json(&template, pretty);
             }
         },
         Commands::Embeddings { action } => match action {

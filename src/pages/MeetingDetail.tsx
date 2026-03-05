@@ -15,7 +15,7 @@ import { useMeeting, updateMeetingTitle } from "@/hooks/useMeetings";
 import { useTranscript } from "@/hooks/useTranscripts";
 import { useSummaries } from "@/hooks/useSummaries";
 import { useInsights } from "@/hooks/useInsights";
-import { usePrompts } from "@/hooks/usePrompts";
+import { useTemplates } from "@/hooks/useTemplates";
 import { useLLM } from "@/hooks/useLLM";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import { useApiKeys } from "@/hooks/useApiKeys";
@@ -789,7 +789,7 @@ export function MeetingDetail() {
   const { meeting, loading: meetingLoading, refresh: refreshMeeting } = useMeeting(id!);
   const { segments, loading: transcriptLoading } = useTranscript(id!);
   const { summaries, generateSummary } = useSummaries(id!);
-  const { prompts } = usePrompts();
+  const { templates } = useTemplates();
   const { models, providers } = useLLM();
   const { storedProviders: storedApiProviders } = useApiKeys();
   const { tags: allTags, getMeetingTags, addMeetingTag, removeMeetingTag, createTag } = useTags();
@@ -806,7 +806,7 @@ export function MeetingDetail() {
   const [titleDraft, setTitleDraft] = useState("");
   const [generating, setGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
-  const [selectedPrompt, setSelectedPrompt] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [compactTranscript, setCompactTranscript] = useState(false);
@@ -825,10 +825,10 @@ export function MeetingDetail() {
 
   // Default selections
   useEffect(() => {
-    if (prompts.length > 0 && !selectedPrompt) {
-      setSelectedPrompt(prompts[0].id);
+    if (templates.length > 0 && !selectedTemplate) {
+      setSelectedTemplate(templates[0].id);
     }
-  }, [prompts, selectedPrompt]);
+  }, [templates, selectedTemplate]);
 
   useEffect(() => {
     if (providers.length > 0 && !selectedProvider) {
@@ -963,10 +963,10 @@ export function MeetingDetail() {
   });
 
   const handleGenerate = async () => {
-    if (!selectedPrompt || !selectedProvider || !selectedModel) return;
+    if (!selectedTemplate || !selectedProvider || !selectedModel) return;
     setGenerating(true);
     try {
-      await generateSummary(selectedPrompt, selectedProvider, selectedModel);
+      await generateSummary(selectedTemplate, selectedProvider, selectedModel);
       setJustGenerated(true);
       setTimeout(() => setJustGenerated(false), 100);
     } catch {
@@ -1175,13 +1175,13 @@ export function MeetingDetail() {
               {/* Compact generate toolbar */}
               <div className="flex items-center gap-2 border-b px-5 py-2 flex-wrap">
                 <select
-                  value={selectedPrompt}
-                  onChange={(e) => setSelectedPrompt(e.target.value)}
+                  value={selectedTemplate}
+                  onChange={(e) => setSelectedTemplate(e.target.value)}
                   className="h-7 rounded-md border bg-transparent px-2 text-xs"
                 >
-                  <option value="">Prompt</option>
-                  {prompts.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
+                  <option value="">Template</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
                 <select
@@ -1213,7 +1213,7 @@ export function MeetingDetail() {
                     variant="ghost"
                     className="h-7 text-xs"
                     onClick={handleGenerate}
-                    disabled={generating || !selectedPrompt || !selectedProvider || !selectedModel}
+                    disabled={generating || !selectedTemplate || !selectedProvider || !selectedModel}
                   >
                     <Sparkles className={`h-3 w-3 mr-1 ${generating ? "animate-pulse" : ""}`} />
                     {generating ? "Generating..." : "Generate"}
@@ -1235,14 +1235,14 @@ export function MeetingDetail() {
                 ) : (
                   <div className="p-5 space-y-6">
                     {summaries.map((s) => {
-                      const prompt = s.prompt_id
-                        ? prompts.find((p) => p.id === s.prompt_id)
+                      const tmpl = s.template_id
+                        ? templates.find((t) => t.id === s.template_id)
                         : null;
                       return (
                         <div key={s.id}>
                           <div className="flex items-center gap-2 mb-3">
                             <span className="text-xs font-medium text-foreground">
-                              {prompt?.name ?? "Summary"}
+                              {tmpl?.name ?? "Summary"}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
                               {s.provider}/{s.model}

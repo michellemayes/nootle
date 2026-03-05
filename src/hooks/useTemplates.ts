@@ -32,6 +32,8 @@ export function useTemplates() {
       sections: string,
       autoApplyRules: string,
       prompt: string,
+      isFavorite: boolean,
+      isAutoRun: boolean,
     ) => {
       const template = await invoke<Template>("create_template", {
         name,
@@ -40,6 +42,8 @@ export function useTemplates() {
         sections,
         autoApplyRules,
         prompt,
+        isFavorite,
+        isAutoRun,
       });
       await refresh();
       return template;
@@ -64,6 +68,8 @@ export function useTemplates() {
       sections: string,
       autoApplyRules: string,
       prompt: string,
+      isFavorite: boolean,
+      isAutoRun: boolean,
     ) => {
       const template = await invoke<Template>("update_template", {
         params: {
@@ -74,6 +80,8 @@ export function useTemplates() {
           sections,
           autoApplyRules,
           prompt,
+          isFavorite,
+          isAutoRun,
         },
       });
       await refresh();

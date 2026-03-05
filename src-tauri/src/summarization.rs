@@ -20,7 +20,7 @@ pub async fn summarize_meeting(
     db: &Database,
     llm: &LlmRegistry,
     meeting_id: &str,
-    prompt_id: &str,
+    template_id: &str,
     provider_name: &str,
     model: &str,
 ) -> anyhow::Result<Summary> {
@@ -29,7 +29,7 @@ pub async fn summarize_meeting(
         anyhow::bail!("No transcript found for meeting {}", meeting_id);
     }
 
-    let prompt = db.get_prompt(prompt_id)?;
+    let template = db.get_template(template_id)?;
 
     let transcript_text = format_transcript(&transcript);
 
@@ -51,7 +51,7 @@ pub async fn summarize_meeting(
     let messages = vec![
         ChatMessage {
             role: "system".into(),
-            content: prompt.content,
+            content: template.prompt,
         },
         ChatMessage {
             role: "user".into(),
@@ -71,7 +71,7 @@ pub async fn summarize_meeting(
     // Save summary to DB
     let summary = db.create_summary(NewSummary {
         meeting_id: meeting_id.to_string(),
-        prompt_id: Some(prompt_id.to_string()),
+        template_id: Some(template_id.to_string()),
         provider: provider_name.to_string(),
         model: model.to_string(),
         content,
@@ -80,19 +80,19 @@ pub async fn summarize_meeting(
     Ok(summary)
 }
 
-pub async fn run_auto_prompts(
+pub async fn run_auto_templates(
     db: &Database,
     llm: &LlmRegistry,
     meeting_id: &str,
     provider_name: &str,
     model: &str,
 ) -> anyhow::Result<Vec<Summary>> {
-    let prompts = db.get_auto_run_prompts()?;
+    let templates = db.get_auto_run_templates()?;
     let mut summaries = Vec::new();
-    for prompt in prompts {
-        match summarize_meeting(db, llm, meeting_id, &prompt.id, provider_name, model).await {
+    for template in templates {
+        match summarize_meeting(db, llm, meeting_id, &template.id, provider_name, model).await {
             Ok(summary) => summaries.push(summary),
-            Err(e) => tracing::error!("Auto-prompt '{}' failed: {}", prompt.name, e),
+            Err(e) => tracing::error!("Auto-run template '{}' failed: {}", template.name, e),
         }
     }
     Ok(summaries)
