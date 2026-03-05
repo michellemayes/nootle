@@ -4,32 +4,34 @@ import { motion } from "framer-motion";
 
 const steps = [
   {
-    number: "1",
+    number: "01",
     title: "Join your meeting",
-    description: "Nootle detects active meetings automatically — Zoom, Teams, Google Meet, and more.",
-    color: "#4EEABB",
+    description:
+      "Nootle detects active meetings automatically — Zoom, Teams, Google Meet, and more.",
+    accent: "var(--color-mint)",
   },
   {
-    number: "2",
+    number: "02",
     title: "Record & transcribe",
-    description: "Real-time transcription with speaker labels. Captures both your mic and system audio.",
-    color: "#C084FC",
+    description:
+      "Real-time transcription with speaker labels. Captures both your mic and system audio.",
+    accent: "var(--color-blue)",
   },
   {
-    number: "3",
+    number: "03",
     title: "Review & chat",
-    description: "Browse transcripts, get AI summaries, and ask follow-up questions about anything discussed.",
-    color: "#E879A8",
+    description:
+      "Browse transcripts, get AI summaries, and ask follow-up questions about anything discussed.",
+    accent: "var(--color-magenta)",
   },
 ];
 
 export function HowItWorks() {
   return (
-    <section className="py-24 px-6 bg-white">
-      <div className="max-w-6xl mx-auto">
+    <section className="py-24 px-6">
+      <div className="max-w-3xl mx-auto">
         <motion.h2
-          className="text-4xl md:text-5xl font-bold text-center mb-16"
-          style={{ color: "var(--color-text)" }}
+          className="font-[family-name:var(--font-syne)] text-4xl md:text-5xl font-bold text-center mb-16 text-[var(--color-text)]"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -38,34 +40,37 @@ export function HowItWorks() {
           How it works
         </motion.h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
-          {/* Connecting line (desktop only) */}
-          <div className="hidden md:block absolute top-8 left-[16.67%] right-[16.67%] h-0.5 bg-gradient-to-r from-[#4EEABB] via-[#C084FC] to-[#E879A8]" />
+        <div className="space-y-12 relative">
+          {/* Connecting line */}
+          <div className="absolute left-6 top-6 bottom-6 w-px bg-gradient-to-b from-[var(--color-mint)] via-[var(--color-blue)] to-[var(--color-magenta)] opacity-30" />
 
           {steps.map((step, i) => (
             <motion.div
               key={step.number}
-              className="text-center relative"
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
+              className="flex gap-8 items-start relative"
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.4, delay: i * 0.15 }}
             >
               <div
-                className="inline-flex items-center justify-center w-16 h-16 rounded-full text-2xl font-bold text-white mb-6 relative z-10"
-                style={{ backgroundColor: step.color }}
+                className="font-[family-name:var(--font-syne)] text-sm font-bold w-12 h-12 rounded-full flex items-center justify-center shrink-0 relative z-10"
+                style={{
+                  backgroundColor: `color-mix(in srgb, ${step.accent} 15%, var(--color-bg))`,
+                  color: step.accent,
+                  border: `1px solid color-mix(in srgb, ${step.accent} 30%, transparent)`,
+                }}
               >
                 {step.number}
               </div>
-              <h3
-                className="text-2xl font-bold mb-3"
-                style={{ color: "var(--color-text)" }}
-              >
-                {step.title}
-              </h3>
-              <p className="text-gray-600 text-lg max-w-xs mx-auto">
-                {step.description}
-              </p>
+              <div>
+                <h3 className="font-[family-name:var(--font-syne)] text-2xl font-bold mb-2 text-[var(--color-text)]">
+                  {step.title}
+                </h3>
+                <p className="text-[var(--color-text-secondary)] text-base leading-relaxed">
+                  {step.description}
+                </p>
+              </div>
             </motion.div>
           ))}
         </div>

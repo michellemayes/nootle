@@ -1,6 +1,6 @@
 use nootle_app_lib::db::{
     Database, NewCategory, NewLinearTicket, NewMeeting, NewPrompt, NewRecipe, NewSummary,
-    NewTemplate, NewTranscriptSegment,
+    NewTemplate, NewTranscriptSegment, UpdateTemplate,
 };
 
 #[test]
@@ -331,15 +331,15 @@ fn test_templates_crud() {
     assert_eq!(templates.len(), 9);
 
     let updated = db
-        .update_template(
-            &custom.id,
-            "Daily Sync",
-            "Updated description",
-            None,
-            r#"["Blockers","Updates","Next Steps"]"#,
-            "{}",
-            "Updated prompt.",
-        )
+        .update_template(&UpdateTemplate {
+            id: custom.id.clone(),
+            name: "Daily Sync".to_string(),
+            description: "Updated description".to_string(),
+            category_id: None,
+            sections: r#"["Blockers","Updates","Next Steps"]"#.to_string(),
+            auto_apply_rules: "{}".to_string(),
+            prompt: "Updated prompt.".to_string(),
+        })
         .unwrap();
     assert_eq!(updated.name, "Daily Sync");
     assert_eq!(updated.description, "Updated description");

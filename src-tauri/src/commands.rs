@@ -451,26 +451,8 @@ pub fn delete_template(db: State<'_, DbState>, id: String) -> Result<(), String>
 }
 
 #[tauri::command]
-pub fn update_template(
-    db: State<'_, DbState>,
-    id: String,
-    name: String,
-    description: String,
-    category_id: Option<String>,
-    sections: String,
-    auto_apply_rules: String,
-    prompt: String,
-) -> Result<Template, String> {
-    db.update_template(
-        &id,
-        &name,
-        &description,
-        category_id.as_deref(),
-        &sections,
-        &auto_apply_rules,
-        &prompt,
-    )
-    .map_err(|e| e.to_string())
+pub fn update_template(db: State<'_, DbState>, params: UpdateTemplate) -> Result<Template, String> {
+    db.update_template(&params).map_err(|e| e.to_string())
 }
 
 // Summary commands

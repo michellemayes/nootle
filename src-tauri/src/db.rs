@@ -116,6 +116,17 @@ pub struct NewTemplate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateTemplate {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub category_id: Option<String>,
+    pub sections: String,
+    pub auto_apply_rules: String,
+    pub prompt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Summary {
     pub id: String,
     pub meeting_id: String,
@@ -1917,21 +1928,12 @@ impl Database {
         Ok(())
     }
 
-    pub fn update_template(
-        &self,
-        id: &str,
-        name: &str,
-        description: &str,
-        category_id: Option<&str>,
-        sections: &str,
-        auto_apply_rules: &str,
-        prompt: &str,
-    ) -> Result<Template> {
+    pub fn update_template(&self, params: &UpdateTemplate) -> Result<Template> {
         let conn = self.lock_conn()?;
 
         conn.execute(
             "UPDATE templates SET name = ?1, description = ?2, category_id = ?3, sections = ?4, auto_apply_rules = ?5, prompt = ?6 WHERE id = ?7",
-            params![name, description, category_id, sections, auto_apply_rules, prompt, id],
+            rusqlite::params![params.name, params.description, params.category_id, params.sections, params.auto_apply_rules, params.prompt, params.id],
         )?;
 
         let mut stmt = conn.prepare(
@@ -1940,7 +1942,7 @@ impl Database {
         )?;
 
         let template = stmt
-            .query_row(params![id], |row| {
+            .query_row(rusqlite::params![params.id], |row| {
                 Ok(Template {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -1955,7 +1957,7 @@ impl Database {
             })
             .map_err(|e| match e {
                 rusqlite::Error::QueryReturnedNoRows => {
-                    NootleError::Other(format!("Template not found: {}", id))
+                    NootleError::Other(format!("Template not found: {}", params.id))
                 }
                 other => NootleError::Database(other),
             })?;
