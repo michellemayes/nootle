@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { MotionButton } from "@/components/MotionButton";
@@ -22,17 +22,22 @@ function formatTime(seconds: number): string {
 }
 
 function WaveformBar({ index }: { index: number }) {
+  const { maxHeight, animDuration } = useMemo(() => ({
+    maxHeight: 10 + Math.random() * 6,
+    animDuration: 0.6 + Math.random() * 0.4,
+  }), []);
+
   return (
     <motion.div
       className="w-[2px] rounded-full bg-primary"
       initial={{ height: 0, opacity: 0 }}
       animate={{
-        height: [3, 10 + Math.random() * 6, 3],
+        height: [3, maxHeight, 3],
         opacity: 1,
       }}
       transition={{
         height: {
-          duration: 0.6 + Math.random() * 0.4,
+          duration: animDuration,
           repeat: Infinity,
           repeatType: "reverse",
           delay: 0.3 + index * 0.05,
@@ -94,16 +99,19 @@ export function RecordingView() {
     };
   }, []);
 
+  const latestTitleRef = useRef(title);
+  latestTitleRef.current = title;
+
   // Start recording on mount — after event listeners are registered above
   // so we don't miss the transcription-status event from the backend
   useEffect(() => {
     if (!hasStarted) {
       setHasStarted(true);
-      startRecording(title).catch(() => {
+      startRecording(latestTitleRef.current).catch(() => {
         // Error is captured in useRecording's error state
       });
     }
-  }, [hasStarted, startRecording, title]);
+  }, [hasStarted, startRecording]);
 
   // Auto-scroll transcript
   useEffect(() => {
