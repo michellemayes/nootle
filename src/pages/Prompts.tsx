@@ -56,11 +56,11 @@ export function PromptsPage() {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-8">
+    <div className="flex flex-1 flex-col gap-8 p-10">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Prompts</h1>
+          <h1 className="text-3xl font-bold tracking-tight font-serif">Prompts</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Instructions that tell the AI what to focus on and how to write
           </p>

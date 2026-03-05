@@ -65,7 +65,7 @@ export function HelpPage() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="border-b px-8 py-4">
-        <h1 className="text-2xl font-bold tracking-tight">Help</h1>
+        <h1 className="text-3xl font-bold tracking-tight font-serif">Help</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Learn how to use Nootle and get the most out of your meetings
         </p>
@@ -84,7 +84,7 @@ export function HelpPage() {
 
         {tabs.map((tab) => (
           <TabsContent key={tab.value} value={tab.value} className="flex-1 mt-0 overflow-auto">
-            <div className="flex flex-col gap-8 p-8 max-w-3xl">
+            <div className="flex flex-col gap-8 p-10 max-w-3xl">
               {"quickStart" in tab && tab.quickStart && <McpQuickStart />}
               <Card>
                 <CardHeader>
