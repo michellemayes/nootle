@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 
 export interface ModelFile {
   local_name: string;
@@ -76,9 +76,7 @@ export function useModelDownload() {
 
   // Listen for download progress events
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-
-    listen<DownloadProgress>("model-download-progress", (event) => {
+    const unlistenPromise = listen<DownloadProgress>("model-download-progress", (event) => {
       setProgress(event.payload);
 
       // Auto-refresh disk status when download completes
@@ -87,12 +85,10 @@ export function useModelDownload() {
         // Clear progress after a short delay
         setTimeout(() => setProgress(null), 1500);
       }
-    }).then((fn) => {
-      unlisten = fn;
     });
 
     return () => {
-      unlisten?.();
+      unlistenPromise.then((fn) => fn());
     };
   }, [refresh]);
 

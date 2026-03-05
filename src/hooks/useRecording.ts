@@ -64,10 +64,13 @@ export function useRecording() {
   );
 
   const stopRecording = useCallback(async () => {
-    const meeting = await invoke<Meeting>("stop_recording");
-    setCurrentMeeting(meeting);
-    setIsRecording(false);
-    return meeting;
+    try {
+      const meeting = await invoke<Meeting>("stop_recording");
+      setCurrentMeeting(meeting);
+      return meeting;
+    } finally {
+      setIsRecording(false);
+    }
   }, []);
 
   return {

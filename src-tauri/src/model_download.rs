@@ -203,6 +203,15 @@ async fn download_single_file(
         ));
     }
 
+    // Warn if server ignored Range header and returned full file (200 instead of 206)
+    if existing_bytes > 0 && status_code == 200 {
+        tracing::warn!(
+            "Server returned 200 instead of 206 for {}; discarding {} bytes of partial download and restarting",
+            file.local_name,
+            existing_bytes
+        );
+    }
+
     // Open file for writing (append if resuming)
     let mut out_file = if existing_bytes > 0 && status_code == 206 {
         tokio::fs::OpenOptions::new()

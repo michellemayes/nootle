@@ -598,11 +598,11 @@ function CreateTicketButton({
 
   useEffect(() => {
     if (defaultTeamId && !teamId) setTeamId(defaultTeamId);
-  }, [defaultTeamId]);
+  }, [defaultTeamId, teamId]);
 
   useEffect(() => {
     if (defaultProjectId && !projectId) setProjectId(defaultProjectId);
-  }, [defaultProjectId]);
+  }, [defaultProjectId, projectId]);
 
   const filteredModels = models.filter((m) => m.provider === selectedProvider);
 
@@ -954,7 +954,10 @@ export function MeetingDetail() {
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(true);
 
   // Audio player state
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const audioRef = useCallback((node: HTMLAudioElement | null) => {
+    setAudioElement(node);
+  }, []);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [audioLoading, setAudioLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -1036,7 +1039,7 @@ export function MeetingDetail() {
 
   // Audio time update
   useEffect(() => {
-    const audio = audioRef.current;
+    const audio = audioElement;
     if (!audio) return;
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
     const onDuration = () => setDuration(audio.duration);
@@ -1049,37 +1052,45 @@ export function MeetingDetail() {
       audio.removeEventListener("loadedmetadata", onDuration);
       audio.removeEventListener("ended", onEnded);
     };
-  }, [audioSrc]);
+  }, [audioElement]);
 
-  const togglePlayback = useCallback(() => {
-    const audio = audioRef.current;
+  const togglePlayback = useCallback(async () => {
+    const audio = audioElement;
     if (!audio) return;
     if (isPlaying) {
       audio.pause();
       setIsPlaying(false);
     } else {
-      audio.play();
-      setIsPlaying(true);
+      try {
+        await audio.play();
+        setIsPlaying(true);
+      } catch {
+        setIsPlaying(false);
+      }
     }
-  }, [isPlaying]);
+  }, [isPlaying, audioElement]);
 
   const seekAudio = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const audio = audioRef.current;
+    const audio = audioElement;
     if (!audio || !duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     audio.currentTime = ratio * duration;
-  }, [duration]);
+  }, [duration, audioElement]);
 
-  const seekToMs = useCallback((ms: number) => {
-    const audio = audioRef.current;
+  const seekToMs = useCallback(async (ms: number) => {
+    const audio = audioElement;
     if (!audio) return;
     audio.currentTime = ms / 1000;
     if (!isPlaying) {
-      audio.play();
-      setIsPlaying(true);
+      try {
+        await audio.play();
+        setIsPlaying(true);
+      } catch {
+        setIsPlaying(false);
+      }
     }
-  }, [isPlaying]);
+  }, [isPlaying, audioElement]);
 
   // Speaker color map
   const speakerMap = new Map<string, string>();

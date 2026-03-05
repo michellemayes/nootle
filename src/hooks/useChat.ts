@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ChatMessage } from "@/types";
 
@@ -6,6 +6,8 @@ export function useChat(meetingId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const latestMessagesRef = useRef<ChatMessage[]>(messages);
+  latestMessagesRef.current = messages;
 
   const sendMessage = useCallback(
     async (message: string, provider: string, model: string) => {
@@ -18,7 +20,7 @@ export function useChat(meetingId: string) {
         const response = await invoke<string>("chat_with_meeting", {
           meetingId,
           message,
-          history: [...messages, userMsg],
+          history: [...latestMessagesRef.current, userMsg],
           provider,
           model,
         });
@@ -35,7 +37,7 @@ export function useChat(meetingId: string) {
         setLoading(false);
       }
     },
-    [meetingId, messages],
+    [meetingId],
   );
 
   const clearMessages = useCallback(() => {
