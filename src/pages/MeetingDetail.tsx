@@ -750,7 +750,7 @@ function NotesPanel({
                 filter: viewMode === "enriched" || !hasEnriched ? "blur(0px)" : "blur(4px)",
               }}
               transition={{ duration: 0.4, ease: "easeOut" }}
-              className={viewMode === "original" && hasEnriched ? "pointer-events-none" : ""}
+              className={`${viewMode === "original" && hasEnriched ? "pointer-events-none" : ""} ${hasEnriched && viewMode === "enriched" ? "bg-muted/30 rounded-lg p-4" : ""}`}
             >
               <NotesEditor
                 content={displayContent}
@@ -971,7 +971,7 @@ export function MeetingDetail() {
       className="flex flex-1 flex-col"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-8 py-4">
+      <div className="flex items-center justify-between border-b px-8 py-5">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
             <ArrowLeft className="h-4 w-4" /> Back
@@ -986,12 +986,12 @@ export function MeetingDetail() {
                   if (e.key === "Enter") handleTitleSave();
                   if (e.key === "Escape") setEditingTitle(false);
                 }}
-                className="text-xl font-bold h-auto py-0 border-none bg-transparent"
+                className="text-2xl font-bold font-serif h-auto py-0 border-none bg-transparent"
                 autoFocus
               />
             ) : (
               <h1
-                className="text-xl font-bold cursor-pointer group/title flex items-center gap-2 hover:text-muted-foreground transition-colors"
+                className="text-2xl font-bold font-serif cursor-pointer group/title flex items-center gap-2 hover:text-muted-foreground transition-colors"
                 onClick={() => {
                   setTitleDraft(meeting.title);
                   setEditingTitle(true);
@@ -1082,7 +1082,7 @@ export function MeetingDetail() {
               >
                 {transcriptCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
               </Button>
-              <TabsList>
+              <TabsList variant="line">
                 <TabsTrigger value="notes">Notes</TabsTrigger>
                 <TabsTrigger value="summaries">Summaries</TabsTrigger>
                 <TabsTrigger value="insights">Insights</TabsTrigger>

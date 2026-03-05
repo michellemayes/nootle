@@ -609,7 +609,7 @@ impl Database {
         Ok(())
     }
 
-    fn seed_default_insight_types(conn: &Connection) -> Result<()> {
+    fn seed_default_insight_types(conn: &rusqlite::Connection) -> Result<()> {
         let count: i64 =
             conn.query_row("SELECT COUNT(*) FROM insight_types", [], |row| row.get(0))?;
         if count > 0 {
@@ -2145,7 +2145,9 @@ impl Database {
     // --- App Settings ---
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         let mut stmt = conn.prepare("SELECT value FROM app_settings WHERE key = ?1")?;
         let result = stmt.query_row(params![key], |row| row.get::<_, String>(0));
@@ -2157,7 +2159,9 @@ impl Database {
     }
 
     pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
@@ -2274,7 +2278,9 @@ impl Database {
     // --- Meeting Analytics ---
 
     pub fn save_speaker_analytics(&self, analytics: &[SpeakerAnalytics]) -> Result<()> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         for a in analytics {
             conn.execute(
@@ -2286,28 +2292,34 @@ impl Database {
     }
 
     pub fn get_speaker_analytics(&self, meeting_id: &str) -> Result<Vec<SpeakerAnalytics>> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         let mut stmt = conn.prepare(
             "SELECT id, meeting_id, speaker_label, talk_time_ms, turn_count, interruption_count, avg_turn_length_ms, longest_monologue_ms FROM meeting_analytics WHERE meeting_id = ?1"
         )?;
-        let rows = stmt.query_map(params![meeting_id], |row| {
-            Ok(SpeakerAnalytics {
-                id: row.get(0)?,
-                meeting_id: row.get(1)?,
-                speaker_label: row.get(2)?,
-                talk_time_ms: row.get(3)?,
-                turn_count: row.get(4)?,
-                interruption_count: row.get(5)?,
-                avg_turn_length_ms: row.get(6)?,
-                longest_monologue_ms: row.get(7)?,
-            })
-        })?.collect::<std::result::Result<Vec<_>, _>>()?;
+        let rows = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok(SpeakerAnalytics {
+                    id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    speaker_label: row.get(2)?,
+                    talk_time_ms: row.get(3)?,
+                    turn_count: row.get(4)?,
+                    interruption_count: row.get(5)?,
+                    avg_turn_length_ms: row.get(6)?,
+                    longest_monologue_ms: row.get(7)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
     pub fn save_sentiment_segments(&self, segments: &[SentimentSegment]) -> Result<()> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         for s in segments {
             conn.execute(
@@ -2319,26 +2331,32 @@ impl Database {
     }
 
     pub fn get_sentiment_segments(&self, meeting_id: &str) -> Result<Vec<SentimentSegment>> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         let mut stmt = conn.prepare(
             "SELECT id, meeting_id, start_ms, end_ms, sentiment, score FROM sentiment_segments WHERE meeting_id = ?1 ORDER BY start_ms"
         )?;
-        let rows = stmt.query_map(params![meeting_id], |row| {
-            Ok(SentimentSegment {
-                id: row.get(0)?,
-                meeting_id: row.get(1)?,
-                start_ms: row.get(2)?,
-                end_ms: row.get(3)?,
-                sentiment: row.get(4)?,
-                score: row.get(5)?,
-            })
-        })?.collect::<std::result::Result<Vec<_>, _>>()?;
+        let rows = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok(SentimentSegment {
+                    id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    start_ms: row.get(2)?,
+                    end_ms: row.get(3)?,
+                    sentiment: row.get(4)?,
+                    score: row.get(5)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
     pub fn save_engagement(&self, engagement: &MeetingEngagement) -> Result<()> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         conn.execute(
             "INSERT OR REPLACE INTO meeting_engagement (id, meeting_id, engagement_level, participation_balance, question_count, back_and_forth_ratio) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -2348,7 +2366,9 @@ impl Database {
     }
 
     pub fn get_engagement(&self, meeting_id: &str) -> Result<Option<MeetingEngagement>> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         let mut stmt = conn.prepare(
             "SELECT id, meeting_id, engagement_level, participation_balance, question_count, back_and_forth_ratio FROM meeting_engagement WHERE meeting_id = ?1"

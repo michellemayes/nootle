@@ -225,10 +225,10 @@ export function MeetingLibrary() {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-8">
+    <div className="flex flex-1 flex-col gap-8 p-10">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Meetings</h1>
+        <h1 className="text-3xl font-bold tracking-tight font-serif">Meetings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Your recorded meetings and transcriptions
         </p>
@@ -237,12 +237,12 @@ export function MeetingLibrary() {
       {/* Search and filters */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search meetings..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-10 h-11 rounded-lg"
           />
         </div>
         <DropdownMenu>
@@ -330,23 +330,22 @@ export function MeetingLibrary() {
           )}
         </div>
       ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {meetings.map((meeting) => (
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  whileHover={{ y: -2 }}
                   transition={{ duration: 0.2 }}
                 >
                   <Card
-                    className="group cursor-pointer transition-colors hover:bg-accent/30 hover:shadow-md"
+                    className="group cursor-pointer transition-all duration-200 hover:border-foreground/20 hover:shadow-sm"
                     onClick={() => navigate(`/meeting/${meeting.id}`)}
                   >
                     <CardContent className="space-y-3">
                       <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-medium leading-snug line-clamp-2">
+                        <h3 className="font-serif text-base leading-snug line-clamp-2">
                           {meeting.title}
                         </h3>
                         <div className="flex items-center gap-1 shrink-0">
@@ -397,10 +396,10 @@ export function MeetingLibrary() {
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
                 <div
-                  className="group flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors hover:bg-accent/30"
+                  className="group flex items-center gap-4 px-5 py-4 cursor-pointer transition-all duration-200 hover:bg-accent/30"
                   onClick={() => navigate(`/meeting/${meeting.id}`)}
                 >
-                  <h3 className="flex-1 font-medium truncate">
+                  <h3 className="flex-1 font-serif font-medium truncate">
                     {meeting.title}
                   </h3>
                   {meeting.category_id && (() => {

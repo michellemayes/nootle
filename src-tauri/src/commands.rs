@@ -75,10 +75,7 @@ pub fn get_meeting(db: State<'_, DbState>, id: String) -> Result<Meeting, String
 #[tauri::command]
 pub fn delete_meeting(db: State<'_, DbState>, id: String) -> Result<(), String> {
     // Get meeting to find audio path before deleting
-    let audio_path = db
-        .get_meeting(&id)
-        .ok()
-        .and_then(|m| m.audio_path.clone());
+    let audio_path = db.get_meeting(&id).ok().and_then(|m| m.audio_path.clone());
 
     // Delete vec0 embeddings (not cascade-aware)
     let _ = db.delete_meeting_chunks(&id);
@@ -288,6 +285,7 @@ pub fn get_summaries(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<S
 }
 
 // Recording commands
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn start_recording(
@@ -362,7 +360,8 @@ pub async fn start_recording(
 
     session.start();
 
-    let denoise_enabled = db.get_setting("denoise_enabled")
+    let denoise_enabled = db
+        .get_setting("denoise_enabled")
         .unwrap_or(None)
         .map(|v| v != "false")
         .unwrap_or(true); // default on
@@ -374,22 +373,25 @@ pub async fn start_recording(
 
         let handle = std::thread::spawn(move || {
             // Create denoise engine inside the thread (Session may not be Send)
-            let mut denoise_engine = if denoise_enabled && crate::denoise::DenoiseEngine::is_available() {
-                match crate::denoise::DenoiseEngine::load() {
-                    Ok(e) => {
-                        tracing::info!("Denoising enabled");
-                        Some(e)
+            let mut denoise_engine =
+                if denoise_enabled && crate::denoise::DenoiseEngine::is_available() {
+                    match crate::denoise::DenoiseEngine::load() {
+                        Ok(e) => {
+                            tracing::info!("Denoising enabled");
+                            Some(e)
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to load denoise engine: {e}");
+                            None
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to load denoise engine: {e}");
-                        None
-                    }
-                }
-            } else {
-                None
-            };
+                } else {
+                    None
+                };
 
-            if let Err(e) = run_audio_capture(audio_tx, is_active, audio_path, denoise_engine.as_mut()) {
+            if let Err(e) =
+                run_audio_capture(audio_tx, is_active, audio_path, denoise_engine.as_mut())
+            {
                 tracing::error!("Audio capture failed: {e}");
             }
         });
@@ -586,10 +588,14 @@ async fn run_transcription_pipeline(
 
             let llm = llm_state.read().await;
             let fallback_title = || -> String {
-                if full_text.len() <= 60 { full_text.trim().to_string() }
-                else {
+                if full_text.len() <= 60 {
+                    full_text.trim().to_string()
+                } else {
                     let t = &full_text[..60];
-                    match t.rfind(' ') { Some(p) => format!("{}...", &t[..p]), None => format!("{t}...") }
+                    match t.rfind(' ') {
+                        Some(p) => format!("{}...", &t[..p]),
+                        None => format!("{t}..."),
+                    }
                 }
             };
             let title = if let Some(model) = llm.all_models().first().cloned() {
@@ -605,7 +611,11 @@ async fn run_transcription_pipeline(
                     match provider.chat(messages, &model.id).await {
                         Ok(resp) => {
                             let t = resp.trim().trim_matches('"').trim().to_string();
-                            if t.is_empty() || t.len() > 100 { fallback_title() } else { t }
+                            if t.is_empty() || t.len() > 100 {
+                                fallback_title()
+                            } else {
+                                t
+                            }
                         }
                         Err(e) => {
                             tracing::warn!("LLM title generation failed, using fallback: {e}");
@@ -622,10 +632,8 @@ async fn run_transcription_pipeline(
 
             if let Err(e) = db.update_meeting_title(&meeting_id, &title) {
                 tracing::warn!("Failed to auto-generate title: {e}");
-            } else {
-                if let Ok(meeting) = db.get_meeting(&meeting_id) {
-                    let _ = app.emit("meeting-updated", &meeting);
-                }
+            } else if let Ok(meeting) = db.get_meeting(&meeting_id) {
+                let _ = app.emit("meeting-updated", &meeting);
             }
         }
     }
@@ -743,8 +751,10 @@ pub async fn stop_recording(
 
         tauri::async_runtime::spawn(async move {
             if let Err(e) = (|| -> std::result::Result<(), Box<dyn std::error::Error>> {
-                let speaker_analytics =
-                    crate::analytics::compute_speaker_analytics(&db_analytics, &meeting_id_analytics)?;
+                let speaker_analytics = crate::analytics::compute_speaker_analytics(
+                    &db_analytics,
+                    &meeting_id_analytics,
+                )?;
                 db_analytics.save_speaker_analytics(&speaker_analytics)?;
 
                 let transcripts = db_analytics.get_transcript(&meeting_id_analytics)?;
@@ -1759,7 +1769,11 @@ pub async fn send_chat_message(
             match llm_provider.chat(title_messages, &model).await {
                 Ok(resp) => {
                     let t = resp.trim().trim_matches('"').trim().to_string();
-                    if t.is_empty() || t.len() > 100 { fallback } else { t }
+                    if t.is_empty() || t.len() > 100 {
+                        fallback
+                    } else {
+                        t
+                    }
                 }
                 Err(_) => fallback,
             }
@@ -1877,8 +1891,8 @@ pub async fn compute_meeting_analytics(
     db: State<'_, DbState>,
     meeting_id: String,
 ) -> Result<(), String> {
-    let speaker_analytics = crate::analytics::compute_speaker_analytics(&db, &meeting_id)
-        .map_err(|e| e.to_string())?;
+    let speaker_analytics =
+        crate::analytics::compute_speaker_analytics(&db, &meeting_id).map_err(|e| e.to_string())?;
 
     db.save_speaker_analytics(&speaker_analytics)
         .map_err(|e| e.to_string())?;
@@ -1887,8 +1901,7 @@ pub async fn compute_meeting_analytics(
     let texts: Vec<String> = transcripts.iter().map(|t| t.text.clone()).collect();
     let engagement = crate::analytics::compute_engagement(&meeting_id, &speaker_analytics, &texts);
 
-    db.save_engagement(&engagement)
-        .map_err(|e| e.to_string())?;
+    db.save_engagement(&engagement).map_err(|e| e.to_string())?;
 
     Ok(())
 }
