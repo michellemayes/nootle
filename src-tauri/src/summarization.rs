@@ -150,6 +150,65 @@ pub async fn chat_with_transcript(
     provider.chat(messages, model).await
 }
 
+pub async fn run_recipe(
+    db: &Database,
+    llm: &LlmRegistry,
+    meeting_id: &str,
+    recipe_id: &str,
+    provider_name: &str,
+    model: &str,
+) -> anyhow::Result<String> {
+    let recipe = db.get_recipe(recipe_id)?;
+    let meeting = db.get_meeting(meeting_id)?;
+    let transcript = db.get_transcript(meeting_id)?;
+
+    // Format transcript like chat_with_transcript does
+    let transcript_text = transcript
+        .iter()
+        .map(|s| {
+            format!(
+                "[{}] {}: {}",
+                format_ms(s.start_ms),
+                s.speaker_label,
+                s.text
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Replace template variables
+    let mut prompt = recipe.prompt_template.clone();
+    prompt = prompt.replace("{{transcript}}", &transcript_text);
+    prompt = prompt.replace("{{title}}", &meeting.title);
+    prompt = prompt.replace("{{date}}", &meeting.start_time);
+
+    // Replace {{summary}} if available
+    if let Ok(summaries) = db.get_summaries_for_meeting(meeting_id) {
+        if let Some(summary) = summaries.first() {
+            prompt = prompt.replace("{{summary}}", &summary.content);
+        }
+    }
+
+    let provider = llm
+        .get_provider(provider_name)
+        .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider_name))?;
+    provider
+        .chat(
+            vec![
+                ChatMessage {
+                    role: "system".into(),
+                    content: "You are a meeting assistant. Produce the requested output based on the meeting data provided.".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: prompt,
+                },
+            ],
+            model,
+        )
+        .await
+}
+
 pub fn format_ms(ms: i64) -> String {
     let total_seconds = ms / 1000;
     let minutes = total_seconds / 60;

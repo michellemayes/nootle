@@ -1,6 +1,6 @@
 use nootle_app_lib::db::{
-    Database, NewCategory, NewLinearTicket, NewMeeting, NewPrompt, NewSummary, NewTemplate,
-    NewTranscriptSegment,
+    Database, NewCategory, NewLinearTicket, NewMeeting, NewPrompt, NewRecipe, NewSummary,
+    NewTemplate, NewTranscriptSegment,
 };
 
 #[test]
@@ -13,6 +13,7 @@ fn test_database_initializes_tables() {
     assert!(tables.contains(&"categories".to_string()));
     assert!(tables.contains(&"templates".to_string()));
     assert!(tables.contains(&"prompts".to_string()));
+    assert!(tables.contains(&"recipes".to_string()));
 }
 
 #[test]
@@ -488,4 +489,54 @@ fn test_scratch_notes() {
     db.delete_scratch_note(&note.id).unwrap();
     let notes = db.get_scratch_notes(&meeting.id).unwrap();
     assert_eq!(notes.len(), 0);
+}
+
+#[test]
+fn test_recipe_crud() {
+    let db = Database::new_in_memory().unwrap();
+
+    // Should have 5 built-in recipes from seed
+    let recipes = db.list_recipes().unwrap();
+    assert_eq!(recipes.len(), 5);
+    assert!(recipes.iter().all(|r| r.is_builtin));
+
+    // Create custom recipe
+    let recipe = db
+        .create_recipe(NewRecipe {
+            name: "Custom".into(),
+            description: "Test recipe".into(),
+            slash_command: "custom".into(),
+            prompt_template: "Do something with {{transcript}}".into(),
+            output_format: "markdown".into(),
+        })
+        .unwrap();
+    assert_eq!(recipe.slash_command, "custom");
+    assert!(!recipe.is_builtin);
+
+    // Get by command
+    let found = db.get_recipe_by_command("custom").unwrap();
+    assert_eq!(found.id, recipe.id);
+
+    // Total should be 6
+    let recipes = db.list_recipes().unwrap();
+    assert_eq!(recipes.len(), 6);
+
+    // Update
+    let updated = db
+        .update_recipe(
+            &recipe.id,
+            "Custom Updated",
+            "Updated description",
+            "custom-v2",
+            "New template {{transcript}}",
+            "markdown",
+        )
+        .unwrap();
+    assert_eq!(updated.name, "Custom Updated");
+    assert_eq!(updated.slash_command, "custom-v2");
+
+    // Delete
+    db.delete_recipe(&recipe.id).unwrap();
+    let recipes = db.list_recipes().unwrap();
+    assert_eq!(recipes.len(), 5);
 }

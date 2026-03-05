@@ -343,6 +343,28 @@ pub struct ScratchNote {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Recipe {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub slash_command: String,
+    pub prompt_template: String,
+    pub output_format: String,
+    pub is_builtin: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewRecipe {
+    pub name: String,
+    pub description: String,
+    pub slash_command: String,
+    pub prompt_template: String,
+    pub output_format: String,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -643,6 +665,18 @@ impl Database {
                 timestamp_ms INTEGER NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS recipes (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                slash_command TEXT NOT NULL UNIQUE,
+                prompt_template TEXT NOT NULL,
+                output_format TEXT NOT NULL DEFAULT 'markdown',
+                is_builtin INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             ",
         )?;
         Self::seed_default_insight_types(&conn)?;
@@ -662,6 +696,9 @@ impl Database {
 
         // Seed built-in templates
         Self::seed_builtin_templates(&conn)?;
+
+        // Seed built-in recipes
+        Self::seed_builtin_recipes(&conn)?;
 
         Ok(())
     }
@@ -1400,6 +1437,245 @@ impl Database {
             .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         conn.execute("DELETE FROM scratch_notes WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // --- Recipes ---
+
+    fn seed_builtin_recipes(conn: &rusqlite::Connection) -> Result<()> {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM recipes WHERE is_builtin = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        if count > 0 {
+            return Ok(());
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let builtins: Vec<(&str, &str, &str, &str)> = vec![
+            (
+                "brief",
+                "Write Brief",
+                "Turn a brainstorm into a structured brief",
+                "Based on this meeting transcript:\n\n{{transcript}}\n\nWrite a structured project brief with: Objective, Background, Scope, Key Requirements, Timeline, and Next Steps.",
+            ),
+            (
+                "followup",
+                "Draft Follow-up",
+                "Draft a follow-up email",
+                "Based on this meeting:\n\n{{transcript}}\n\nDraft a concise follow-up email summarizing what was discussed and listing next steps for each participant.",
+            ),
+            (
+                "tickets",
+                "Extract Tickets",
+                "Extract work items as tickets",
+                "From this meeting transcript:\n\n{{transcript}}\n\nExtract discrete work items as tickets. For each: Title, Description, Assignee (if mentioned), Priority (if implied).",
+            ),
+            (
+                "recap",
+                "Meeting Recap",
+                "Casual recap for Slack",
+                "Create a brief, casual recap of this meeting suitable for posting in a Slack channel:\n\n{{transcript}}",
+            ),
+            (
+                "decisions",
+                "List Decisions",
+                "Extract all decisions made",
+                "From this transcript, extract every decision that was made. For each: What was decided, who made the call, and any conditions or caveats:\n\n{{transcript}}",
+            ),
+        ];
+
+        for (slash_command, name, description, prompt_template) in builtins {
+            let id = uuid::Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO recipes (id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'markdown', 1, ?6, ?7)",
+                params![id, name, description, slash_command, prompt_template, now, now],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn create_recipe(&self, new: NewRecipe) -> Result<Recipe> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO recipes (id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8)",
+            params![id, new.name, new.description, new.slash_command, new.prompt_template, new.output_format, now, now],
+        )?;
+
+        Ok(Recipe {
+            id,
+            name: new.name,
+            description: new.description,
+            slash_command: new.slash_command,
+            prompt_template: new.prompt_template,
+            output_format: new.output_format,
+            is_builtin: false,
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    pub fn list_recipes(&self) -> Result<Vec<Recipe>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
+             FROM recipes ORDER BY is_builtin DESC, name ASC",
+        )?;
+
+        let recipes = stmt
+            .query_map([], |row| {
+                Ok(Recipe {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    slash_command: row.get(3)?,
+                    prompt_template: row.get(4)?,
+                    output_format: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(recipes)
+    }
+
+    pub fn get_recipe(&self, id: &str) -> Result<Recipe> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
+             FROM recipes WHERE id = ?1",
+        )?;
+
+        let recipe = stmt
+            .query_row(params![id], |row| {
+                Ok(Recipe {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    slash_command: row.get(3)?,
+                    prompt_template: row.get(4)?,
+                    output_format: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Recipe not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(recipe)
+    }
+
+    pub fn get_recipe_by_command(&self, slash_command: &str) -> Result<Recipe> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
+             FROM recipes WHERE slash_command = ?1",
+        )?;
+
+        let recipe = stmt
+            .query_row(params![slash_command], |row| {
+                Ok(Recipe {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    slash_command: row.get(3)?,
+                    prompt_template: row.get(4)?,
+                    output_format: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Recipe not found for command: {}", slash_command))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(recipe)
+    }
+
+    pub fn update_recipe(
+        &self,
+        id: &str,
+        name: &str,
+        description: &str,
+        slash_command: &str,
+        prompt_template: &str,
+        output_format: &str,
+    ) -> Result<Recipe> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "UPDATE recipes SET name = ?1, description = ?2, slash_command = ?3, prompt_template = ?4, output_format = ?5, updated_at = ?6 WHERE id = ?7",
+            params![name, description, slash_command, prompt_template, output_format, now, id],
+        )?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
+             FROM recipes WHERE id = ?1",
+        )?;
+
+        let recipe = stmt
+            .query_row(params![id], |row| {
+                Ok(Recipe {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    slash_command: row.get(3)?,
+                    prompt_template: row.get(4)?,
+                    output_format: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Recipe not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(recipe)
+    }
+
+    pub fn delete_recipe(&self, id: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute("DELETE FROM recipes WHERE id = ?1", params![id])?;
         Ok(())
     }
 

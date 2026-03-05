@@ -342,6 +342,70 @@ pub fn update_prompt(
         .map_err(|e| e.to_string())
 }
 
+// Recipe commands
+#[tauri::command]
+pub fn create_recipe(
+    db: State<'_, DbState>,
+    name: String,
+    description: String,
+    slash_command: String,
+    prompt_template: String,
+    output_format: String,
+) -> Result<Recipe, String> {
+    db.create_recipe(NewRecipe {
+        name,
+        description,
+        slash_command,
+        prompt_template,
+        output_format,
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_recipes(db: State<'_, DbState>) -> Result<Vec<Recipe>, String> {
+    db.list_recipes().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_recipe(db: State<'_, DbState>, id: String) -> Result<Recipe, String> {
+    db.get_recipe(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_recipe(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    description: String,
+    slash_command: String,
+    prompt_template: String,
+    output_format: String,
+) -> Result<Recipe, String> {
+    db.update_recipe(&id, &name, &description, &slash_command, &prompt_template, &output_format)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_recipe(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_recipe(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn run_recipe(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    recipe_id: String,
+    provider: String,
+    model: String,
+) -> Result<String, String> {
+    let llm = llm.read().await;
+    summarization::run_recipe(&db, &llm, &meeting_id, &recipe_id, &provider, &model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // Template commands
 #[tauri::command]
 pub fn create_template(

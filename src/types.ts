@@ -176,6 +176,18 @@ export interface ScratchNote {
   created_at: string;
 }
 
+export interface Recipe {
+  id: string;
+  name: string;
+  description: string;
+  slash_command: string;
+  prompt_template: string;
+  output_format: string;
+  is_builtin: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface InsightWithActionItem {
   id: string;
   meeting_id: string;
