@@ -44,6 +44,7 @@ import { useTags } from "@/hooks/useTags";
 import { MeetingActionMenuItems } from "@/components/MeetingActionMenuItems";
 import { DeleteMeetingDialog } from "@/components/DeleteMeetingDialog";
 import { NewCategoryDialog } from "@/components/NewCategoryDialog";
+import { TagEditor } from "@/components/TagEditor";
 import type { Meeting } from "@/types";
 import {
   Search,
@@ -127,7 +128,7 @@ export function MeetingLibrary() {
     showArchived,
   );
   const { categories, createCategory } = useCategories();
-  const { tags, meetingTagsMap } = useTags();
+  const { tags, meetingTagsMap, addMeetingTag, removeMeetingTag, createTag } = useTags();
 
   const toggleTag = useCallback((tagId: string) => {
     setActiveTagIds((prev) => {
@@ -443,19 +444,16 @@ export function MeetingLibrary() {
                           )}
                         </span>
                       </div>
-                      {meetingTagsMap[meeting.id]?.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {meetingTagsMap[meeting.id].map((tag) => (
-                            <span
-                              key={tag.id}
-                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-                              style={{ backgroundColor: tag.color }}
-                            >
-                              {tag.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <TagEditor
+                          meetingId={meeting.id}
+                          meetingTags={meetingTagsMap[meeting.id] ?? []}
+                          allTags={tags}
+                          onAddTag={addMeetingTag}
+                          onRemoveTag={removeMeetingTag}
+                          onCreateTag={createTag}
+                        />
+                      </div>
                     </CardContent>
                   </Card>
                 </motion.div>
@@ -492,19 +490,16 @@ export function MeetingLibrary() {
                       </span>
                     ) : null;
                   })()}
-                  {meetingTagsMap[meeting.id]?.length > 0 && (
-                    <div className="flex gap-1 shrink-0">
-                      {meetingTagsMap[meeting.id].map((tag) => (
-                        <span
-                          key={tag.id}
-                          className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-                          style={{ backgroundColor: tag.color }}
-                        >
-                          {tag.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                    <TagEditor
+                      meetingId={meeting.id}
+                      meetingTags={meetingTagsMap[meeting.id] ?? []}
+                      allTags={tags}
+                      onAddTag={addMeetingTag}
+                      onRemoveTag={removeMeetingTag}
+                      onCreateTag={createTag}
+                    />
+                  </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {formatDate(meeting.start_time)}
                   </span>
