@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Remove duplicate headings from help pages and fix Rust formatting (#44) ([9884142](https://github.com/michellemayes/nootle/commit/9884142baff0fa59e26d30f27b992bbaad09ed89))
 - Resolve CI workflow failures (#43) ([bf29cd1](https://github.com/michellemayes/nootle/commit/bf29cd1574c66460f640415620fed6a5868a9b7b))
 - Wire audio capture into recording session (#19) ([4004932](https://github.com/michellemayes/nootle/commit/40049325a33ac246a5c97142860a73cf556b864b))
 - Enable scrolling on Settings page by constraining flex item height (#11) ([e30e1bb](https://github.com/michellemayes/nootle/commit/e30e1bb6d4927e5d936e18f2a785512ab2d48fef))
