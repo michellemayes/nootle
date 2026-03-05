@@ -40,6 +40,7 @@ import {
   updateMeetingCategory,
 } from "@/hooks/useMeetings";
 import { useCategories } from "@/hooks/useCategories";
+import { useTags } from "@/hooks/useTags";
 import { MeetingActionMenuItems } from "@/components/MeetingActionMenuItems";
 import { DeleteMeetingDialog } from "@/components/DeleteMeetingDialog";
 import { NewCategoryDialog } from "@/components/NewCategoryDialog";
@@ -119,12 +120,35 @@ export function MeetingLibrary() {
     () =>
       LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)],
   );
+  const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
   const { meetings, loading, refresh } = useMeetings(
     categoryFilter,
     search || undefined,
     showArchived,
   );
   const { categories, createCategory } = useCategories();
+  const { tags, meetingTagsMap } = useTags();
+
+  const toggleTag = useCallback((tagId: string) => {
+    setActiveTagIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(tagId)) {
+        next.delete(tagId);
+      } else {
+        next.add(tagId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Filter meetings by active tags (AND logic: meeting must have ALL selected tags)
+  const filteredMeetings = activeTagIds.size === 0
+    ? meetings
+    : meetings.filter((meeting) => {
+        const meetingTags = meetingTagsMap[meeting.id] ?? [];
+        const meetingTagIds = new Set(meetingTags.map((t) => t.id));
+        return Array.from(activeTagIds).every((tagId) => meetingTagIds.has(tagId));
+      });
 
   const handleViewModeChange = useCallback((mode: "grid" | "list") => {
     setViewMode(mode);
@@ -302,12 +326,51 @@ export function MeetingLibrary() {
         </div>
       </div>
 
+      {/* Tag filter bar */}
+      {tags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {tags.map((tag) => {
+            const isActive = activeTagIds.has(tag.id);
+            return (
+              <button
+                key={tag.id}
+                onClick={() => toggleTag(tag.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors border ${
+                  isActive
+                    ? "text-white border-transparent"
+                    : "bg-transparent border-border text-foreground hover:bg-accent"
+                }`}
+                style={
+                  isActive
+                    ? { backgroundColor: tag.color, borderColor: tag.color }
+                    : undefined
+                }
+              >
+                <span
+                  className="inline-block h-2 w-2 rounded-full shrink-0"
+                  style={{ backgroundColor: tag.color }}
+                />
+                {tag.name}
+              </button>
+            );
+          })}
+          {activeTagIds.size > 0 && (
+            <button
+              onClick={() => setActiveTagIds(new Set())}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Meeting content */}
       {loading ? (
         <div className="flex flex-1 items-center justify-center">
           <p className="text-sm text-muted-foreground">{loadingMessage}</p>
         </div>
-      ) : meetings.length === 0 ? (
+      ) : filteredMeetings.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           {search.toLowerCase() === "noodle" ? (
             <>
@@ -331,7 +394,7 @@ export function MeetingLibrary() {
         </div>
       ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {meetings.map((meeting) => (
+          {filteredMeetings.map((meeting) => (
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
                 <motion.div
@@ -381,6 +444,19 @@ export function MeetingLibrary() {
                           )}
                         </span>
                       </div>
+                      {(meetingTagsMap[meeting.id]?.length ?? 0) > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {meetingTagsMap[meeting.id].map((tag) => (
+                            <span
+                              key={tag.id}
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+                              style={{ backgroundColor: tag.color }}
+                            >
+                              {tag.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </motion.div>
@@ -393,7 +469,7 @@ export function MeetingLibrary() {
         </div>
       ) : (
         <div className="flex flex-col divide-y rounded-md border">
-          {meetings.map((meeting) => (
+          {filteredMeetings.map((meeting) => (
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
                 <div
@@ -417,6 +493,19 @@ export function MeetingLibrary() {
                       </span>
                     ) : null;
                   })()}
+                  {(meetingTagsMap[meeting.id]?.length ?? 0) > 0 && (
+                    <div className="flex gap-1 shrink-0">
+                      {meetingTagsMap[meeting.id].map((tag) => (
+                        <span
+                          key={tag.id}
+                          className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+                          style={{ backgroundColor: tag.color }}
+                        >
+                          {tag.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {formatDate(meeting.start_time)}
                   </span>

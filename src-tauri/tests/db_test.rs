@@ -382,3 +382,84 @@ fn test_meeting_with_template_id() {
     let fetched = db.get_meeting(&meeting.id).unwrap();
     assert_eq!(fetched.template_id, Some(template_id));
 }
+
+#[test]
+fn test_create_and_list_tags() {
+    let db = Database::new_in_memory().unwrap();
+    let tag = db.create_tag("Engineering", "#4EEABB").unwrap();
+    assert_eq!(tag.name, "Engineering");
+    assert_eq!(tag.color, "#4EEABB");
+    let tags = db.list_tags().unwrap();
+    assert_eq!(tags.len(), 1);
+}
+
+#[test]
+fn test_update_tag() {
+    let db = Database::new_in_memory().unwrap();
+    let tag = db.create_tag("Engineering", "#4EEABB").unwrap();
+    let updated = db.update_tag(&tag.id, "Eng", "#C084FC").unwrap();
+    assert_eq!(updated.name, "Eng");
+    assert_eq!(updated.color, "#C084FC");
+}
+
+#[test]
+fn test_delete_tag() {
+    let db = Database::new_in_memory().unwrap();
+    let tag = db.create_tag("Engineering", "#4EEABB").unwrap();
+    db.delete_tag(&tag.id).unwrap();
+    let tags = db.list_tags().unwrap();
+    assert_eq!(tags.len(), 0);
+}
+
+#[test]
+fn test_meeting_tags() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Test".into(),
+            category_id: None,
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    let tag1 = db.create_tag("Engineering", "#4EEABB").unwrap();
+    let tag2 = db.create_tag("Sprint 42", "#C084FC").unwrap();
+
+    db.add_meeting_tag(&meeting.id, &tag1.id).unwrap();
+    db.add_meeting_tag(&meeting.id, &tag2.id).unwrap();
+
+    let tags = db.get_meeting_tags(&meeting.id).unwrap();
+    assert_eq!(tags.len(), 2);
+
+    db.remove_meeting_tag(&meeting.id, &tag1.id).unwrap();
+    let tags = db.get_meeting_tags(&meeting.id).unwrap();
+    assert_eq!(tags.len(), 1);
+    assert_eq!(tags[0].name, "Sprint 42");
+}
+
+#[test]
+fn test_get_all_meeting_tags() {
+    let db = Database::new_in_memory().unwrap();
+    let m1 = db
+        .create_meeting(NewMeeting {
+            title: "Meeting 1".into(),
+            category_id: None,
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    let m2 = db
+        .create_meeting(NewMeeting {
+            title: "Meeting 2".into(),
+            category_id: None,
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    let tag = db.create_tag("Shared", "#3B82F6").unwrap();
+    db.add_meeting_tag(&m1.id, &tag.id).unwrap();
+    db.add_meeting_tag(&m2.id, &tag.id).unwrap();
+
+    let all = db.get_all_meeting_tags().unwrap();
+    assert_eq!(all.len(), 2);
+}

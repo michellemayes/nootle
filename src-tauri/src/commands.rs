@@ -174,6 +174,90 @@ pub fn delete_category(db: State<'_, DbState>, id: String) -> Result<(), String>
     db.delete_category(&id).map_err(|e| e.to_string())
 }
 
+// Tag commands
+#[tauri::command]
+pub fn create_tag(db: State<'_, DbState>, name: String, color: String) -> Result<Tag, String> {
+    let valid =
+        color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+    if !valid {
+        return Err(format!("Invalid hex color: {}", color));
+    }
+    db.create_tag(&name, &color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_tags(db: State<'_, DbState>) -> Result<Vec<Tag>, String> {
+    db.list_tags().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_tag(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    color: String,
+) -> Result<Tag, String> {
+    let valid =
+        color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+    if !valid {
+        return Err(format!("Invalid hex color: {}", color));
+    }
+    db.update_tag(&id, &name, &color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_tag(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_tag(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_meeting_tag(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    tag_id: String,
+) -> Result<(), String> {
+    db.add_meeting_tag(&meeting_id, &tag_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_meeting_tag(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    tag_id: String,
+) -> Result<(), String> {
+    db.remove_meeting_tag(&meeting_id, &tag_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_meeting_tags(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<Tag>, String> {
+    db.get_meeting_tags(&meeting_id).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct MeetingTagEntry {
+    pub meeting_id: String,
+    pub tag: Tag,
+}
+
+#[tauri::command]
+pub fn get_all_meeting_tags(
+    db: State<'_, DbState>,
+) -> Result<Vec<MeetingTagEntry>, String> {
+    db.get_all_meeting_tags()
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|(meeting_id, tag)| MeetingTagEntry { meeting_id, tag })
+                .collect()
+        })
+        .map_err(|e| e.to_string())
+}
+
 // Transcript commands
 #[tauri::command]
 pub fn get_transcript(

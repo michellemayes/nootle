@@ -67,6 +67,14 @@ pub struct NewCategory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tag {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Prompt {
     pub id: String,
     pub name: String,
@@ -605,6 +613,19 @@ impl Database {
                 question_count INTEGER NOT NULL DEFAULT 0,
                 back_and_forth_ratio REAL NOT NULL DEFAULT 0.0
             );
+
+            CREATE TABLE IF NOT EXISTS tags (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                color TEXT NOT NULL DEFAULT '#6366f1',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS meeting_tags (
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                PRIMARY KEY (meeting_id, tag_id)
+            );
             ",
         )?;
         Self::seed_default_insight_types(&conn)?;
@@ -1135,6 +1156,169 @@ impl Database {
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         conn.execute("DELETE FROM categories WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    // --- Tags ---
+
+    pub fn create_tag(&self, name: &str, color: &str) -> Result<Tag> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO tags (id, name, color, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id, name, color, now],
+        )?;
+
+        Ok(Tag {
+            id,
+            name: name.to_string(),
+            color: color.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn list_tags(&self) -> Result<Vec<Tag>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, color, created_at FROM tags ORDER BY name ASC")?;
+
+        let tags = stmt
+            .query_map([], |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(tags)
+    }
+
+    pub fn update_tag(&self, id: &str, name: &str, color: &str) -> Result<Tag> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
+            params![name, color, id],
+        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, color, created_at FROM tags WHERE id = ?1")?;
+        let tag = stmt
+            .query_row(params![id], |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Tag not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+        Ok(tag)
+    }
+
+    pub fn delete_tag(&self, id: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute("DELETE FROM tags WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn add_meeting_tag(&self, meeting_id: &str, tag_id: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_tags (meeting_id, tag_id) VALUES (?1, ?2)",
+            params![meeting_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_meeting_tag(&self, meeting_id: &str, tag_id: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "DELETE FROM meeting_tags WHERE meeting_id = ?1 AND tag_id = ?2",
+            params![meeting_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_meeting_tags(&self, meeting_id: &str) -> Result<Vec<Tag>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.name, t.color, t.created_at
+             FROM tags t
+             INNER JOIN meeting_tags mt ON mt.tag_id = t.id
+             WHERE mt.meeting_id = ?1
+             ORDER BY t.name ASC",
+        )?;
+
+        let tags = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(tags)
+    }
+
+    pub fn get_all_meeting_tags(&self) -> Result<Vec<(String, Tag)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT mt.meeting_id, t.id, t.name, t.color, t.created_at
+             FROM meeting_tags mt
+             INNER JOIN tags t ON mt.tag_id = t.id
+             ORDER BY t.name ASC",
+        )?;
+
+        let results = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    Tag {
+                        id: row.get(1)?,
+                        name: row.get(2)?,
+                        color: row.get(3)?,
+                        created_at: row.get(4)?,
+                    },
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(results)
     }
 
     // --- Transcript Segments ---

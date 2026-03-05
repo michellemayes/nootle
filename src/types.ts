@@ -32,6 +32,18 @@ export interface Category {
   created_at: string;
 }
 
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
+export interface MeetingTagEntry {
+  meeting_id: string;
+  tag: Tag;
+}
+
 export interface Prompt {
   id: string;
   name: string;
