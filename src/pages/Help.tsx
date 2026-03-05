@@ -8,6 +8,7 @@ import gettingStartedMd from "@/help/getting-started.md?raw";
 import mcpServerMd from "@/help/mcp-server.md?raw";
 import llmProvidersMd from "@/help/llm-providers.md?raw";
 import troubleshootingMd from "@/help/troubleshooting.md?raw";
+import cliToolMd from "@/help/cli-tool.md?raw";
 
 const MCP_CONFIG = `{
   "mcpServers": {
@@ -57,6 +58,7 @@ function McpQuickStart() {
 const tabs = [
   { value: "getting-started", label: "Getting Started", content: gettingStartedMd, description: "Learn the basics of using Nootle" },
   { value: "mcp-server", label: "MCP Server", content: mcpServerMd, quickStart: true, description: "Connect Nootle to Claude Code and other MCP clients" },
+  { value: "cli-tool", label: "CLI Tool", content: cliToolMd, description: "Query meeting data from the terminal" },
   { value: "llm-providers", label: "LLM Providers", content: llmProvidersMd, description: "Configure AI providers for transcription and summaries" },
   { value: "troubleshooting", label: "Troubleshooting", content: troubleshootingMd, description: "Common issues and how to fix them" },
 ] as const;
