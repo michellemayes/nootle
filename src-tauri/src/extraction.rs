@@ -168,7 +168,10 @@ pub async fn extract_insights(
             if content.is_empty() {
                 continue;
             }
-            let context = item.get("context").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let context = item
+                .get("context")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             let timestamp_ms = item.get("timestamp_ms").and_then(|v| v.as_i64());
 
             let insight = db.create_insight(NewInsight {
@@ -181,8 +184,14 @@ pub async fn extract_insights(
             })?;
 
             if t.has_action_fields {
-                let assignee = item.get("assignee").and_then(|v| v.as_str()).map(|s| s.to_string());
-                let due_date = item.get("due_date").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let assignee = item
+                    .get("assignee")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let due_date = item
+                    .get("due_date")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
                 db.create_action_item(NewActionItem {
                     insight_id: insight.id,
                     assignee,

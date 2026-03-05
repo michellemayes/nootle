@@ -57,10 +57,7 @@ impl VadEngine {
 
         // Expect shape [1, 2] — two logits: [no_speech, speech]
         if dims.len() < 2 || dims[dims.len() - 1] < 2 {
-            return Err(anyhow::anyhow!(
-                "Unexpected VAD output shape: {:?}",
-                dims
-            ));
+            return Err(anyhow::anyhow!("Unexpected VAD output shape: {:?}", dims));
         }
 
         let no_speech_logit = logits_data[0];
