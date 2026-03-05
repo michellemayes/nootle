@@ -12,6 +12,7 @@ export function useMeetingDetection() {
         title: "Detected Meeting",
         categoryId: null,
         calendarEventId: null,
+        templateId: null,
       });
       navigate("/recording");
     } catch (err) {

@@ -197,9 +197,9 @@ export function TemplatesPage() {
       ) : templates.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <FileText className="h-10 w-10 text-muted-foreground" />
-          <h2 className="text-lg font-medium">No templates yet</h2>
+          <h2 className="text-lg font-medium">No templates found</h2>
           <p className="text-sm text-muted-foreground">
-            Give Nootle a format to follow
+            Create a template to structure how meeting summaries are organized
           </p>
         </div>
       ) : (
