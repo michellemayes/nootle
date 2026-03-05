@@ -1409,8 +1409,7 @@ impl Database {
             Ok(()) => {
                 // Best-effort: remove any legacy SQLite copy so the plaintext
                 // row does not linger.
-                if let Ok(conn) = self.lock_conn()
-                {
+                if let Ok(conn) = self.lock_conn() {
                     let _ = conn.execute(
                         "DELETE FROM api_keys WHERE provider = ?1",
                         params![provider],
@@ -1496,8 +1495,7 @@ impl Database {
     pub fn migrate_keys_to_keychain(&self) {
         // --- LLM provider keys from api_keys table ---
         let legacy_llm_keys: Vec<(String, String)> = {
-            match self.lock_conn()
-            {
+            match self.lock_conn() {
                 Ok(conn) => match conn.prepare("SELECT provider, key_value FROM api_keys") {
                     Ok(mut stmt) => stmt
                         .query_map([], |row| {
@@ -1515,8 +1513,7 @@ impl Database {
             match crate::keychain::store_key(&provider, &key) {
                 Ok(()) => {
                     tracing::info!("Migrated API key for provider='{provider}' to Keychain.");
-                    if let Ok(conn) = self.lock_conn()
-                    {
+                    if let Ok(conn) = self.lock_conn() {
                         let _ = conn.execute(
                             "DELETE FROM api_keys WHERE provider = ?1",
                             params![provider],
@@ -1533,8 +1530,7 @@ impl Database {
 
         // --- Linear API key from linear_settings ---
         let linear_key: Option<String> = {
-            match self.lock_conn()
-            {
+            match self.lock_conn() {
                 Ok(conn) => {
                     match conn.prepare("SELECT value FROM linear_settings WHERE key = 'api_key'") {
                         Ok(mut stmt) => stmt.query_row([], |row| row.get::<_, String>(0)).ok(),
@@ -1549,8 +1545,7 @@ impl Database {
             match crate::keychain::store_key("linear", &key) {
                 Ok(()) => {
                     tracing::info!("Migrated Linear API key to Keychain.");
-                    if let Ok(conn) = self.lock_conn()
-                    {
+                    if let Ok(conn) = self.lock_conn() {
                         let _ =
                             conn.execute("DELETE FROM linear_settings WHERE key = 'api_key'", []);
                     }
@@ -1605,8 +1600,7 @@ impl Database {
             match crate::keychain::store_key("linear", value) {
                 Ok(()) => {
                     // Remove any legacy SQLite copy.
-                    if let Ok(conn) = self.lock_conn()
-                    {
+                    if let Ok(conn) = self.lock_conn() {
                         let _ =
                             conn.execute("DELETE FROM linear_settings WHERE key = 'api_key'", []);
                     }
