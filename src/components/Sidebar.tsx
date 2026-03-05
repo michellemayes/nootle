@@ -66,20 +66,18 @@ export function Sidebar() {
       transition={{ duration: 0.4, ease: "easeInOut" }}
     >
       {/* Logo */}
-      <div className="flex items-center gap-2 px-5 pt-6 pb-4">
-        <motion.div
+      <div className="flex items-center gap-3 px-6 pt-7 pb-5">
+        <div
           className="cursor-pointer"
-          whileHover={{ rotate: [0, -3, 3, 0] }}
-          transition={{ duration: 0.4, ease: "easeInOut" }}
           onClick={handleLogoClick}
         >
           <img src="/nootle-icon.png" alt="Nootle" className="h-8 w-8 rounded-lg" />
-        </motion.div>
-        <span className="text-lg font-semibold tracking-tight">Nootle</span>
+        </div>
+        <span className="text-lg font-semibold tracking-tight font-serif">Nootle</span>
       </div>
 
       {/* New Recording Button */}
-      <div className="px-3 pb-2">
+      <div className="px-4 pb-3">
         <MotionButton
           className="w-full justify-start gap-2"
           onClick={() => navigate("/recording")}
@@ -92,7 +90,7 @@ export function Sidebar() {
       <Separator />
 
       {/* Navigation */}
-      <nav className="flex flex-1 flex-col gap-1 px-3 pt-3">
+      <nav className="flex flex-1 flex-col gap-1.5 px-4 pt-4">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -100,27 +98,23 @@ export function Sidebar() {
             end={item.to === "/"}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
                   ? "bg-accent text-accent-foreground"
                   : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
               )
             }
           >
-            <motion.span
-              className="inline-flex"
-              whileHover={{ y: -1 }}
-              transition={{ type: "spring", stiffness: 300, damping: 10 }}
-            >
-              <item.icon className="h-4 w-4" />
-            </motion.span>
+            <span className="inline-flex">
+              <item.icon className="h-[18px] w-[18px]" />
+            </span>
             {item.label}
           </NavLink>
         ))}
       </nav>
 
       {/* Footer */}
-      <div className="flex items-center justify-between px-5 py-4">
+      <div className="flex items-center justify-between px-6 py-5">
         <p className="text-xs text-muted-foreground">Nootle v{version}</p>
         <Button
           variant="ghost"
