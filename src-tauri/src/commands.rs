@@ -287,7 +287,6 @@ pub fn get_summaries(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<S
 // Recording commands
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub async fn start_recording(
     app: tauri::AppHandle,
     db: State<'_, DbState>,
