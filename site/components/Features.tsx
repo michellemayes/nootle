@@ -1,31 +1,37 @@
 "use client";
 
+import { Lock, Mic, MessageSquare, Monitor, type LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
 
-const features = [
+const features: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  gradient: string;
+}[] = [
   {
-    icon: "🔒",
+    icon: Lock,
     title: "Local & Private",
     description:
       "No cloud recording. Everything stays on your Mac — your meetings, your data.",
     gradient: "from-[#4EEABB] to-[#5BC4A8]",
   },
   {
-    icon: "🎙️",
+    icon: Mic,
     title: "Real-time Transcription",
     description:
       "Live speech-to-text with automatic speaker identification. Know who said what.",
     gradient: "from-[#C084FC] to-[#A855F7]",
   },
   {
-    icon: "💬",
+    icon: MessageSquare,
     title: "AI Summaries & Chat",
     description:
       "Get instant summaries and ask follow-up questions about your meetings.",
     gradient: "from-[#E879A8] to-[#C084FC]",
   },
   {
-    icon: "🖥️",
+    icon: Monitor,
     title: "Works with Any Meeting App",
     description:
       "Zoom, Teams, Google Meet, and more. Nootle captures audio from any app.",
@@ -59,9 +65,9 @@ export function Features() {
               transition={{ duration: 0.4, delay: i * 0.1 }}
             >
               <div
-                className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br ${feature.gradient} text-2xl mb-4`}
+                className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br ${feature.gradient} mb-4`}
               >
-                {feature.icon}
+                <feature.icon className="w-7 h-7 text-white" />
               </div>
               <h3
                 className="text-2xl font-bold mb-2"
