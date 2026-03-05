@@ -1,25 +1,8 @@
-use crate::db::{Database, NewSummary, Summary};
+use crate::db::{Database, NewSummary, Summary, TranscriptSegment};
 use crate::llm::{ChatMessage, LlmRegistry};
 
-pub async fn summarize_meeting(
-    db: &Database,
-    llm: &LlmRegistry,
-    meeting_id: &str,
-    prompt_id: &str,
-    provider_name: &str,
-    model: &str,
-) -> anyhow::Result<Summary> {
-    // Get transcript
-    let transcript = db.get_transcript(meeting_id)?;
-    if transcript.is_empty() {
-        anyhow::bail!("No transcript found for meeting {}", meeting_id);
-    }
-
-    // Get prompt
-    let prompt = db.get_prompt(prompt_id)?;
-
-    // Format transcript as text
-    let transcript_text = transcript
+fn format_transcript(segments: &[TranscriptSegment]) -> String {
+    segments
         .iter()
         .map(|s| {
             format!(
@@ -30,7 +13,39 @@ pub async fn summarize_meeting(
             )
         })
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n")
+}
+
+pub async fn summarize_meeting(
+    db: &Database,
+    llm: &LlmRegistry,
+    meeting_id: &str,
+    prompt_id: &str,
+    provider_name: &str,
+    model: &str,
+) -> anyhow::Result<Summary> {
+    let transcript = db.get_transcript(meeting_id)?;
+    if transcript.is_empty() {
+        anyhow::bail!("No transcript found for meeting {}", meeting_id);
+    }
+
+    let prompt = db.get_prompt(prompt_id)?;
+
+    let transcript_text = format_transcript(&transcript);
+
+    let scratch_notes = db.get_scratch_notes(meeting_id).unwrap_or_default();
+    let notes_section = if scratch_notes.is_empty() {
+        String::new()
+    } else {
+        let formatted: Vec<String> = scratch_notes
+            .iter()
+            .map(|n| format!("- [{}] \"{}\"", format_ms(n.timestamp_ms), n.content))
+            .collect();
+        format!(
+            "\n\nThe user highlighted these moments during the meeting:\n{}\n\nGive extra attention to these highlighted topics in your summary.",
+            formatted.join("\n")
+        )
+    };
 
     // Build messages
     let messages = vec![
@@ -40,7 +55,10 @@ pub async fn summarize_meeting(
         },
         ChatMessage {
             role: "user".into(),
-            content: format!("Here is the meeting transcript:\n\n{}", transcript_text),
+            content: format!(
+                "Here is the meeting transcript:\n\n{}{}",
+                transcript_text, notes_section
+            ),
         },
     ];
 
@@ -89,20 +107,8 @@ pub async fn chat_with_transcript(
     provider_name: &str,
     model: &str,
 ) -> anyhow::Result<String> {
-    // Get transcript
     let transcript = db.get_transcript(meeting_id)?;
-    let transcript_text = transcript
-        .iter()
-        .map(|s| {
-            format!(
-                "[{}] {}: {}",
-                format_ms(s.start_ms),
-                s.speaker_label,
-                s.text
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let transcript_text = format_transcript(&transcript);
 
     // Build messages with transcript as system context
     let mut messages = vec![ChatMessage {
@@ -130,6 +136,50 @@ pub async fn chat_with_transcript(
         .get_provider(provider_name)
         .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider_name))?;
     provider.chat(messages, model).await
+}
+
+pub async fn run_recipe(
+    db: &Database,
+    llm: &LlmRegistry,
+    meeting_id: &str,
+    recipe_id: &str,
+    provider_name: &str,
+    model: &str,
+) -> anyhow::Result<String> {
+    let recipe = db.get_recipe(recipe_id)?;
+    let meeting = db.get_meeting(meeting_id)?;
+    let transcript = db.get_transcript(meeting_id)?;
+    let transcript_text = format_transcript(&transcript);
+
+    let mut prompt = recipe.prompt_template.clone();
+    prompt = prompt.replace("{{transcript}}", &transcript_text);
+    prompt = prompt.replace("{{title}}", &meeting.title);
+    prompt = prompt.replace("{{date}}", &meeting.start_time);
+
+    if let Ok(summaries) = db.get_summaries_for_meeting(meeting_id) {
+        if let Some(summary) = summaries.first() {
+            prompt = prompt.replace("{{summary}}", &summary.content);
+        }
+    }
+
+    let provider = llm
+        .get_provider(provider_name)
+        .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider_name))?;
+    provider
+        .chat(
+            vec![
+                ChatMessage {
+                    role: "system".into(),
+                    content: "You are a meeting assistant. Produce the requested output based on the meeting data provided.".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: prompt,
+                },
+            ],
+            model,
+        )
+        .await
 }
 
 pub fn format_ms(ms: i64) -> String {

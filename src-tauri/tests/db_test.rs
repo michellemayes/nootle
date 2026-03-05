@@ -1,6 +1,6 @@
 use nootle_app_lib::db::{
-    Database, NewCategory, NewLinearTicket, NewMeeting, NewPrompt, NewSummary, NewTemplate,
-    NewTranscriptSegment,
+    Database, NewCategory, NewLinearTicket, NewMeeting, NewPrompt, NewRecipe, NewSummary,
+    NewTemplate, NewTranscriptSegment,
 };
 
 #[test]
@@ -13,6 +13,7 @@ fn test_database_initializes_tables() {
     assert!(tables.contains(&"categories".to_string()));
     assert!(tables.contains(&"templates".to_string()));
     assert!(tables.contains(&"prompts".to_string()));
+    assert!(tables.contains(&"recipes".to_string()));
 }
 
 #[test]
@@ -23,6 +24,7 @@ fn test_create_and_get_meeting() {
             title: "Daily Standup".to_string(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
 
@@ -40,12 +42,14 @@ fn test_list_meetings() {
         title: "Meeting 1".to_string(),
         category_id: None,
         calendar_event_id: None,
+        template_id: None,
     })
     .unwrap();
     db.create_meeting(NewMeeting {
         title: "Meeting 2".to_string(),
         category_id: None,
         calendar_event_id: None,
+        template_id: None,
     })
     .unwrap();
 
@@ -61,6 +65,7 @@ fn test_update_meeting_status() {
             title: "Test".to_string(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
 
@@ -77,6 +82,7 @@ fn test_finalize_meeting() {
             title: "Finalize Test".to_string(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
 
@@ -105,6 +111,7 @@ fn test_delete_meeting() {
             title: "To Delete".to_string(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
 
@@ -141,6 +148,7 @@ fn test_transcript_segments() {
             title: "Test".into(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
     db.create_transcript_segment(NewTranscriptSegment {
@@ -200,6 +208,7 @@ fn test_summaries() {
             title: "Test".into(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
     db.create_summary(NewSummary {
@@ -223,6 +232,7 @@ fn test_create_and_list_linear_tickets() {
             title: "Linear Sync".into(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
     let summary = db
@@ -267,6 +277,7 @@ fn test_search_transcripts() {
             title: "Sprint Review".into(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
     db.create_transcript_segment(NewTranscriptSegment {
@@ -296,14 +307,236 @@ fn test_search_transcripts() {
 #[test]
 fn test_templates_crud() {
     let db = Database::new_in_memory().unwrap();
-    db.create_template(NewTemplate {
-        name: "Standup".into(),
-        category_id: None,
-        sections: r#"["Blockers","Updates"]"#.into(),
-        auto_apply_rules: "{}".into(),
-    })
-    .unwrap();
+    // The DB seeds 8 built-in templates on init
+    let initial_templates = db.list_templates().unwrap();
+    assert_eq!(initial_templates.len(), 8);
+    assert!(initial_templates.iter().all(|t| t.is_builtin));
+
+    let custom = db
+        .create_template(NewTemplate {
+            name: "Standup".into(),
+            description: "Quick daily sync".into(),
+            category_id: None,
+            sections: r#"["Blockers","Updates"]"#.into(),
+            auto_apply_rules: "{}".into(),
+            prompt: "Summarize the standup.".into(),
+        })
+        .unwrap();
+    assert_eq!(custom.name, "Standup");
+    assert_eq!(custom.description, "Quick daily sync");
+    assert_eq!(custom.prompt, "Summarize the standup.");
+    assert!(!custom.is_builtin);
+
     let templates = db.list_templates().unwrap();
-    assert_eq!(templates.len(), 1);
-    assert_eq!(templates[0].name, "Standup");
+    assert_eq!(templates.len(), 9);
+
+    let updated = db
+        .update_template(
+            &custom.id,
+            "Daily Sync",
+            "Updated description",
+            None,
+            r#"["Blockers","Updates","Next Steps"]"#,
+            "{}",
+            "Updated prompt.",
+        )
+        .unwrap();
+    assert_eq!(updated.name, "Daily Sync");
+    assert_eq!(updated.description, "Updated description");
+    assert_eq!(updated.prompt, "Updated prompt.");
+
+    db.delete_template(&custom.id).unwrap();
+    let templates = db.list_templates().unwrap();
+    assert_eq!(templates.len(), 8);
+}
+
+#[test]
+fn test_builtin_templates_have_prompts() {
+    let db = Database::new_in_memory().unwrap();
+    let templates = db.list_templates().unwrap();
+    for t in &templates {
+        assert!(t.is_builtin);
+        assert!(
+            !t.prompt.is_empty(),
+            "Template '{}' should have a prompt",
+            t.name
+        );
+        assert!(
+            !t.description.is_empty(),
+            "Template '{}' should have a description",
+            t.name
+        );
+    }
+}
+
+#[test]
+fn test_meeting_with_template_id() {
+    let db = Database::new_in_memory().unwrap();
+    let templates = db.list_templates().unwrap();
+    let template_id = templates[0].id.clone();
+
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Templated Meeting".into(),
+            category_id: None,
+            calendar_event_id: None,
+            template_id: Some(template_id.clone()),
+        })
+        .unwrap();
+    assert_eq!(meeting.template_id, Some(template_id.clone()));
+
+    let fetched = db.get_meeting(&meeting.id).unwrap();
+    assert_eq!(fetched.template_id, Some(template_id));
+}
+
+#[test]
+fn test_create_and_list_tags() {
+    let db = Database::new_in_memory().unwrap();
+    let tag = db.create_tag("Engineering", "#4EEABB").unwrap();
+    assert_eq!(tag.name, "Engineering");
+    assert_eq!(tag.color, "#4EEABB");
+    let tags = db.list_tags().unwrap();
+    assert_eq!(tags.len(), 1);
+}
+
+#[test]
+fn test_update_tag() {
+    let db = Database::new_in_memory().unwrap();
+    let tag = db.create_tag("Engineering", "#4EEABB").unwrap();
+    let updated = db.update_tag(&tag.id, "Eng", "#C084FC").unwrap();
+    assert_eq!(updated.name, "Eng");
+    assert_eq!(updated.color, "#C084FC");
+}
+
+#[test]
+fn test_delete_tag() {
+    let db = Database::new_in_memory().unwrap();
+    let tag = db.create_tag("Engineering", "#4EEABB").unwrap();
+    db.delete_tag(&tag.id).unwrap();
+    let tags = db.list_tags().unwrap();
+    assert_eq!(tags.len(), 0);
+}
+
+#[test]
+fn test_meeting_tags() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Test".into(),
+            category_id: None,
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    let tag1 = db.create_tag("Engineering", "#4EEABB").unwrap();
+    let tag2 = db.create_tag("Sprint 42", "#C084FC").unwrap();
+
+    db.add_meeting_tag(&meeting.id, &tag1.id).unwrap();
+    db.add_meeting_tag(&meeting.id, &tag2.id).unwrap();
+
+    let tags = db.get_meeting_tags(&meeting.id).unwrap();
+    assert_eq!(tags.len(), 2);
+
+    db.remove_meeting_tag(&meeting.id, &tag1.id).unwrap();
+    let tags = db.get_meeting_tags(&meeting.id).unwrap();
+    assert_eq!(tags.len(), 1);
+    assert_eq!(tags[0].name, "Sprint 42");
+}
+
+#[test]
+fn test_get_all_meeting_tags() {
+    let db = Database::new_in_memory().unwrap();
+    let m1 = db
+        .create_meeting(NewMeeting {
+            title: "Meeting 1".into(),
+            category_id: None,
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    let m2 = db
+        .create_meeting(NewMeeting {
+            title: "Meeting 2".into(),
+            category_id: None,
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    let tag = db.create_tag("Shared", "#3B82F6").unwrap();
+    db.add_meeting_tag(&m1.id, &tag.id).unwrap();
+    db.add_meeting_tag(&m2.id, &tag.id).unwrap();
+
+    let all = db.get_all_meeting_tags().unwrap();
+    assert_eq!(all.len(), 2);
+}
+
+#[test]
+fn test_scratch_notes() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Test".into(),
+            category_id: None,
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+
+    let note = db
+        .add_scratch_note(&meeting.id, "Important pricing discussion", 323000)
+        .unwrap();
+    assert_eq!(note.content, "Important pricing discussion");
+    assert_eq!(note.timestamp_ms, 323000);
+
+    let notes = db.get_scratch_notes(&meeting.id).unwrap();
+    assert_eq!(notes.len(), 1);
+
+    db.delete_scratch_note(&note.id).unwrap();
+    let notes = db.get_scratch_notes(&meeting.id).unwrap();
+    assert_eq!(notes.len(), 0);
+}
+
+#[test]
+fn test_recipe_crud() {
+    let db = Database::new_in_memory().unwrap();
+
+    // Should have 5 built-in recipes from seed
+    let recipes = db.list_recipes().unwrap();
+    assert_eq!(recipes.len(), 5);
+    assert!(recipes.iter().all(|r| r.is_builtin));
+
+    let recipe = db
+        .create_recipe(NewRecipe {
+            name: "Custom".into(),
+            description: "Test recipe".into(),
+            slash_command: "custom".into(),
+            prompt_template: "Do something with {{transcript}}".into(),
+            output_format: "markdown".into(),
+        })
+        .unwrap();
+    assert_eq!(recipe.slash_command, "custom");
+    assert!(!recipe.is_builtin);
+
+    let found = db.get_recipe_by_command("custom").unwrap();
+    assert_eq!(found.id, recipe.id);
+
+    let recipes = db.list_recipes().unwrap();
+    assert_eq!(recipes.len(), 6);
+
+    let updated = db
+        .update_recipe(
+            &recipe.id,
+            "Custom Updated",
+            "Updated description",
+            "custom-v2",
+            "New template {{transcript}}",
+            "markdown",
+        )
+        .unwrap();
+    assert_eq!(updated.name, "Custom Updated");
+    assert_eq!(updated.slash_command, "custom-v2");
+
+    db.delete_recipe(&recipe.id).unwrap();
+    let recipes = db.list_recipes().unwrap();
+    assert_eq!(recipes.len(), 5);
 }

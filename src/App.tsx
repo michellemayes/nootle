@@ -7,6 +7,7 @@ import { MeetingLibrary } from "@/pages/MeetingLibrary";
 import { RecordingView } from "@/pages/RecordingView";
 import { MeetingDetail } from "@/pages/MeetingDetail";
 import { PromptsPage } from "@/pages/Prompts";
+import { TemplatesPage } from "@/pages/Templates";
 
 import { SettingsPage } from "@/pages/Settings";
 import { HelpPage } from "@/pages/Help";
@@ -89,6 +90,14 @@ function App() {
             element={
               <Layout>
                 <PromptsPage />
+              </Layout>
+            }
+          />
+          <Route
+            path="/templates"
+            element={
+              <Layout>
+                <TemplatesPage />
               </Layout>
             }
           />

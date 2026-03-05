@@ -54,11 +54,13 @@ pub fn create_meeting(
     title: String,
     category_id: Option<String>,
     calendar_event_id: Option<String>,
+    template_id: Option<String>,
 ) -> Result<Meeting, String> {
     db.create_meeting(NewMeeting {
         title,
         category_id,
         calendar_event_id,
+        template_id,
     })
     .map_err(|e| e.to_string())
 }
@@ -183,6 +185,111 @@ pub fn delete_category(db: State<'_, DbState>, id: String) -> Result<(), String>
     db.delete_category(&id).map_err(|e| e.to_string())
 }
 
+fn validate_hex_color(color: &str) -> Result<(), String> {
+    let valid = color.len() == 7
+        && color.starts_with('#')
+        && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("Invalid hex color: {}", color))
+    }
+}
+
+#[tauri::command]
+pub fn create_tag(db: State<'_, DbState>, name: String, color: String) -> Result<Tag, String> {
+    validate_hex_color(&color)?;
+    db.create_tag(&name, &color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_tags(db: State<'_, DbState>) -> Result<Vec<Tag>, String> {
+    db.list_tags().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_tag(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    color: String,
+) -> Result<Tag, String> {
+    validate_hex_color(&color)?;
+    db.update_tag(&id, &name, &color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_tag(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_tag(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_meeting_tag(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    tag_id: String,
+) -> Result<(), String> {
+    db.add_meeting_tag(&meeting_id, &tag_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_meeting_tag(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    tag_id: String,
+) -> Result<(), String> {
+    db.remove_meeting_tag(&meeting_id, &tag_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_meeting_tags(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<Tag>, String> {
+    db.get_meeting_tags(&meeting_id).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct MeetingTagEntry {
+    pub meeting_id: String,
+    pub tag: Tag,
+}
+
+#[tauri::command]
+pub fn get_all_meeting_tags(db: State<'_, DbState>) -> Result<Vec<MeetingTagEntry>, String> {
+    db.get_all_meeting_tags()
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|(meeting_id, tag)| MeetingTagEntry { meeting_id, tag })
+                .collect()
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_scratch_note(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    content: String,
+    timestamp_ms: i64,
+) -> Result<ScratchNote, String> {
+    db.add_scratch_note(&meeting_id, &content, timestamp_ms)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_scratch_notes(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<ScratchNote>, String> {
+    db.get_scratch_notes(&meeting_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_scratch_note(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_scratch_note(&id).map_err(|e| e.to_string())
+}
+
 // Transcript commands
 #[tauri::command]
 pub fn get_transcript(
@@ -241,20 +348,94 @@ pub fn update_prompt(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn create_recipe(
+    db: State<'_, DbState>,
+    name: String,
+    description: String,
+    slash_command: String,
+    prompt_template: String,
+    output_format: String,
+) -> Result<Recipe, String> {
+    db.create_recipe(NewRecipe {
+        name,
+        description,
+        slash_command,
+        prompt_template,
+        output_format,
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_recipes(db: State<'_, DbState>) -> Result<Vec<Recipe>, String> {
+    db.list_recipes().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_recipe(db: State<'_, DbState>, id: String) -> Result<Recipe, String> {
+    db.get_recipe(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_recipe(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    description: String,
+    slash_command: String,
+    prompt_template: String,
+    output_format: String,
+) -> Result<Recipe, String> {
+    db.update_recipe(
+        &id,
+        &name,
+        &description,
+        &slash_command,
+        &prompt_template,
+        &output_format,
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_recipe(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_recipe(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn run_recipe(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    recipe_id: String,
+    provider: String,
+    model: String,
+) -> Result<String, String> {
+    let llm = llm.read().await;
+    summarization::run_recipe(&db, &llm, &meeting_id, &recipe_id, &provider, &model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // Template commands
 #[tauri::command]
 pub fn create_template(
     db: State<'_, DbState>,
     name: String,
+    description: String,
     category_id: Option<String>,
     sections: String,
     auto_apply_rules: String,
+    prompt: String,
 ) -> Result<Template, String> {
     db.create_template(NewTemplate {
         name,
+        description,
         category_id,
         sections,
         auto_apply_rules,
+        prompt,
     })
     .map_err(|e| e.to_string())
 }
@@ -274,16 +455,20 @@ pub fn update_template(
     db: State<'_, DbState>,
     id: String,
     name: String,
+    description: String,
     category_id: Option<String>,
     sections: String,
     auto_apply_rules: String,
+    prompt: String,
 ) -> Result<Template, String> {
     db.update_template(
         &id,
         &name,
+        &description,
         category_id.as_deref(),
         &sections,
         &auto_apply_rules,
+        &prompt,
     )
     .map_err(|e| e.to_string())
 }
@@ -307,6 +492,7 @@ pub async fn start_recording(
     title: String,
     category_id: Option<String>,
     calendar_event_id: Option<String>,
+    template_id: Option<String>,
 ) -> Result<Meeting, String> {
     // Check if already recording
     let mut session_lock = recording.lock().await;
@@ -338,6 +524,7 @@ pub async fn start_recording(
             title,
             category_id,
             calendar_event_id,
+            template_id,
         })
         .map_err(|e| e.to_string())?;
 

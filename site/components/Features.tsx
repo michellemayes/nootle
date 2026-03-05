@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, Mic, MessageSquare, Monitor, type LucideIcon } from "lucide-react";
+import { Lock, Mic, MessageSquare, Monitor, Lightbulb, Search, Volume2, Zap, SquareKanban, Terminal, type LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
 
 const features: {
@@ -37,6 +37,48 @@ const features: {
       "Zoom, Teams, Google Meet, and more. Nootle captures audio from any app.",
     gradient: "from-[#5BC4A8] to-[#4EEABB]",
   },
+  {
+    icon: Lightbulb,
+    title: "Smart Insights",
+    description:
+      "Automatically extract decisions, action items, and key moments from every meeting.",
+    gradient: "from-[#F59E0B] to-[#D97706]",
+  },
+  {
+    icon: Search,
+    title: "Search Across Meetings",
+    description:
+      "Ask questions across your entire meeting history with AI-powered semantic search.",
+    gradient: "from-[#3B82F6] to-[#2563EB]",
+  },
+  {
+    icon: Volume2,
+    title: "Noise Cancellation",
+    description:
+      "Built-in noise reduction for cleaner audio and more accurate transcriptions.",
+    gradient: "from-[#10B981] to-[#059669]",
+  },
+  {
+    icon: Zap,
+    title: "Auto-Detection",
+    description:
+      "Nootle detects when you join Zoom, Teams, or Meet and offers to start recording.",
+    gradient: "from-[#F97316] to-[#EA580C]",
+  },
+  {
+    icon: SquareKanban,
+    title: "Linear Integration",
+    description:
+      "Turn action items into Linear tickets with one click.",
+    gradient: "from-[#8B5CF6] to-[#7C3AED]",
+  },
+  {
+    icon: Terminal,
+    title: "CLI & Developer Tools",
+    description:
+      "Query your meetings from the terminal. MCP server for AI assistant integration.",
+    gradient: "from-[#6366F1] to-[#4F46E5]",
+  },
 ];
 
 export function Features() {
@@ -54,7 +96,7 @@ export function Features() {
           Everything you need from a meeting recorder
         </motion.h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {features.map((feature, i) => (
             <motion.div
               key={feature.title}
