@@ -678,10 +678,10 @@ export function AppMockup() {
   const titleBarText = currentView === "library" ? "Nootle" : "Sprint Planning — Feb 25, 2026";
 
   return (
-    <section className="py-24 px-6 bg-white">
+    <section className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
         <motion.h2
-          className="text-4xl md:text-5xl font-bold text-center mb-4"
+          className="font-[family-name:var(--font-syne)] text-4xl md:text-5xl font-bold text-center mb-4"
           style={{ color: "var(--color-text)" }}
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -691,7 +691,7 @@ export function AppMockup() {
           See it in action
         </motion.h2>
         <motion.p
-          className="text-xl text-gray-500 text-center mb-12 max-w-2xl mx-auto"
+          className="text-xl text-[var(--color-text-secondary)] text-center mb-12 max-w-2xl mx-auto"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}

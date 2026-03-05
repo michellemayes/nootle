@@ -42,7 +42,7 @@ export function HowItWorks() {
 
         <div className="space-y-12 relative">
           {/* Connecting line */}
-          <div className="absolute left-[23px] top-6 bottom-6 w-px bg-gradient-to-b from-[var(--color-mint)] via-[var(--color-blue)] to-[var(--color-magenta)] opacity-30" />
+          <div className="absolute left-6 top-6 bottom-6 w-px bg-gradient-to-b from-[var(--color-mint)] via-[var(--color-blue)] to-[var(--color-magenta)] opacity-30" />
 
           {steps.map((step, i) => (
             <motion.div
