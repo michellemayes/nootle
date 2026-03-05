@@ -1,13 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --color-mint: #4EEABB;
-  --color-teal: #5BC4A8;
-  --color-lavender: #C084FC;
-  --color-purple: #A855F7;
-  --color-pink: #E879A8;
-  --color-bg: #FAFAFA;
-  --color-text: #1A1A2E;
+  --color-bg: #0A0A0F;
+  --color-surface: #14141F;
+  --color-surface-elevated: #1E1E2E;
+  --color-border: #2A2A3A;
+  --color-text: #F0F0F5;
+  --color-text-secondary: #8888A0;
+  --color-mint: #00FFB2;
+  --color-blue: #3B82F6;
+  --color-magenta: #FF2D8A;
 }
 
 html {
@@ -17,4 +19,6 @@ html {
 body {
   background: var(--color-bg);
   color: var(--color-text);
+  background-image: radial-gradient(circle, var(--color-border) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
