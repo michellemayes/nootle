@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Redesign lander app preview with interactive views (#46) ([f34baa9](https://github.com/michellemayes/nootle/commit/f34baa9ab828549332e172ba7111edd54715b1e1))
 - Add git-cliff for continuous changelog generation ([3f63cf9](https://github.com/michellemayes/nootle/commit/3f63cf94e759944ca7c55ef59eb72a8dff17fccf))
 - Automate versioning with release-please, commitlint, and husky ([f4de3e0](https://github.com/michellemayes/nootle/commit/f4de3e03c96b889b603859982b4407dcee5434b1))
 - Add global chat with transcript search via RAG embeddings (#28) ([fd1a831](https://github.com/michellemayes/nootle/commit/fd1a8311ca68db8510c106ee5764298b795dd989))
