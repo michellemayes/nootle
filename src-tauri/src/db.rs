@@ -2093,55 +2093,19 @@ impl Database {
         })
     }
 
-    // --- API Keys ---
-    //
-    // Keys are now stored in the macOS Keychain via the `keychain` module.
-    // The `api_keys` SQLite table is kept for backward compatibility during
-    // migration only.  All reads/writes go to the Keychain; if the Keychain is
-    // unavailable we fall back to SQLite with a warning.
+    // --- API Keys (stored in SQLite) ---
 
     pub fn store_api_key(&self, provider: &str, key: &str) -> Result<()> {
-        match crate::keychain::store_key(provider, key) {
-            Ok(()) => {
-                // Best-effort: remove any legacy SQLite copy so the plaintext
-                // row does not linger.
-                if let Ok(conn) = self.lock_conn() {
-                    let _ = conn.execute(
-                        "DELETE FROM api_keys WHERE provider = ?1",
-                        params![provider],
-                    );
-                }
-                Ok(())
-            }
-            Err(kc_err) => {
-                tracing::warn!(
-                    "Keychain unavailable for store (provider={provider}): {kc_err}. Falling back to SQLite."
-                );
-                let conn = self.lock_conn()?;
-                conn.execute(
-                    "INSERT INTO api_keys (provider, key_value) VALUES (?1, ?2)
-                     ON CONFLICT(provider) DO UPDATE SET key_value = excluded.key_value",
-                    params![provider, key],
-                )?;
-                Ok(())
-            }
-        }
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "INSERT INTO api_keys (provider, key_value) VALUES (?1, ?2)
+             ON CONFLICT(provider) DO UPDATE SET key_value = excluded.key_value",
+            params![provider, key],
+        )?;
+        Ok(())
     }
 
     pub fn get_api_key(&self, provider: &str) -> Result<Option<String>> {
-        match crate::keychain::get_key(provider) {
-            Ok(Some(value)) => return Ok(Some(value)),
-            Ok(None) => {
-                // Nothing in Keychain; fall through to check legacy SQLite row.
-            }
-            Err(kc_err) => {
-                tracing::warn!(
-                    "Keychain unavailable for get (provider={provider}): {kc_err}. Falling back to SQLite."
-                );
-            }
-        }
-
-        // Legacy SQLite fallback
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT key_value FROM api_keys WHERE provider = ?1")?;
         match stmt.query_row(params![provider], |row| row.get::<_, String>(0)) {
@@ -2152,12 +2116,6 @@ impl Database {
     }
 
     pub fn delete_api_key(&self, provider: &str) -> Result<()> {
-        // Delete from Keychain (errors are logged but not fatal).
-        if let Err(e) = crate::keychain::delete_key(provider) {
-            tracing::warn!("Keychain delete error for provider={provider}: {e}");
-        }
-
-        // Also remove any legacy SQLite row.
         let conn = self.lock_conn()?;
         conn.execute(
             "DELETE FROM api_keys WHERE provider = ?1",
@@ -2167,16 +2125,6 @@ impl Database {
     }
 
     pub fn list_api_key_providers(&self) -> Result<Vec<String>> {
-        // Primary source: Keychain
-        match crate::keychain::list_providers() {
-            Ok(providers) if !providers.is_empty() => return Ok(providers),
-            Ok(_) => {}
-            Err(e) => {
-                tracing::warn!("Keychain list error: {e}. Falling back to SQLite.");
-            }
-        }
-
-        // Legacy SQLite fallback
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT provider FROM api_keys ORDER BY provider ASC")?;
         let providers = stmt
@@ -2185,103 +2133,9 @@ impl Database {
         Ok(providers)
     }
 
-    /// Migrate any API keys stored in the legacy SQLite `api_keys` table and
-    /// the `linear_settings` `api_key` entry to the macOS Keychain, then
-    /// delete the plaintext rows from SQLite.
-    pub fn migrate_keys_to_keychain(&self) {
-        // --- LLM provider keys from api_keys table ---
-        let legacy_llm_keys: Vec<(String, String)> = {
-            match self.lock_conn() {
-                Ok(conn) => match conn.prepare("SELECT provider, key_value FROM api_keys") {
-                    Ok(mut stmt) => stmt
-                        .query_map([], |row| {
-                            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                        })
-                        .and_then(|rows| rows.collect::<std::result::Result<Vec<_>, _>>())
-                        .unwrap_or_default(),
-                    Err(_) => vec![],
-                },
-                Err(_) => vec![],
-            }
-        };
-
-        for (provider, key) in legacy_llm_keys {
-            match crate::keychain::store_key(&provider, &key) {
-                Ok(()) => {
-                    tracing::info!("Migrated API key for provider='{provider}' to Keychain.");
-                    if let Ok(conn) = self.lock_conn() {
-                        let _ = conn.execute(
-                            "DELETE FROM api_keys WHERE provider = ?1",
-                            params![provider],
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Could not migrate API key for provider='{provider}' to Keychain: {e}. Key remains in SQLite."
-                    );
-                }
-            }
-        }
-
-        // --- Linear API key from linear_settings ---
-        let linear_key: Option<String> = {
-            match self.lock_conn() {
-                Ok(conn) => {
-                    match conn.prepare("SELECT value FROM linear_settings WHERE key = 'api_key'") {
-                        Ok(mut stmt) => stmt.query_row([], |row| row.get::<_, String>(0)).ok(),
-                        Err(_) => None,
-                    }
-                }
-                Err(_) => None,
-            }
-        };
-
-        if let Some(key) = linear_key {
-            match crate::keychain::store_key("linear", &key) {
-                Ok(()) => {
-                    tracing::info!("Migrated Linear API key to Keychain.");
-                    if let Ok(conn) = self.lock_conn() {
-                        let _ =
-                            conn.execute("DELETE FROM linear_settings WHERE key = 'api_key'", []);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Could not migrate Linear API key to Keychain: {e}. Key remains in SQLite."
-                    );
-                }
-            }
-        }
-    }
-
     // --- Linear Settings ---
-    //
-    // The `api_key` sub-key is stored in the Keychain (provider name "linear").
-    // All other Linear settings remain in the SQLite `linear_settings` table.
 
     pub fn get_linear_setting(&self, key: &str) -> Result<Option<String>> {
-        if key == "api_key" {
-            // Primary: Keychain
-            match crate::keychain::get_key("linear") {
-                Ok(Some(value)) => return Ok(Some(value)),
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::warn!(
-                        "Keychain get error for linear api_key: {e}. Falling back to SQLite."
-                    );
-                }
-            }
-            // Legacy SQLite fallback for linear api_key
-            let conn = self.lock_conn()?;
-            let mut stmt = conn.prepare("SELECT value FROM linear_settings WHERE key = ?1")?;
-            return match stmt.query_row(params![key], |row| row.get::<_, String>(0)) {
-                Ok(value) => Ok(Some(value)),
-                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-                Err(e) => Err(e.into()),
-            };
-        }
-
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT value FROM linear_settings WHERE key = ?1")?;
         match stmt.query_row(params![key], |row| row.get::<_, String>(0)) {
@@ -2292,24 +2146,6 @@ impl Database {
     }
 
     pub fn set_linear_setting(&self, key: &str, value: &str) -> Result<()> {
-        if key == "api_key" {
-            match crate::keychain::store_key("linear", value) {
-                Ok(()) => {
-                    // Remove any legacy SQLite copy.
-                    if let Ok(conn) = self.lock_conn() {
-                        let _ =
-                            conn.execute("DELETE FROM linear_settings WHERE key = 'api_key'", []);
-                    }
-                    return Ok(());
-                }
-                Err(kc_err) => {
-                    tracing::warn!(
-                        "Keychain unavailable for linear api_key: {kc_err}. Falling back to SQLite."
-                    );
-                }
-            }
-        }
-
         let conn = self.lock_conn()?;
         conn.execute(
             "INSERT INTO linear_settings (key, value) VALUES (?1, ?2)
@@ -2320,12 +2156,6 @@ impl Database {
     }
 
     pub fn delete_linear_setting(&self, key: &str) -> Result<()> {
-        if key == "api_key" {
-            if let Err(e) = crate::keychain::delete_key("linear") {
-                tracing::warn!("Keychain delete error for linear api_key: {e}");
-            }
-        }
-
         let conn = self.lock_conn()?;
         conn.execute("DELETE FROM linear_settings WHERE key = ?1", params![key])?;
         Ok(())

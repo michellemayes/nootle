@@ -985,7 +985,7 @@ pub async fn get_audio_data(
     ))
 }
 
-// Keychain commands
+// API key commands
 #[tauri::command]
 pub async fn store_api_key(
     db: State<'_, DbState>,

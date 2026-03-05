@@ -9,7 +9,6 @@ pub mod diarization;
 pub mod embedding;
 pub mod error;
 pub mod extraction;
-pub mod keychain;
 pub mod linear;
 pub mod llm;
 pub mod mcp;
@@ -48,9 +47,6 @@ pub fn run() {
         Err(e) => tracing::warn!("Failed to clean up stale recordings: {e}"),
     }
 
-    // Migrate any plaintext API keys from SQLite to the macOS Keychain.
-    db.migrate_keys_to_keychain();
-
     let recording_state: RecordingState = Arc::new(TokioMutex::new(None));
 
     // Initialize LLM registry with available providers
@@ -66,7 +62,7 @@ pub fn run() {
         llm_registry.register(Box::new(OllamaProvider::new()));
     }
 
-    // Register providers with stored API keys (read from Keychain via db.get_api_key).
+    // Register providers with stored API keys.
     if let Ok(Some(key)) = db.get_api_key("openai") {
         llm_registry.register(Box::new(llm::OpenAiProvider::new(key)));
     }

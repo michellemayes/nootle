@@ -340,27 +340,33 @@ export function ChatPage() {
 
             {/* Input bar */}
             <div className="border-t p-4">
-              <div className="flex gap-2">
-                <Input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask about your meetings..."
-                  className="flex-1"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  disabled={loading || !selectedProvider || !selectedModel}
-                />
-                <Button
-                  onClick={handleSend}
-                  disabled={loading || !input.trim() || !selectedProvider || !selectedModel}
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
+              {!selectedProvider || !selectedModel ? (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  Select a provider and model above, or add an API key in Settings to start chatting.
+                </p>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Ask about your meetings..."
+                    className="flex-1"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
+                    disabled={loading}
+                  />
+                  <Button
+                    onClick={handleSend}
+                    disabled={loading || !input.trim()}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           </>
         )}
