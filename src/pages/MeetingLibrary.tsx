@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 
 const LOADING_MESSAGES = [
   "Warming up the noodles...",
@@ -9,7 +10,6 @@ const LOADING_MESSAGES = [
   "Slurping through the data...",
   "Almost there, just al dente...",
 ];
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -443,7 +443,7 @@ export function MeetingLibrary() {
                           )}
                         </span>
                       </div>
-                      {(meetingTagsMap[meeting.id]?.length ?? 0) > 0 && (
+                      {meetingTagsMap[meeting.id]?.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {meetingTagsMap[meeting.id].map((tag) => (
                             <span
@@ -492,7 +492,7 @@ export function MeetingLibrary() {
                       </span>
                     ) : null;
                   })()}
-                  {(meetingTagsMap[meeting.id]?.length ?? 0) > 0 && (
+                  {meetingTagsMap[meeting.id]?.length > 0 && (
                     <div className="flex gap-1 shrink-0">
                       {meetingTagsMap[meeting.id].map((tag) => (
                         <span

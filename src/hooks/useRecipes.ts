@@ -83,13 +83,12 @@ export function useRecipes() {
       provider: string,
       model: string,
     ) => {
-      const result = await invoke<string>("run_recipe", {
+      return invoke<string>("run_recipe", {
         meetingId,
         recipeId,
         provider,
         model,
       });
-      return result;
     },
     [],
   );

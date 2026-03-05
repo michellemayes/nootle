@@ -1,25 +1,8 @@
-use crate::db::{Database, NewSummary, Summary};
+use crate::db::{Database, NewSummary, Summary, TranscriptSegment};
 use crate::llm::{ChatMessage, LlmRegistry};
 
-pub async fn summarize_meeting(
-    db: &Database,
-    llm: &LlmRegistry,
-    meeting_id: &str,
-    prompt_id: &str,
-    provider_name: &str,
-    model: &str,
-) -> anyhow::Result<Summary> {
-    // Get transcript
-    let transcript = db.get_transcript(meeting_id)?;
-    if transcript.is_empty() {
-        anyhow::bail!("No transcript found for meeting {}", meeting_id);
-    }
-
-    // Get prompt
-    let prompt = db.get_prompt(prompt_id)?;
-
-    // Format transcript as text
-    let transcript_text = transcript
+fn format_transcript(segments: &[TranscriptSegment]) -> String {
+    segments
         .iter()
         .map(|s| {
             format!(
@@ -30,7 +13,25 @@ pub async fn summarize_meeting(
             )
         })
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n")
+}
+
+pub async fn summarize_meeting(
+    db: &Database,
+    llm: &LlmRegistry,
+    meeting_id: &str,
+    prompt_id: &str,
+    provider_name: &str,
+    model: &str,
+) -> anyhow::Result<Summary> {
+    let transcript = db.get_transcript(meeting_id)?;
+    if transcript.is_empty() {
+        anyhow::bail!("No transcript found for meeting {}", meeting_id);
+    }
+
+    let prompt = db.get_prompt(prompt_id)?;
+
+    let transcript_text = format_transcript(&transcript);
 
     let scratch_notes = db.get_scratch_notes(meeting_id).unwrap_or_default();
     let notes_section = if scratch_notes.is_empty() {
@@ -106,20 +107,8 @@ pub async fn chat_with_transcript(
     provider_name: &str,
     model: &str,
 ) -> anyhow::Result<String> {
-    // Get transcript
     let transcript = db.get_transcript(meeting_id)?;
-    let transcript_text = transcript
-        .iter()
-        .map(|s| {
-            format!(
-                "[{}] {}: {}",
-                format_ms(s.start_ms),
-                s.speaker_label,
-                s.text
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let transcript_text = format_transcript(&transcript);
 
     // Build messages with transcript as system context
     let mut messages = vec![ChatMessage {
@@ -160,20 +149,7 @@ pub async fn run_recipe(
     let recipe = db.get_recipe(recipe_id)?;
     let meeting = db.get_meeting(meeting_id)?;
     let transcript = db.get_transcript(meeting_id)?;
-
-    // Format transcript like chat_with_transcript does
-    let transcript_text = transcript
-        .iter()
-        .map(|s| {
-            format!(
-                "[{}] {}: {}",
-                format_ms(s.start_ms),
-                s.speaker_label,
-                s.text
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let transcript_text = format_transcript(&transcript);
 
     let mut prompt = recipe.prompt_template.clone();
     prompt = prompt.replace("{{transcript}}", &transcript_text);

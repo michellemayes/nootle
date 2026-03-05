@@ -174,13 +174,20 @@ pub fn delete_category(db: State<'_, DbState>, id: String) -> Result<(), String>
     db.delete_category(&id).map_err(|e| e.to_string())
 }
 
+fn validate_hex_color(color: &str) -> Result<(), String> {
+    let valid = color.len() == 7
+        && color.starts_with('#')
+        && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("Invalid hex color: {}", color))
+    }
+}
+
 #[tauri::command]
 pub fn create_tag(db: State<'_, DbState>, name: String, color: String) -> Result<Tag, String> {
-    let valid =
-        color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
-    if !valid {
-        return Err(format!("Invalid hex color: {}", color));
-    }
+    validate_hex_color(&color)?;
     db.create_tag(&name, &color).map_err(|e| e.to_string())
 }
 
@@ -196,11 +203,7 @@ pub fn update_tag(
     name: String,
     color: String,
 ) -> Result<Tag, String> {
-    let valid =
-        color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
-    if !valid {
-        return Err(format!("Invalid hex color: {}", color));
-    }
+    validate_hex_color(&color)?;
     db.update_tag(&id, &name, &color).map_err(|e| e.to_string())
 }
 
