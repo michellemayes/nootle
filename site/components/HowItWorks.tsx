@@ -40,7 +40,7 @@ export function HowItWorks() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
           {/* Connecting line (desktop only) */}
-          <div className="hidden md:block absolute top-16 left-[20%] right-[20%] h-0.5 bg-gradient-to-r from-[#4EEABB] via-[#C084FC] to-[#E879A8]" />
+          <div className="hidden md:block absolute top-8 left-[20%] right-[20%] h-0.5 bg-gradient-to-r from-[#4EEABB] via-[#C084FC] to-[#E879A8]" />
 
           {steps.map((step, i) => (
             <motion.div
