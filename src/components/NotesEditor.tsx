@@ -96,7 +96,9 @@ export function NotesEditor({ content, hasHighlights, onChange }: NotesEditorPro
     isExternalUpdate.current = true;
     const html = markdownToHtml(content, hasHighlights);
     setHtmlContent(editor, html);
-    isExternalUpdate.current = false;
+    requestAnimationFrame(() => {
+      isExternalUpdate.current = false;
+    });
   }, [content, hasHighlights, editor]);
 
   return (

@@ -190,6 +190,8 @@ impl DiarizationEngine {
 
         for speaker_idx in 0..n_speakers {
             let mut active_start: Option<usize> = None;
+            let mut active_prob_sum: f32 = 0.0;
+            let mut active_prob_count: u32 = 0;
 
             for frame_idx in 0..n_frames {
                 let flat_idx = frame_idx * n_speakers + speaker_idx;
@@ -198,7 +200,11 @@ impl DiarizationEngine {
                 if prob > 0.5 {
                     if active_start.is_none() {
                         active_start = Some(frame_idx);
+                        active_prob_sum = 0.0;
+                        active_prob_count = 0;
                     }
+                    active_prob_sum += prob;
+                    active_prob_count += 1;
                 } else if let Some(start) = active_start.take() {
                     let start_ms = offset_ms + start as u64 * frame_duration_ms;
                     let end_ms = offset_ms + frame_idx as u64 * frame_duration_ms;
@@ -212,13 +218,21 @@ impl DiarizationEngine {
                             .identify_speaker(speaker_audio)
                             .unwrap_or_else(|_| format!("Speaker {}", speaker_idx + 1));
 
+                        let confidence = if active_prob_count > 0 {
+                            active_prob_sum / active_prob_count as f32
+                        } else {
+                            0.5
+                        };
+
                         segments.push(SpeakerSegment {
                             speaker_id,
                             start_ms,
                             end_ms,
-                            confidence: prob,
+                            confidence,
                         });
                     }
+                    active_prob_sum = 0.0;
+                    active_prob_count = 0;
                 }
             }
 
