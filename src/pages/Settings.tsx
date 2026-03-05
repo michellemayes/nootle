@@ -575,7 +575,7 @@ export function SettingsPage() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="border-b px-8 py-4">
-        <h1 className="text-3xl font-bold tracking-tight font-serif">Settings</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Configure API keys and application settings
         </p>
@@ -595,7 +595,7 @@ export function SettingsPage() {
         </div>
 
         <TabsContent value="general" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-10 max-w-3xl">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
             <Card>
               <CardHeader>
                 <CardTitle>Appearance</CardTitle>
@@ -673,7 +673,7 @@ export function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="api-keys" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-10 max-w-3xl">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
             <Card>
               <CardHeader>
                 <CardTitle>API Keys</CardTitle>
@@ -700,7 +700,7 @@ export function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="integrations" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-10 max-w-3xl">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
             <Card>
               <CardHeader>
                 <CardTitle>Project Management</CardTitle>
@@ -730,25 +730,25 @@ export function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="models" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-10 max-w-3xl">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
             <ModelManagementCard />
           </div>
         </TabsContent>
 
         <TabsContent value="categories" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-10 max-w-3xl">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
             <CategoriesManager />
           </div>
         </TabsContent>
 
         <TabsContent value="insight-types" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-10 max-w-3xl">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
             <InsightTypesManager />
           </div>
         </TabsContent>
 
         <TabsContent value="about" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-10 max-w-3xl">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
             <Card>
               <CardHeader>
                 <CardTitle>About</CardTitle>

@@ -44,8 +44,7 @@ impl MeetingDetector {
     }
 
     pub fn check(&mut self) -> Vec<DetectedMeeting> {
-        self.system
-            .refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        self.system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         let mut detected = Vec::new();
         let mut currently_running = HashSet::new();
 
@@ -129,7 +128,7 @@ mod tests {
         let mut detector = MeetingDetector::new();
         assert!(!detector.update_vad(0.9)); // 1
         assert!(!detector.update_vad(0.9)); // 2
-        assert!(detector.update_vad(0.9)); // 3 - triggers
+        assert!(detector.update_vad(0.9));  // 3 - triggers
     }
 
     #[test]
@@ -144,16 +143,16 @@ mod tests {
     #[test]
     fn test_should_notify_once_per_session() {
         let mut detector = MeetingDetector::new();
-        assert!(detector.should_notify(true, true)); // first time
+        assert!(detector.should_notify(true, true));  // first time
         assert!(!detector.should_notify(true, true)); // already notified
     }
 
     #[test]
     fn test_should_notify_requires_both_signals() {
         let mut detector = MeetingDetector::new();
-        assert!(!detector.should_notify(true, false)); // app only
-        assert!(!detector.should_notify(false, true)); // vad only
-        assert!(detector.should_notify(true, true)); // both
+        assert!(!detector.should_notify(true, false));  // app only
+        assert!(!detector.should_notify(false, true));  // vad only
+        assert!(detector.should_notify(true, true));    // both
     }
 
     #[test]

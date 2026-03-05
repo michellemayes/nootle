@@ -397,7 +397,7 @@ export function InsightsDashboard() {
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b px-8 py-4">
-        <h1 className="text-3xl font-bold tracking-tight font-serif">Insights</h1>
+        <h1 className="text-xl font-bold">Insights</h1>
         <div className="flex items-center gap-3">
           <select
             value={typeFilter ?? ""}

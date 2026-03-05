@@ -349,10 +349,7 @@ impl TranscriptionEngine {
             let (nm, nf) = mel.dim();
             (mel.into_raw_vec_and_offset().0, nm, nf)
         };
-        tracing::info!(
-            "[DIAG] Mel: n_mels={n_mels}, n_frames={n_frames}, audio_len={}",
-            audio.len()
-        );
+        tracing::info!("[DIAG] Mel: n_mels={n_mels}, n_frames={n_frames}, audio_len={}", audio.len());
 
         // 2. Run encoder: mel [1, n_mels, n_frames] -> encoded [1, D, T]
         let mel_tensor = Tensor::from_array(([1, n_mels, n_frames], mel_data))?;
@@ -371,9 +368,7 @@ impl TranscriptionEngine {
         let enc_dims: Vec<usize> = enc_shape.iter().map(|&d| d as usize).collect();
         let d_model = enc_dims[1]; // feature dimension (1024)
         let t_enc = enc_dims[2]; // time frames
-        tracing::info!(
-            "[DIAG] Encoder output: enc_dims={enc_dims:?}, d_model={d_model}, t_enc={t_enc}"
-        );
+        tracing::info!("[DIAG] Encoder output: enc_dims={enc_dims:?}, d_model={d_model}, t_enc={t_enc}");
 
         // Transpose from [D, T] to [T, D] so frame t is a contiguous slice at t * d_model.
         // Source layout (row-major, ignoring batch): element [d, t] = data[d * t_enc + t]
@@ -390,11 +385,7 @@ impl TranscriptionEngine {
             .try_extract_tensor::<i64>()
             .context("Failed to extract encoded lengths")?;
         let encoded_len = (enc_len_data[0] as usize).min(t_enc);
-        tracing::info!(
-            "[DIAG] Encoded length={encoded_len}, state1_dims={:?}, state2_dims={:?}",
-            self.state1_dims,
-            self.state2_dims
-        );
+        tracing::info!("[DIAG] Encoded length={encoded_len}, state1_dims={:?}, state2_dims={:?}", self.state1_dims, self.state2_dims);
 
         // 4. TDT greedy search: call decoder step-by-step over encoder frames
         let mut state1 =
@@ -436,25 +427,13 @@ impl TranscriptionEngine {
 
             if t == 0 {
                 let logit_dims: Vec<usize> = logit_shape.iter().map(|&d| d as usize).collect();
-                tracing::info!(
-                    "[DIAG] Decoder output shape: {logit_dims:?}, total logits={}, vocab_size={}",
-                    logits.len(),
-                    self.vocab_size
-                );
+                tracing::info!("[DIAG] Decoder output shape: {logit_dims:?}, total logits={}, vocab_size={}", logits.len(), self.vocab_size);
             }
 
             // TDT: split into vocab logits and duration logits
             if logits.len() < self.vocab_size {
-                tracing::error!(
-                    "[DIAG] Decoder output too small: {} < vocab_size {}",
-                    logits.len(),
-                    self.vocab_size
-                );
-                return Err(anyhow!(
-                    "Decoder output size {} smaller than vocab size {}",
-                    logits.len(),
-                    self.vocab_size
-                ));
+                tracing::error!("[DIAG] Decoder output too small: {} < vocab_size {}", logits.len(), self.vocab_size);
+                return Err(anyhow!("Decoder output size {} smaller than vocab size {}", logits.len(), self.vocab_size));
             }
             let vocab_logits = &logits[..self.vocab_size];
             let duration_logits = &logits[self.vocab_size..];
@@ -503,24 +482,12 @@ impl TranscriptionEngine {
         }
 
         // 5. Convert token IDs to text
-        tracing::info!(
-            "[DIAG] TDT decode: {}/{encoded_len} frames processed, {} tokens emitted, blank_idx={}",
-            t,
-            tokens.len(),
-            self.blank_idx
-        );
+        tracing::info!("[DIAG] TDT decode: {}/{encoded_len} frames processed, {} tokens emitted, blank_idx={}",
+            t, tokens.len(), self.blank_idx);
         if !tokens.is_empty() {
-            let sample: Vec<_> = tokens
-                .iter()
-                .take(10)
-                .map(|&id| {
-                    if id < self.vocab.len() {
-                        self.vocab[id].clone()
-                    } else {
-                        format!("?{id}")
-                    }
-                })
-                .collect();
+            let sample: Vec<_> = tokens.iter().take(10).map(|&id| {
+                if id < self.vocab.len() { self.vocab[id].clone() } else { format!("?{id}") }
+            }).collect();
             tracing::info!("[DIAG] First tokens: {sample:?}");
         }
         let mut text = String::new();

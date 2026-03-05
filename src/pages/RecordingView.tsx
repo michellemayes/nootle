@@ -129,9 +129,9 @@ export function RecordingView() {
   // Show error state if recording failed to start
   if (error && !isRecording) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-6 p-10">
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
         <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-6 text-center max-w-md">
-          <h2 className="text-lg font-serif font-semibold text-foreground mb-2">
+          <h2 className="text-lg font-semibold text-foreground mb-2">
             Recording Failed
           </h2>
           <p className="text-sm text-destructive mb-4">{error}</p>
