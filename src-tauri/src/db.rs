@@ -2,7 +2,7 @@ use crate::error::{NootleError, Result};
 use rusqlite::{ffi::sqlite3_auto_extension, params, Connection};
 use serde::{Deserialize, Serialize};
 use sqlite_vec::sqlite3_vec_init;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Meeting {
@@ -16,6 +16,7 @@ pub struct Meeting {
     pub calendar_event_id: Option<String>,
     pub raw_notes: Option<String>,
     pub enriched_notes: Option<String>,
+    pub template_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -25,6 +26,7 @@ pub struct NewMeeting {
     pub title: String,
     pub category_id: Option<String>,
     pub calendar_event_id: Option<String>,
+    pub template_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +67,14 @@ pub struct NewCategory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tag {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Prompt {
     pub id: String,
     pub name: String,
@@ -86,18 +96,23 @@ pub struct NewPrompt {
 pub struct Template {
     pub id: String,
     pub name: String,
+    pub description: String,
     pub category_id: Option<String>,
     pub sections: String,
     pub auto_apply_rules: String,
+    pub prompt: String,
+    pub is_builtin: bool,
     pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewTemplate {
     pub name: String,
+    pub description: String,
     pub category_id: Option<String>,
     pub sections: String,
     pub auto_apply_rules: String,
+    pub prompt: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -319,6 +334,37 @@ pub struct MeetingEngagement {
     pub back_and_forth_ratio: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScratchNote {
+    pub id: String,
+    pub meeting_id: String,
+    pub content: String,
+    pub timestamp_ms: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Recipe {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub slash_command: String,
+    pub prompt_template: String,
+    pub output_format: String,
+    pub is_builtin: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewRecipe {
+    pub name: String,
+    pub description: String,
+    pub slash_command: String,
+    pub prompt_template: String,
+    pub output_format: String,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -338,6 +384,12 @@ impl Database {
                 ) -> i32,
             >(sqlite3_vec_init as *const ())));
         });
+    }
+
+    fn lock_conn(&self) -> Result<MutexGuard<'_, Connection>> {
+        self.conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))
     }
 
     pub fn new(path: &str) -> Result<Self> {
@@ -361,10 +413,7 @@ impl Database {
     }
 
     fn initialize(&self) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS categories (
@@ -598,6 +647,39 @@ impl Database {
                 question_count INTEGER NOT NULL DEFAULT 0,
                 back_and_forth_ratio REAL NOT NULL DEFAULT 0.0
             );
+
+            CREATE TABLE IF NOT EXISTS tags (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                color TEXT NOT NULL DEFAULT '#6366f1',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS meeting_tags (
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                PRIMARY KEY (meeting_id, tag_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS scratch_notes (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                content TEXT NOT NULL,
+                timestamp_ms INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS recipes (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                slash_command TEXT NOT NULL UNIQUE,
+                prompt_template TEXT NOT NULL,
+                output_format TEXT NOT NULL DEFAULT 'markdown',
+                is_builtin INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             ",
         )?;
         Self::seed_default_insight_types(&conn)?;
@@ -605,6 +687,19 @@ impl Database {
         // Migrations: add notes columns to meetings
         let _ = conn.execute("ALTER TABLE meetings ADD COLUMN raw_notes TEXT", []);
         let _ = conn.execute("ALTER TABLE meetings ADD COLUMN enriched_notes TEXT", []);
+
+        // Migration: add description, prompt, is_builtin to templates (idempotent)
+        Self::run_template_migrations(&conn)?;
+
+        // Migration: add template_id to meetings (idempotent)
+        let _ = conn.execute(
+            "ALTER TABLE meetings ADD COLUMN template_id TEXT REFERENCES templates(id)",
+            [],
+        );
+
+        Self::seed_builtin_templates(&conn)?;
+
+        Self::seed_builtin_recipes(&conn)?;
 
         Ok(())
     }
@@ -632,11 +727,121 @@ impl Database {
         Ok(())
     }
 
+    fn run_template_migrations(conn: &rusqlite::Connection) -> Result<()> {
+        let mut has_description = false;
+        let mut has_prompt = false;
+        let mut has_is_builtin = false;
+
+        let mut stmt = conn.prepare("PRAGMA table_info(templates)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        for col in &columns {
+            match col.as_str() {
+                "description" => has_description = true,
+                "prompt" => has_prompt = true,
+                "is_builtin" => has_is_builtin = true,
+                _ => {}
+            }
+        }
+
+        if !has_description {
+            conn.execute(
+                "ALTER TABLE templates ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        if !has_prompt {
+            conn.execute(
+                "ALTER TABLE templates ADD COLUMN prompt TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        if !has_is_builtin {
+            conn.execute(
+                "ALTER TABLE templates ADD COLUMN is_builtin INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn seed_builtin_templates(conn: &rusqlite::Connection) -> Result<()> {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM templates WHERE is_builtin = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        if count > 0 {
+            return Ok(());
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let builtins: Vec<(&str, &str, &str, &str)> = vec![
+            (
+                "General",
+                "Default for any meeting",
+                "Summarize this meeting transcript. Include key discussion points, decisions made, and action items.",
+                r#"["Summary","Key Discussion Points","Decisions","Action Items"]"#,
+            ),
+            (
+                "1-on-1",
+                "Manager/report check-ins",
+                "Summarize this 1-on-1 meeting. Structure as: Updates, Feedback, Blockers, Action Items.",
+                r#"["Updates","Feedback","Blockers","Action Items"]"#,
+            ),
+            (
+                "Daily Standup",
+                "Quick team sync",
+                "Summarize this standup. For each speaker list: What they did, what they'll do, blockers.",
+                r#"["Yesterday","Today","Blockers"]"#,
+            ),
+            (
+                "Sprint Retro",
+                "What went well/poorly",
+                "Summarize this retrospective. Organize into: What Went Well, What Didn't, Action Items for Improvement.",
+                r#"["What Went Well","What Didn't Go Well","Action Items for Improvement"]"#,
+            ),
+            (
+                "Customer Call",
+                "External stakeholder meeting",
+                "Summarize this customer call. Include: Customer requests, commitments made, follow-ups needed, sentiment.",
+                r#"["Customer Requests","Commitments Made","Follow-ups","Sentiment"]"#,
+            ),
+            (
+                "User Interview",
+                "UX research session",
+                "Summarize this user interview. Capture: Key quotes, pain points, feature requests, surprising insights.",
+                r#"["Key Quotes","Pain Points","Feature Requests","Surprising Insights"]"#,
+            ),
+            (
+                "Brainstorm",
+                "Ideation session",
+                "Summarize this brainstorm session. List: Ideas proposed, ideas with most support, next steps to evaluate.",
+                r#"["Ideas Proposed","Ideas with Most Support","Next Steps"]"#,
+            ),
+            (
+                "All-Hands",
+                "Company-wide meeting",
+                "Summarize this all-hands meeting. Cover: Announcements, Q&A highlights, key decisions, action items.",
+                r#"["Announcements","Q&A Highlights","Key Decisions","Action Items"]"#,
+            ),
+        ];
+
+        for (name, description, prompt, sections) in builtins {
+            let id = uuid::Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO templates (id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at)
+                 VALUES (?1, ?2, ?3, NULL, ?4, '{}', ?5, 1, ?6)",
+                params![id, name, description, sections, prompt, now],
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn list_tables(&self) -> Result<Vec<String>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '%_fts%' AND name NOT LIKE '%_content%' AND name NOT LIKE '%_docsize%' AND name NOT LIKE '%_data%' AND name NOT LIKE '%_idx%' AND name NOT LIKE '%_config%'"
         )?;
@@ -647,18 +852,15 @@ impl Database {
     }
 
     pub fn create_meeting(&self, new: NewMeeting) -> Result<Meeting> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         let status = "recording";
 
         conn.execute(
-            "INSERT INTO meetings (id, title, start_time, category_id, status, calendar_event_id, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![id, new.title, now, new.category_id, status, new.calendar_event_id, now, now],
+            "INSERT INTO meetings (id, title, start_time, category_id, status, calendar_event_id, template_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![id, new.title, now, new.category_id, status, new.calendar_event_id, new.template_id, now, now],
         )?;
 
         Ok(Meeting {
@@ -672,18 +874,16 @@ impl Database {
             calendar_event_id: new.calendar_event_id,
             raw_notes: None,
             enriched_notes: None,
+            template_id: new.template_id,
             created_at: now.clone(),
             updated_at: now,
         })
     }
 
     pub fn get_meeting(&self, id: &str) -> Result<Meeting> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, created_at, updated_at
+            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at
              FROM meetings WHERE id = ?1",
         )?;
 
@@ -700,8 +900,9 @@ impl Database {
                     calendar_event_id: row.get(7)?,
                     raw_notes: row.get(8)?,
                     enriched_notes: row.get(9)?,
-                    created_at: row.get(10)?,
-                    updated_at: row.get(11)?,
+                    template_id: row.get(10)?,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
                 })
             })
             .map_err(|e| match e {
@@ -720,13 +921,10 @@ impl Database {
         search: Option<&str>,
         include_archived: bool,
     ) -> Result<Vec<Meeting>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
 
         let mut sql = String::from(
-            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, created_at, updated_at
+            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at
              FROM meetings"
         );
         let mut conditions: Vec<String> = Vec::new();
@@ -776,8 +974,9 @@ impl Database {
                     calendar_event_id: row.get(7)?,
                     raw_notes: row.get(8)?,
                     enriched_notes: row.get(9)?,
-                    created_at: row.get(10)?,
-                    updated_at: row.get(11)?,
+                    template_id: row.get(10)?,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -786,10 +985,14 @@ impl Database {
     }
 
     pub fn update_meeting_status(&self, id: &str, status: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        const VALID_STATUSES: &[&str] = &["recording", "transcribing", "summarized", "archived"];
+        if !VALID_STATUSES.contains(&status) {
+            return Err(NootleError::Other(format!(
+                "Invalid meeting status: {}",
+                status
+            )));
+        }
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
 
         conn.execute(
@@ -801,10 +1004,7 @@ impl Database {
     }
 
     pub fn update_meeting_title(&self, id: &str, title: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
 
         conn.execute(
@@ -816,10 +1016,7 @@ impl Database {
     }
 
     pub fn update_meeting_category(&self, id: &str, category_id: Option<&str>) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
 
         conn.execute(
@@ -831,10 +1028,7 @@ impl Database {
     }
 
     pub fn update_meeting_notes(&self, id: &str, raw_notes: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE meetings SET raw_notes = ?1, updated_at = ?2 WHERE id = ?3",
@@ -844,10 +1038,7 @@ impl Database {
     }
 
     pub fn update_meeting_enriched_notes(&self, id: &str, enriched_notes: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE meetings SET enriched_notes = ?1, updated_at = ?2 WHERE id = ?3",
@@ -863,10 +1054,7 @@ impl Database {
         audio_path: Option<&str>,
         status: &str,
     ) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
 
         conn.execute(
@@ -880,10 +1068,7 @@ impl Database {
     /// Fix any meetings stuck in "recording" or "transcribing" status from a previous crash.
     /// Sets them to "summarized" with end_time = now so they appear as completed.
     pub fn cleanup_stale_recordings(&self) -> Result<usize> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
 
         let count = conn.execute(
@@ -895,10 +1080,7 @@ impl Database {
     }
 
     pub fn delete_meeting(&self, id: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
 
         conn.execute("DELETE FROM meetings WHERE id = ?1", params![id])?;
 
@@ -908,10 +1090,7 @@ impl Database {
     // --- Categories ---
 
     pub fn create_category(&self, new: NewCategory) -> Result<Category> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         let color = new.color.unwrap_or_else(|| "#6366f1".to_string());
@@ -933,10 +1112,7 @@ impl Database {
     }
 
     pub fn list_categories(&self) -> Result<Vec<Category>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, name, color, icon, created_at FROM categories ORDER BY name ASC",
         )?;
@@ -963,10 +1139,7 @@ impl Database {
         color: &str,
         icon: &str,
     ) -> Result<Category> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE categories SET name = ?1, color = ?2, icon = ?3 WHERE id = ?4",
             params![name, color, icon, id],
@@ -993,11 +1166,469 @@ impl Database {
     }
 
     pub fn delete_category(&self, id: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute("DELETE FROM categories WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn create_tag(&self, name: &str, color: &str) -> Result<Tag> {
         let conn = self
             .conn
             .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
-        conn.execute("DELETE FROM categories WHERE id = ?1", params![id])?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO tags (id, name, color, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id, name, color, now],
+        )?;
+
+        Ok(Tag {
+            id,
+            name: name.to_string(),
+            color: color.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn list_tags(&self) -> Result<Vec<Tag>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, color, created_at FROM tags ORDER BY name ASC")?;
+
+        let tags = stmt
+            .query_map([], |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(tags)
+    }
+
+    pub fn update_tag(&self, id: &str, name: &str, color: &str) -> Result<Tag> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
+            params![name, color, id],
+        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, color, created_at FROM tags WHERE id = ?1")?;
+        let tag = stmt
+            .query_row(params![id], |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Tag not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+        Ok(tag)
+    }
+
+    pub fn delete_tag(&self, id: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute("DELETE FROM tags WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn add_meeting_tag(&self, meeting_id: &str, tag_id: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_tags (meeting_id, tag_id) VALUES (?1, ?2)",
+            params![meeting_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_meeting_tag(&self, meeting_id: &str, tag_id: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute(
+            "DELETE FROM meeting_tags WHERE meeting_id = ?1 AND tag_id = ?2",
+            params![meeting_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_meeting_tags(&self, meeting_id: &str) -> Result<Vec<Tag>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.name, t.color, t.created_at
+             FROM tags t
+             INNER JOIN meeting_tags mt ON mt.tag_id = t.id
+             WHERE mt.meeting_id = ?1
+             ORDER BY t.name ASC",
+        )?;
+
+        let tags = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(tags)
+    }
+
+    pub fn get_all_meeting_tags(&self) -> Result<Vec<(String, Tag)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT mt.meeting_id, t.id, t.name, t.color, t.created_at
+             FROM meeting_tags mt
+             INNER JOIN tags t ON mt.tag_id = t.id
+             ORDER BY t.name ASC",
+        )?;
+
+        let results = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    Tag {
+                        id: row.get(1)?,
+                        name: row.get(2)?,
+                        color: row.get(3)?,
+                        created_at: row.get(4)?,
+                    },
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(results)
+    }
+
+    pub fn add_scratch_note(
+        &self,
+        meeting_id: &str,
+        content: &str,
+        timestamp_ms: i64,
+    ) -> Result<ScratchNote> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO scratch_notes (id, meeting_id, content, timestamp_ms, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, meeting_id, content, timestamp_ms, now],
+        )?;
+
+        Ok(ScratchNote {
+            id,
+            meeting_id: meeting_id.to_string(),
+            content: content.to_string(),
+            timestamp_ms,
+            created_at: now,
+        })
+    }
+
+    pub fn get_scratch_notes(&self, meeting_id: &str) -> Result<Vec<ScratchNote>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, meeting_id, content, timestamp_ms, created_at
+             FROM scratch_notes
+             WHERE meeting_id = ?1
+             ORDER BY timestamp_ms ASC",
+        )?;
+
+        let notes = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok(ScratchNote {
+                    id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    content: row.get(2)?,
+                    timestamp_ms: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(notes)
+    }
+
+    pub fn delete_scratch_note(&self, id: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute("DELETE FROM scratch_notes WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    fn seed_builtin_recipes(conn: &rusqlite::Connection) -> Result<()> {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM recipes WHERE is_builtin = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        if count > 0 {
+            return Ok(());
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let builtins: Vec<(&str, &str, &str, &str)> = vec![
+            (
+                "brief",
+                "Write Brief",
+                "Turn a brainstorm into a structured brief",
+                "Based on this meeting transcript:\n\n{{transcript}}\n\nWrite a structured project brief with: Objective, Background, Scope, Key Requirements, Timeline, and Next Steps.",
+            ),
+            (
+                "followup",
+                "Draft Follow-up",
+                "Draft a follow-up email",
+                "Based on this meeting:\n\n{{transcript}}\n\nDraft a concise follow-up email summarizing what was discussed and listing next steps for each participant.",
+            ),
+            (
+                "tickets",
+                "Extract Tickets",
+                "Extract work items as tickets",
+                "From this meeting transcript:\n\n{{transcript}}\n\nExtract discrete work items as tickets. For each: Title, Description, Assignee (if mentioned), Priority (if implied).",
+            ),
+            (
+                "recap",
+                "Meeting Recap",
+                "Casual recap for Slack",
+                "Create a brief, casual recap of this meeting suitable for posting in a Slack channel:\n\n{{transcript}}",
+            ),
+            (
+                "decisions",
+                "List Decisions",
+                "Extract all decisions made",
+                "From this transcript, extract every decision that was made. For each: What was decided, who made the call, and any conditions or caveats:\n\n{{transcript}}",
+            ),
+        ];
+
+        for (slash_command, name, description, prompt_template) in builtins {
+            let id = uuid::Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO recipes (id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'markdown', 1, ?6, ?7)",
+                params![id, name, description, slash_command, prompt_template, now, now],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn create_recipe(&self, new: NewRecipe) -> Result<Recipe> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO recipes (id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8)",
+            params![id, new.name, new.description, new.slash_command, new.prompt_template, new.output_format, now, now],
+        )?;
+
+        Ok(Recipe {
+            id,
+            name: new.name,
+            description: new.description,
+            slash_command: new.slash_command,
+            prompt_template: new.prompt_template,
+            output_format: new.output_format,
+            is_builtin: false,
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    pub fn list_recipes(&self) -> Result<Vec<Recipe>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
+             FROM recipes ORDER BY is_builtin DESC, name ASC",
+        )?;
+
+        let recipes = stmt
+            .query_map([], |row| {
+                Ok(Recipe {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    slash_command: row.get(3)?,
+                    prompt_template: row.get(4)?,
+                    output_format: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(recipes)
+    }
+
+    pub fn get_recipe(&self, id: &str) -> Result<Recipe> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
+             FROM recipes WHERE id = ?1",
+        )?;
+
+        let recipe = stmt
+            .query_row(params![id], |row| {
+                Ok(Recipe {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    slash_command: row.get(3)?,
+                    prompt_template: row.get(4)?,
+                    output_format: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Recipe not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(recipe)
+    }
+
+    pub fn get_recipe_by_command(&self, slash_command: &str) -> Result<Recipe> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
+             FROM recipes WHERE slash_command = ?1",
+        )?;
+
+        let recipe = stmt
+            .query_row(params![slash_command], |row| {
+                Ok(Recipe {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    slash_command: row.get(3)?,
+                    prompt_template: row.get(4)?,
+                    output_format: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Recipe not found for command: {}", slash_command))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(recipe)
+    }
+
+    pub fn update_recipe(
+        &self,
+        id: &str,
+        name: &str,
+        description: &str,
+        slash_command: &str,
+        prompt_template: &str,
+        output_format: &str,
+    ) -> Result<Recipe> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "UPDATE recipes SET name = ?1, description = ?2, slash_command = ?3, prompt_template = ?4, output_format = ?5, updated_at = ?6 WHERE id = ?7",
+            params![name, description, slash_command, prompt_template, output_format, now, id],
+        )?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
+             FROM recipes WHERE id = ?1",
+        )?;
+
+        let recipe = stmt
+            .query_row(params![id], |row| {
+                Ok(Recipe {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    slash_command: row.get(3)?,
+                    prompt_template: row.get(4)?,
+                    output_format: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Recipe not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(recipe)
+    }
+
+    pub fn delete_recipe(&self, id: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        conn.execute("DELETE FROM recipes WHERE id = ?1", params![id])?;
         Ok(())
     }
 
@@ -1007,10 +1638,7 @@ impl Database {
         &self,
         new: NewTranscriptSegment,
     ) -> Result<TranscriptSegment> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
 
         conn.execute(
@@ -1039,10 +1667,7 @@ impl Database {
     }
 
     pub fn get_transcript(&self, meeting_id: &str) -> Result<Vec<TranscriptSegment>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, meeting_id, speaker_label, text, start_ms, end_ms, confidence
              FROM transcripts WHERE meeting_id = ?1 ORDER BY start_ms ASC",
@@ -1068,10 +1693,7 @@ impl Database {
     // --- Prompts ---
 
     pub fn create_prompt(&self, new: NewPrompt) -> Result<Prompt> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         let is_favorite = new.is_favorite as i32;
@@ -1094,10 +1716,7 @@ impl Database {
     }
 
     pub fn list_prompts(&self) -> Result<Vec<Prompt>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, name, content, is_favorite, is_auto_run, created_at
              FROM prompts ORDER BY created_at DESC",
@@ -1120,10 +1739,7 @@ impl Database {
     }
 
     pub fn get_prompt(&self, id: &str) -> Result<Prompt> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, name, content, is_favorite, is_auto_run, created_at
              FROM prompts WHERE id = ?1",
@@ -1151,10 +1767,7 @@ impl Database {
     }
 
     pub fn get_auto_run_prompts(&self) -> Result<Vec<Prompt>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, name, content, is_favorite, is_auto_run, created_at
              FROM prompts WHERE is_auto_run = 1 ORDER BY created_at DESC",
@@ -1177,10 +1790,7 @@ impl Database {
     }
 
     pub fn delete_prompt(&self, id: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         conn.execute("DELETE FROM prompts WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -1193,7 +1803,7 @@ impl Database {
         is_favorite: bool,
         is_auto_run: bool,
     ) -> Result<Prompt> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let is_fav = is_favorite as i32;
         let is_auto = is_auto_run as i32;
 
@@ -1231,22 +1841,21 @@ impl Database {
     // --- Templates ---
 
     pub fn create_template(&self, new: NewTemplate) -> Result<Template> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
 
         conn.execute(
-            "INSERT INTO templates (id, name, category_id, sections, auto_apply_rules, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO templates (id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
             params![
                 id,
                 new.name,
+                new.description,
                 new.category_id,
                 new.sections,
                 new.auto_apply_rules,
+                new.prompt,
                 now
             ],
         )?;
@@ -1254,21 +1863,21 @@ impl Database {
         Ok(Template {
             id,
             name: new.name,
+            description: new.description,
             category_id: new.category_id,
             sections: new.sections,
             auto_apply_rules: new.auto_apply_rules,
+            prompt: new.prompt,
+            is_builtin: false,
             created_at: now,
         })
     }
 
     pub fn list_templates(&self) -> Result<Vec<Template>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, category_id, sections, auto_apply_rules, created_at
-             FROM templates ORDER BY created_at DESC",
+            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at
+             FROM templates ORDER BY is_builtin DESC, created_at DESC",
         )?;
 
         let templates = stmt
@@ -1276,10 +1885,13 @@ impl Database {
                 Ok(Template {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    category_id: row.get(2)?,
-                    sections: row.get(3)?,
-                    auto_apply_rules: row.get(4)?,
-                    created_at: row.get(5)?,
+                    description: row.get(2)?,
+                    category_id: row.get(3)?,
+                    sections: row.get(4)?,
+                    auto_apply_rules: row.get(5)?,
+                    prompt: row.get(6)?,
+                    is_builtin: row.get::<_, i32>(7)? != 0,
+                    created_at: row.get(8)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1288,10 +1900,19 @@ impl Database {
     }
 
     pub fn delete_template(&self, id: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
+        let is_builtin: bool = conn
+            .query_row(
+                "SELECT is_builtin FROM templates WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, i32>(0).map(|v| v != 0),
+            )
+            .map_err(|_| NootleError::Other("Template not found".to_string()))?;
+        if is_builtin {
+            return Err(NootleError::Other(
+                "Cannot delete built-in templates".to_string(),
+            ));
+        }
         conn.execute("DELETE FROM templates WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -1300,19 +1921,21 @@ impl Database {
         &self,
         id: &str,
         name: &str,
+        description: &str,
         category_id: Option<&str>,
         sections: &str,
         auto_apply_rules: &str,
+        prompt: &str,
     ) -> Result<Template> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
 
         conn.execute(
-            "UPDATE templates SET name = ?1, category_id = ?2, sections = ?3, auto_apply_rules = ?4 WHERE id = ?5",
-            params![name, category_id, sections, auto_apply_rules, id],
+            "UPDATE templates SET name = ?1, description = ?2, category_id = ?3, sections = ?4, auto_apply_rules = ?5, prompt = ?6 WHERE id = ?7",
+            params![name, description, category_id, sections, auto_apply_rules, prompt, id],
         )?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, name, category_id, sections, auto_apply_rules, created_at
+            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at
              FROM templates WHERE id = ?1",
         )?;
 
@@ -1321,10 +1944,13 @@ impl Database {
                 Ok(Template {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    category_id: row.get(2)?,
-                    sections: row.get(3)?,
-                    auto_apply_rules: row.get(4)?,
-                    created_at: row.get(5)?,
+                    description: row.get(2)?,
+                    category_id: row.get(3)?,
+                    sections: row.get(4)?,
+                    auto_apply_rules: row.get(5)?,
+                    prompt: row.get(6)?,
+                    is_builtin: row.get::<_, i32>(7)? != 0,
+                    created_at: row.get(8)?,
                 })
             })
             .map_err(|e| match e {
@@ -1340,10 +1966,7 @@ impl Database {
     // --- Summaries ---
 
     pub fn create_summary(&self, new: NewSummary) -> Result<Summary> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -1365,10 +1988,7 @@ impl Database {
     }
 
     pub fn get_summaries_for_meeting(&self, meeting_id: &str) -> Result<Vec<Summary>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, meeting_id, prompt_id, provider, model, content, created_at
              FROM summaries WHERE meeting_id = ?1 ORDER BY created_at DESC",
@@ -1394,10 +2014,7 @@ impl Database {
     // --- Linear Tickets ---
 
     pub fn create_linear_ticket(&self, params: NewLinearTicket<'_>) -> Result<LinearTicket> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -1422,10 +2039,7 @@ impl Database {
     }
 
     pub fn get_linear_tickets(&self, meeting_id: &str) -> Result<Vec<LinearTicket>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, summary_id, meeting_id, linear_issue_id, linear_issue_url, linear_identifier, title, team_id, project_id, created_at
              FROM linear_tickets WHERE meeting_id = ?1 ORDER BY created_at DESC",
@@ -1452,10 +2066,7 @@ impl Database {
     }
 
     pub fn get_summary(&self, id: &str) -> Result<Summary> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, meeting_id, prompt_id, provider, model, content, created_at
              FROM summaries WHERE id = ?1",
@@ -1481,25 +2092,55 @@ impl Database {
     }
 
     // --- API Keys ---
+    //
+    // Keys are now stored in the macOS Keychain via the `keychain` module.
+    // The `api_keys` SQLite table is kept for backward compatibility during
+    // migration only.  All reads/writes go to the Keychain; if the Keychain is
+    // unavailable we fall back to SQLite with a warning.
 
     pub fn store_api_key(&self, provider: &str, key: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
-        conn.execute(
-            "INSERT INTO api_keys (provider, key_value) VALUES (?1, ?2)
-             ON CONFLICT(provider) DO UPDATE SET key_value = excluded.key_value",
-            params![provider, key],
-        )?;
-        Ok(())
+        match crate::keychain::store_key(provider, key) {
+            Ok(()) => {
+                // Best-effort: remove any legacy SQLite copy so the plaintext
+                // row does not linger.
+                if let Ok(conn) = self.lock_conn() {
+                    let _ = conn.execute(
+                        "DELETE FROM api_keys WHERE provider = ?1",
+                        params![provider],
+                    );
+                }
+                Ok(())
+            }
+            Err(kc_err) => {
+                tracing::warn!(
+                    "Keychain unavailable for store (provider={provider}): {kc_err}. Falling back to SQLite."
+                );
+                let conn = self.lock_conn()?;
+                conn.execute(
+                    "INSERT INTO api_keys (provider, key_value) VALUES (?1, ?2)
+                     ON CONFLICT(provider) DO UPDATE SET key_value = excluded.key_value",
+                    params![provider, key],
+                )?;
+                Ok(())
+            }
+        }
     }
 
     pub fn get_api_key(&self, provider: &str) -> Result<Option<String>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        match crate::keychain::get_key(provider) {
+            Ok(Some(value)) => return Ok(Some(value)),
+            Ok(None) => {
+                // Nothing in Keychain; fall through to check legacy SQLite row.
+            }
+            Err(kc_err) => {
+                tracing::warn!(
+                    "Keychain unavailable for get (provider={provider}): {kc_err}. Falling back to SQLite."
+                );
+            }
+        }
+
+        // Legacy SQLite fallback
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT key_value FROM api_keys WHERE provider = ?1")?;
         match stmt.query_row(params![provider], |row| row.get::<_, String>(0)) {
             Ok(value) => Ok(Some(value)),
@@ -1509,10 +2150,13 @@ impl Database {
     }
 
     pub fn delete_api_key(&self, provider: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        // Delete from Keychain (errors are logged but not fatal).
+        if let Err(e) = crate::keychain::delete_key(provider) {
+            tracing::warn!("Keychain delete error for provider={provider}: {e}");
+        }
+
+        // Also remove any legacy SQLite row.
+        let conn = self.lock_conn()?;
         conn.execute(
             "DELETE FROM api_keys WHERE provider = ?1",
             params![provider],
@@ -1521,10 +2165,17 @@ impl Database {
     }
 
     pub fn list_api_key_providers(&self) -> Result<Vec<String>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        // Primary source: Keychain
+        match crate::keychain::list_providers() {
+            Ok(providers) if !providers.is_empty() => return Ok(providers),
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!("Keychain list error: {e}. Falling back to SQLite.");
+            }
+        }
+
+        // Legacy SQLite fallback
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT provider FROM api_keys ORDER BY provider ASC")?;
         let providers = stmt
             .query_map([], |row| row.get::<_, String>(0))?
@@ -1532,13 +2183,104 @@ impl Database {
         Ok(providers)
     }
 
+    /// Migrate any API keys stored in the legacy SQLite `api_keys` table and
+    /// the `linear_settings` `api_key` entry to the macOS Keychain, then
+    /// delete the plaintext rows from SQLite.
+    pub fn migrate_keys_to_keychain(&self) {
+        // --- LLM provider keys from api_keys table ---
+        let legacy_llm_keys: Vec<(String, String)> = {
+            match self.lock_conn() {
+                Ok(conn) => match conn.prepare("SELECT provider, key_value FROM api_keys") {
+                    Ok(mut stmt) => stmt
+                        .query_map([], |row| {
+                            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                        })
+                        .and_then(|rows| rows.collect::<std::result::Result<Vec<_>, _>>())
+                        .unwrap_or_default(),
+                    Err(_) => vec![],
+                },
+                Err(_) => vec![],
+            }
+        };
+
+        for (provider, key) in legacy_llm_keys {
+            match crate::keychain::store_key(&provider, &key) {
+                Ok(()) => {
+                    tracing::info!("Migrated API key for provider='{provider}' to Keychain.");
+                    if let Ok(conn) = self.lock_conn() {
+                        let _ = conn.execute(
+                            "DELETE FROM api_keys WHERE provider = ?1",
+                            params![provider],
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Could not migrate API key for provider='{provider}' to Keychain: {e}. Key remains in SQLite."
+                    );
+                }
+            }
+        }
+
+        // --- Linear API key from linear_settings ---
+        let linear_key: Option<String> = {
+            match self.lock_conn() {
+                Ok(conn) => {
+                    match conn.prepare("SELECT value FROM linear_settings WHERE key = 'api_key'") {
+                        Ok(mut stmt) => stmt.query_row([], |row| row.get::<_, String>(0)).ok(),
+                        Err(_) => None,
+                    }
+                }
+                Err(_) => None,
+            }
+        };
+
+        if let Some(key) = linear_key {
+            match crate::keychain::store_key("linear", &key) {
+                Ok(()) => {
+                    tracing::info!("Migrated Linear API key to Keychain.");
+                    if let Ok(conn) = self.lock_conn() {
+                        let _ =
+                            conn.execute("DELETE FROM linear_settings WHERE key = 'api_key'", []);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Could not migrate Linear API key to Keychain: {e}. Key remains in SQLite."
+                    );
+                }
+            }
+        }
+    }
+
     // --- Linear Settings ---
+    //
+    // The `api_key` sub-key is stored in the Keychain (provider name "linear").
+    // All other Linear settings remain in the SQLite `linear_settings` table.
 
     pub fn get_linear_setting(&self, key: &str) -> Result<Option<String>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        if key == "api_key" {
+            // Primary: Keychain
+            match crate::keychain::get_key("linear") {
+                Ok(Some(value)) => return Ok(Some(value)),
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        "Keychain get error for linear api_key: {e}. Falling back to SQLite."
+                    );
+                }
+            }
+            // Legacy SQLite fallback for linear api_key
+            let conn = self.lock_conn()?;
+            let mut stmt = conn.prepare("SELECT value FROM linear_settings WHERE key = ?1")?;
+            return match stmt.query_row(params![key], |row| row.get::<_, String>(0)) {
+                Ok(value) => Ok(Some(value)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(e.into()),
+            };
+        }
+
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT value FROM linear_settings WHERE key = ?1")?;
         match stmt.query_row(params![key], |row| row.get::<_, String>(0)) {
             Ok(value) => Ok(Some(value)),
@@ -1548,10 +2290,25 @@ impl Database {
     }
 
     pub fn set_linear_setting(&self, key: &str, value: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        if key == "api_key" {
+            match crate::keychain::store_key("linear", value) {
+                Ok(()) => {
+                    // Remove any legacy SQLite copy.
+                    if let Ok(conn) = self.lock_conn() {
+                        let _ =
+                            conn.execute("DELETE FROM linear_settings WHERE key = 'api_key'", []);
+                    }
+                    return Ok(());
+                }
+                Err(kc_err) => {
+                    tracing::warn!(
+                        "Keychain unavailable for linear api_key: {kc_err}. Falling back to SQLite."
+                    );
+                }
+            }
+        }
+
+        let conn = self.lock_conn()?;
         conn.execute(
             "INSERT INTO linear_settings (key, value) VALUES (?1, ?2)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1561,7 +2318,13 @@ impl Database {
     }
 
     pub fn delete_linear_setting(&self, key: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        if key == "api_key" {
+            if let Err(e) = crate::keychain::delete_key("linear") {
+                tracing::warn!("Keychain delete error for linear api_key: {e}");
+            }
+        }
+
+        let conn = self.lock_conn()?;
         conn.execute("DELETE FROM linear_settings WHERE key = ?1", params![key])?;
         Ok(())
     }
@@ -1569,10 +2332,7 @@ impl Database {
     // --- FTS5 Search ---
 
     pub fn search_transcripts(&self, query: &str) -> Result<Vec<TranscriptSearchResult>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         // Sanitize for FTS5: escape internal double quotes and wrap as phrase
         let safe_query = format!("\"{}\"", query.replace('"', "\"\""));
         let mut stmt = conn.prepare(
@@ -1603,7 +2363,7 @@ impl Database {
     // --- Transcript Chunks & Embeddings ---
 
     pub fn insert_chunk(&self, chunk: &TranscriptChunk) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "INSERT INTO transcript_chunks (id, meeting_id, chunk_index, text, start_ms, end_ms, speaker_labels)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -1621,7 +2381,7 @@ impl Database {
     }
 
     pub fn insert_chunk_embedding(&self, chunk_id: &str, embedding: &[f32]) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let bytes = f32_slice_to_bytes(embedding);
         conn.execute(
             "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (?1, ?2)",
@@ -1638,7 +2398,7 @@ impl Database {
         date_from: Option<&str>,
         date_to: Option<&str>,
     ) -> Result<Vec<ChunkSearchResult>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let query_bytes = f32_slice_to_bytes(query_embedding);
 
         // First get KNN results from vec0, then join with metadata and apply filters.
@@ -1714,7 +2474,7 @@ impl Database {
     }
 
     pub fn get_embedding_status(&self) -> Result<(u32, u32)> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
 
         let embedded_count: u32 = conn.query_row(
             "SELECT COUNT(DISTINCT tc.meeting_id) FROM transcript_chunks tc
@@ -1733,7 +2493,7 @@ impl Database {
     }
 
     pub fn has_meeting_chunks(&self, meeting_id: &str) -> Result<bool> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let count: u32 = conn.query_row(
             "SELECT COUNT(*) FROM transcript_chunks WHERE meeting_id = ?1",
             params![meeting_id],
@@ -1743,7 +2503,7 @@ impl Database {
     }
 
     pub fn delete_meeting_chunks(&self, meeting_id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         // Delete embeddings first (referencing chunks), then chunks
         conn.execute(
             "DELETE FROM chunk_embeddings WHERE chunk_id IN (
@@ -1761,7 +2521,7 @@ impl Database {
     // --- Insights ---
 
     pub fn create_insight(&self, new: NewInsight) -> Result<Insight> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -1782,7 +2542,7 @@ impl Database {
     }
 
     pub fn get_insights_for_meeting(&self, meeting_id: &str) -> Result<Vec<InsightWithActionItem>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT i.id, i.meeting_id, i.type, i.content, i.context, i.transcript_start_ms, i.transcript_end_ms, i.created_at,
                     a.id, a.assignee, a.due_date, a.status, a.linear_ticket_id, a.updated_at,
@@ -1824,7 +2584,7 @@ impl Database {
         status: Option<&str>,
         search: Option<&str>,
     ) -> Result<Vec<InsightWithActionItem>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut sql = String::from(
             "SELECT i.id, i.meeting_id, i.type, i.content, i.context, i.transcript_start_ms, i.transcript_end_ms, i.created_at,
                     a.id, a.assignee, a.due_date, a.status, a.linear_ticket_id, a.updated_at,
@@ -1841,15 +2601,20 @@ impl Database {
             param_values.push(Box::new(t.to_string()));
         }
         if let Some(s) = status {
-            conditions.push(format!("a.status = ?{}", param_values.len() + 1));
+            conditions.push(format!(
+                "(a.status = ?{} OR a.status IS NULL)",
+                param_values.len() + 1
+            ));
             param_values.push(Box::new(s.to_string()));
         }
         if let Some(q) = search {
+            // Sanitize for FTS5: escape internal double quotes and wrap as phrase
+            let safe_query = format!("\"{}\"", q.replace('"', "\"\""));
             conditions.push(format!(
                 "i.rowid IN (SELECT rowid FROM insights_fts WHERE insights_fts MATCH ?{})",
                 param_values.len() + 1
             ));
-            param_values.push(Box::new(q.to_string()));
+            param_values.push(Box::new(safe_query));
         }
         if !conditions.is_empty() {
             sql.push_str(" WHERE ");
@@ -1889,7 +2654,7 @@ impl Database {
         &self,
         action_item_id: &str,
     ) -> Result<InsightWithActionItem> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT i.id, i.meeting_id, i.type, i.content, i.context, i.transcript_start_ms, i.transcript_end_ms, i.created_at,
                     a.id, a.assignee, a.due_date, a.status, a.linear_ticket_id, a.updated_at,
@@ -1930,7 +2695,7 @@ impl Database {
     }
 
     pub fn delete_insights_for_meeting(&self, meeting_id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "DELETE FROM insights WHERE meeting_id = ?1",
             params![meeting_id],
@@ -1939,7 +2704,7 @@ impl Database {
     }
 
     pub fn create_action_item(&self, new: NewActionItem) -> Result<ActionItem> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -1959,7 +2724,7 @@ impl Database {
     }
 
     pub fn update_action_item_status(&self, id: &str, status: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE action_items SET status = ?1, updated_at = ?2 WHERE id = ?3",
@@ -1974,7 +2739,7 @@ impl Database {
         assignee: Option<&str>,
         due_date: Option<&str>,
     ) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE action_items SET assignee = ?1, due_date = ?2, updated_at = ?3 WHERE id = ?4",
@@ -1984,7 +2749,7 @@ impl Database {
     }
 
     pub fn set_action_item_linear_ticket(&self, id: &str, linear_ticket_id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE action_items SET linear_ticket_id = ?1, updated_at = ?2 WHERE id = ?3",
@@ -1999,7 +2764,7 @@ impl Database {
         provider: &str,
         model: &str,
     ) -> Result<ExtractionRun> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -2018,7 +2783,7 @@ impl Database {
     }
 
     pub fn update_extraction_run_status(&self, id: &str, status: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE extraction_runs SET status = ?1 WHERE id = ?2",
             params![status, id],
@@ -2029,7 +2794,7 @@ impl Database {
     // --- Insight Types ---
 
     pub fn list_insight_types(&self) -> Result<Vec<InsightType>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, name, slug, description, extraction_prompt, icon, has_action_fields, is_builtin, sort_order, created_at
              FROM insight_types ORDER BY sort_order ASC, created_at ASC",
@@ -2062,7 +2827,7 @@ impl Database {
         icon: &str,
         has_action_fields: bool,
     ) -> Result<InsightType> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         let max_sort: i32 = conn.query_row(
@@ -2098,7 +2863,7 @@ impl Database {
         icon: &str,
         has_action_fields: bool,
     ) -> Result<InsightType> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE insight_types SET name = ?1, description = ?2, extraction_prompt = ?3, icon = ?4, has_action_fields = ?5 WHERE id = ?6",
             params![name, description, extraction_prompt, icon, has_action_fields as i32, id],
@@ -2125,7 +2890,7 @@ impl Database {
     }
 
     pub fn delete_insight_type(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let is_builtin: i32 = conn
             .query_row(
                 "SELECT is_builtin FROM insight_types WHERE id = ?1",
@@ -2145,10 +2910,7 @@ impl Database {
     // --- App Settings ---
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT value FROM app_settings WHERE key = ?1")?;
         let result = stmt.query_row(params![key], |row| row.get::<_, String>(0));
         match result {
@@ -2159,10 +2921,7 @@ impl Database {
     }
 
     pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
             params![key, value],
@@ -2173,7 +2932,7 @@ impl Database {
     // --- Chat Conversations ---
 
     pub fn create_chat_conversation(&self) -> Result<ChatConversation> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -2189,7 +2948,7 @@ impl Database {
     }
 
     pub fn list_chat_conversations(&self) -> Result<Vec<ChatConversation>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, title, created_at, updated_at FROM chat_conversations ORDER BY updated_at DESC",
         )?;
@@ -2207,7 +2966,7 @@ impl Database {
     }
 
     pub fn update_chat_conversation_title(&self, id: &str, title: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE chat_conversations SET title = ?1 WHERE id = ?2",
             params![title, id],
@@ -2216,7 +2975,7 @@ impl Database {
     }
 
     pub fn touch_chat_conversation(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE chat_conversations SET updated_at = ?1 WHERE id = ?2",
@@ -2226,7 +2985,7 @@ impl Database {
     }
 
     pub fn delete_chat_conversation(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute("DELETE FROM chat_conversations WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -2238,7 +2997,7 @@ impl Database {
         content: &str,
         sources_json: Option<&str>,
     ) -> Result<ChatMessage> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
@@ -2256,7 +3015,7 @@ impl Database {
     }
 
     pub fn list_chat_messages(&self, conversation_id: &str) -> Result<Vec<ChatMessage>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, conversation_id, role, content, sources_json, created_at FROM chat_messages WHERE conversation_id = ?1 ORDER BY created_at ASC",
         )?;
@@ -2278,10 +3037,7 @@ impl Database {
     // --- Meeting Analytics ---
 
     pub fn save_speaker_analytics(&self, analytics: &[SpeakerAnalytics]) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         for a in analytics {
             conn.execute(
                 "INSERT OR REPLACE INTO meeting_analytics (id, meeting_id, speaker_label, talk_time_ms, turn_count, interruption_count, avg_turn_length_ms, longest_monologue_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -2292,10 +3048,7 @@ impl Database {
     }
 
     pub fn get_speaker_analytics(&self, meeting_id: &str) -> Result<Vec<SpeakerAnalytics>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, meeting_id, speaker_label, talk_time_ms, turn_count, interruption_count, avg_turn_length_ms, longest_monologue_ms FROM meeting_analytics WHERE meeting_id = ?1"
         )?;
@@ -2317,10 +3070,7 @@ impl Database {
     }
 
     pub fn save_sentiment_segments(&self, segments: &[SentimentSegment]) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         for s in segments {
             conn.execute(
                 "INSERT OR REPLACE INTO sentiment_segments (id, meeting_id, start_ms, end_ms, sentiment, score) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -2331,10 +3081,7 @@ impl Database {
     }
 
     pub fn get_sentiment_segments(&self, meeting_id: &str) -> Result<Vec<SentimentSegment>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, meeting_id, start_ms, end_ms, sentiment, score FROM sentiment_segments WHERE meeting_id = ?1 ORDER BY start_ms"
         )?;
@@ -2354,10 +3101,7 @@ impl Database {
     }
 
     pub fn save_engagement(&self, engagement: &MeetingEngagement) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         conn.execute(
             "INSERT OR REPLACE INTO meeting_engagement (id, meeting_id, engagement_level, participation_balance, question_count, back_and_forth_ratio) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![engagement.id, engagement.meeting_id, engagement.engagement_level, engagement.participation_balance, engagement.question_count, engagement.back_and_forth_ratio],
@@ -2366,10 +3110,7 @@ impl Database {
     }
 
     pub fn get_engagement(&self, meeting_id: &str) -> Result<Option<MeetingEngagement>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, meeting_id, engagement_level, participation_balance, question_count, back_and_forth_ratio FROM meeting_engagement WHERE meeting_id = ?1"
         )?;

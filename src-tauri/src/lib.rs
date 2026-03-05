@@ -9,6 +9,7 @@ pub mod diarization;
 pub mod embedding;
 pub mod error;
 pub mod extraction;
+pub mod keychain;
 pub mod linear;
 pub mod llm;
 pub mod mcp;
@@ -33,7 +34,9 @@ pub fn run() {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let app_dir = dirs::data_dir().unwrap().join("Nootle");
+    let app_dir = dirs::data_dir()
+        .expect("Could not determine data directory")
+        .join("Nootle");
     std::fs::create_dir_all(&app_dir).unwrap();
     let db_path = app_dir.join("nootle.db");
     let db = std::sync::Arc::new(db::Database::new(db_path.to_str().unwrap()).unwrap());
@@ -44,6 +47,9 @@ pub fn run() {
         Ok(n) => tracing::info!("Cleaned up {n} stale recording(s) from previous session"),
         Err(e) => tracing::warn!("Failed to clean up stale recordings: {e}"),
     }
+
+    // Migrate any plaintext API keys from SQLite to the macOS Keychain.
+    db.migrate_keys_to_keychain();
 
     let recording_state: RecordingState = Arc::new(TokioMutex::new(None));
 
@@ -60,7 +66,7 @@ pub fn run() {
         llm_registry.register(Box::new(OllamaProvider::new()));
     }
 
-    // Register providers with stored API keys
+    // Register providers with stored API keys (read from Keychain via db.get_api_key).
     if let Ok(Some(key)) = db.get_api_key("openai") {
         llm_registry.register(Box::new(llm::OpenAiProvider::new(key)));
     }
@@ -227,8 +233,8 @@ pub fn run() {
                     let detection_enabled = db_for_detection
                         .get_setting("detection_enabled")
                         .unwrap_or(None)
-                        .map(|v| v != "false")
-                        .unwrap_or(true);
+                        .map(|v| v == "true")
+                        .unwrap_or(false);
 
                     if !detection_enabled {
                         continue;
@@ -285,12 +291,29 @@ pub fn run() {
             commands::list_categories,
             commands::update_category,
             commands::delete_category,
+            commands::create_tag,
+            commands::list_tags,
+            commands::update_tag,
+            commands::delete_tag,
+            commands::add_meeting_tag,
+            commands::remove_meeting_tag,
+            commands::get_meeting_tags,
+            commands::get_all_meeting_tags,
+            commands::add_scratch_note,
+            commands::get_scratch_notes,
+            commands::delete_scratch_note,
             commands::get_transcript,
             commands::search_transcripts,
             commands::create_prompt,
             commands::list_prompts,
             commands::delete_prompt,
             commands::update_prompt,
+            commands::create_recipe,
+            commands::list_recipes,
+            commands::get_recipe,
+            commands::update_recipe,
+            commands::delete_recipe,
+            commands::run_recipe,
             commands::create_template,
             commands::list_templates,
             commands::delete_template,

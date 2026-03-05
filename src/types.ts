@@ -9,6 +9,7 @@ export interface Meeting {
   calendar_event_id: string | null;
   raw_notes: string | null;
   enriched_notes: string | null;
+  template_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -31,6 +32,18 @@ export interface Category {
   created_at: string;
 }
 
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
+export interface MeetingTagEntry {
+  meeting_id: string;
+  tag: Tag;
+}
+
 export interface Prompt {
   id: string;
   name: string;
@@ -43,9 +56,12 @@ export interface Prompt {
 export interface Template {
   id: string;
   name: string;
+  description: string;
   category_id: string | null;
   sections: string;
   auto_apply_rules: string;
+  prompt: string;
+  is_builtin: boolean;
   created_at: string;
 }
 
@@ -150,6 +166,26 @@ export interface ChatMessageRecord {
   content: string;
   sources_json: string | null;
   created_at: string;
+}
+
+export interface ScratchNote {
+  id: string;
+  meeting_id: string;
+  content: string;
+  timestamp_ms: number;
+  created_at: string;
+}
+
+export interface Recipe {
+  id: string;
+  name: string;
+  description: string;
+  slash_command: string;
+  prompt_template: string;
+  output_format: string;
+  is_builtin: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface InsightWithActionItem {

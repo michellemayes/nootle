@@ -42,13 +42,14 @@ export function useRecording() {
   }, [isRecording]);
 
   const startRecording = useCallback(
-    async (title: string, categoryId?: string, calendarEventId?: string) => {
+    async (title: string, categoryId?: string, calendarEventId?: string, templateId?: string) => {
       setError(null);
       try {
         const meeting = await invoke<Meeting>("start_recording", {
           title,
           categoryId: categoryId ?? null,
           calendarEventId: calendarEventId ?? null,
+          templateId: templateId ?? null,
         });
         setCurrentMeeting(meeting);
         setIsRecording(true);
@@ -63,10 +64,13 @@ export function useRecording() {
   );
 
   const stopRecording = useCallback(async () => {
-    const meeting = await invoke<Meeting>("stop_recording");
-    setCurrentMeeting(meeting);
-    setIsRecording(false);
-    return meeting;
+    try {
+      const meeting = await invoke<Meeting>("stop_recording");
+      setCurrentMeeting(meeting);
+      return meeting;
+    } finally {
+      setIsRecording(false);
+    }
   }, []);
 
   return {

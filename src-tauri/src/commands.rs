@@ -11,6 +11,17 @@ use std::sync::Arc;
 use tauri::{Emitter, State};
 use tokio::sync::Mutex as TokioMutex;
 
+fn truncate_at_word_boundary(text: &str, max_chars: usize, suffix: &str) -> String {
+    if text.chars().count() <= max_chars {
+        return text.trim().to_string();
+    }
+    let prefix: String = text.chars().take(max_chars).collect();
+    match prefix.rfind(' ') {
+        Some(pos) => format!("{}{suffix}", &prefix[..pos]),
+        None => format!("{prefix}{suffix}"),
+    }
+}
+
 pub type DbState = Arc<Database>;
 pub type RecordingState = Arc<TokioMutex<Option<RecordingSession>>>;
 pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
@@ -43,11 +54,13 @@ pub fn create_meeting(
     title: String,
     category_id: Option<String>,
     calendar_event_id: Option<String>,
+    template_id: Option<String>,
 ) -> Result<Meeting, String> {
     db.create_meeting(NewMeeting {
         title,
         category_id,
         calendar_event_id,
+        template_id,
     })
     .map_err(|e| e.to_string())
 }
@@ -172,6 +185,111 @@ pub fn delete_category(db: State<'_, DbState>, id: String) -> Result<(), String>
     db.delete_category(&id).map_err(|e| e.to_string())
 }
 
+fn validate_hex_color(color: &str) -> Result<(), String> {
+    let valid = color.len() == 7
+        && color.starts_with('#')
+        && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("Invalid hex color: {}", color))
+    }
+}
+
+#[tauri::command]
+pub fn create_tag(db: State<'_, DbState>, name: String, color: String) -> Result<Tag, String> {
+    validate_hex_color(&color)?;
+    db.create_tag(&name, &color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_tags(db: State<'_, DbState>) -> Result<Vec<Tag>, String> {
+    db.list_tags().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_tag(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    color: String,
+) -> Result<Tag, String> {
+    validate_hex_color(&color)?;
+    db.update_tag(&id, &name, &color).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_tag(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_tag(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_meeting_tag(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    tag_id: String,
+) -> Result<(), String> {
+    db.add_meeting_tag(&meeting_id, &tag_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_meeting_tag(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    tag_id: String,
+) -> Result<(), String> {
+    db.remove_meeting_tag(&meeting_id, &tag_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_meeting_tags(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<Tag>, String> {
+    db.get_meeting_tags(&meeting_id).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct MeetingTagEntry {
+    pub meeting_id: String,
+    pub tag: Tag,
+}
+
+#[tauri::command]
+pub fn get_all_meeting_tags(db: State<'_, DbState>) -> Result<Vec<MeetingTagEntry>, String> {
+    db.get_all_meeting_tags()
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|(meeting_id, tag)| MeetingTagEntry { meeting_id, tag })
+                .collect()
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_scratch_note(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    content: String,
+    timestamp_ms: i64,
+) -> Result<ScratchNote, String> {
+    db.add_scratch_note(&meeting_id, &content, timestamp_ms)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_scratch_notes(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<ScratchNote>, String> {
+    db.get_scratch_notes(&meeting_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_scratch_note(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_scratch_note(&id).map_err(|e| e.to_string())
+}
+
 // Transcript commands
 #[tauri::command]
 pub fn get_transcript(
@@ -230,20 +348,94 @@ pub fn update_prompt(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn create_recipe(
+    db: State<'_, DbState>,
+    name: String,
+    description: String,
+    slash_command: String,
+    prompt_template: String,
+    output_format: String,
+) -> Result<Recipe, String> {
+    db.create_recipe(NewRecipe {
+        name,
+        description,
+        slash_command,
+        prompt_template,
+        output_format,
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_recipes(db: State<'_, DbState>) -> Result<Vec<Recipe>, String> {
+    db.list_recipes().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_recipe(db: State<'_, DbState>, id: String) -> Result<Recipe, String> {
+    db.get_recipe(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_recipe(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    description: String,
+    slash_command: String,
+    prompt_template: String,
+    output_format: String,
+) -> Result<Recipe, String> {
+    db.update_recipe(
+        &id,
+        &name,
+        &description,
+        &slash_command,
+        &prompt_template,
+        &output_format,
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_recipe(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_recipe(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn run_recipe(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    recipe_id: String,
+    provider: String,
+    model: String,
+) -> Result<String, String> {
+    let llm = llm.read().await;
+    summarization::run_recipe(&db, &llm, &meeting_id, &recipe_id, &provider, &model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // Template commands
 #[tauri::command]
 pub fn create_template(
     db: State<'_, DbState>,
     name: String,
+    description: String,
     category_id: Option<String>,
     sections: String,
     auto_apply_rules: String,
+    prompt: String,
 ) -> Result<Template, String> {
     db.create_template(NewTemplate {
         name,
+        description,
         category_id,
         sections,
         auto_apply_rules,
+        prompt,
     })
     .map_err(|e| e.to_string())
 }
@@ -263,16 +455,20 @@ pub fn update_template(
     db: State<'_, DbState>,
     id: String,
     name: String,
+    description: String,
     category_id: Option<String>,
     sections: String,
     auto_apply_rules: String,
+    prompt: String,
 ) -> Result<Template, String> {
     db.update_template(
         &id,
         &name,
+        &description,
         category_id.as_deref(),
         &sections,
         &auto_apply_rules,
+        &prompt,
     )
     .map_err(|e| e.to_string())
 }
@@ -296,11 +492,30 @@ pub async fn start_recording(
     title: String,
     category_id: Option<String>,
     calendar_event_id: Option<String>,
+    template_id: Option<String>,
 ) -> Result<Meeting, String> {
     // Check if already recording
     let mut session_lock = recording.lock().await;
     if session_lock.is_some() {
         return Err("Already recording".to_string());
+    }
+
+    // Check microphone permission before creating any resources
+    let mic_status = crate::permissions::check_microphone();
+    if mic_status == "denied" {
+        return Err(
+            "Microphone access denied. Please grant microphone permission in System Settings."
+                .to_string(),
+        );
+    }
+    if mic_status == "undetermined" {
+        let granted = crate::permissions::request_microphone().await;
+        if !granted {
+            return Err(
+                "Microphone access is required to record. Please grant permission and try again."
+                    .to_string(),
+            );
+        }
     }
 
     // Create meeting in DB
@@ -309,11 +524,15 @@ pub async fn start_recording(
             title,
             category_id,
             calendar_event_id,
+            template_id,
         })
         .map_err(|e| e.to_string())?;
 
     // Create recording session — rollback meeting if this fails
-    let recordings_dir = dirs::data_dir().unwrap().join("Nootle").join("recordings");
+    let recordings_dir = dirs::data_dir()
+        .ok_or_else(|| "Could not determine data directory".to_string())?
+        .join("Nootle")
+        .join("recordings");
     let mut session = match RecordingSession::new(&recordings_dir, &meeting.id, 16000) {
         Ok(s) => s,
         Err(e) => {
@@ -321,27 +540,6 @@ pub async fn start_recording(
             return Err(e.to_string());
         }
     };
-
-    // Check microphone permission before proceeding
-    let mic_status = crate::permissions::check_microphone();
-    if mic_status == "denied" {
-        let _ = db.delete_meeting(&meeting.id);
-        return Err(
-            "Microphone access denied. Please grant microphone permission in System Settings."
-                .to_string(),
-        );
-    }
-    if mic_status == "undetermined" {
-        // Request permission — if user declines, the recording will fail
-        let granted = crate::permissions::request_microphone().await;
-        if !granted {
-            let _ = db.delete_meeting(&meeting.id);
-            return Err(
-                "Microphone access is required to record. Please grant permission and try again."
-                    .to_string(),
-            );
-        }
-    }
 
     // Initialize audio capture on this thread to fail early if there are permission or device issues
     let audio_tx = match session.take_audio_tx() {
@@ -482,6 +680,7 @@ async fn run_transcription_pipeline(
     let sample_rate: u64 = 16000;
 
     let mut chunk_count: u64 = 0;
+    let mut segment_count: u64 = 0;
     tracing::info!(
         "[DIAG] Entering audio chunk loop, engine={}, diarization={}",
         transcription_engine.is_some(),
@@ -507,6 +706,7 @@ async fn run_transcription_pipeline(
                         "[DIAG] Chunk #{chunk_count}: transcribe() returned {} segments",
                         segments.len()
                     );
+                    segment_count += segments.len() as u64;
                     for seg in &segments {
                         tracing::info!("[DIAG] Segment: {:?}", seg.text);
 
@@ -527,8 +727,8 @@ async fn run_transcription_pipeline(
                             meeting_id: meeting_id.clone(),
                             speaker_label: speaker,
                             text: seg.text.clone(),
-                            start_ms: seg.start_ms as i64,
-                            end_ms: seg.end_ms as i64,
+                            start_ms: i64::try_from(seg.start_ms).unwrap_or(i64::MAX),
+                            end_ms: i64::try_from(seg.end_ms).unwrap_or(i64::MAX),
                             confidence: 0.9,
                         }) {
                             Ok(_) => tracing::info!("[DIAG] DB insert succeeded"),
@@ -575,28 +775,10 @@ async fn run_transcription_pipeline(
             .join(" ");
         if !full_text.trim().is_empty() {
             // Take up to ~500 chars of transcript for the LLM to summarize
-            let snippet = if full_text.len() <= 500 {
-                full_text.trim().to_string()
-            } else {
-                let truncated = &full_text[..500];
-                match truncated.rfind(' ') {
-                    Some(pos) => truncated[..pos].to_string(),
-                    None => truncated.to_string(),
-                }
-            };
+            let snippet = truncate_at_word_boundary(&full_text, 500, "");
 
             let llm = llm_state.read().await;
-            let fallback_title = || -> String {
-                if full_text.len() <= 60 {
-                    full_text.trim().to_string()
-                } else {
-                    let t = &full_text[..60];
-                    match t.rfind(' ') {
-                        Some(p) => format!("{}...", &t[..p]),
-                        None => format!("{t}..."),
-                    }
-                }
-            };
+            let fallback_title = || -> String { truncate_at_word_boundary(&full_text, 60, "...") };
             let title = if let Some(model) = llm.all_models().first().cloned() {
                 if let Some(provider) = llm.get_provider(&model.provider) {
                     let prompt = format!(
@@ -665,9 +847,15 @@ async fn run_transcription_pipeline(
         }
     }
 
-    // Mark meeting as done transcribing
-    if let Err(e) = db.update_meeting_status(&meeting_id, "summarized") {
-        tracing::warn!("Failed to update meeting status to summarized: {e}");
+    // Mark meeting as done transcribing only if transcription produced segments
+    if segment_count > 0 {
+        if let Err(e) = db.update_meeting_status(&meeting_id, "summarized") {
+            tracing::warn!("Failed to update meeting status to summarized: {e}");
+        }
+    } else {
+        tracing::info!(
+            "No transcript segments produced for {meeting_id}, not marking as summarized"
+        );
     }
 
     // After transcription completes, embed the meeting
@@ -799,7 +987,16 @@ pub async fn get_audio_data(
     if !path.exists() {
         return Ok(None);
     }
-    let data = std::fs::read(path).map_err(|e| format!("Failed to read audio file: {e}"))?;
+    // Validate that the audio path is within the expected recordings directory
+    let recordings_dir = dirs::data_dir()
+        .ok_or_else(|| "Could not determine data directory".to_string())?
+        .join("Nootle")
+        .join("recordings");
+    let canonical = std::fs::canonicalize(path).map_err(|_| "Invalid audio path".to_string())?;
+    if !canonical.starts_with(&recordings_dir) {
+        return Err("Audio path outside recordings directory".to_string());
+    }
+    let data = std::fs::read(&canonical).map_err(|e| format!("Failed to read audio file: {e}"))?;
     use base64::Engine;
     Ok(Some(
         base64::engine::general_purpose::STANDARD.encode(&data),
@@ -1005,9 +1202,9 @@ pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
         ("TL;DR", "Give a 2-3 sentence TL;DR of this meeting. What was it about and what was the outcome?", true, false),
     ];
 
+    let existing = db.list_prompts().map_err(|e| e.to_string())?;
     for (name, content, is_favorite, is_auto_run) in defaults {
         // Skip if a prompt with this name already exists
-        let existing = db.list_prompts().map_err(|e| e.to_string())?;
         if existing.iter().any(|p| p.name == name) {
             continue;
         }
@@ -1623,6 +1820,10 @@ pub fn update_action_item_status(
     id: String,
     status: String,
 ) -> Result<(), String> {
+    const VALID_STATUSES: &[&str] = &["open", "done", "cancelled"];
+    if !VALID_STATUSES.contains(&status.as_str()) {
+        return Err(format!("Invalid action item status: {status}"));
+    }
     db.update_action_item_status(&id, &status)
         .map_err(|e| e.to_string())
 }
@@ -1659,6 +1860,10 @@ pub async fn set_app_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
+    const ALLOWED_SETTING_KEYS: &[&str] = &["denoise_enabled", "detection_enabled"];
+    if !ALLOWED_SETTING_KEYS.contains(&key.as_str()) {
+        return Err(format!("Invalid setting key: {key}"));
+    }
     db.set_setting(&key, &value).map_err(|e| e.to_string())
 }
 
@@ -1750,8 +1955,8 @@ pub async fn send_chat_message(
 
     // Auto-title on first message using LLM
     if db_messages.len() <= 1 {
-        let fallback = if message.len() > 50 {
-            format!("{}...", &message[..47])
+        let fallback = if message.chars().count() > 50 {
+            truncate_at_word_boundary(&message, 47, "...")
         } else {
             message.clone()
         };

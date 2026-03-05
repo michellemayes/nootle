@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { MotionButton } from "@/components/MotionButton";
@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
+import { useTemplates } from "@/hooks/useTemplates";
 import type { TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Square, ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
+import { ScratchPad } from "@/components/ScratchPad";
+import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText } from "lucide-react";
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -22,17 +24,22 @@ function formatTime(seconds: number): string {
 }
 
 function WaveformBar({ index }: { index: number }) {
+  const { maxHeight, animDuration } = useMemo(() => ({
+    maxHeight: 10 + Math.random() * 6,
+    animDuration: 0.6 + Math.random() * 0.4,
+  }), []);
+
   return (
     <motion.div
       className="w-[2px] rounded-full bg-primary"
       initial={{ height: 0, opacity: 0 }}
       animate={{
-        height: [3, 10 + Math.random() * 6, 3],
+        height: [3, maxHeight, 3],
         opacity: 1,
       }}
       transition={{
         height: {
-          duration: 0.6 + Math.random() * 0.4,
+          duration: animDuration,
           repeat: Infinity,
           repeatType: "reverse",
           delay: 0.3 + index * 0.05,
@@ -54,8 +61,9 @@ interface TranscriptionStatus {
 
 export function RecordingView() {
   const navigate = useNavigate();
-  const { isRecording, elapsed, error, startRecording, stopRecording } =
+  const { isRecording, currentMeeting, elapsed, error, startRecording, stopRecording } =
     useRecording();
+  const { templates } = useTemplates();
   const [title, setTitle] = useState("Untitled Recording");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
@@ -63,6 +71,7 @@ export function RecordingView() {
   const [notes, setNotes] = useState("");
   const [stopping, setStopping] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [transcriptionStatus, setTranscriptionStatus] =
     useState<TranscriptionStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -94,16 +103,19 @@ export function RecordingView() {
     };
   }, []);
 
+  const latestTitleRef = useRef(title);
+  latestTitleRef.current = title;
+
   // Start recording on mount — after event listeners are registered above
   // so we don't miss the transcription-status event from the backend
   useEffect(() => {
     if (!hasStarted) {
       setHasStarted(true);
-      startRecording(title).catch(() => {
+      startRecording(latestTitleRef.current, undefined, undefined, selectedTemplateId || undefined).catch(() => {
         // Error is captured in useRecording's error state
       });
     }
-  }, [hasStarted, startRecording, title]);
+  }, [hasStarted, startRecording]);
 
   // Auto-scroll transcript
   useEffect(() => {
@@ -177,6 +189,23 @@ export function RecordingView() {
           </button>
         )}
 
+        <div className="flex items-center gap-1.5">
+          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+          <select
+            value={selectedTemplateId}
+            onChange={(e) => setSelectedTemplateId(e.target.value)}
+            className="h-7 rounded-md border bg-transparent px-2 text-xs text-muted-foreground"
+            title="Select template"
+          >
+            <option value="">No template</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <span className="font-mono text-sm tabular-nums text-muted-foreground">
           {formatTime(elapsed)}
         </span>
@@ -222,6 +251,8 @@ export function RecordingView() {
           autoFocus
         />
       </div>
+
+      <ScratchPad meetingId={currentMeeting?.id ?? null} elapsedMs={elapsed * 1000} />
 
       {/* Collapsible live transcript */}
       <div className="border-t">

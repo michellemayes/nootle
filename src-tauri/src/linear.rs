@@ -9,7 +9,7 @@ static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))
         .build()
-        .unwrap_or_default()
+        .expect("Failed to build HTTP client")
 });
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

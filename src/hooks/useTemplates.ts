@@ -27,15 +27,19 @@ export function useTemplates() {
   const createTemplate = useCallback(
     async (
       name: string,
+      description: string,
       categoryId: string | null,
       sections: string,
       autoApplyRules: string,
+      prompt: string,
     ) => {
       const template = await invoke<Template>("create_template", {
         name,
+        description,
         categoryId,
         sections,
         autoApplyRules,
+        prompt,
       });
       await refresh();
       return template;
@@ -55,16 +59,20 @@ export function useTemplates() {
     async (
       id: string,
       name: string,
+      description: string,
       categoryId: string | null,
       sections: string,
       autoApplyRules: string,
+      prompt: string,
     ) => {
       const template = await invoke<Template>("update_template", {
         id,
         name,
+        description,
         categoryId,
         sections,
         autoApplyRules,
+        prompt,
       });
       await refresh();
       return template;

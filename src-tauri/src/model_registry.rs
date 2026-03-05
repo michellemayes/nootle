@@ -41,34 +41,32 @@ pub struct ModelDefinition {
 }
 
 // ── Parakeet TDT 0.6B v3 (Transcription) ──────────────────────────────
-// TODO(security): Populate sha256 fields below by downloading each model file
-// and running `shasum -a 256 <file>`. The verification logic in model_download.rs
-// is already implemented — it just needs non-empty hash values.
+// SHA-256 hashes sourced from HuggingFace LFS oid metadata.
 
 const PARAKEET_INT8_FILES: &[ModelFile] = &[
     ModelFile {
         local_name: "encoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.int8.onnx",
         size_bytes: 652_000_000,
-        sha256: "", // TODO(security): compute hash
+        sha256: "6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09",
     },
     ModelFile {
         local_name: "decoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.int8.onnx",
         size_bytes: 18_200_000,
-        sha256: "", // TODO(security): compute hash
+        sha256: "eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70",
     },
     ModelFile {
         local_name: "vocab.txt",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt",
         size_bytes: 94_000,
-        sha256: "", // TODO(security): compute hash
+        sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
     },
     ModelFile {
         local_name: "nemo128.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/nemo128.onnx",
         size_bytes: 140_000,
-        sha256: "", // TODO(security): compute hash
+        sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
     },
 ];
 
@@ -77,31 +75,31 @@ const PARAKEET_FULL_FILES: &[ModelFile] = &[
         local_name: "encoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx",
         size_bytes: 41_800_000,
-        sha256: "", // TODO(security): compute hash
+        sha256: "98a74b21b4cc0017c1e7030319a4a96f4a9506e50f0708f3a516d02a77c96bb1",
     },
     ModelFile {
         local_name: "encoder.onnx.data",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx.data",
         size_bytes: 2_440_000_000,
-        sha256: "", // TODO(security): compute hash
+        sha256: "9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36",
     },
     ModelFile {
         local_name: "decoder.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.onnx",
         size_bytes: 72_500_000,
-        sha256: "", // TODO(security): compute hash
+        sha256: "e978ddf6688527182c10fde2eb4b83068421648985ef23f7a86be732be8706c1",
     },
     ModelFile {
         local_name: "vocab.txt",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt",
         size_bytes: 94_000,
-        sha256: "", // TODO(security): compute hash
+        sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
     },
     ModelFile {
         local_name: "nemo128.onnx",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/nemo128.onnx",
         size_bytes: 140_000,
-        sha256: "", // TODO(security): compute hash
+        sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
     },
 ];
 
@@ -127,13 +125,13 @@ const DIARIZATION_FILES: &[ModelFile] = &[
         local_name: "segmentation.onnx",
         url: "https://huggingface.co/onnx-community/pyannote-segmentation-3.0/resolve/main/onnx/model.onnx",
         size_bytes: 6_000_000,
-        sha256: "", // TODO(security): compute hash
+        sha256: "057ee564753071c0b09b5b611648b50ac188d50846bff5f01e9f7bbf1591ea25",
     },
     ModelFile {
         local_name: "embedding.onnx",
         url: "https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34-LM/resolve/main/voxceleb_resnet34_LM.onnx",
         size_bytes: 26_500_000,
-        sha256: "", // TODO(security): compute hash
+        sha256: "7bb2f06e9df17cdf1ef14ee8a15ab08ed28e8d0ef5054ee135741560df2ec068",
     },
 ];
 
@@ -151,13 +149,13 @@ const EMBEDDING_FILES: &[ModelFile] = &[
         local_name: "model.onnx",
         url: "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx",
         size_bytes: 86_000_000,
-        sha256: "",
+        sha256: "6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452",
     },
     ModelFile {
         local_name: "vocab.txt",
         url: "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/vocab.txt",
         size_bytes: 232_000,
-        sha256: "",
+        sha256: "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
     },
 ];
 
@@ -175,12 +173,14 @@ const DENOISE_FILES: &[ModelFile] = &[
         local_name: "deepfilternet3.onnx",
         url: "https://huggingface.co/deepfilternet/DeepFilterNet3/resolve/main/DeepFilterNet3_onnx/enc.onnx",
         size_bytes: 1_800_000,
+        // TODO(security): gated HuggingFace repo — download with HF token and run `shasum -a 256`
         sha256: "",
     },
     ModelFile {
         local_name: "deepfilternet3_dec.onnx",
         url: "https://huggingface.co/deepfilternet/DeepFilterNet3/resolve/main/DeepFilterNet3_onnx/dec.onnx",
         size_bytes: 1_200_000,
+        // TODO(security): gated HuggingFace repo — download with HF token and run `shasum -a 256`
         sha256: "",
     },
 ];
@@ -198,6 +198,7 @@ const VAD_FILES: &[ModelFile] = &[ModelFile {
     local_name: "marblenet.onnx",
     url: "https://huggingface.co/nvidia/vad_marblenet/resolve/main/vad_marblenet.onnx",
     size_bytes: 5_000_000,
+    // TODO(security): gated HuggingFace repo — download with HF token and run `shasum -a 256`
     sha256: "",
 }];
 

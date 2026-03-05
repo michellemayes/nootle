@@ -24,6 +24,13 @@ export const metadata: Metadata = {
     description:
       "Capture meetings, transcribe in real-time, and chat with AI about what was discussed. Local and private.",
     type: "website",
+    images: ["/nootle-logo.png"],
+  },
+  twitter: {
+    card: "summary",
+    title: "Nootle - AI Meeting Recorder for Mac",
+    description:
+      "Capture meetings, transcribe in real-time, and chat with AI about what was discussed. Local and private.",
   },
   icons: {
     icon: "/favicon.png",

@@ -4,6 +4,7 @@ import Highlight from "@tiptap/extension-highlight";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Markdown as TiptapMarkdown } from "tiptap-markdown";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { useEffect, useRef } from "react";
 
@@ -21,7 +22,11 @@ function markdownToHtml(text: string, hasHighlights: boolean): string {
       .replace(/\[\[highlight\]\]/g, "<mark>")
       .replace(/\[\[\/highlight\]\]/g, "</mark>");
   }
-  return marked.parse(src, { async: false }) as string;
+  const raw = marked.parse(src, { async: false }) as string;
+  return DOMPurify.sanitize(raw, {
+    ALLOWED_TAGS: ["p","br","ul","ol","li","h1","h2","h3","h4","h5","h6","strong","em","mark","code","pre","blockquote","a","hr","table","thead","tbody","tr","th","td","del","sup","sub"],
+    ALLOWED_ATTR: ["href","target","rel"],
+  });
 }
 
 // Set TipTap content from HTML, bypassing tiptap-markdown's string parsing
@@ -52,7 +57,7 @@ export function NotesEditor({ content, hasHighlights, onChange }: NotesEditorPro
         placeholder: "Start typing...",
       }),
       TiptapMarkdown.configure({
-        html: true,
+        html: false,
         transformPastedText: true,
       }),
     ],
@@ -91,7 +96,9 @@ export function NotesEditor({ content, hasHighlights, onChange }: NotesEditorPro
     isExternalUpdate.current = true;
     const html = markdownToHtml(content, hasHighlights);
     setHtmlContent(editor, html);
-    isExternalUpdate.current = false;
+    requestAnimationFrame(() => {
+      isExternalUpdate.current = false;
+    });
   }, [content, hasHighlights, editor]);
 
   return (

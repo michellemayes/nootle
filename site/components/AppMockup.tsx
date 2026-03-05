@@ -348,12 +348,14 @@ function LibraryView({ onSelectMeeting }: { onSelectMeeting: (id: string) => voi
 type TabId = "notes" | "summaries" | "insights" | "analytics";
 
 function DetailView({
+  meeting,
   onBack,
   activeTab,
   onTabChange,
   transcriptVisible,
   onToggleTranscript,
 }: {
+  meeting: (typeof meetings)[number];
   onBack: () => void;
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
@@ -380,10 +382,10 @@ function DetailView({
             <span>Back</span>
           </button>
           <div className="ml-1">
-            <h3 className="text-xs font-bold text-gray-900">Sprint Planning</h3>
-            <p className="text-[9px] text-gray-400">Feb 25, 2026</p>
+            <h3 className="text-xs font-bold text-gray-900">{meeting.title}</h3>
+            <p className="text-[9px] text-gray-400">{meeting.date}</p>
           </div>
-          <StatusBadge status="Done" />
+          <StatusBadge status={meeting.status} />
         </div>
         <button className="flex items-center gap-1 text-[10px] border border-gray-200 rounded-md px-2 py-1 text-gray-600 hover:bg-gray-50 transition-colors">
           <MessageIcon className="w-3 h-3" />
@@ -397,11 +399,11 @@ function DetailView({
         <AnimatePresence>
           {transcriptVisible && (
             <motion.div
-              initial={{ width: 0, opacity: 0 }}
+              initial={{ width: "0%", opacity: 0 }}
               animate={{ width: "50%", opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
+              exit={{ width: "0%", opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="flex flex-col border-r border-gray-200 overflow-hidden"
+              className="flex flex-col border-r border-gray-200 overflow-hidden min-w-0"
             >
               <div className="flex items-center justify-between px-4 border-b border-gray-200 h-8">
                 <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
@@ -674,8 +676,17 @@ export function AppMockup() {
   const [currentView, setCurrentView] = useState<"library" | "detail">("library");
   const [activeTab, setActiveTab] = useState<TabId>("notes");
   const [transcriptVisible, setTranscriptVisible] = useState(true);
+  const [activeMeetingId, setSelectedMeetingId] = useState<string>("1");
 
-  const titleBarText = currentView === "library" ? "Nootle" : "Sprint Planning — Feb 25, 2026";
+  const activeMeeting = meetings.find((m) => m.id === activeMeetingId) ?? meetings[0];
+  const titleBarText = currentView === "library"
+    ? "Nootle"
+    : `${activeMeeting.title} — ${activeMeeting.date}`;
+
+  function handleSelectMeeting(id: string) {
+    setSelectedMeetingId(id);
+    setCurrentView("detail");
+  }
 
   return (
     <section className="py-24 px-6">
@@ -701,7 +712,7 @@ export function AppMockup() {
         </motion.p>
 
         <motion.div
-          className="relative mx-auto max-w-5xl"
+          className="hidden md:block relative mx-auto max-w-5xl"
           initial={{ opacity: 0, y: 40 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -734,7 +745,7 @@ export function AppMockup() {
                     transition={{ duration: 0.2 }}
                     className="flex-1 flex min-w-0"
                   >
-                    <LibraryView onSelectMeeting={() => setCurrentView("detail")} />
+                    <LibraryView onSelectMeeting={handleSelectMeeting} />
                   </motion.div>
                 ) : (
                   <motion.div
@@ -746,6 +757,7 @@ export function AppMockup() {
                     className="flex-1 flex min-w-0"
                   >
                     <DetailView
+                      meeting={activeMeeting}
                       onBack={() => setCurrentView("library")}
                       activeTab={activeTab}
                       onTabChange={setActiveTab}

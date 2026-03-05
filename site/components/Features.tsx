@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, Mic, MessageSquare, type LucideIcon } from "lucide-react";
+import { Lock, Mic, MessageSquare, Lightbulb, Search, Volume2, Zap, SquareKanban, Terminal, type LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
 
 const features: {
@@ -30,6 +30,48 @@ const features: {
       "Get instant summaries and ask follow-up questions about your meetings.",
     accent: "var(--color-magenta)",
   },
+  {
+    icon: Lightbulb,
+    title: "Smart Insights",
+    description:
+      "Automatically extract decisions, action items, and key moments from every meeting.",
+    accent: "var(--color-mint)",
+  },
+  {
+    icon: Search,
+    title: "Search Across Meetings",
+    description:
+      "Ask questions across your entire meeting history with AI-powered semantic search.",
+    accent: "var(--color-blue)",
+  },
+  {
+    icon: Volume2,
+    title: "Noise Cancellation",
+    description:
+      "Built-in noise reduction for cleaner audio and more accurate transcriptions.",
+    accent: "var(--color-mint)",
+  },
+  {
+    icon: Zap,
+    title: "Auto-Detection",
+    description:
+      "Nootle detects when you join Zoom, Teams, or Meet and offers to start recording.",
+    accent: "var(--color-magenta)",
+  },
+  {
+    icon: SquareKanban,
+    title: "Linear Integration",
+    description:
+      "Turn action items into Linear tickets with one click.",
+    accent: "var(--color-blue)",
+  },
+  {
+    icon: Terminal,
+    title: "CLI & Developer Tools",
+    description:
+      "Query your meetings from the terminal. MCP server for AI assistant integration.",
+    accent: "var(--color-magenta)",
+  },
 ];
 
 export function Features() {
@@ -46,7 +88,7 @@ export function Features() {
           Built for focus
         </motion.h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {features.map((feature, i) => (
             <motion.div
               key={feature.title}
