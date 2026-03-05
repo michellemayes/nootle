@@ -218,7 +218,7 @@ export function GlobalChatPanel() {
             >
               <div className="flex items-center gap-2">
                 <GripHorizontal className="h-4 w-4 text-muted-foreground" />
-                <h3 className="font-serif font-semibold text-sm">
+                <h3 className="font-semibold text-sm">
                   Ask across meetings
                 </h3>
               </div>

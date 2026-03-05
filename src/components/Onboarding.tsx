@@ -130,7 +130,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
             {step === "Welcome" && (
               <div className="text-center">
-                <h1 className="mb-2 text-3xl font-bold font-serif text-foreground">
+                <h1 className="mb-2 text-3xl font-bold text-foreground">
                   Welcome to Nootle
                 </h1>
                 <p className="mb-8 text-muted-foreground">
@@ -151,7 +151,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
 
             {step === "API Keys" && (
               <div>
-                <h2 className="mb-2 text-2xl font-bold font-serif text-foreground">
+                <h2 className="mb-2 text-2xl font-bold text-foreground">
                   AI Providers
                 </h2>
                 <p className="mb-6 text-sm text-muted-foreground">
@@ -191,7 +191,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             {step === "Done" && (
               <div className="relative text-center">
                 <SparkleShower />
-                <h2 className="relative mb-2 text-3xl font-bold font-serif text-foreground">
+                <h2 className="relative mb-2 text-3xl font-bold text-foreground">
                   You're ready to nootle!
                 </h2>
                 <p className="relative mb-8 text-muted-foreground">
@@ -263,7 +263,7 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
 
   return (
     <div>
-      <h2 className="mb-2 text-2xl font-bold font-serif text-foreground">Permissions</h2>
+      <h2 className="mb-2 text-2xl font-bold text-foreground">Permissions</h2>
       <p className="mb-6 text-sm text-muted-foreground">
         Nootle needs these permissions to record and transcribe your meetings.
       </p>
@@ -374,7 +374,7 @@ function ModelsStep({ onNext }: { onNext: () => void }) {
 
   return (
     <div>
-      <h2 className="mb-2 text-2xl font-bold font-serif text-foreground">AI Models</h2>
+      <h2 className="mb-2 text-2xl font-bold text-foreground">AI Models</h2>
       <p className="mb-6 text-sm text-muted-foreground">
         Download local AI models for transcription and speaker identification.
         These run entirely on your Mac for privacy and speed.
