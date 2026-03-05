@@ -42,7 +42,6 @@ export function PromptsPage() {
   const [newAutoRun, setNewAutoRun] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
 
-  // Recipe dialog state
   const [recipeDialogOpen, setRecipeDialogOpen] = useState(false);
   const [recipeName, setRecipeName] = useState("");
   const [recipeDescription, setRecipeDescription] = useState("");
@@ -80,7 +79,6 @@ export function PromptsPage() {
     setDialogOpen(true);
   };
 
-  // Recipe handlers
   const validateSlashCommand = (value: string): boolean => {
     const valid = /^[a-zA-Z0-9-]+$/.test(value);
     if (!valid && value.length > 0) {
@@ -155,7 +153,6 @@ export function PromptsPage() {
 
         <Separator className="mt-4" />
 
-        {/* Prompts Tab */}
         <TabsContent value="prompts">
           <div className="flex flex-col gap-6 pt-4">
             <div className="flex justify-end">
@@ -249,7 +246,6 @@ export function PromptsPage() {
               </Dialog>
             </div>
 
-            {/* Prompt list */}
             {loading ? (
               <p className="text-sm text-muted-foreground">
                 Loading prompts...
@@ -330,7 +326,6 @@ export function PromptsPage() {
           </div>
         </TabsContent>
 
-        {/* Recipes Tab */}
         <TabsContent value="recipes">
           <div className="flex flex-col gap-6 pt-4">
             <div className="flex justify-end">
@@ -452,7 +447,6 @@ export function PromptsPage() {
               </Dialog>
             </div>
 
-            {/* Recipe list */}
             {recipesLoading ? (
               <p className="text-sm text-muted-foreground">
                 Loading recipes...

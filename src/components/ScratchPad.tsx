@@ -82,7 +82,6 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
             className="overflow-hidden"
           >
             <div className="px-6 pb-3 space-y-2">
-              {/* Input row */}
               <div className="flex items-center gap-2">
                 <Input
                   ref={inputRef}
@@ -103,7 +102,6 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
                 </Button>
               </div>
 
-              {/* Notes list */}
               {notes.length > 0 && (
                 <div className="space-y-1 max-h-[160px] overflow-y-auto">
                   {notes.map((note) => (

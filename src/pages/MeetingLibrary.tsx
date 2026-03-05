@@ -326,7 +326,6 @@ export function MeetingLibrary() {
         </div>
       </div>
 
-      {/* Tag filter bar */}
       {tags.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {tags.map((tag) => {

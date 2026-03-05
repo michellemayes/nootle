@@ -694,10 +694,8 @@ impl Database {
             [],
         );
 
-        // Seed built-in templates
         Self::seed_builtin_templates(&conn)?;
 
-        // Seed built-in recipes
         Self::seed_builtin_recipes(&conn)?;
 
         Ok(())
@@ -727,7 +725,6 @@ impl Database {
     }
 
     fn run_template_migrations(conn: &rusqlite::Connection) -> Result<()> {
-        // Check which columns already exist
         let mut has_description = false;
         let mut has_prompt = false;
         let mut has_is_builtin = false;
@@ -1212,8 +1209,6 @@ impl Database {
         Ok(())
     }
 
-    // --- Tags ---
-
     pub fn create_tag(&self, name: &str, color: &str) -> Result<Tag> {
         let conn = self
             .conn
@@ -1375,8 +1370,6 @@ impl Database {
         Ok(results)
     }
 
-    // --- Scratch Notes ---
-
     pub fn add_scratch_note(
         &self,
         meeting_id: &str,
@@ -1439,8 +1432,6 @@ impl Database {
         conn.execute("DELETE FROM scratch_notes WHERE id = ?1", params![id])?;
         Ok(())
     }
-
-    // --- Recipes ---
 
     fn seed_builtin_recipes(conn: &rusqlite::Connection) -> Result<()> {
         let count: i64 = conn.query_row(

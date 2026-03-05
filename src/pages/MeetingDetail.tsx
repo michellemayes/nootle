@@ -985,7 +985,6 @@ export function MeetingDetail() {
     }
   }, [selectedProvider, models, selectedModel]);
 
-  // Load meeting tags
   useEffect(() => {
     if (!id) return;
     getMeetingTags(id).then(setMeetingTags).catch(() => {});

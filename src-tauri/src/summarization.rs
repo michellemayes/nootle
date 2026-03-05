@@ -32,7 +32,6 @@ pub async fn summarize_meeting(
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Fetch scratch notes and format them if present
     let scratch_notes = db.get_scratch_notes(meeting_id).unwrap_or_default();
     let notes_section = if scratch_notes.is_empty() {
         String::new()
@@ -176,13 +175,11 @@ pub async fn run_recipe(
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Replace template variables
     let mut prompt = recipe.prompt_template.clone();
     prompt = prompt.replace("{{transcript}}", &transcript_text);
     prompt = prompt.replace("{{title}}", &meeting.title);
     prompt = prompt.replace("{{date}}", &meeting.start_time);
 
-    // Replace {{summary}} if available
     if let Ok(summaries) = db.get_summaries_for_meeting(meeting_id) {
         if let Some(summary) = summaries.first() {
             prompt = prompt.replace("{{summary}}", &summary.content);

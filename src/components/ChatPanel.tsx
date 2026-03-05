@@ -59,7 +59,6 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
     }
   }, [messages, recipeMessages]);
 
-  // Filter recipes based on input
   const filteredRecipes = useMemo(() => {
     if (!input.startsWith("/")) return [];
     const query = input.slice(1).toLowerCase();
@@ -69,7 +68,6 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
     );
   }, [input, recipes]);
 
-  // Show/hide slash menu
   useEffect(() => {
     if (input.startsWith("/") && filteredRecipes.length > 0) {
       setShowSlashMenu(true);
@@ -87,7 +85,6 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
     setInput("");
     setRecipeLoading(true);
 
-    // Add a user message showing the command
     setRecipeMessages((prev) => [
       ...prev,
       { role: "user", content: `/${recipes.find((r) => r.id === recipeId)?.slash_command || recipeName}` },
@@ -268,9 +265,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
 
           <Separator />
 
-          {/* Input area with slash-command dropdown */}
           <div className="relative">
-            {/* Slash command dropdown */}
             <AnimatePresence>
               {showSlashMenu && (
                 <motion.div

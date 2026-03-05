@@ -244,7 +244,6 @@ export function RecordingView() {
         />
       </div>
 
-      {/* Scratch pad for timestamped highlights */}
       <ScratchPad meetingId={currentMeeting?.id ?? null} elapsedMs={elapsed * 1000} />
 
       {/* Collapsible live transcript */}

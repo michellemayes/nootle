@@ -18,7 +18,6 @@ export function useScratchPad(meetingId: string | null) {
       });
       setNotes(result);
     } catch {
-      // silently fail
     } finally {
       setLoading(false);
     }

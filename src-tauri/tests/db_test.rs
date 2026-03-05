@@ -312,7 +312,6 @@ fn test_templates_crud() {
     assert_eq!(initial_templates.len(), 8);
     assert!(initial_templates.iter().all(|t| t.is_builtin));
 
-    // Create a custom template
     let custom = db
         .create_template(NewTemplate {
             name: "Standup".into(),
@@ -331,7 +330,6 @@ fn test_templates_crud() {
     let templates = db.list_templates().unwrap();
     assert_eq!(templates.len(), 9);
 
-    // Update the custom template
     let updated = db
         .update_template(
             &custom.id,
@@ -347,7 +345,6 @@ fn test_templates_crud() {
     assert_eq!(updated.description, "Updated description");
     assert_eq!(updated.prompt, "Updated prompt.");
 
-    // Delete the custom template
     db.delete_template(&custom.id).unwrap();
     let templates = db.list_templates().unwrap();
     assert_eq!(templates.len(), 8);
@@ -500,7 +497,6 @@ fn test_recipe_crud() {
     assert_eq!(recipes.len(), 5);
     assert!(recipes.iter().all(|r| r.is_builtin));
 
-    // Create custom recipe
     let recipe = db
         .create_recipe(NewRecipe {
             name: "Custom".into(),
@@ -513,15 +509,12 @@ fn test_recipe_crud() {
     assert_eq!(recipe.slash_command, "custom");
     assert!(!recipe.is_builtin);
 
-    // Get by command
     let found = db.get_recipe_by_command("custom").unwrap();
     assert_eq!(found.id, recipe.id);
 
-    // Total should be 6
     let recipes = db.list_recipes().unwrap();
     assert_eq!(recipes.len(), 6);
 
-    // Update
     let updated = db
         .update_recipe(
             &recipe.id,
@@ -535,7 +528,6 @@ fn test_recipe_crud() {
     assert_eq!(updated.name, "Custom Updated");
     assert_eq!(updated.slash_command, "custom-v2");
 
-    // Delete
     db.delete_recipe(&recipe.id).unwrap();
     let recipes = db.list_recipes().unwrap();
     assert_eq!(recipes.len(), 5);

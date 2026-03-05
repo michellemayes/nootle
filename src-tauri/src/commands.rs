@@ -174,7 +174,6 @@ pub fn delete_category(db: State<'_, DbState>, id: String) -> Result<(), String>
     db.delete_category(&id).map_err(|e| e.to_string())
 }
 
-// Tag commands
 #[tauri::command]
 pub fn create_tag(db: State<'_, DbState>, name: String, color: String) -> Result<Tag, String> {
     let valid =
@@ -258,7 +257,6 @@ pub fn get_all_meeting_tags(
         .map_err(|e| e.to_string())
 }
 
-// Scratch note commands
 #[tauri::command]
 pub fn add_scratch_note(
     db: State<'_, DbState>,
@@ -342,7 +340,6 @@ pub fn update_prompt(
         .map_err(|e| e.to_string())
 }
 
-// Recipe commands
 #[tauri::command]
 pub fn create_recipe(
     db: State<'_, DbState>,
