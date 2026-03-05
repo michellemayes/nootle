@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Comprehensive security hardening (#49) ([336369a](https://github.com/michellemayes/nootle/commit/336369a23f844918bc83461a2b37060919be7df9))
 - Resolve 31 bugs across frontend, backend, and marketing site (#50) ([db129c5](https://github.com/michellemayes/nootle/commit/db129c5251dc17e34e17f6cef448b52242562a9b))
 - Align connecting line through circle centers in how-it-works section (#47) ([4e110cf](https://github.com/michellemayes/nootle/commit/4e110cf02eff28a104f5dcffc375688c2f0a89c4))
 - Remove duplicate headings from help pages and fix Rust formatting (#44) ([9884142](https://github.com/michellemayes/nootle/commit/9884142baff0fa59e26d30f27b992bbaad09ed89))
@@ -22,6 +23,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Add Granola-parity features (templates, recipes, tags, scratch pad) (#51) ([403bc27](https://github.com/michellemayes/nootle/commit/403bc273ad1a033a6fdf235c76747dfe9a798dab))
 - Switch lander feature icons to lucide-react (#48) ([765a8e9](https://github.com/michellemayes/nootle/commit/765a8e9f9dcbafa5487fae240d761f22ef3141da))
 - Redesign lander app preview with interactive views (#46) ([f34baa9](https://github.com/michellemayes/nootle/commit/f34baa9ab828549332e172ba7111edd54715b1e1))
 - Add git-cliff for continuous changelog generation ([3f63cf9](https://github.com/michellemayes/nootle/commit/3f63cf94e759944ca7c55ef59eb72a8dff17fccf))
