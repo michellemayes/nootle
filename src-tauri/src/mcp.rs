@@ -275,6 +275,7 @@ mod tests {
                 title: "Test Meeting".to_string(),
                 category_id: None,
                 calendar_event_id: None,
+                template_id: None,
             })
             .unwrap();
 

@@ -9,6 +9,7 @@ export interface Meeting {
   calendar_event_id: string | null;
   raw_notes: string | null;
   enriched_notes: string | null;
+  template_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -43,9 +44,12 @@ export interface Prompt {
 export interface Template {
   id: string;
   name: string;
+  description: string;
   category_id: string | null;
   sections: string;
   auto_apply_rules: string;
+  prompt: string;
+  is_builtin: boolean;
   created_at: string;
 }
 

@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
+import { useTemplates } from "@/hooks/useTemplates";
 import type { TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Square, ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
+import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText } from "lucide-react";
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -56,6 +57,7 @@ export function RecordingView() {
   const navigate = useNavigate();
   const { isRecording, elapsed, error, startRecording, stopRecording } =
     useRecording();
+  const { templates } = useTemplates();
   const [title, setTitle] = useState("Untitled Recording");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
@@ -63,6 +65,7 @@ export function RecordingView() {
   const [notes, setNotes] = useState("");
   const [stopping, setStopping] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [transcriptionStatus, setTranscriptionStatus] =
     useState<TranscriptionStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -176,6 +179,23 @@ export function RecordingView() {
             {title}
           </button>
         )}
+
+        <div className="flex items-center gap-1.5">
+          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+          <select
+            value={selectedTemplateId}
+            onChange={(e) => setSelectedTemplateId(e.target.value)}
+            className="h-7 rounded-md border bg-transparent px-2 text-xs text-muted-foreground"
+            title="Select template"
+          >
+            <option value="">No template</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <span className="font-mono text-sm tabular-nums text-muted-foreground">
           {formatTime(elapsed)}

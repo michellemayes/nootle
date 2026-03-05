@@ -23,6 +23,7 @@ fn test_create_and_get_meeting() {
             title: "Daily Standup".to_string(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
 
@@ -40,12 +41,14 @@ fn test_list_meetings() {
         title: "Meeting 1".to_string(),
         category_id: None,
         calendar_event_id: None,
+        template_id: None,
     })
     .unwrap();
     db.create_meeting(NewMeeting {
         title: "Meeting 2".to_string(),
         category_id: None,
         calendar_event_id: None,
+        template_id: None,
     })
     .unwrap();
 
@@ -61,6 +64,7 @@ fn test_update_meeting_status() {
             title: "Test".to_string(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
 
@@ -77,6 +81,7 @@ fn test_finalize_meeting() {
             title: "Finalize Test".to_string(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
 
@@ -105,6 +110,7 @@ fn test_delete_meeting() {
             title: "To Delete".to_string(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
 
@@ -141,6 +147,7 @@ fn test_transcript_segments() {
             title: "Test".into(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
     db.create_transcript_segment(NewTranscriptSegment {
@@ -200,6 +207,7 @@ fn test_summaries() {
             title: "Test".into(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
     db.create_summary(NewSummary {
@@ -223,6 +231,7 @@ fn test_create_and_list_linear_tickets() {
             title: "Linear Sync".into(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
     let summary = db
@@ -267,6 +276,7 @@ fn test_search_transcripts() {
             title: "Sprint Review".into(),
             category_id: None,
             calendar_event_id: None,
+            template_id: None,
         })
         .unwrap();
     db.create_transcript_segment(NewTranscriptSegment {
@@ -296,14 +306,79 @@ fn test_search_transcripts() {
 #[test]
 fn test_templates_crud() {
     let db = Database::new_in_memory().unwrap();
-    db.create_template(NewTemplate {
-        name: "Standup".into(),
-        category_id: None,
-        sections: r#"["Blockers","Updates"]"#.into(),
-        auto_apply_rules: "{}".into(),
-    })
-    .unwrap();
+    // The DB seeds 8 built-in templates on init
+    let initial_templates = db.list_templates().unwrap();
+    assert_eq!(initial_templates.len(), 8);
+    assert!(initial_templates.iter().all(|t| t.is_builtin));
+
+    // Create a custom template
+    let custom = db
+        .create_template(NewTemplate {
+            name: "Standup".into(),
+            description: "Quick daily sync".into(),
+            category_id: None,
+            sections: r#"["Blockers","Updates"]"#.into(),
+            auto_apply_rules: "{}".into(),
+            prompt: "Summarize the standup.".into(),
+        })
+        .unwrap();
+    assert_eq!(custom.name, "Standup");
+    assert_eq!(custom.description, "Quick daily sync");
+    assert_eq!(custom.prompt, "Summarize the standup.");
+    assert!(!custom.is_builtin);
+
     let templates = db.list_templates().unwrap();
-    assert_eq!(templates.len(), 1);
-    assert_eq!(templates[0].name, "Standup");
+    assert_eq!(templates.len(), 9);
+
+    // Update the custom template
+    let updated = db
+        .update_template(
+            &custom.id,
+            "Daily Sync",
+            "Updated description",
+            None,
+            r#"["Blockers","Updates","Next Steps"]"#,
+            "{}",
+            "Updated prompt.",
+        )
+        .unwrap();
+    assert_eq!(updated.name, "Daily Sync");
+    assert_eq!(updated.description, "Updated description");
+    assert_eq!(updated.prompt, "Updated prompt.");
+
+    // Delete the custom template
+    db.delete_template(&custom.id).unwrap();
+    let templates = db.list_templates().unwrap();
+    assert_eq!(templates.len(), 8);
+}
+
+#[test]
+fn test_builtin_templates_have_prompts() {
+    let db = Database::new_in_memory().unwrap();
+    let templates = db.list_templates().unwrap();
+    for t in &templates {
+        assert!(t.is_builtin);
+        assert!(!t.prompt.is_empty(), "Template '{}' should have a prompt", t.name);
+        assert!(!t.description.is_empty(), "Template '{}' should have a description", t.name);
+    }
+}
+
+#[test]
+fn test_meeting_with_template_id() {
+    let db = Database::new_in_memory().unwrap();
+    let templates = db.list_templates().unwrap();
+    let template_id = templates[0].id.clone();
+
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Templated Meeting".into(),
+            category_id: None,
+            calendar_event_id: None,
+            template_id: Some(template_id.clone()),
+        })
+        .unwrap();
+    assert_eq!(meeting.template_id, Some(template_id.clone()));
+
+    let fetched = db.get_meeting(&meeting.id).unwrap();
+    assert_eq!(fetched.template_id, Some(template_id));
 }

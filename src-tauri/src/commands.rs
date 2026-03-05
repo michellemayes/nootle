@@ -43,11 +43,13 @@ pub fn create_meeting(
     title: String,
     category_id: Option<String>,
     calendar_event_id: Option<String>,
+    template_id: Option<String>,
 ) -> Result<Meeting, String> {
     db.create_meeting(NewMeeting {
         title,
         category_id,
         calendar_event_id,
+        template_id,
     })
     .map_err(|e| e.to_string())
 }
@@ -235,15 +237,19 @@ pub fn update_prompt(
 pub fn create_template(
     db: State<'_, DbState>,
     name: String,
+    description: String,
     category_id: Option<String>,
     sections: String,
     auto_apply_rules: String,
+    prompt: String,
 ) -> Result<Template, String> {
     db.create_template(NewTemplate {
         name,
+        description,
         category_id,
         sections,
         auto_apply_rules,
+        prompt,
     })
     .map_err(|e| e.to_string())
 }
@@ -263,16 +269,20 @@ pub fn update_template(
     db: State<'_, DbState>,
     id: String,
     name: String,
+    description: String,
     category_id: Option<String>,
     sections: String,
     auto_apply_rules: String,
+    prompt: String,
 ) -> Result<Template, String> {
     db.update_template(
         &id,
         &name,
+        &description,
         category_id.as_deref(),
         &sections,
         &auto_apply_rules,
+        &prompt,
     )
     .map_err(|e| e.to_string())
 }
@@ -296,6 +306,7 @@ pub async fn start_recording(
     title: String,
     category_id: Option<String>,
     calendar_event_id: Option<String>,
+    template_id: Option<String>,
 ) -> Result<Meeting, String> {
     // Check if already recording
     let mut session_lock = recording.lock().await;
@@ -309,6 +320,7 @@ pub async fn start_recording(
             title,
             category_id,
             calendar_event_id,
+            template_id,
         })
         .map_err(|e| e.to_string())?;
 

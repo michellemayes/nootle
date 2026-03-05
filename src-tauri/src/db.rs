@@ -16,6 +16,7 @@ pub struct Meeting {
     pub calendar_event_id: Option<String>,
     pub raw_notes: Option<String>,
     pub enriched_notes: Option<String>,
+    pub template_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -25,6 +26,7 @@ pub struct NewMeeting {
     pub title: String,
     pub category_id: Option<String>,
     pub calendar_event_id: Option<String>,
+    pub template_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,18 +88,23 @@ pub struct NewPrompt {
 pub struct Template {
     pub id: String,
     pub name: String,
+    pub description: String,
     pub category_id: Option<String>,
     pub sections: String,
     pub auto_apply_rules: String,
+    pub prompt: String,
+    pub is_builtin: bool,
     pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewTemplate {
     pub name: String,
+    pub description: String,
     pub category_id: Option<String>,
     pub sections: String,
     pub auto_apply_rules: String,
+    pub prompt: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -606,6 +613,18 @@ impl Database {
         let _ = conn.execute("ALTER TABLE meetings ADD COLUMN raw_notes TEXT", []);
         let _ = conn.execute("ALTER TABLE meetings ADD COLUMN enriched_notes TEXT", []);
 
+        // Migration: add description, prompt, is_builtin to templates (idempotent)
+        Self::run_template_migrations(&conn)?;
+
+        // Migration: add template_id to meetings (idempotent)
+        let _ = conn.execute(
+            "ALTER TABLE meetings ADD COLUMN template_id TEXT REFERENCES templates(id)",
+            [],
+        );
+
+        // Seed built-in templates
+        Self::seed_builtin_templates(&conn)?;
+
         Ok(())
     }
 
@@ -627,6 +646,120 @@ impl Database {
                 "INSERT INTO insight_types (id, name, slug, description, extraction_prompt, icon, has_action_fields, is_builtin, sort_order, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![id, name, slug, desc, prompt, icon, has_action as i32, is_builtin as i32, sort, now],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn run_template_migrations(conn: &rusqlite::Connection) -> Result<()> {
+        // Check which columns already exist
+        let mut has_description = false;
+        let mut has_prompt = false;
+        let mut has_is_builtin = false;
+
+        let mut stmt = conn.prepare("PRAGMA table_info(templates)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        for col in &columns {
+            match col.as_str() {
+                "description" => has_description = true,
+                "prompt" => has_prompt = true,
+                "is_builtin" => has_is_builtin = true,
+                _ => {}
+            }
+        }
+
+        if !has_description {
+            conn.execute(
+                "ALTER TABLE templates ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        if !has_prompt {
+            conn.execute(
+                "ALTER TABLE templates ADD COLUMN prompt TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        if !has_is_builtin {
+            conn.execute(
+                "ALTER TABLE templates ADD COLUMN is_builtin INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn seed_builtin_templates(conn: &rusqlite::Connection) -> Result<()> {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM templates WHERE is_builtin = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        if count > 0 {
+            return Ok(());
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let builtins: Vec<(&str, &str, &str, &str)> = vec![
+            (
+                "General",
+                "Default for any meeting",
+                "Summarize this meeting transcript. Include key discussion points, decisions made, and action items.",
+                r#"["Summary","Key Discussion Points","Decisions","Action Items"]"#,
+            ),
+            (
+                "1-on-1",
+                "Manager/report check-ins",
+                "Summarize this 1-on-1 meeting. Structure as: Updates, Feedback, Blockers, Action Items.",
+                r#"["Updates","Feedback","Blockers","Action Items"]"#,
+            ),
+            (
+                "Daily Standup",
+                "Quick team sync",
+                "Summarize this standup. For each speaker list: What they did, what they'll do, blockers.",
+                r#"["Yesterday","Today","Blockers"]"#,
+            ),
+            (
+                "Sprint Retro",
+                "What went well/poorly",
+                "Summarize this retrospective. Organize into: What Went Well, What Didn't, Action Items for Improvement.",
+                r#"["What Went Well","What Didn't Go Well","Action Items for Improvement"]"#,
+            ),
+            (
+                "Customer Call",
+                "External stakeholder meeting",
+                "Summarize this customer call. Include: Customer requests, commitments made, follow-ups needed, sentiment.",
+                r#"["Customer Requests","Commitments Made","Follow-ups","Sentiment"]"#,
+            ),
+            (
+                "User Interview",
+                "UX research session",
+                "Summarize this user interview. Capture: Key quotes, pain points, feature requests, surprising insights.",
+                r#"["Key Quotes","Pain Points","Feature Requests","Surprising Insights"]"#,
+            ),
+            (
+                "Brainstorm",
+                "Ideation session",
+                "Summarize this brainstorm session. List: Ideas proposed, ideas with most support, next steps to evaluate.",
+                r#"["Ideas Proposed","Ideas with Most Support","Next Steps"]"#,
+            ),
+            (
+                "All-Hands",
+                "Company-wide meeting",
+                "Summarize this all-hands meeting. Cover: Announcements, Q&A highlights, key decisions, action items.",
+                r#"["Announcements","Q&A Highlights","Key Decisions","Action Items"]"#,
+            ),
+        ];
+
+        for (name, description, prompt, sections) in builtins {
+            let id = uuid::Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO templates (id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at)
+                 VALUES (?1, ?2, ?3, NULL, ?4, '{}', ?5, 1, ?6)",
+                params![id, name, description, sections, prompt, now],
             )?;
         }
         Ok(())
@@ -656,9 +789,9 @@ impl Database {
         let status = "recording";
 
         conn.execute(
-            "INSERT INTO meetings (id, title, start_time, category_id, status, calendar_event_id, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![id, new.title, now, new.category_id, status, new.calendar_event_id, now, now],
+            "INSERT INTO meetings (id, title, start_time, category_id, status, calendar_event_id, template_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![id, new.title, now, new.category_id, status, new.calendar_event_id, new.template_id, now, now],
         )?;
 
         Ok(Meeting {
@@ -672,6 +805,7 @@ impl Database {
             calendar_event_id: new.calendar_event_id,
             raw_notes: None,
             enriched_notes: None,
+            template_id: new.template_id,
             created_at: now.clone(),
             updated_at: now,
         })
@@ -683,7 +817,7 @@ impl Database {
             .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         let mut stmt = conn.prepare(
-            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, created_at, updated_at
+            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at
              FROM meetings WHERE id = ?1",
         )?;
 
@@ -700,8 +834,9 @@ impl Database {
                     calendar_event_id: row.get(7)?,
                     raw_notes: row.get(8)?,
                     enriched_notes: row.get(9)?,
-                    created_at: row.get(10)?,
-                    updated_at: row.get(11)?,
+                    template_id: row.get(10)?,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
                 })
             })
             .map_err(|e| match e {
@@ -726,7 +861,7 @@ impl Database {
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
 
         let mut sql = String::from(
-            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, created_at, updated_at
+            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at
              FROM meetings"
         );
         let mut conditions: Vec<String> = Vec::new();
@@ -776,8 +911,9 @@ impl Database {
                     calendar_event_id: row.get(7)?,
                     raw_notes: row.get(8)?,
                     enriched_notes: row.get(9)?,
-                    created_at: row.get(10)?,
-                    updated_at: row.get(11)?,
+                    template_id: row.get(10)?,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1239,14 +1375,16 @@ impl Database {
         let now = chrono::Utc::now().to_rfc3339();
 
         conn.execute(
-            "INSERT INTO templates (id, name, category_id, sections, auto_apply_rules, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO templates (id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
             params![
                 id,
                 new.name,
+                new.description,
                 new.category_id,
                 new.sections,
                 new.auto_apply_rules,
+                new.prompt,
                 now
             ],
         )?;
@@ -1254,9 +1392,12 @@ impl Database {
         Ok(Template {
             id,
             name: new.name,
+            description: new.description,
             category_id: new.category_id,
             sections: new.sections,
             auto_apply_rules: new.auto_apply_rules,
+            prompt: new.prompt,
+            is_builtin: false,
             created_at: now,
         })
     }
@@ -1267,8 +1408,8 @@ impl Database {
             .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, category_id, sections, auto_apply_rules, created_at
-             FROM templates ORDER BY created_at DESC",
+            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at
+             FROM templates ORDER BY is_builtin DESC, created_at DESC",
         )?;
 
         let templates = stmt
@@ -1276,10 +1417,13 @@ impl Database {
                 Ok(Template {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    category_id: row.get(2)?,
-                    sections: row.get(3)?,
-                    auto_apply_rules: row.get(4)?,
-                    created_at: row.get(5)?,
+                    description: row.get(2)?,
+                    category_id: row.get(3)?,
+                    sections: row.get(4)?,
+                    auto_apply_rules: row.get(5)?,
+                    prompt: row.get(6)?,
+                    is_builtin: row.get::<_, i32>(7)? != 0,
+                    created_at: row.get(8)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1300,19 +1444,21 @@ impl Database {
         &self,
         id: &str,
         name: &str,
+        description: &str,
         category_id: Option<&str>,
         sections: &str,
         auto_apply_rules: &str,
+        prompt: &str,
     ) -> Result<Template> {
         let conn = self.conn.lock().unwrap();
 
         conn.execute(
-            "UPDATE templates SET name = ?1, category_id = ?2, sections = ?3, auto_apply_rules = ?4 WHERE id = ?5",
-            params![name, category_id, sections, auto_apply_rules, id],
+            "UPDATE templates SET name = ?1, description = ?2, category_id = ?3, sections = ?4, auto_apply_rules = ?5, prompt = ?6 WHERE id = ?7",
+            params![name, description, category_id, sections, auto_apply_rules, prompt, id],
         )?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, name, category_id, sections, auto_apply_rules, created_at
+            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at
              FROM templates WHERE id = ?1",
         )?;
 
@@ -1321,10 +1467,13 @@ impl Database {
                 Ok(Template {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    category_id: row.get(2)?,
-                    sections: row.get(3)?,
-                    auto_apply_rules: row.get(4)?,
-                    created_at: row.get(5)?,
+                    description: row.get(2)?,
+                    category_id: row.get(3)?,
+                    sections: row.get(4)?,
+                    auto_apply_rules: row.get(5)?,
+                    prompt: row.get(6)?,
+                    is_builtin: row.get::<_, i32>(7)? != 0,
+                    created_at: row.get(8)?,
                 })
             })
             .map_err(|e| match e {
