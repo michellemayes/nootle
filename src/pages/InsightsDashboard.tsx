@@ -10,7 +10,7 @@ import { useAllInsights } from "@/hooks/useInsights";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
 import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
-import type { InsightWithActionItem, InsightType } from "@/types";
+import type { InsightWithActionItem, InsightType, LinearTeam } from "@/types";
 import { Check, Lightbulb, ListChecks, Star, Search, AlertTriangle, Ticket } from "lucide-react";
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -34,20 +34,17 @@ function formatDate(dateStr: string): string {
 
 function ActionItemTicketButton({
   item,
+  teams,
   onTicketCreated,
 }: {
   item: InsightWithActionItem;
+  teams: LinearTeam[];
   onTicketCreated: () => void;
 }) {
   const { storedProviders } = useApiKeys();
   const { models, providers } = useLLM();
   const { defaultTeamId, defaultProjectId } = useLinearSettings();
-  const { teams, fetchTeams } = useLinearTeams();
   const { projects } = useLinearProjects(defaultTeamId);
-
-  useEffect(() => {
-    fetchTeams();
-  }, [fetchTeams]);
   const [open, setOpen] = useState(false);
   const [teamId, setTeamId] = useState(defaultTeamId ?? "");
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
@@ -177,11 +174,13 @@ function ActionItemTicketButton({
 
 function DashboardActionItem({
   item,
+  teams,
   onToggle,
   onNavigate,
   onTicketCreated,
 }: {
   item: InsightWithActionItem;
+  teams: LinearTeam[];
   onToggle: (actionItemId: string, currentStatus: string) => void;
   onNavigate: (meetingId: string) => void;
   onTicketCreated: () => void;
@@ -236,7 +235,7 @@ function DashboardActionItem({
           )}
         </div>
       </div>
-      <ActionItemTicketButton item={item} onTicketCreated={onTicketCreated} />
+      <ActionItemTicketButton item={item} teams={teams} onTicketCreated={onTicketCreated} />
     </motion.div>
   );
 }
@@ -298,12 +297,14 @@ function SectionHeader({
 function TypeSection({
   insightType,
   items,
+  teams,
   toggleActionItem,
   onNavigate,
   onTicketCreated,
 }: {
   insightType: InsightType;
   items: InsightWithActionItem[];
+  teams: LinearTeam[];
   toggleActionItem: (actionItemId: string, currentStatus: string) => void;
   onNavigate: (meetingId: string) => void;
   onTicketCreated: () => void;
@@ -324,6 +325,7 @@ function TypeSection({
             <DashboardActionItem
               key={item.id}
               item={item}
+              teams={teams}
               onToggle={toggleActionItem}
               onNavigate={onNavigate}
               onTicketCreated={onTicketCreated}
@@ -333,6 +335,7 @@ function TypeSection({
             <DashboardActionItem
               key={item.id}
               item={item}
+              teams={teams}
               onToggle={toggleActionItem}
               onNavigate={onNavigate}
               onTicketCreated={onTicketCreated}
@@ -369,6 +372,11 @@ export function InsightsDashboard() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
   const [searchDebounced, setSearchDebounced] = useState<string | undefined>(undefined);
+  const { teams, fetchTeams } = useLinearTeams();
+
+  useEffect(() => {
+    fetchTeams();
+  }, [fetchTeams]);
 
   const { insightTypes, groupedByType, loading, toggleActionItem, refresh } = useAllInsights(
     typeFilter,
@@ -445,6 +453,7 @@ export function InsightsDashboard() {
                   key={t.slug}
                   insightType={t}
                   items={groupedByType[t.slug] ?? []}
+                  teams={teams}
                   toggleActionItem={toggleActionItem}
                   onNavigate={handleNavigate}
                   onTicketCreated={refresh}

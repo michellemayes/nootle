@@ -33,7 +33,9 @@ pub fn run() {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let app_dir = dirs::data_dir().unwrap().join("Nootle");
+    let app_dir = dirs::data_dir()
+        .expect("Could not determine data directory")
+        .join("Nootle");
     std::fs::create_dir_all(&app_dir).unwrap();
     let db_path = app_dir.join("nootle.db");
     let db = std::sync::Arc::new(db::Database::new(db_path.to_str().unwrap()).unwrap());

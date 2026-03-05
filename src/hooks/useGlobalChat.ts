@@ -17,6 +17,7 @@ export function useGlobalChat() {
   const [embeddingStatus, setEmbeddingStatus] =
     useState<EmbeddingStatus | null>(null);
   const conversationIdRef = useRef<string | null>(null);
+  const pendingConversationRef = useRef<Promise<string> | null>(null);
 
   const refreshEmbeddingStatus = useCallback(async () => {
     try {
@@ -41,10 +42,16 @@ export function useGlobalChat() {
       try {
         // Create a conversation on first message
         if (!conversationIdRef.current) {
-          const conv = await invoke<ChatConversation>(
-            "create_chat_conversation",
-          );
-          conversationIdRef.current = conv.id;
+          if (!pendingConversationRef.current) {
+            pendingConversationRef.current = invoke<ChatConversation>(
+              "create_chat_conversation",
+            ).then((conv) => {
+              conversationIdRef.current = conv.id;
+              pendingConversationRef.current = null;
+              return conv.id;
+            });
+          }
+          await pendingConversationRef.current;
         }
 
         const result = await invoke<GlobalChatResponse>("send_chat_message", {

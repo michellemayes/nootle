@@ -28,7 +28,7 @@ impl AudioWriter {
     /// Write f32 samples (converting to i16)
     pub fn write_samples(&mut self, samples: &[f32]) -> anyhow::Result<()> {
         for &sample in samples {
-            let s = (sample * i16::MAX as f32) as i16;
+            let s = (sample.clamp(-1.0, 1.0) * 32767.0) as i16;
             self.writer.write_sample(s)?;
         }
         Ok(())

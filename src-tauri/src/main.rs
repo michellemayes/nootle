@@ -10,7 +10,9 @@ fn main() {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let app_dir = dirs::data_dir().unwrap().join("Nootle");
+            let app_dir = dirs::data_dir()
+                .expect("Could not determine data directory")
+                .join("Nootle");
             std::fs::create_dir_all(&app_dir).unwrap();
             let db_path = app_dir.join("nootle.db");
             let db = std::sync::Arc::new(

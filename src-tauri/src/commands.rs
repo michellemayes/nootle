@@ -11,6 +11,17 @@ use std::sync::Arc;
 use tauri::{Emitter, State};
 use tokio::sync::Mutex as TokioMutex;
 
+fn truncate_at_word_boundary(text: &str, max_chars: usize, suffix: &str) -> String {
+    if text.chars().count() <= max_chars {
+        return text.trim().to_string();
+    }
+    let prefix: String = text.chars().take(max_chars).collect();
+    match prefix.rfind(' ') {
+        Some(pos) => format!("{}{suffix}", &prefix[..pos]),
+        None => format!("{prefix}{suffix}"),
+    }
+}
+
 pub type DbState = Arc<Database>;
 pub type RecordingState = Arc<TokioMutex<Option<RecordingSession>>>;
 pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
@@ -313,7 +324,10 @@ pub async fn start_recording(
         .map_err(|e| e.to_string())?;
 
     // Create recording session — rollback meeting if this fails
-    let recordings_dir = dirs::data_dir().unwrap().join("Nootle").join("recordings");
+    let recordings_dir = dirs::data_dir()
+        .ok_or_else(|| "Could not determine data directory".to_string())?
+        .join("Nootle")
+        .join("recordings");
     let mut session = match RecordingSession::new(&recordings_dir, &meeting.id, 16000) {
         Ok(s) => s,
         Err(e) => {
@@ -482,6 +496,7 @@ async fn run_transcription_pipeline(
     let sample_rate: u64 = 16000;
 
     let mut chunk_count: u64 = 0;
+    let mut segment_count: u64 = 0;
     tracing::info!(
         "[DIAG] Entering audio chunk loop, engine={}, diarization={}",
         transcription_engine.is_some(),
@@ -507,6 +522,7 @@ async fn run_transcription_pipeline(
                         "[DIAG] Chunk #{chunk_count}: transcribe() returned {} segments",
                         segments.len()
                     );
+                    segment_count += segments.len() as u64;
                     for seg in &segments {
                         tracing::info!("[DIAG] Segment: {:?}", seg.text);
 
@@ -527,8 +543,8 @@ async fn run_transcription_pipeline(
                             meeting_id: meeting_id.clone(),
                             speaker_label: speaker,
                             text: seg.text.clone(),
-                            start_ms: seg.start_ms as i64,
-                            end_ms: seg.end_ms as i64,
+                            start_ms: i64::try_from(seg.start_ms).unwrap_or(i64::MAX),
+                            end_ms: i64::try_from(seg.end_ms).unwrap_or(i64::MAX),
                             confidence: 0.9,
                         }) {
                             Ok(_) => tracing::info!("[DIAG] DB insert succeeded"),
@@ -575,28 +591,10 @@ async fn run_transcription_pipeline(
             .join(" ");
         if !full_text.trim().is_empty() {
             // Take up to ~500 chars of transcript for the LLM to summarize
-            let snippet = if full_text.len() <= 500 {
-                full_text.trim().to_string()
-            } else {
-                let truncated = &full_text[..500];
-                match truncated.rfind(' ') {
-                    Some(pos) => truncated[..pos].to_string(),
-                    None => truncated.to_string(),
-                }
-            };
+            let snippet = truncate_at_word_boundary(&full_text, 500, "");
 
             let llm = llm_state.read().await;
-            let fallback_title = || -> String {
-                if full_text.len() <= 60 {
-                    full_text.trim().to_string()
-                } else {
-                    let t = &full_text[..60];
-                    match t.rfind(' ') {
-                        Some(p) => format!("{}...", &t[..p]),
-                        None => format!("{t}..."),
-                    }
-                }
-            };
+            let fallback_title = || -> String { truncate_at_word_boundary(&full_text, 60, "...") };
             let title = if let Some(model) = llm.all_models().first().cloned() {
                 if let Some(provider) = llm.get_provider(&model.provider) {
                     let prompt = format!(
@@ -665,9 +663,15 @@ async fn run_transcription_pipeline(
         }
     }
 
-    // Mark meeting as done transcribing
-    if let Err(e) = db.update_meeting_status(&meeting_id, "summarized") {
-        tracing::warn!("Failed to update meeting status to summarized: {e}");
+    // Mark meeting as done transcribing only if transcription produced segments
+    if segment_count > 0 {
+        if let Err(e) = db.update_meeting_status(&meeting_id, "summarized") {
+            tracing::warn!("Failed to update meeting status to summarized: {e}");
+        }
+    } else {
+        tracing::info!(
+            "No transcript segments produced for {meeting_id}, not marking as summarized"
+        );
     }
 
     // After transcription completes, embed the meeting
@@ -1005,9 +1009,9 @@ pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
         ("TL;DR", "Give a 2-3 sentence TL;DR of this meeting. What was it about and what was the outcome?", true, false),
     ];
 
+    let existing = db.list_prompts().map_err(|e| e.to_string())?;
     for (name, content, is_favorite, is_auto_run) in defaults {
         // Skip if a prompt with this name already exists
-        let existing = db.list_prompts().map_err(|e| e.to_string())?;
         if existing.iter().any(|p| p.name == name) {
             continue;
         }
@@ -1750,8 +1754,8 @@ pub async fn send_chat_message(
 
     // Auto-title on first message using LLM
     if db_messages.len() <= 1 {
-        let fallback = if message.len() > 50 {
-            format!("{}...", &message[..47])
+        let fallback = if message.chars().count() > 50 {
+            truncate_at_word_boundary(&message, 47, "...")
         } else {
             message.clone()
         };
