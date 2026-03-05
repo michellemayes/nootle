@@ -314,6 +314,24 @@ pub async fn start_recording(
         return Err("Already recording".to_string());
     }
 
+    // Check microphone permission before creating any resources
+    let mic_status = crate::permissions::check_microphone();
+    if mic_status == "denied" {
+        return Err(
+            "Microphone access denied. Please grant microphone permission in System Settings."
+                .to_string(),
+        );
+    }
+    if mic_status == "undetermined" {
+        let granted = crate::permissions::request_microphone().await;
+        if !granted {
+            return Err(
+                "Microphone access is required to record. Please grant permission and try again."
+                    .to_string(),
+            );
+        }
+    }
+
     // Create meeting in DB
     let meeting = db
         .create_meeting(NewMeeting {
@@ -335,27 +353,6 @@ pub async fn start_recording(
             return Err(e.to_string());
         }
     };
-
-    // Check microphone permission before proceeding
-    let mic_status = crate::permissions::check_microphone();
-    if mic_status == "denied" {
-        let _ = db.delete_meeting(&meeting.id);
-        return Err(
-            "Microphone access denied. Please grant microphone permission in System Settings."
-                .to_string(),
-        );
-    }
-    if mic_status == "undetermined" {
-        // Request permission — if user declines, the recording will fail
-        let granted = crate::permissions::request_microphone().await;
-        if !granted {
-            let _ = db.delete_meeting(&meeting.id);
-            return Err(
-                "Microphone access is required to record. Please grant permission and try again."
-                    .to_string(),
-            );
-        }
-    }
 
     // Initialize audio capture on this thread to fail early if there are permission or device issues
     let audio_tx = match session.take_audio_tx() {
@@ -803,7 +800,16 @@ pub async fn get_audio_data(
     if !path.exists() {
         return Ok(None);
     }
-    let data = std::fs::read(path).map_err(|e| format!("Failed to read audio file: {e}"))?;
+    // Validate that the audio path is within the expected recordings directory
+    let recordings_dir = dirs::data_dir()
+        .ok_or_else(|| "Could not determine data directory".to_string())?
+        .join("Nootle")
+        .join("recordings");
+    let canonical = std::fs::canonicalize(path).map_err(|_| "Invalid audio path".to_string())?;
+    if !canonical.starts_with(&recordings_dir) {
+        return Err("Audio path outside recordings directory".to_string());
+    }
+    let data = std::fs::read(&canonical).map_err(|e| format!("Failed to read audio file: {e}"))?;
     use base64::Engine;
     Ok(Some(
         base64::engine::general_purpose::STANDARD.encode(&data),
@@ -1627,6 +1633,10 @@ pub fn update_action_item_status(
     id: String,
     status: String,
 ) -> Result<(), String> {
+    const VALID_STATUSES: &[&str] = &["open", "done", "cancelled"];
+    if !VALID_STATUSES.contains(&status.as_str()) {
+        return Err(format!("Invalid action item status: {status}"));
+    }
     db.update_action_item_status(&id, &status)
         .map_err(|e| e.to_string())
 }
@@ -1663,6 +1673,10 @@ pub async fn set_app_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
+    const ALLOWED_SETTING_KEYS: &[&str] = &["denoise_enabled", "detection_enabled"];
+    if !ALLOWED_SETTING_KEYS.contains(&key.as_str()) {
+        return Err(format!("Invalid setting key: {key}"));
+    }
     db.set_setting(&key, &value).map_err(|e| e.to_string())
 }
 

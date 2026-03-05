@@ -12,7 +12,7 @@ impl AnthropicProvider {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(120))
             .build()
-            .unwrap_or_default();
+            .expect("Failed to build HTTP client");
         Self { api_key, client }
     }
 }

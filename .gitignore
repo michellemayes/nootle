@@ -29,5 +29,12 @@ dist-ssr
 # Plans/design docs
 docs/plans/
 
+# SQLite database files
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
 # Lock files (project uses pnpm)
 package-lock.json
