@@ -356,8 +356,16 @@ fn test_builtin_templates_have_prompts() {
     let templates = db.list_templates().unwrap();
     for t in &templates {
         assert!(t.is_builtin);
-        assert!(!t.prompt.is_empty(), "Template '{}' should have a prompt", t.name);
-        assert!(!t.description.is_empty(), "Template '{}' should have a description", t.name);
+        assert!(
+            !t.prompt.is_empty(),
+            "Template '{}' should have a prompt",
+            t.name
+        );
+        assert!(
+            !t.description.is_empty(),
+            "Template '{}' should have a description",
+            t.name
+        );
     }
 }
 

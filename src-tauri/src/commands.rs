@@ -233,10 +233,7 @@ pub fn remove_meeting_tag(
 }
 
 #[tauri::command]
-pub fn get_meeting_tags(
-    db: State<'_, DbState>,
-    meeting_id: String,
-) -> Result<Vec<Tag>, String> {
+pub fn get_meeting_tags(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<Tag>, String> {
     db.get_meeting_tags(&meeting_id).map_err(|e| e.to_string())
 }
 
@@ -247,9 +244,7 @@ pub struct MeetingTagEntry {
 }
 
 #[tauri::command]
-pub fn get_all_meeting_tags(
-    db: State<'_, DbState>,
-) -> Result<Vec<MeetingTagEntry>, String> {
+pub fn get_all_meeting_tags(db: State<'_, DbState>) -> Result<Vec<MeetingTagEntry>, String> {
     db.get_all_meeting_tags()
         .map(|entries| {
             entries
@@ -276,8 +271,7 @@ pub fn get_scratch_notes(
     db: State<'_, DbState>,
     meeting_id: String,
 ) -> Result<Vec<ScratchNote>, String> {
-    db.get_scratch_notes(&meeting_id)
-        .map_err(|e| e.to_string())
+    db.get_scratch_notes(&meeting_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -382,8 +376,15 @@ pub fn update_recipe(
     prompt_template: String,
     output_format: String,
 ) -> Result<Recipe, String> {
-    db.update_recipe(&id, &name, &description, &slash_command, &prompt_template, &output_format)
-        .map_err(|e| e.to_string())
+    db.update_recipe(
+        &id,
+        &name,
+        &description,
+        &slash_command,
+        &prompt_template,
+        &output_format,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

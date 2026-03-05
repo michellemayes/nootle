@@ -1969,13 +1969,17 @@ impl Database {
             .conn
             .lock()
             .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
-        let is_builtin: bool = conn.query_row(
-            "SELECT is_builtin FROM templates WHERE id = ?1",
-            params![id],
-            |row| row.get::<_, i32>(0).map(|v| v != 0),
-        ).map_err(|_| NootleError::Other("Template not found".to_string()))?;
+        let is_builtin: bool = conn
+            .query_row(
+                "SELECT is_builtin FROM templates WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, i32>(0).map(|v| v != 0),
+            )
+            .map_err(|_| NootleError::Other("Template not found".to_string()))?;
         if is_builtin {
-            return Err(NootleError::Other("Cannot delete built-in templates".to_string()));
+            return Err(NootleError::Other(
+                "Cannot delete built-in templates".to_string(),
+            ));
         }
         conn.execute("DELETE FROM templates WHERE id = ?1", params![id])?;
         Ok(())
