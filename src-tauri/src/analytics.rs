@@ -6,10 +6,7 @@ use std::collections::HashMap;
 use crate::db::SentimentSegment;
 
 /// Compute talk-time analytics from transcript segments.
-pub fn compute_speaker_analytics(
-    db: &Database,
-    meeting_id: &str,
-) -> Result<Vec<SpeakerAnalytics>> {
+pub fn compute_speaker_analytics(db: &Database, meeting_id: &str) -> Result<Vec<SpeakerAnalytics>> {
     let transcripts = db.get_transcript(meeting_id)?;
     if transcripts.is_empty() {
         return Ok(vec![]);
@@ -116,10 +113,7 @@ pub fn compute_engagement(
         0.5
     };
 
-    let question_count = transcript_texts
-        .iter()
-        .filter(|t| t.contains('?'))
-        .count() as i64;
+    let question_count = transcript_texts.iter().filter(|t| t.contains('?')).count() as i64;
 
     let total_turns: i64 = speaker_analytics.iter().map(|s| s.turn_count).sum();
     let back_and_forth = if total_turns > 1 {
@@ -209,8 +203,10 @@ pub async fn analyze_sentiment(
                 // Try to extract JSON from the response (the LLM may include markdown fences)
                 let json_str = extract_json(&response);
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
-                    let sentiment =
-                        parsed["sentiment"].as_str().unwrap_or("neutral").to_string();
+                    let sentiment = parsed["sentiment"]
+                        .as_str()
+                        .unwrap_or("neutral")
+                        .to_string();
                     let score = parsed["score"].as_f64().unwrap_or(0.5);
                     segments.push(SentimentSegment {
                         id: uuid::Uuid::new_v4().to_string(),

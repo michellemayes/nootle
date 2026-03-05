@@ -20,8 +20,7 @@ impl DenoiseEngine {
             None => return false,
         };
         let dir = crate::model_registry::model_dir(model);
-        dir.join("deepfilternet3.onnx").exists()
-            && dir.join("deepfilternet3_dec.onnx").exists()
+        dir.join("deepfilternet3.onnx").exists() && dir.join("deepfilternet3_dec.onnx").exists()
     }
 
     /// Load the DeepFilterNet3 ONNX sessions.
