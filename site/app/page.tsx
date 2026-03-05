@@ -23,7 +23,7 @@ export default function Home() {
         <p>
           Made by{" "}
           <a
-            href="https://github.com/michellemayes"
+            href="https://michellemayes.me"
             className="underline hover:text-[var(--color-text)]"
           >
             Michelle Mayes

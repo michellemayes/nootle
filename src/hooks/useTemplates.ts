@@ -66,13 +66,15 @@ export function useTemplates() {
       prompt: string,
     ) => {
       const template = await invoke<Template>("update_template", {
-        id,
-        name,
-        description,
-        categoryId,
-        sections,
-        autoApplyRules,
-        prompt,
+        params: {
+          id,
+          name,
+          description,
+          categoryId,
+          sections,
+          autoApplyRules,
+          prompt,
+        },
       });
       await refresh();
       return template;
