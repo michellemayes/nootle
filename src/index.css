@@ -143,3 +143,21 @@
   border-radius: 4px;
 }
 
+/* AI content distinction */
+.ai-content {
+  color: var(--muted-foreground);
+  background: oklch(from var(--muted) l c h / 0.3);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.ai-content a {
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.user-content {
+  color: var(--foreground);
+}
+
