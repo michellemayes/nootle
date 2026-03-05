@@ -285,6 +285,7 @@ pub fn get_summaries(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<S
 }
 
 // Recording commands
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn start_recording(
     app: tauri::AppHandle,
@@ -556,10 +557,8 @@ async fn run_transcription_pipeline(
                     tracing::error!("[DIAG] Chunk #{chunk_count}: transcribe() FAILED: {e:#}");
                 }
             }
-        } else {
-            if chunk_count == 1 {
-                tracing::warn!("[DIAG] No transcription engine — chunks will not be transcribed");
-            }
+        } else if chunk_count == 1 {
+            tracing::warn!("[DIAG] No transcription engine — chunks will not be transcribed");
         }
 
         offset_samples += chunk_len;
@@ -632,10 +631,8 @@ async fn run_transcription_pipeline(
 
             if let Err(e) = db.update_meeting_title(&meeting_id, &title) {
                 tracing::warn!("Failed to auto-generate title: {e}");
-            } else {
-                if let Ok(meeting) = db.get_meeting(&meeting_id) {
-                    let _ = app.emit("meeting-updated", &meeting);
-                }
+            } else if let Ok(meeting) = db.get_meeting(&meeting_id) {
+                let _ = app.emit("meeting-updated", &meeting);
             }
         }
     }
@@ -1323,6 +1320,7 @@ pub async fn delete_model(model_id: String) -> Result<(), String> {
 // Global chat commands
 
 /// Shared RAG helper: embed query, search chunks, call LLM with retrieved context.
+#[allow(clippy::too_many_arguments)]
 async fn rag_chat(
     db: &Database,
     llm: &LlmRegistry,
