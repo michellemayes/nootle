@@ -609,9 +609,9 @@ impl Database {
         Ok(())
     }
 
-    fn seed_default_insight_types(conn: &rusqlite::Connection) -> Result<()> {
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM insight_types", [], |row| row.get(0))?;
+    fn seed_default_insight_types(conn: &Connection) -> Result<()> {
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM insight_types", [], |row| row.get(0))?;
         if count > 0 {
             return Ok(());
         }
@@ -971,9 +971,8 @@ impl Database {
             "UPDATE categories SET name = ?1, color = ?2, icon = ?3 WHERE id = ?4",
             params![name, color, icon, id],
         )?;
-        let mut stmt = conn.prepare(
-            "SELECT id, name, color, icon, created_at FROM categories WHERE id = ?1",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, color, icon, created_at FROM categories WHERE id = ?1")?;
         let category = stmt
             .query_row(params![id], |row| {
                 Ok(Category {
@@ -1886,7 +1885,10 @@ impl Database {
         Ok(rows)
     }
 
-    pub fn get_insight_by_action_item(&self, action_item_id: &str) -> Result<InsightWithActionItem> {
+    pub fn get_insight_by_action_item(
+        &self,
+        action_item_id: &str,
+    ) -> Result<InsightWithActionItem> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT i.id, i.meeting_id, i.type, i.content, i.context, i.transcript_start_ms, i.transcript_end_ms, i.created_at,
@@ -2063,8 +2065,11 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
-        let max_sort: i32 = conn
-            .query_row("SELECT COALESCE(MAX(sort_order), 0) FROM insight_types", [], |row| row.get(0))?;
+        let max_sort: i32 = conn.query_row(
+            "SELECT COALESCE(MAX(sort_order), 0) FROM insight_types",
+            [],
+            |row| row.get(0),
+        )?;
         conn.execute(
             "INSERT INTO insight_types (id, name, slug, description, extraction_prompt, icon, has_action_fields, is_builtin, sort_order, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9)",
@@ -2129,7 +2134,9 @@ impl Database {
             )
             .map_err(|_| NootleError::Other(format!("Insight type not found: {}", id)))?;
         if is_builtin != 0 {
-            return Err(NootleError::Other("Cannot delete built-in insight types".into()));
+            return Err(NootleError::Other(
+                "Cannot delete built-in insight types".into(),
+            ));
         }
         conn.execute("DELETE FROM insight_types WHERE id = ?1", params![id])?;
         Ok(())

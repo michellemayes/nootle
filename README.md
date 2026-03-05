@@ -31,6 +31,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, or local Ollama
 - **Meeting detection** — auto-detects active meeting apps and calendar events
 - **MCP server** — integrate with Claude Code and other MCP-compatible tools
+- **CLI tool** — query meetings, transcripts, insights, and more from the terminal
 - **Customizable** — editable prompts for summaries
 - **Auto-titling** — meetings are automatically titled from transcript content
 
@@ -59,6 +60,34 @@ pnpm install
 
 # Run in dev mode
 pnpm tauri dev
+```
+
+## CLI Tool
+
+`nootle-cli` is a standalone command-line tool for querying your meeting data. It reads the Nootle database directly — the app doesn't need to be running.
+
+```bash
+# Build and install
+cargo install --path src-tauri --bin nootle-cli
+
+# List meetings
+nootle-cli meetings list
+
+# Search transcripts
+nootle-cli search "quarterly review"
+
+# List open action items
+nootle-cli actions list --status open
+```
+
+Output is JSON by default. Add `--pretty` for human-readable formatting. See `nootle-cli --help` for all commands.
+
+### Claude Code Skill
+
+Install the skill so Claude can query your meetings:
+
+```bash
+claude skill add --global --file "$(dirname $(which nootle-cli))/../skills/nootle-cli.md"
 ```
 
 ## Testing

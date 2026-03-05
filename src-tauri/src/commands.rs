@@ -18,7 +18,15 @@ pub type DetectorState = Arc<std::sync::Mutex<crate::detection::MeetingDetector>
 pub type DownloadManagerState = Arc<TokioMutex<DownloadManager>>;
 pub type EmbeddingState = Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>;
 
-const ALLOWED_PROVIDERS: &[&str] = &["openai", "anthropic", "google", "groq", "openrouter", "linear", "asana"];
+const ALLOWED_PROVIDERS: &[&str] = &[
+    "openai",
+    "anthropic",
+    "google",
+    "groq",
+    "openrouter",
+    "linear",
+    "asana",
+];
 
 fn validate_provider(provider: &str) -> Result<(), String> {
     if ALLOWED_PROVIDERS.contains(&provider) {
@@ -152,8 +160,9 @@ pub fn update_category(
     color: String,
     icon: String,
 ) -> Result<Category, String> {
-    let valid =
-        color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+    let valid = color.len() == 7
+        && color.starts_with('#')
+        && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
     if !valid {
         return Err(format!("Invalid hex color: {}", color));
     }
@@ -280,6 +289,7 @@ pub fn get_summaries(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<S
 
 // Recording commands
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn start_recording(
     app: tauri::AppHandle,
     db: State<'_, DbState>,
@@ -395,8 +405,15 @@ pub async fn start_recording(
         let app_handle = app.clone();
 
         tokio::spawn(async move {
-            run_transcription_pipeline(audio_rx, db_clone, llm_clone, embedding_clone, meeting_id, app_handle)
-                .await;
+            run_transcription_pipeline(
+                audio_rx,
+                db_clone,
+                llm_clone,
+                embedding_clone,
+                meeting_id,
+                app_handle,
+            )
+            .await;
         });
     }
 
@@ -464,8 +481,11 @@ async fn run_transcription_pipeline(
     let sample_rate: u64 = 16000;
 
     let mut chunk_count: u64 = 0;
-    tracing::info!("[DIAG] Entering audio chunk loop, engine={}, diarization={}",
-        transcription_engine.is_some(), diarization_engine.is_some());
+    tracing::info!(
+        "[DIAG] Entering audio chunk loop, engine={}, diarization={}",
+        transcription_engine.is_some(),
+        diarization_engine.is_some()
+    );
 
     while let Some(chunk) = audio_rx.recv().await {
         let offset_ms = offset_samples * 1000 / sample_rate;
@@ -474,13 +494,18 @@ async fn run_transcription_pipeline(
 
         // Log every chunk received
         let rms = (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt();
-        tracing::info!("[DIAG] Chunk #{chunk_count}: {chunk_len} samples, offset={offset_ms}ms, RMS={rms:.6}");
+        tracing::info!(
+            "[DIAG] Chunk #{chunk_count}: {chunk_len} samples, offset={offset_ms}ms, RMS={rms:.6}"
+        );
 
         // Run transcription
         if let Some(ref mut engine) = transcription_engine {
             match engine.transcribe(&chunk, offset_ms) {
                 Ok(segments) => {
-                    tracing::info!("[DIAG] Chunk #{chunk_count}: transcribe() returned {} segments", segments.len());
+                    tracing::info!(
+                        "[DIAG] Chunk #{chunk_count}: transcribe() returned {} segments",
+                        segments.len()
+                    );
                     for seg in &segments {
                         tracing::info!("[DIAG] Segment: {:?}", seg.text);
 
@@ -513,7 +538,10 @@ async fn run_transcription_pipeline(
                     // Emit updated transcript to frontend
                     match db.get_transcript(&meeting_id) {
                         Ok(all_segments) => {
-                            tracing::info!("[DIAG] Emitting transcript-update with {} segments", all_segments.len());
+                            tracing::info!(
+                                "[DIAG] Emitting transcript-update with {} segments",
+                                all_segments.len()
+                            );
                             match app.emit("transcript-update", &all_segments) {
                                 Ok(_) => tracing::info!("[DIAG] Emit succeeded"),
                                 Err(e) => tracing::error!("[DIAG] Emit FAILED: {e}"),
@@ -528,10 +556,8 @@ async fn run_transcription_pipeline(
                     tracing::error!("[DIAG] Chunk #{chunk_count}: transcribe() FAILED: {e:#}");
                 }
             }
-        } else {
-            if chunk_count == 1 {
-                tracing::warn!("[DIAG] No transcription engine — chunks will not be transcribed");
-            }
+        } else if chunk_count == 1 {
+            tracing::warn!("[DIAG] No transcription engine — chunks will not be transcribed");
         }
 
         offset_samples += chunk_len;
@@ -541,7 +567,11 @@ async fn run_transcription_pipeline(
 
     // Auto-generate title from transcript content using LLM
     if let Ok(segments) = db.get_transcript(&meeting_id) {
-        let full_text: String = segments.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
+        let full_text: String = segments
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
         if !full_text.trim().is_empty() {
             // Take up to ~500 chars of transcript for the LLM to summarize
             let snippet = if full_text.len() <= 500 {
@@ -605,10 +635,19 @@ async fn run_transcription_pipeline(
         let llm = llm_state.read().await;
         if let Some(first_model) = llm.all_models().first().cloned() {
             match summarization::run_auto_prompts(
-                &db, &llm, &meeting_id, &first_model.provider, &first_model.id,
-            ).await {
+                &db,
+                &llm,
+                &meeting_id,
+                &first_model.provider,
+                &first_model.id,
+            )
+            .await
+            {
                 Ok(summaries) if !summaries.is_empty() => {
-                    tracing::info!("Auto-run produced {} summaries for {meeting_id}", summaries.len());
+                    tracing::info!(
+                        "Auto-run produced {} summaries for {meeting_id}",
+                        summaries.len()
+                    );
                     let _ = app.emit("summaries-updated", &meeting_id);
                 }
                 Ok(_) => tracing::info!("No auto-run prompts configured"),
@@ -1272,6 +1311,7 @@ pub async fn delete_model(model_id: String) -> Result<(), String> {
 // Global chat commands
 
 /// Shared RAG helper: embed query, search chunks, call LLM with retrieved context.
+#[allow(clippy::too_many_arguments)]
 async fn rag_chat(
     db: &Database,
     llm: &LlmRegistry,
@@ -1295,13 +1335,7 @@ async fn rag_chat(
     drop(engine_lock);
 
     let results = db
-        .search_similar_chunks(
-            &query_embedding,
-            10,
-            category_ids,
-            date_from,
-            date_to,
-        )
+        .search_similar_chunks(&query_embedding, 10, category_ids, date_from, date_to)
         .map_err(|e| e.to_string())?;
 
     if results.is_empty() {
@@ -1469,8 +1503,15 @@ pub fn create_insight_type(
     icon: String,
     has_action_fields: bool,
 ) -> Result<crate::db::InsightType, String> {
-    db.create_insight_type(&name, &slug, description.as_deref(), &extraction_prompt, &icon, has_action_fields)
-        .map_err(|e| e.to_string())
+    db.create_insight_type(
+        &name,
+        &slug,
+        description.as_deref(),
+        &extraction_prompt,
+        &icon,
+        has_action_fields,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1483,8 +1524,15 @@ pub fn update_insight_type(
     icon: String,
     has_action_fields: bool,
 ) -> Result<crate::db::InsightType, String> {
-    db.update_insight_type(&id, &name, description.as_deref(), &extraction_prompt, &icon, has_action_fields)
-        .map_err(|e| e.to_string())
+    db.update_insight_type(
+        &id,
+        &name,
+        description.as_deref(),
+        &extraction_prompt,
+        &icon,
+        has_action_fields,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
