@@ -1283,15 +1283,15 @@ export function MeetingDetail() {
                     </h3>
                     {scratchNotes.map((note) => {
                       const totalSec = Math.floor(note.timestamp_ms / 1000);
-                      const mm = String(Math.floor(totalSec / 60)).padStart(2, "0");
-                      const ss = String(totalSec % 60).padStart(2, "0");
+                      const minutes = String(Math.floor(totalSec / 60)).padStart(2, "0");
+                      const seconds = String(totalSec % 60).padStart(2, "0");
                       return (
                         <div
                           key={note.id}
                           className="rounded-lg bg-amber-500/5 border border-amber-500/10 px-4 py-3 flex items-start gap-3"
                         >
                           <span className="font-mono text-xs text-amber-600 dark:text-amber-400 mt-0.5 shrink-0">
-                            {mm}:{ss}
+                            {minutes}:{seconds}
                           </span>
                           <span className="text-sm text-foreground leading-relaxed">{note.content}</span>
                         </div>

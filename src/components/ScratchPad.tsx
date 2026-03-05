@@ -56,7 +56,7 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
   return (
     <div className="border-t">
       <button
-        onClick={() => setIsOpen((v) => !v)}
+        onClick={() => setIsOpen((isCurrentlyOpen) => !isCurrentlyOpen)}
         className="flex w-full items-center gap-2 px-6 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
       >
         {isOpen ? (

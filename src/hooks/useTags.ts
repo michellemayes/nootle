@@ -28,14 +28,11 @@ export function useTags() {
   const refreshMeetingTags = useCallback(async () => {
     try {
       const entries = await invoke<MeetingTagEntry[]>("get_all_meeting_tags");
-      const map: Record<string, Tag[]> = {};
+      const tagsByMeetingId: Record<string, Tag[]> = {};
       for (const entry of entries) {
-        if (!map[entry.meeting_id]) {
-          map[entry.meeting_id] = [];
-        }
-        map[entry.meeting_id].push(entry.tag);
+        (tagsByMeetingId[entry.meeting_id] ??= []).push(entry.tag);
       }
-      setMeetingTagsMap(map);
+      setMeetingTagsMap(tagsByMeetingId);
     } catch {
       // silently fail — meeting tags are supplemental
     }
