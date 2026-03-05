@@ -51,9 +51,6 @@ export function Features() {
             <motion.div
               key={feature.title}
               className="group relative p-8 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] hover:border-transparent transition-all duration-300"
-              style={{
-                boxShadow: "none",
-              }}
               whileHover={{
                 boxShadow: `0 0 30px -5px ${feature.accent}33`,
                 borderColor: `${feature.accent}44`,
@@ -65,7 +62,7 @@ export function Features() {
             >
               <div
                 className="inline-flex items-center justify-center w-12 h-12 rounded-xl mb-5"
-                style={{ backgroundColor: `color-mix(in srgb, ${feature.accent} 15%, transparent)` }}
+                style={{ backgroundColor: `color-mix(in srgb, ${feature.accent} 15%, var(--color-bg))` }}
               >
                 <feature.icon
                   className="w-6 h-6"

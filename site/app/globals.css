@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 :root {
-  --color-bg: #0A0A0F;
-  --color-surface: #14141F;
-  --color-surface-elevated: #1E1E2E;
-  --color-border: #2A2A3A;
+  --color-bg: #181820;
+  --color-surface: #21212E;
+  --color-surface-elevated: #2B2B3A;
+  --color-border: #3A3A52;
   --color-text: #F0F0F5;
   --color-text-secondary: #8888A0;
   --color-mint: #00FFB2;
@@ -21,4 +21,23 @@ body {
   color: var(--color-text);
   background-image: radial-gradient(circle, var(--color-border) 1px, transparent 1px);
   background-size: 32px 32px;
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -20px) scale(1.05); }
+  66% { transform: translate(-20px, 15px) scale(0.95); }
+}
+
+@keyframes float-slower {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-25px, 25px) scale(1.08); }
+}
+
+.animate-float-slow {
+  animation: float-slow 12s ease-in-out infinite;
+}
+
+.animate-float-slower {
+  animation: float-slower 16s ease-in-out infinite;
 }
