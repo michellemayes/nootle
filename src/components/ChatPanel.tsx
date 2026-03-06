@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useChat } from "@/hooks/useChat";
 import { useLLM } from "@/hooks/useLLM";
+import { useLLMSelection } from "@/hooks/useLLMSelection";
 import { useRecipes } from "@/hooks/useRecipes";
 import { X, Slash } from "lucide-react";
 
@@ -21,10 +22,9 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
   const { messages, loading, error, sendMessage, clearMessages } =
     useChat(meetingId);
   const { models, providers } = useLLM();
+  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
   const { recipes, runRecipe } = useRecipes();
   const [input, setInput] = useState("");
-  const [selectedProvider, setSelectedProvider] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
   const [recipeLoading, setRecipeLoading] = useState(false);
   const [recipeMessages, setRecipeMessages] = useState<
     { role: string; content: string }[]
@@ -34,25 +34,6 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Default to first provider/model when loaded
-  useEffect(() => {
-    if (providers.length > 0 && !selectedProvider) {
-      setSelectedProvider(providers[0]);
-    }
-  }, [providers, selectedProvider]);
-
-  useEffect(() => {
-    if (selectedProvider && models.length > 0 && !selectedModel) {
-      const providerModels = models.filter(
-        (m) => m.provider === selectedProvider,
-      );
-      if (providerModels.length > 0) {
-        setSelectedModel(providerModels[0].id);
-      }
-    }
-  }, [selectedProvider, models, selectedModel]);
-
-  // Auto-scroll on new messages
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -168,9 +149,6 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
     setRecipeMessages([]);
   };
 
-  const filteredModels = models.filter(
-    (m) => m.provider === selectedProvider,
-  );
 
   const isLoading = loading || recipeLoading;
 
@@ -196,10 +174,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
           <div className="flex items-center gap-2 px-4 py-2 border-b">
             <select
               value={selectedProvider}
-              onChange={(e) => {
-                setSelectedProvider(e.target.value);
-                setSelectedModel("");
-              }}
+              onChange={(e) => changeProvider(e.target.value)}
               className="h-7 flex-1 rounded-md border bg-transparent px-2 text-xs"
             >
               <option value="">Provider</option>

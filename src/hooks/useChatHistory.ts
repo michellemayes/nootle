@@ -5,14 +5,16 @@ import type { ChatConversation, ChatMessageRecord } from "@/types";
 export function useChatConversations() {
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const result = await invoke<ChatConversation[]>("list_chat_conversations");
       setConversations(result);
-    } catch {
-      // ignore
+    } catch (err) {
+      setError(String(err));
     } finally {
       setLoading(false);
     }
@@ -44,12 +46,13 @@ export function useChatConversations() {
     [refresh],
   );
 
-  return { conversations, loading, refresh, createConversation, deleteConversation, updateTitle };
+  return { conversations, loading, error, refresh, createConversation, deleteConversation, updateTitle };
 }
 
 export function useChatMessages(conversationId: string | null) {
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!conversationId) {
@@ -58,12 +61,13 @@ export function useChatMessages(conversationId: string | null) {
     }
     try {
       setLoading(true);
+      setError(null);
       const result = await invoke<ChatMessageRecord[]>("list_chat_messages", {
         conversationId,
       });
       setMessages(result);
-    } catch {
-      // ignore
+    } catch (err) {
+      setError(String(err));
     } finally {
       setLoading(false);
     }
@@ -73,5 +77,5 @@ export function useChatMessages(conversationId: string | null) {
     refresh();
   }, [refresh]);
 
-  return { messages, loading, refresh };
+  return { messages, loading, error, refresh };
 }

@@ -7,7 +7,6 @@ export function useTags() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Map of meeting_id -> Tag[]
   const [meetingTagsMap, setMeetingTagsMap] = useState<
     Record<string, Tag[]>
   >({});

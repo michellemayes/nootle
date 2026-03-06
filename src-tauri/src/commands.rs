@@ -47,24 +47,6 @@ fn validate_provider(provider: &str) -> Result<(), String> {
     }
 }
 
-// Meeting commands
-#[tauri::command]
-pub fn create_meeting(
-    db: State<'_, DbState>,
-    title: String,
-    category_id: Option<String>,
-    calendar_event_id: Option<String>,
-    template_id: Option<String>,
-) -> Result<Meeting, String> {
-    db.create_meeting(NewMeeting {
-        title,
-        category_id,
-        calendar_event_id,
-        template_id,
-    })
-    .map_err(|e| e.to_string())
-}
-
 #[tauri::command]
 pub fn list_meetings(
     db: State<'_, DbState>,
@@ -93,10 +75,8 @@ pub fn delete_meeting(db: State<'_, DbState>, id: String) -> Result<(), String> 
     // Delete vec0 embeddings (not cascade-aware)
     let _ = db.delete_meeting_chunks(&id);
 
-    // Delete meeting (cascades transcripts, summaries, insights)
     db.delete_meeting(&id).map_err(|e| e.to_string())?;
 
-    // Clean up audio file from disk
     if let Some(path) = audio_path {
         let _ = std::fs::remove_file(&path);
     }
@@ -138,7 +118,6 @@ pub fn update_meeting_category(
         .map_err(|e| e.to_string())
 }
 
-// Category commands
 #[tauri::command]
 pub fn create_category(
     db: State<'_, DbState>,
@@ -147,11 +126,7 @@ pub fn create_category(
     icon: Option<String>,
 ) -> Result<Category, String> {
     if let Some(ref c) = color {
-        let valid =
-            c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
-        if !valid {
-            return Err(format!("Invalid hex color: {}", c));
-        }
+        validate_hex_color(c)?;
     }
     db.create_category(NewCategory { name, color, icon })
         .map_err(|e| e.to_string())
@@ -170,12 +145,7 @@ pub fn update_category(
     color: String,
     icon: String,
 ) -> Result<Category, String> {
-    let valid = color.len() == 7
-        && color.starts_with('#')
-        && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
-    if !valid {
-        return Err(format!("Invalid hex color: {}", color));
-    }
+    validate_hex_color(&color)?;
     db.update_category(&id, &name, &color, &icon)
         .map_err(|e| e.to_string())
 }
@@ -194,6 +164,13 @@ fn validate_hex_color(color: &str) -> Result<(), String> {
     } else {
         Err(format!("Invalid hex color: {}", color))
     }
+}
+
+fn get_linear_api_key(db: &Database) -> Result<String, String> {
+    db.get_linear_setting("api_key")
+        .map_err(|e| e.to_string())?
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| "Linear API key not configured".to_string())
 }
 
 #[tauri::command]
@@ -290,7 +267,6 @@ pub fn delete_scratch_note(db: State<'_, DbState>, id: String) -> Result<(), Str
     db.delete_scratch_note(&id).map_err(|e| e.to_string())
 }
 
-// Transcript commands
 #[tauri::command]
 pub fn get_transcript(
     db: State<'_, DbState>,
@@ -329,11 +305,6 @@ pub fn create_recipe(
 #[tauri::command]
 pub fn list_recipes(db: State<'_, DbState>) -> Result<Vec<Recipe>, String> {
     db.list_recipes().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn get_recipe(db: State<'_, DbState>, id: String) -> Result<Recipe, String> {
-    db.get_recipe(&id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -377,7 +348,6 @@ pub async fn run_recipe(
         .map_err(|e| e.to_string())
 }
 
-// Template commands
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn create_template(
@@ -419,14 +389,12 @@ pub fn update_template(db: State<'_, DbState>, params: UpdateTemplate) -> Result
     db.update_template(&params).map_err(|e| e.to_string())
 }
 
-// Summary commands
 #[tauri::command]
 pub fn get_summaries(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<Summary>, String> {
     db.get_summaries_for_meeting(&meeting_id)
         .map_err(|e| e.to_string())
 }
 
-// Recording commands
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn start_recording(
@@ -440,7 +408,6 @@ pub async fn start_recording(
     calendar_event_id: Option<String>,
     template_id: Option<String>,
 ) -> Result<Meeting, String> {
-    // Check if already recording
     let mut session_lock = recording.lock().await;
     if session_lock.is_some() {
         return Err("Already recording".to_string());
@@ -464,7 +431,6 @@ pub async fn start_recording(
         }
     }
 
-    // Create meeting in DB
     let meeting = db
         .create_meeting(NewMeeting {
             title,
@@ -949,7 +915,6 @@ pub async fn get_audio_data(
     ))
 }
 
-// API key commands
 #[tauri::command]
 pub async fn store_api_key(
     db: State<'_, DbState>,
@@ -1032,7 +997,6 @@ pub fn list_stored_providers(db: State<'_, DbState>) -> Result<Vec<String>, Stri
     Ok(providers)
 }
 
-// Summarization commands
 #[tauri::command]
 pub async fn generate_summary(
     db: State<'_, DbState>,
@@ -1086,37 +1050,6 @@ pub async fn list_llm_providers(llm: State<'_, LlmState>) -> Result<Vec<String>,
     Ok(llm.provider_names())
 }
 
-// Meeting detection commands
-#[tauri::command]
-pub fn get_active_meeting_apps(detector: State<'_, DetectorState>) -> Result<Vec<String>, String> {
-    let detector = detector.lock().map_err(|e| e.to_string())?;
-    Ok(detector.active_apps())
-}
-
-// Transcription commands
-#[tauri::command]
-pub async fn get_model_status(
-    download_mgr: State<'_, DownloadManagerState>,
-) -> Result<String, String> {
-    let mgr = download_mgr.lock().await;
-    let is_downloading = mgr.cancel_token.is_some();
-    drop(mgr);
-
-    if is_downloading {
-        return serde_json::to_string(&transcription::ModelStatus::Downloading { progress: 0.0 })
-            .map_err(|e| e.to_string());
-    }
-
-    let status = transcription::TranscriptionEngine::check_status();
-    serde_json::to_string(&status).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn get_diarization_status() -> Result<bool, String> {
-    Ok(crate::diarization::DiarizationEngine::models_available())
-}
-
-// Permission commands
 #[tauri::command]
 pub fn check_permissions() -> Result<crate::permissions::PermissionStatus, String> {
     Ok(crate::permissions::check_all())
@@ -1137,7 +1070,6 @@ pub async fn request_calendar_permission() -> Result<bool, String> {
     Ok(crate::permissions::request_calendar().await)
 }
 
-// Onboarding commands
 #[tauri::command]
 pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
     let defaults = vec![
@@ -1169,16 +1101,11 @@ pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
     Ok(())
 }
 
-// Linear commands
 #[tauri::command]
 pub async fn list_linear_teams(
     db: State<'_, DbState>,
 ) -> Result<Vec<crate::linear::LinearTeam>, String> {
-    let api_key = db
-        .get_linear_setting("api_key")
-        .map_err(|e| e.to_string())?
-        .filter(|k| !k.is_empty())
-        .ok_or_else(|| "Linear API key not configured".to_string())?;
+    let api_key = get_linear_api_key(&db)?;
     crate::linear::list_teams(&api_key)
         .await
         .map_err(|e| e.to_string())
@@ -1189,11 +1116,7 @@ pub async fn list_linear_projects(
     db: State<'_, DbState>,
     team_id: String,
 ) -> Result<Vec<crate::linear::LinearProject>, String> {
-    let api_key = db
-        .get_linear_setting("api_key")
-        .map_err(|e| e.to_string())?
-        .filter(|k| !k.is_empty())
-        .ok_or_else(|| "Linear API key not configured".to_string())?;
+    let api_key = get_linear_api_key(&db)?;
     crate::linear::list_projects(&api_key, &team_id)
         .await
         .map_err(|e| e.to_string())
@@ -1255,12 +1178,7 @@ pub async fn create_linear_ticket(
         Err(_) => (meeting.title.clone(), summary.content.clone()),
     };
 
-    // Get Linear API key and create issue
-    let api_key = db
-        .get_linear_setting("api_key")
-        .map_err(|e| e.to_string())?
-        .filter(|k| !k.is_empty())
-        .ok_or_else(|| "Linear API key not configured".to_string())?;
+    let api_key = get_linear_api_key(&db)?;
 
     let issue = crate::linear::create_issue(
         &api_key,
@@ -1272,7 +1190,6 @@ pub async fn create_linear_ticket(
     .await
     .map_err(|e| e.to_string())?;
 
-    // Store ticket reference in DB
     let ticket = db
         .create_linear_ticket(NewLinearTicket {
             summary_id: &summary_id,
@@ -1356,12 +1273,7 @@ pub async fn create_ticket_from_action_item(
         Err(_) => (item.content.clone(), item.content.clone()),
     };
 
-    // Get Linear API key and create issue
-    let api_key = db
-        .get_linear_setting("api_key")
-        .map_err(|e| e.to_string())?
-        .filter(|k| !k.is_empty())
-        .ok_or_else(|| "Linear API key not configured".to_string())?;
+    let api_key = get_linear_api_key(&db)?;
 
     let issue = crate::linear::create_issue(
         &api_key,
@@ -1412,7 +1324,6 @@ pub fn set_linear_setting(
         .map_err(|e| e.to_string())
 }
 
-// Model download commands
 
 #[tauri::command]
 pub async fn get_available_models() -> Result<serde_json::Value, String> {
@@ -1463,7 +1374,6 @@ pub async fn delete_model(model_id: String) -> Result<(), String> {
     model_download::delete_model_files(model)
 }
 
-// Global chat commands
 
 /// Shared RAG helper: embed query, search chunks, call LLM with retrieved context.
 #[allow(clippy::too_many_arguments)]
@@ -1548,41 +1458,6 @@ async fn rag_chat(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn chat_with_transcripts(
-    db: State<'_, DbState>,
-    llm: State<'_, LlmState>,
-    embedding_state: State<'_, EmbeddingState>,
-    message: String,
-    history: Vec<ChatMessage>,
-    provider: String,
-    model: String,
-    category_ids: Vec<String>,
-    date_from: Option<String>,
-    date_to: Option<String>,
-) -> Result<serde_json::Value, String> {
-    let llm = llm.read().await;
-    let (response, sources) = rag_chat(
-        &db,
-        &llm,
-        &embedding_state,
-        &message,
-        history,
-        &provider,
-        &model,
-        &category_ids,
-        date_from.as_deref(),
-        date_to.as_deref(),
-    )
-    .await?;
-
-    Ok(serde_json::json!({
-        "response": response,
-        "sources": sources
-    }))
-}
-
-#[tauri::command]
 pub async fn embed_meeting_cmd(
     db: State<'_, DbState>,
     embedding_state: State<'_, EmbeddingState>,
@@ -1642,7 +1517,6 @@ pub async fn get_embedding_status(
     }))
 }
 
-// Insight Type commands
 #[tauri::command]
 pub fn list_insight_types(db: State<'_, DbState>) -> Result<Vec<crate::db::InsightType>, String> {
     db.list_insight_types().map_err(|e| e.to_string())
@@ -1695,7 +1569,6 @@ pub fn delete_insight_type(db: State<'_, DbState>, id: String) -> Result<(), Str
     db.delete_insight_type(&id).map_err(|e| e.to_string())
 }
 
-// Insight commands
 #[tauri::command]
 pub fn get_insights(
     db: State<'_, DbState>,
@@ -1816,7 +1689,6 @@ pub async fn set_app_setting(
     db.set_setting(&key, &value).map_err(|e| e.to_string())
 }
 
-// Chat conversation commands
 
 #[tauri::command]
 pub fn create_chat_conversation(db: State<'_, DbState>) -> Result<ChatConversation, String> {
@@ -1856,11 +1728,9 @@ pub async fn send_chat_message(
     date_from: Option<String>,
     date_to: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    // Save user message
     db.create_chat_message(&conversation_id, "user", &message, None)
         .map_err(|e| e.to_string())?;
 
-    // Load conversation history
     let db_messages = db
         .list_chat_messages(&conversation_id)
         .map_err(|e| e.to_string())?;
@@ -1892,7 +1762,6 @@ pub async fn send_chat_message(
     )
     .await?;
 
-    // Save assistant response
     let sources_json = serde_json::to_string(&sources).ok();
     db.create_chat_message(
         &conversation_id,
@@ -1956,7 +1825,6 @@ pub fn update_chat_conversation_title(
         .map_err(|e| e.to_string())
 }
 
-// Meeting notes commands
 
 #[tauri::command]
 pub fn save_meeting_notes(

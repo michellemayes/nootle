@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { BarChart3, RotateCw, Users, Timer, MessageCircleQuestion, Zap } from "lucide-react";
 import type { ModelInfo } from "@/types";
+import { formatMs } from "@/lib/utils";
+import { useLLMSelection } from "@/hooks/useLLMSelection";
 
 const barColors = [
   "bg-blue-500",
@@ -14,13 +16,6 @@ const barColors = [
   "bg-pink-500",
   "bg-cyan-500",
 ];
-
-function formatMs(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
 
 export function AnalyticsPanel({
   meetingId,
@@ -41,28 +36,10 @@ export function AnalyticsPanel({
     computeSentiment,
   } = useAnalytics(meetingId);
 
-  const [selectedProvider, setSelectedProvider] = useState(providers[0] ?? "");
-  const [selectedModel, setSelectedModel] = useState("");
+  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
   const [computing, setComputing] = useState(false);
   const [analyzingSentiment, setAnalyzingSentiment] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (providers.length > 0 && !selectedProvider) {
-      setSelectedProvider(providers[0]);
-    }
-  }, [providers, selectedProvider]);
-
-  useEffect(() => {
-    if (selectedProvider && models.length > 0 && !selectedModel) {
-      const providerModels = models.filter((m) => m.provider === selectedProvider);
-      if (providerModels.length > 0) {
-        setSelectedModel(providerModels[0].id);
-      }
-    }
-  }, [selectedProvider, models, selectedModel]);
-
-  const filteredModels = models.filter((m) => m.provider === selectedProvider);
 
   const hasSpeakers = speakers.length > 0;
   const hasSentiment = sentiment.length > 0;
@@ -255,10 +232,7 @@ export function AnalyticsPanel({
           <div className="flex gap-2">
             <select
               value={selectedProvider}
-              onChange={(e) => {
-                setSelectedProvider(e.target.value);
-                setSelectedModel("");
-              }}
+              onChange={(e) => changeProvider(e.target.value)}
               className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
             >
               <option value="">Provider</option>

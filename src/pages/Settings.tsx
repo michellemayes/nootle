@@ -16,6 +16,7 @@ import { useInsightTypes } from "@/hooks/useInsightTypes";
 import { useAppVersion } from "@/hooks/useAppVersion";
 import { AccentColorPicker } from "@/components/AccentColorPicker";
 import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus } from "lucide-react";
+import { formatBytes } from "@/lib/utils";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter"];
 
@@ -29,15 +30,6 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   linear: "Linear",
   asana: "Asana",
 };
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
 
 function getMcpConfig(exePath: string) {
   return `{

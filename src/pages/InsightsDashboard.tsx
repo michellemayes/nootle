@@ -12,6 +12,7 @@ import { useLLM } from "@/hooks/useLLM";
 import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import type { InsightWithActionItem, InsightType, LinearTeam } from "@/types";
 import { Check, Lightbulb, ListChecks, Star, Search, AlertTriangle, Ticket } from "lucide-react";
+import { formatDate } from "@/lib/utils";
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   lightbulb: Lightbulb,
@@ -22,14 +23,6 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
 
 function getIcon(iconName: string): React.ComponentType<{ className?: string }> {
   return ICON_MAP[iconName] ?? Lightbulb;
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function ActionItemTicketButton({

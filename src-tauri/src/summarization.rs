@@ -47,7 +47,6 @@ pub async fn summarize_meeting(
         )
     };
 
-    // Build messages
     let messages = vec![
         ChatMessage {
             role: "system".into(),
@@ -62,13 +61,11 @@ pub async fn summarize_meeting(
         },
     ];
 
-    // Call LLM
     let provider = llm
         .get_provider(provider_name)
         .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider_name))?;
     let content = provider.chat(messages, model).await?;
 
-    // Save summary to DB
     let summary = db.create_summary(NewSummary {
         meeting_id: meeting_id.to_string(),
         template_id: Some(template_id.to_string()),
@@ -110,7 +107,6 @@ pub async fn chat_with_transcript(
     let transcript = db.get_transcript(meeting_id)?;
     let transcript_text = format_transcript(&transcript);
 
-    // Build messages with transcript as system context
     let mut messages = vec![ChatMessage {
         role: "system".into(),
         content: format!(
@@ -122,16 +118,13 @@ pub async fn chat_with_transcript(
         ),
     }];
 
-    // Add conversation history
     messages.extend(conversation_history);
 
-    // Add the new user message
     messages.push(ChatMessage {
         role: "user".into(),
         content: user_message.to_string(),
     });
 
-    // Call LLM
     let provider = llm
         .get_provider(provider_name)
         .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider_name))?;

@@ -12,7 +12,6 @@ pub fn compute_speaker_analytics(db: &Database, meeting_id: &str) -> Result<Vec<
         return Ok(vec![]);
     }
 
-    // Group segments by speaker
     let mut speaker_segments: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
     for seg in &transcripts {
         speaker_segments
@@ -234,7 +233,6 @@ pub async fn analyze_sentiment(
 /// Extract the first JSON object from a string, handling markdown code fences.
 fn extract_json(s: &str) -> &str {
     let trimmed = s.trim();
-    // Strip markdown fences if present
     if let Some(rest) = trimmed.strip_prefix("```json") {
         if let Some(inner) = rest.strip_suffix("```") {
             return inner.trim();
@@ -245,7 +243,6 @@ fn extract_json(s: &str) -> &str {
             return inner.trim();
         }
     }
-    // Try to find a JSON object directly
     if let Some(start) = trimmed.find('{') {
         if let Some(end) = trimmed.rfind('}') {
             return &trimmed[start..=end];

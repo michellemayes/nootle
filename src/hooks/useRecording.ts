@@ -14,7 +14,6 @@ export function useRecording() {
       const recording = await invoke<boolean>("is_recording");
       setIsRecording(recording);
     } catch {
-      // Ignore errors during check
     }
   }, []);
 

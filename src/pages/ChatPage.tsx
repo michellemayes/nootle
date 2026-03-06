@@ -10,32 +10,10 @@ import { ThinkingDots } from "@/components/ThinkingDots";
 import { useChatConversations, useChatMessages } from "@/hooks/useChatHistory";
 import { useCategories } from "@/hooks/useCategories";
 import { useLLM } from "@/hooks/useLLM";
+import { useLLMSelection } from "@/hooks/useLLMSelection";
 import type { ChatSource, GlobalChatResponse } from "@/types";
 import { Plus, Trash2, MessageSquare, Send } from "lucide-react";
-
-function formatTimestamp(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function SourceCitation({
-  source,
-  onClick,
-}: {
-  source: ChatSource;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20 transition-colors"
-    >
-      {source.meeting_title}, {formatTimestamp(source.start_ms)}
-    </button>
-  );
-}
+import { SourceCitation } from "@/components/SourceCitation";
 
 export function ChatPage() {
   const navigate = useNavigate();
@@ -45,49 +23,28 @@ export function ChatPage() {
   const { messages: dbMessages, refresh: refreshMessages } = useChatMessages(activeId);
   const { categories } = useCategories();
   const { models, providers } = useLLM();
+  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
 
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [dateFromValue, setDateFromValue] = useState("");
   const [dateToValue, setDateToValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Default provider/model
-  useEffect(() => {
-    if (providers.length > 0 && !selectedProvider) {
-      setSelectedProvider(providers[0]);
-    }
-  }, [providers, selectedProvider]);
-
-  useEffect(() => {
-    if (selectedProvider && models.length > 0 && !selectedModel) {
-      const providerModels = models.filter((m) => m.provider === selectedProvider);
-      if (providerModels.length > 0) {
-        setSelectedModel(providerModels[0].id);
-      }
-    }
-  }, [selectedProvider, models, selectedModel]);
-
-  // Auto-select first conversation
   useEffect(() => {
     if (conversations.length > 0 && !activeId) {
       setActiveId(conversations[0].id);
     }
   }, [conversations, activeId]);
 
-  // Auto-scroll
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [dbMessages]);
-
-  const filteredModels = models.filter((m) => m.provider === selectedProvider);
 
   const getDateFrom = () => dateFromValue ? new Date(dateFromValue).toISOString() : null;
   const getDateTo = () => dateToValue ? new Date(dateToValue + "T23:59:59").toISOString() : null;
@@ -245,10 +202,7 @@ export function ChatPage() {
           />
           <select
             value={selectedProvider}
-            onChange={(e) => {
-              setSelectedProvider(e.target.value);
-              setSelectedModel("");
-            }}
+            onChange={(e) => changeProvider(e.target.value)}
             className="h-7 rounded-md border bg-transparent px-2 text-xs"
           >
             <option value="">Provider</option>

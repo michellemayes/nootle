@@ -18,6 +18,8 @@ import { useInsights } from "@/hooks/useInsights";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useLLM } from "@/hooks/useLLM";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
+import { formatMs, formatDate, statusLabel } from "@/lib/utils";
+import { useLLMSelection } from "@/hooks/useLLMSelection";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useTags } from "@/hooks/useTags";
 import { useScratchPad } from "@/hooks/useScratchPad";
@@ -56,37 +58,11 @@ const speakerColors = [
   "text-cyan-400",
 ];
 
-function formatMs(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 function formatPlayerTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return "00:00";
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function statusLabel(status: string): string {
-  switch (status) {
-    case "summarized": return "Done";
-    case "recording": return "Recording";
-    case "transcribing": return "Transcribing";
-    case "idle": return "Idle";
-    default: return status.charAt(0).toUpperCase() + status.slice(1);
-  }
 }
 
 function ActionItemRow({
@@ -257,27 +233,10 @@ function InsightsPanel({
     updateActionItem,
   } = useInsights(meetingId);
 
-  const [selectedProvider, setSelectedProvider] = useState(providers[0] ?? "");
-  const [selectedModel, setSelectedModel] = useState("");
+  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (providers.length > 0 && !selectedProvider) {
-      setSelectedProvider(providers[0]);
-    }
-  }, [providers, selectedProvider]);
-
-  useEffect(() => {
-    if (selectedProvider && models.length > 0 && !selectedModel) {
-      const providerModels = models.filter((m) => m.provider === selectedProvider);
-      if (providerModels.length > 0) {
-        setSelectedModel(providerModels[0].id);
-      }
-    }
-  }, [selectedProvider, models, selectedModel]);
-
-  const filteredModels = models.filter((m) => m.provider === selectedProvider);
   const hasInsights = insights.length > 0;
 
   const handleExtract = async (reExtract: boolean) => {
@@ -319,10 +278,7 @@ function InsightsPanel({
       <div className="flex items-center gap-2 border-b px-5 py-2 flex-wrap">
         <select
           value={selectedProvider}
-          onChange={(e) => {
-            setSelectedProvider(e.target.value);
-            setSelectedModel("");
-          }}
+          onChange={(e) => changeProvider(e.target.value)}
           className="h-7 rounded-md border bg-transparent px-2 text-xs"
         >
           <option value="">Provider</option>
@@ -450,8 +406,7 @@ function CreateTicketButton({
   const [open, setOpen] = useState(false);
   const [teamId, setTeamId] = useState(defaultTeamId ?? "");
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
-  const [selectedProvider, setSelectedProvider] = useState(providers[0] ?? "");
-  const [selectedModel, setSelectedModel] = useState("");
+  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -462,8 +417,6 @@ function CreateTicketButton({
   useEffect(() => {
     if (defaultProjectId && !projectId) setProjectId(defaultProjectId);
   }, [defaultProjectId, projectId]);
-
-  const filteredModels = models.filter((m) => m.provider === selectedProvider);
 
   if (existingTicket) {
     const isHttps = existingTicket.linear_issue_url.startsWith("https://");
@@ -551,10 +504,7 @@ function CreateTicketButton({
           <div className="flex gap-2">
             <select
               value={selectedProvider}
-              onChange={(e) => {
-                setSelectedProvider(e.target.value);
-                setSelectedModel("");
-              }}
+              onChange={(e) => changeProvider(e.target.value)}
               className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
             >
               {providers.map((p) => (
@@ -613,29 +563,11 @@ function NotesPanel({
   models: ModelInfo[];
   onRefresh: () => void;
 }) {
-  const [selectedProvider, setSelectedProvider] = useState(providers[0] ?? "");
-  const [selectedModel, setSelectedModel] = useState("");
+  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
   const [enriching, setEnriching] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"original" | "enriched">("enriched");
   const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (providers.length > 0 && !selectedProvider) {
-      setSelectedProvider(providers[0]);
-    }
-  }, [providers, selectedProvider]);
-
-  useEffect(() => {
-    if (selectedProvider && models.length > 0 && !selectedModel) {
-      const providerModels = models.filter((m) => m.provider === selectedProvider);
-      if (providerModels.length > 0) {
-        setSelectedModel(providerModels[0].id);
-      }
-    }
-  }, [selectedProvider, models, selectedModel]);
-
-  const filteredModels = models.filter((m) => m.provider === selectedProvider);
 
   const handleEnrich = async () => {
     if (!selectedProvider || !selectedModel) return;
@@ -662,7 +594,6 @@ function NotesPanel({
       try {
         await invoke("save_enriched_notes", { id: meetingId, enrichedNotes: value });
       } catch {
-        // silent
       }
     }, 600);
   }, [meetingId]);
@@ -689,10 +620,7 @@ function NotesPanel({
           <>
             <select
               value={selectedProvider}
-              onChange={(e) => {
-                setSelectedProvider(e.target.value);
-                setSelectedModel("");
-              }}
+              onChange={(e) => changeProvider(e.target.value)}
               className="h-7 rounded-md border bg-transparent px-2 text-xs"
             >
               <option value="">Provider</option>
@@ -807,12 +735,10 @@ export function MeetingDetail() {
   const [generating, setGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState("");
-  const [selectedProvider, setSelectedProvider] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
+  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
   const [compactTranscript, setCompactTranscript] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(true);
 
-  // Audio player state
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const audioRef = useCallback((node: HTMLAudioElement | null) => {
     setAudioElement(node);
@@ -823,29 +749,11 @@ export function MeetingDetail() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  // Default selections
   useEffect(() => {
     if (templates.length > 0 && !selectedTemplate) {
       setSelectedTemplate(templates[0].id);
     }
   }, [templates, selectedTemplate]);
-
-  useEffect(() => {
-    if (providers.length > 0 && !selectedProvider) {
-      setSelectedProvider(providers[0]);
-    }
-  }, [providers, selectedProvider]);
-
-  useEffect(() => {
-    if (selectedProvider && models.length > 0 && !selectedModel) {
-      const providerModels = models.filter(
-        (m) => m.provider === selectedProvider,
-      );
-      if (providerModels.length > 0) {
-        setSelectedModel(providerModels[0].id);
-      }
-    }
-  }, [selectedProvider, models, selectedModel]);
 
   useEffect(() => {
     if (!id) return;
@@ -951,7 +859,6 @@ export function MeetingDetail() {
     }
   }, [isPlaying, audioElement]);
 
-  // Speaker color map
   const speakerMap = new Map<string, string>();
   segments.forEach((seg) => {
     if (!speakerMap.has(seg.speaker_label)) {
@@ -970,7 +877,6 @@ export function MeetingDetail() {
       setJustGenerated(true);
       setTimeout(() => setJustGenerated(false), 100);
     } catch {
-      // Error handling could be improved
     } finally {
       setGenerating(false);
     }
@@ -994,10 +900,6 @@ export function MeetingDetail() {
       </div>
     );
   }
-
-  const filteredModels = models.filter(
-    (m) => m.provider === selectedProvider,
-  );
 
   return (
     <motion.div
@@ -1037,7 +939,7 @@ export function MeetingDetail() {
               </h1>
             )}
             <p className="text-sm text-muted-foreground">
-              {formatDate(meeting.start_time)}
+              {formatDate(meeting.start_time, "long")}
             </p>
             <TagEditor
               meetingId={meeting.id}
@@ -1186,10 +1088,7 @@ export function MeetingDetail() {
                 </select>
                 <select
                   value={selectedProvider}
-                  onChange={(e) => {
-                    setSelectedProvider(e.target.value);
-                    setSelectedModel("");
-                  }}
+                  onChange={(e) => changeProvider(e.target.value)}
                   className="h-7 rounded-md border bg-transparent px-2 text-xs"
                 >
                   <option value="">Provider</option>

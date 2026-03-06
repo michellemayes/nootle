@@ -5,6 +5,7 @@ import type { ScratchNote } from "@/types";
 export function useScratchPad(meetingId: string | null) {
   const [notes, setNotes] = useState<ScratchNote[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!meetingId) {
@@ -13,11 +14,13 @@ export function useScratchPad(meetingId: string | null) {
     }
     try {
       setLoading(true);
+      setError(null);
       const result = await invoke<ScratchNote[]>("get_scratch_notes", {
         meetingId,
       });
       setNotes(result);
-    } catch {
+    } catch (err) {
+      setError(String(err));
     } finally {
       setLoading(false);
     }
@@ -48,5 +51,5 @@ export function useScratchPad(meetingId: string | null) {
     [refresh],
   );
 
-  return { notes, loading, addNote, deleteNote, refresh };
+  return { notes, loading, error, addNote, deleteNote, refresh };
 }

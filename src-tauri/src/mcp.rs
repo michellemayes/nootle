@@ -8,7 +8,6 @@ use serde_json::json;
 
 use crate::db::Database;
 
-// ----- Parameter structs for tools -----
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListMeetingsParams {
@@ -32,7 +31,6 @@ pub struct SearchTranscriptsParams {
     pub query: String,
 }
 
-// ----- MCP Server struct -----
 
 #[derive(Clone)]
 pub struct NootleMcpServer {

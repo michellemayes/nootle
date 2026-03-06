@@ -24,7 +24,6 @@ export function useGlobalChat() {
       const status = await invoke<EmbeddingStatus>("get_embedding_status");
       setEmbeddingStatus(status);
     } catch {
-      // Ignore errors during status fetch
     }
   }, []);
 
