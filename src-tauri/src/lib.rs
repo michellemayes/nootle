@@ -366,6 +366,15 @@ pub fn run() {
             commands::compute_meeting_analytics,
             commands::compute_meeting_sentiment,
             commands::get_meeting_analytics,
+            commands::create_integration,
+            commands::list_integrations,
+            commands::update_integration,
+            commands::delete_integration,
+            commands::create_workflow,
+            commands::list_workflows,
+            commands::update_workflow,
+            commands::delete_workflow,
+            commands::list_workflow_runs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
