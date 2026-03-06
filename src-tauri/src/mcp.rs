@@ -8,7 +8,6 @@ use serde_json::json;
 
 use crate::db::Database;
 
-
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListMeetingsParams {
     /// Optional category ID to filter meetings by
@@ -30,7 +29,6 @@ pub struct SearchTranscriptsParams {
     /// Full-text search query to match against transcript segments
     pub query: String,
 }
-
 
 #[derive(Clone)]
 pub struct NootleMcpServer {
