@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { formatDate, statusLabel } from "@/lib/utils";
 
 const LOADING_MESSAGES = [
   "Warming up the noodles...",
@@ -55,14 +56,6 @@ import {
   Archive,
 } from "lucide-react";
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 function formatDuration(start: string, end: string | null): string {
   if (!end) return "In progress";
   const ms = new Date(end).getTime() - new Date(start).getTime();
@@ -85,21 +78,6 @@ function statusColor(
       return "default";
     default:
       return "outline";
-  }
-}
-
-function statusLabel(status: string): string {
-  switch (status) {
-    case "recording":
-      return "Recording";
-    case "transcribing":
-      return "Transcribing";
-    case "summarized":
-      return "Done";
-    case "archived":
-      return "Archived";
-    default:
-      return status;
   }
 }
 

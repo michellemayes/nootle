@@ -3,6 +3,21 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { InsightWithActionItem, InsightType } from "@/types";
 
+function groupInsightsByType(
+  insights: InsightWithActionItem[],
+  insightTypes: InsightType[],
+): Record<string, InsightWithActionItem[]> {
+  const map: Record<string, InsightWithActionItem[]> = {};
+  for (const t of insightTypes) {
+    map[t.slug] = [];
+  }
+  for (const i of insights) {
+    if (!map[i.type]) map[i.type] = [];
+    map[i.type].push(i);
+  }
+  return map;
+}
+
 export function useInsights(meetingId: string) {
   const [insights, setInsights] = useState<InsightWithActionItem[]>([]);
   const [insightTypes, setInsightTypes] = useState<InsightType[]>([]);
@@ -43,20 +58,11 @@ export function useInsights(meetingId: string) {
     return () => { unlisten.then((fn) => fn()); };
   }, [meetingId, fetchInsights]);
 
-  // Group insights by type dynamically
-  const groupedByType = useMemo(() => {
-    const map: Record<string, InsightWithActionItem[]> = {};
-    for (const t of insightTypes) {
-      map[t.slug] = [];
-    }
-    for (const i of insights) {
-      if (!map[i.type]) map[i.type] = [];
-      map[i.type].push(i);
-    }
-    return map;
-  }, [insights, insightTypes]);
+  const groupedByType = useMemo(
+    () => groupInsightsByType(insights, insightTypes),
+    [insights, insightTypes],
+  );
 
-  // Keep backward-compatible accessors
   const decisions = groupedByType["decision"] ?? [];
   const actionItems = groupedByType["action_item"] ?? [];
   const keyMoments = groupedByType["key_moment"] ?? [];
@@ -166,18 +172,10 @@ export function useAllInsights(
     refresh();
   }, [refresh]);
 
-  // Group insights by type dynamically
-  const groupedByType = useMemo(() => {
-    const map: Record<string, InsightWithActionItem[]> = {};
-    for (const t of insightTypes) {
-      map[t.slug] = [];
-    }
-    for (const i of insights) {
-      if (!map[i.type]) map[i.type] = [];
-      map[i.type].push(i);
-    }
-    return map;
-  }, [insights, insightTypes]);
+  const groupedByType = useMemo(
+    () => groupInsightsByType(insights, insightTypes),
+    [insights, insightTypes],
+  );
 
   const decisions = groupedByType["decision"] ?? [];
   const actionItems = groupedByType["action_item"] ?? [];

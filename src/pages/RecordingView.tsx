@@ -117,7 +117,6 @@ export function RecordingView() {
     }
   }, [hasStarted, startRecording]);
 
-  // Auto-scroll transcript
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;

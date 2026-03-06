@@ -102,6 +102,7 @@ pub struct NewTemplate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateTemplate {
     pub id: String,
     pub name: String,
@@ -1148,7 +1149,6 @@ impl Database {
         Ok(())
     }
 
-    // --- Categories ---
 
     pub fn create_category(&self, new: NewCategory) -> Result<Category> {
         let conn = self.lock_conn()?;
@@ -1693,7 +1693,6 @@ impl Database {
         Ok(())
     }
 
-    // --- Transcript Segments ---
 
     pub fn create_transcript_segment(
         &self,
@@ -1751,7 +1750,6 @@ impl Database {
         Ok(segments)
     }
 
-    // --- Templates ---
 
     pub fn create_template(&self, new: NewTemplate) -> Result<Template> {
         let conn = self.lock_conn()?;
@@ -1940,7 +1938,6 @@ impl Database {
         Ok(template)
     }
 
-    // --- Summaries ---
 
     pub fn create_summary(&self, new: NewSummary) -> Result<Summary> {
         let conn = self.lock_conn()?;
@@ -1988,7 +1985,6 @@ impl Database {
         Ok(summaries)
     }
 
-    // --- Linear Tickets ---
 
     pub fn create_linear_ticket(&self, params: NewLinearTicket<'_>) -> Result<LinearTicket> {
         let conn = self.lock_conn()?;

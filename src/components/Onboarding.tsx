@@ -10,6 +10,7 @@ import {
   type ModelDefinition,
 } from "@/hooks/useModelDownload";
 import { Mic, Monitor, Calendar } from "lucide-react";
+import { formatBytes } from "@/lib/utils";
 
 const STEPS = ["Welcome", "Permissions", "Models", "API Keys", "Done"] as const;
 type Step = (typeof STEPS)[number];
@@ -56,15 +57,6 @@ function SparkleShower() {
   );
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
 export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState<Step>("Welcome");
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
@@ -82,16 +74,13 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const finish = async () => {
     setSaving(true);
     try {
-      // Save API keys
       for (const [provider, key] of Object.entries(apiKeys)) {
         if (key.trim()) {
           await invoke("store_api_key", { provider, key: key.trim() });
         }
       }
       setApiKeys({});
-      // Seed default prompts
       await invoke("seed_default_prompts");
-      // Mark complete
       localStorage.setItem("onboarding_complete", "true");
       onComplete();
     } catch (e) {
@@ -318,7 +307,6 @@ function ModelsStep({ onNext }: { onNext: () => void }) {
   >({});
   const [downloadingAll, setDownloadingAll] = useState(false);
 
-  // Initialize default variant selections
   const variantSelections = useMemo(() => {
     const selections: Record<string, string> = {};
     for (const model of registry) {

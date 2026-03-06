@@ -276,7 +276,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::create_meeting,
             commands::list_meetings,
             commands::get_meeting,
             commands::delete_meeting,
@@ -302,7 +301,6 @@ pub fn run() {
             commands::search_transcripts,
             commands::create_recipe,
             commands::list_recipes,
-            commands::get_recipe,
             commands::update_recipe,
             commands::delete_recipe,
             commands::run_recipe,
@@ -323,10 +321,7 @@ pub fn run() {
             commands::chat_with_meeting,
             commands::list_llm_models,
             commands::list_llm_providers,
-            commands::get_active_meeting_apps,
             commands::seed_default_prompts,
-            commands::get_model_status,
-            commands::get_diarization_status,
             commands::list_linear_teams,
             commands::list_linear_projects,
             commands::create_linear_ticket,
@@ -339,7 +334,6 @@ pub fn run() {
             commands::download_model,
             commands::cancel_download,
             commands::delete_model,
-            commands::chat_with_transcripts,
             commands::embed_meeting_cmd,
             commands::embed_all_meetings,
             commands::get_embedding_status,

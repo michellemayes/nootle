@@ -38,7 +38,6 @@ export function TemplatesPage() {
     deleteRecipe,
   } = useRecipes();
 
-  // Template form state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
@@ -50,7 +49,6 @@ export function TemplatesPage() {
   const [newAutoRun, setNewAutoRun] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
 
-  // Recipe form state
   const [recipeDialogOpen, setRecipeDialogOpen] = useState(false);
   const [recipeName, setRecipeName] = useState("");
   const [recipeDescription, setRecipeDescription] = useState("");

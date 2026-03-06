@@ -5,7 +5,7 @@ export interface Meeting {
   end_time: string | null;
   category_id: string | null;
   audio_path: string | null;
-  status: string; // "recording" | "transcribing" | "summarized" | "archived"
+  status: "recording" | "transcribing" | "summarized" | "archived" | "idle";
   calendar_event_id: string | null;
   raw_notes: string | null;
   enriched_notes: string | null;
@@ -75,7 +75,7 @@ export interface ModelInfo {
 }
 
 export interface ChatMessage {
-  role: string;
+  role: "user" | "assistant" | "system";
   content: string;
 }
 
@@ -121,7 +121,7 @@ export interface GlobalChatResponse {
 }
 
 export interface GlobalChatMessage {
-  role: string;
+  role: "user" | "assistant" | "system";
   content: string;
   sources?: ChatSource[];
 }
@@ -155,7 +155,7 @@ export interface ChatConversation {
 export interface ChatMessageRecord {
   id: string;
   conversation_id: string;
-  role: string;
+  role: "user" | "assistant" | "system";
   content: string;
   sources_json: string | null;
   created_at: string;
@@ -184,7 +184,7 @@ export interface Recipe {
 export interface InsightWithActionItem {
   id: string;
   meeting_id: string;
-  type: string; // "decision" | "action_item" | "key_moment"
+  type: string;
   content: string;
   context: string | null;
   transcript_start_ms: number | null;
@@ -193,7 +193,7 @@ export interface InsightWithActionItem {
   action_item_id: string | null;
   assignee: string | null;
   due_date: string | null;
-  status: string | null; // "open" | "done"
+  status: "open" | "done" | null;
   linear_ticket_id: string | null;
   action_item_updated_at: string | null;
   meeting_title: string | null;

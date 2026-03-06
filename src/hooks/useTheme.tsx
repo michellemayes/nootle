@@ -1,4 +1,3 @@
-// src/hooks/useTheme.tsx
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 
 type Theme = "light" | "dark";

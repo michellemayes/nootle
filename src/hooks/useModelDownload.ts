@@ -20,7 +20,7 @@ export interface ModelDefinition {
   id: string;
   name: string;
   description: string;
-  category: "Transcription" | "Diarization";
+  category: "Transcription" | "Diarization" | "Embedding" | "Denoising" | "VoiceActivity";
   dir_name: string;
   variants: ModelVariant[];
 }

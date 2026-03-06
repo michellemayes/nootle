@@ -4,17 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useScratchPad } from "@/hooks/useScratchPad";
 import { ChevronDown, ChevronRight, X, StickyNote } from "lucide-react";
+import { formatMs } from "@/lib/utils";
 
 interface ScratchPadProps {
   meetingId: string | null;
   elapsedMs: number;
-}
-
-function formatTimestamp(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
@@ -113,7 +107,7 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
                       className="flex items-start gap-2 rounded-md bg-amber-500/5 border border-amber-500/10 px-2.5 py-1.5 group"
                     >
                       <span className="font-mono text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 shrink-0">
-                        {formatTimestamp(note.timestamp_ms)}
+                        {formatMs(note.timestamp_ms)}
                       </span>
                       <span className="text-xs text-foreground flex-1 leading-relaxed">
                         {note.content}

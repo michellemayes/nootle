@@ -11,12 +11,13 @@ import { Markdown } from "@/components/Markdown";
 import { useGlobalChat } from "@/hooks/useGlobalChat";
 import { useCategories } from "@/hooks/useCategories";
 import { useLLM } from "@/hooks/useLLM";
-import type { ChatSource } from "@/types";
+import { useLLMSelection } from "@/hooks/useLLMSelection";
 import {
   X,
   MessageSquare,
   GripHorizontal,
 } from "lucide-react";
+import { SourceCitation } from "@/components/SourceCitation";
 
 const DATE_PRESETS = [
   { label: "Last 7 days", days: 7 },
@@ -24,30 +25,6 @@ const DATE_PRESETS = [
   { label: "Last 90 days", days: 90 },
   { label: "All time", days: null },
 ] as const;
-
-function formatTimestamp(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function SourceCitation({
-  source,
-  onClick,
-}: {
-  source: ChatSource;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20 transition-colors"
-    >
-      {source.meeting_title}, {formatTimestamp(source.start_ms)}
-    </button>
-  );
-}
 
 export function GlobalChatPanel() {
   const [open, setOpen] = useState(false);
@@ -63,13 +40,12 @@ export function GlobalChatPanel() {
   } = useGlobalChat();
   const { categories } = useCategories();
   const { models, providers } = useLLM();
+  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
   const navigate = useNavigate();
   const location = useLocation();
   const onChatPage = location.pathname === "/chat";
 
   const [input, setInput] = useState("");
-  const [selectedProvider, setSelectedProvider] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(""); // "" = all
   const [selectedDatePreset, setSelectedDatePreset] = useState(3); // "All time"
   const [embedding, setEmbedding] = useState(false);
@@ -80,25 +56,6 @@ export function GlobalChatPanel() {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0, right: 0, bottom: 0 });
 
-  // Default provider/model
-  useEffect(() => {
-    if (providers.length > 0 && !selectedProvider) {
-      setSelectedProvider(providers[0]);
-    }
-  }, [providers, selectedProvider]);
-
-  useEffect(() => {
-    if (selectedProvider && models.length > 0 && !selectedModel) {
-      const providerModels = models.filter(
-        (m) => m.provider === selectedProvider
-      );
-      if (providerModels.length > 0) {
-        setSelectedModel(providerModels[0].id);
-      }
-    }
-  }, [selectedProvider, models, selectedModel]);
-
-  // Auto-scroll
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -166,9 +123,6 @@ export function GlobalChatPanel() {
     };
   }, [isDragging]);
 
-  const filteredModels = models.filter(
-    (m) => m.provider === selectedProvider
-  );
 
   const modelNotReady =
     embeddingStatus && !embeddingStatus.model_available;
@@ -365,10 +319,7 @@ export function GlobalChatPanel() {
             <div className="flex items-center gap-2 px-4 py-2 border-b">
               <select
                 value={selectedProvider}
-                onChange={(e) => {
-                  setSelectedProvider(e.target.value);
-                  setSelectedModel("");
-                }}
+                onChange={(e) => changeProvider(e.target.value)}
                 className="h-7 flex-1 rounded-md border bg-transparent px-2 text-xs"
               >
                 <option value="">Provider</option>
