@@ -42,4 +42,8 @@ All notable changes to this project will be documented in this file.
 - Add local model download system for Parakeet and diarization (#6) ([e87a82d](https://github.com/michellemayes/nootle/commit/e87a82d91d4c3f1c124de96458614ebd67896dae))
 - Add CI/CD pipelines, auto-updater, and README (#3) ([6f1d820](https://github.com/michellemayes/nootle/commit/6f1d820a07959fae0bcd60d01abf3ce138c1c8dd))
 
+### Refactoring
+
+- Merge prompts into templates for simplified UX (#54) ([33e3bde](https://github.com/michellemayes/nootle/commit/33e3bdea687e9c84bffa52bf90aa5de6c1c444f7))
+
 
