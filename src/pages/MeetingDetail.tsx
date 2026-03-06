@@ -971,8 +971,12 @@ export function MeetingDetail() {
                     size="sm"
                     disabled={isRunning}
                     onClick={async () => {
-                      await runWorkflow(id!, w.id);
-                      refreshRuns();
+                      try {
+                        await runWorkflow(id!, w.id);
+                      } catch (err) {
+                        console.error("Workflow failed:", err);
+                      }
+                      await refreshRuns();
                     }}
                     className="text-xs gap-1.5"
                     title={w.description || w.name}

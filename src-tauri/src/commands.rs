@@ -1982,7 +1982,7 @@ pub fn create_integration(
 
 #[tauri::command]
 pub fn list_integrations(db: State<'_, DbState>) -> Result<Vec<crate::db::Integration>, String> {
-    db.list_integrations().map_err(|e| e.to_string())
+    db.list_integrations_safe().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

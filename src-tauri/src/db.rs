@@ -3077,6 +3077,29 @@ impl Database {
         Ok(integrations)
     }
 
+    /// Like `list_integrations` but redacts credentials for frontend use.
+    pub fn list_integrations_safe(&self) -> Result<Vec<Integration>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, integration_type, name, created_at
+             FROM integrations ORDER BY created_at DESC",
+        )?;
+
+        let integrations = stmt
+            .query_map([], |row| {
+                Ok(Integration {
+                    id: row.get(0)?,
+                    integration_type: row.get(1)?,
+                    name: row.get(2)?,
+                    credentials_json: String::new(),
+                    created_at: row.get(3)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(integrations)
+    }
+
     pub fn update_integration(
         &self,
         id: &str,
@@ -3116,6 +3139,14 @@ impl Database {
 
     pub fn delete_integration(&self, id: &str) -> Result<()> {
         let conn = self.lock_conn()?;
+        // Delete workflow runs for workflows belonging to this integration
+        conn.execute(
+            "DELETE FROM workflow_runs WHERE workflow_id IN (SELECT id FROM workflows WHERE integration_id = ?1)",
+            params![id],
+        )?;
+        // Delete workflows belonging to this integration
+        conn.execute("DELETE FROM workflows WHERE integration_id = ?1", params![id])?;
+        // Delete the integration
         conn.execute("DELETE FROM integrations WHERE id = ?1", params![id])?;
         Ok(())
     }
