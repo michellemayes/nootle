@@ -18,6 +18,7 @@ pub mod permissions;
 pub mod summarization;
 pub mod transcription;
 pub mod vad;
+pub mod workflows;
 
 use commands::{DetectorState, DownloadManagerState, EmbeddingState, LlmState, RecordingState};
 use detection::MeetingDetector;
@@ -375,6 +376,7 @@ pub fn run() {
             commands::update_workflow,
             commands::delete_workflow,
             commands::list_workflow_runs,
+            commands::run_workflow,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
