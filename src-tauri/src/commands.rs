@@ -1966,3 +1966,141 @@ pub async fn get_meeting_analytics(
         "engagement": engagement,
     }))
 }
+
+#[tauri::command]
+pub fn create_integration(
+    db: State<'_, DbState>,
+    integration_type: String,
+    name: String,
+    credentials_json: String,
+) -> Result<crate::db::Integration, String> {
+    db.create_integration(&integration_type, &name, &credentials_json)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_integrations(db: State<'_, DbState>) -> Result<Vec<crate::db::Integration>, String> {
+    db.list_integrations_safe().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_integration(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    credentials_json: String,
+) -> Result<crate::db::Integration, String> {
+    db.update_integration(&id, &name, &credentials_json)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_integration(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_integration(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_workflow(
+    db: State<'_, DbState>,
+    name: String,
+    description: Option<String>,
+    icon: Option<String>,
+    integration_id: String,
+    action_type: String,
+    config_json: String,
+) -> Result<crate::db::Workflow, String> {
+    db.create_workflow(&name, description.as_deref(), icon.as_deref(), &integration_id, &action_type, &config_json)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_workflows(db: State<'_, DbState>) -> Result<Vec<crate::db::Workflow>, String> {
+    db.list_workflows().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_workflow(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+    description: Option<String>,
+    icon: Option<String>,
+    action_type: String,
+    config_json: String,
+    is_enabled: bool,
+) -> Result<crate::db::Workflow, String> {
+    db.update_workflow(&id, &name, description.as_deref(), icon.as_deref(), &action_type, &config_json, is_enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_workflow(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_workflow(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_workflow_runs(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<crate::db::WorkflowRun>, String> {
+    db.list_workflow_runs_for_meeting(&meeting_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn run_workflow(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    workflow_id: String,
+) -> Result<crate::db::WorkflowRun, String> {
+    let workflow = db.get_workflow(&workflow_id).map_err(|e| e.to_string())?;
+    let integration = db
+        .get_integration(&workflow.integration_id)
+        .map_err(|e| e.to_string())?;
+    let meeting = db.get_meeting(&meeting_id).map_err(|e| e.to_string())?;
+
+    let summaries = db
+        .get_summaries_for_meeting(&meeting_id)
+        .map_err(|e| e.to_string())?;
+    let summary_text = summaries.first().map(|s| s.content.clone());
+
+    let insights = db
+        .get_insights_for_meeting(&meeting_id)
+        .map_err(|e| e.to_string())?;
+    let action_items: Vec<crate::workflows::ActionItemContext> = insights
+        .iter()
+        .filter(|i| i.insight_type == "action_item")
+        .map(|i| crate::workflows::ActionItemContext {
+            content: i.content.clone(),
+            assignee: i.assignee.clone(),
+            due_date: i.due_date.clone(),
+        })
+        .collect();
+
+    let context = crate::workflows::WorkflowContext {
+        meeting_title: meeting.title.clone(),
+        meeting_date: meeting.start_time.clone(),
+        summary: summary_text,
+        action_items,
+    };
+
+    let run = db
+        .create_workflow_run(&meeting_id, &workflow_id)
+        .map_err(|e| e.to_string())?;
+
+    db.update_workflow_run_status(&run.id, "running", None, None)
+        .map_err(|e| e.to_string())?;
+
+    match crate::workflows::execute_workflow(&workflow, &integration, &context).await {
+        Ok(result) => {
+            let result_json = serde_json::to_string(&result).unwrap_or_default();
+            db.update_workflow_run_status(&run.id, "completed", Some(&result_json), None)
+                .map_err(|e| e.to_string())?;
+        }
+        Err(e) => {
+            db.update_workflow_run_status(&run.id, "failed", None, Some(&e))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    db.get_workflow_run(&run.id).map_err(|e| e.to_string())
+}

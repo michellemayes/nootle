@@ -15,8 +15,11 @@ import { useCategories } from "@/hooks/useCategories";
 import { useInsightTypes } from "@/hooks/useInsightTypes";
 import { useAppVersion } from "@/hooks/useAppVersion";
 import { AccentColorPicker } from "@/components/AccentColorPicker";
-import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus } from "lucide-react";
+import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus, Link, Unlink } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
+import { useIntegrations } from "@/hooks/useIntegrations";
+import { useWorkflows } from "@/hooks/useWorkflows";
+import type { Workflow } from "@/types";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter"];
 
@@ -44,6 +47,495 @@ function getMcpConfig(exePath: string) {
 
 function getClaudeCommand(exePath: string) {
   return `claude mcp add nootle -- ${exePath} --mcp`;
+}
+
+const INTEGRATION_TYPES = [
+  { type: "slack", name: "Slack", fields: [{ key: "bot_token", label: "Bot Token", placeholder: "xoxb-..." }] },
+  { type: "notion", name: "Notion", fields: [{ key: "api_key", label: "API Key", placeholder: "secret_..." }] },
+  { type: "confluence", name: "Confluence", fields: [
+    { key: "email", label: "Email", placeholder: "user@example.com" },
+    { key: "api_token", label: "API Token", placeholder: "Enter API token" },
+    { key: "base_url", label: "Base URL", placeholder: "https://your-domain.atlassian.net" },
+  ] },
+  { type: "github", name: "GitHub", fields: [{ key: "token", label: "Token", placeholder: "ghp_..." }] },
+  { type: "linear", name: "Linear", fields: [{ key: "api_key", label: "API Key", placeholder: "lin_api_..." }] },
+  { type: "asana", name: "Asana", fields: [{ key: "token", label: "Token", placeholder: "Enter Asana token" }] },
+  { type: "email", name: "Email", fields: [] },
+] as const;
+
+const ACTION_TYPES_BY_INTEGRATION: Record<string, { value: string; label: string; configFields: { key: string; label: string; placeholder: string; required: boolean }[] }[]> = {
+  slack: [{ value: "post_summary", label: "Post Summary", configFields: [
+    { key: "channel", label: "Channel", placeholder: "#general", required: true },
+    { key: "message_template", label: "Message Template", placeholder: "Optional custom template", required: false },
+  ] }],
+  notion: [{ value: "create_page", label: "Create Page", configFields: [
+    { key: "database_id", label: "Database ID", placeholder: "Enter Notion database ID", required: true },
+  ] }],
+  confluence: [{ value: "create_page", label: "Create Page", configFields: [
+    { key: "space_key", label: "Space Key", placeholder: "e.g. ENG", required: true },
+  ] }],
+  github: [{ value: "create_issues", label: "Create Issues", configFields: [
+    { key: "repo", label: "Repository", placeholder: "owner/repo", required: true },
+  ] }],
+  linear: [{ value: "create_issues", label: "Create Issues", configFields: [
+    { key: "team_id", label: "Team ID", placeholder: "Enter Linear team ID", required: true },
+    { key: "project_id", label: "Project ID", placeholder: "Optional project ID", required: false },
+  ] }],
+  asana: [{ value: "create_tasks", label: "Create Tasks", configFields: [
+    { key: "project_id", label: "Project ID", placeholder: "Enter Asana project ID", required: true },
+  ] }],
+  email: [{ value: "generate_draft", label: "Generate Draft", configFields: [
+    { key: "subject", label: "Subject", placeholder: "Optional subject line", required: false },
+    { key: "body", label: "Body", placeholder: "Optional body template", required: false },
+  ] }],
+};
+
+function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnect }: {
+  intType: typeof INTEGRATION_TYPES[number];
+  connectedIntegration: { id: string; credentials_json: string } | undefined;
+  onConnect: (type: string, name: string, creds: Record<string, string>) => Promise<void>;
+  onDisconnect: (id: string) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const isConnected = !!connectedIntegration;
+  const isEmail = intType.type === "email";
+
+  const handleConnect = async () => {
+    if (isEmail) {
+      setSaving(true);
+      try {
+        await onConnect("email", "Email", {});
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+    if (!expanded) {
+      setExpanded(true);
+      return;
+    }
+    const hasAllRequired = intType.fields.every((f) => fields[f.key]?.trim());
+    if (!hasAllRequired) return;
+    setSaving(true);
+    try {
+      await onConnect(intType.type, intType.name, fields);
+      setFields({});
+      setExpanded(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!connectedIntegration) return;
+    setSaving(true);
+    try {
+      await onDisconnect(connectedIntegration.id);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="py-3">
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-sm font-medium">{intType.name}</span>
+          {isConnected ? (
+            <Badge variant="secondary" className="bg-green-500/15 text-green-500 text-[10px]">
+              Connected
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="text-[10px]">Not Connected</Badge>
+          )}
+        </div>
+        {isConnected ? (
+          <Button variant="outline" size="sm" onClick={handleDisconnect} disabled={saving}>
+            <Unlink className="h-3.5 w-3.5 mr-1.5" />
+            Disconnect
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={handleConnect} disabled={saving}>
+            <Link className="h-3.5 w-3.5 mr-1.5" />
+            {isEmail ? "Enable" : "Connect"}
+          </Button>
+        )}
+      </div>
+      <AnimatePresence>
+        {expanded && !isConnected && intType.fields.length > 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-3 ml-0 space-y-2 pl-0">
+              {intType.fields.map((field) => (
+                <div key={field.key} className="flex items-center gap-2">
+                  <label className="text-xs text-muted-foreground w-24 shrink-0">{field.label}</label>
+                  <Input
+                    type="password"
+                    placeholder={field.placeholder}
+                    value={fields[field.key] ?? ""}
+                    onChange={(e) => setFields((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                    className="flex-1"
+                  />
+                </div>
+              ))}
+              <div className="flex gap-2 justify-end pt-1">
+                <Button variant="ghost" size="sm" onClick={() => { setExpanded(false); setFields({}); }}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleConnect}
+                  disabled={saving || !intType.fields.every((f) => fields[f.key]?.trim())}
+                >
+                  {saving ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function IntegrationsManager() {
+  const { integrations, loading, createIntegration, deleteIntegration } = useIntegrations();
+
+  const handleConnect = async (type: string, name: string, creds: Record<string, string>) => {
+    await createIntegration(type, name, JSON.stringify(creds));
+  };
+
+  const handleDisconnect = async (id: string) => {
+    await deleteIntegration(id);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Integrations</CardTitle>
+        <CardDescription>
+          Connect services to use in post-meeting workflows. These are separate from the API keys above, which are used for LLM providers.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        ) : (
+          <div className="divide-y">
+            {INTEGRATION_TYPES.map((intType) => (
+              <IntegrationCard
+                key={intType.type}
+                intType={intType}
+                connectedIntegration={integrations.find((i) => i.integration_type === intType.type)}
+                onConnect={handleConnect}
+                onDisconnect={handleDisconnect}
+              />
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function WorkflowsManager() {
+  const { workflows, loading, createWorkflow, updateWorkflow, deleteWorkflow } = useWorkflows();
+  const { integrations } = useIntegrations();
+  const [editing, setEditing] = useState<string | null>(null); // workflow id or "new"
+  const [formName, setFormName] = useState("");
+  const [formDescription, setFormDescription] = useState("");
+  const [formIcon, setFormIcon] = useState("");
+  const [formIntegrationId, setFormIntegrationId] = useState("");
+  const [formActionType, setFormActionType] = useState("");
+  const [formConfig, setFormConfig] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const connectedIntegrations = integrations.filter((i) =>
+    INTEGRATION_TYPES.some((t) => t.type === i.integration_type)
+  );
+
+  const selectedIntegration = integrations.find((i) => i.id === formIntegrationId);
+  const selectedIntegrationType = selectedIntegration?.integration_type ?? "";
+  const availableActions = ACTION_TYPES_BY_INTEGRATION[selectedIntegrationType] ?? [];
+  const selectedAction = availableActions.find((a) => a.value === formActionType);
+
+  const resetForm = () => {
+    setEditing(null);
+    setFormName("");
+    setFormDescription("");
+    setFormIcon("");
+    setFormIntegrationId("");
+    setFormActionType("");
+    setFormConfig({});
+  };
+
+  const startCreate = () => {
+    resetForm();
+    setEditing("new");
+  };
+
+  const startEdit = (wf: Workflow) => {
+    setEditing(wf.id);
+    setFormName(wf.name);
+    setFormDescription(wf.description ?? "");
+    setFormIcon(wf.icon ?? "");
+    setFormIntegrationId(wf.integration_id);
+    setFormActionType(wf.action_type);
+    try {
+      setFormConfig(JSON.parse(wf.config_json));
+    } catch {
+      setFormConfig({});
+    }
+  };
+
+  const handleSave = async () => {
+    if (!formName.trim() || !formIntegrationId || !formActionType) return;
+    setSaving(true);
+    try {
+      const configJson = JSON.stringify(formConfig);
+      if (editing === "new") {
+        await createWorkflow(
+          formName,
+          formDescription || null,
+          formIcon || null,
+          formIntegrationId,
+          formActionType,
+          configJson,
+        );
+      } else if (editing) {
+        const existing = workflows.find((w) => w.id === editing);
+        await updateWorkflow(
+          editing,
+          formName,
+          formDescription || null,
+          formIcon || null,
+          formActionType,
+          configJson,
+          existing?.is_enabled ?? true,
+        );
+      }
+      resetForm();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleEnabled = async (wf: Workflow) => {
+    await updateWorkflow(
+      wf.id,
+      wf.name,
+      wf.description,
+      wf.icon,
+      wf.action_type,
+      wf.config_json,
+      !wf.is_enabled,
+    );
+  };
+
+  const getIntegrationTypeName = (integrationId: string) => {
+    const integration = integrations.find((i) => i.id === integrationId);
+    if (!integration) return "Unknown";
+    return INTEGRATION_TYPES.find((t) => t.type === integration.integration_type)?.name ?? integration.integration_type;
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Workflows</CardTitle>
+            <CardDescription>
+              Automate post-meeting actions like posting summaries, creating tickets, or drafting emails.
+            </CardDescription>
+          </div>
+          {editing === null && (
+            <Button size="sm" onClick={startCreate}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Create Workflow
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        ) : (
+          <div className="space-y-3">
+            <AnimatePresence>
+              {editing !== null && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <div className="border rounded-lg p-4 space-y-3 mb-3">
+                    <h4 className="text-sm font-medium">{editing === "new" ? "New Workflow" : "Edit Workflow"}</h4>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-muted-foreground w-28 shrink-0">Name *</label>
+                        <Input
+                          placeholder="e.g. Post summary to Slack"
+                          value={formName}
+                          onChange={(e) => setFormName(e.target.value)}
+                          className="flex-1"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-muted-foreground w-28 shrink-0">Description</label>
+                        <Input
+                          placeholder="Optional description"
+                          value={formDescription}
+                          onChange={(e) => setFormDescription(e.target.value)}
+                          className="flex-1"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-muted-foreground w-28 shrink-0">Icon</label>
+                        <Input
+                          placeholder="Optional icon (emoji or text)"
+                          value={formIcon}
+                          onChange={(e) => setFormIcon(e.target.value)}
+                          className="flex-1"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-muted-foreground w-28 shrink-0">Integration *</label>
+                        <select
+                          className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+                          value={formIntegrationId}
+                          onChange={(e) => {
+                            setFormIntegrationId(e.target.value);
+                            setFormActionType("");
+                            setFormConfig({});
+                          }}
+                        >
+                          <option value="">Select integration...</option>
+                          {connectedIntegrations.map((i) => (
+                            <option key={i.id} value={i.id}>
+                              {INTEGRATION_TYPES.find((t) => t.type === i.integration_type)?.name ?? i.integration_type}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {selectedIntegrationType && (
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-muted-foreground w-28 shrink-0">Action *</label>
+                          <select
+                            className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+                            value={formActionType}
+                            onChange={(e) => {
+                              setFormActionType(e.target.value);
+                              setFormConfig({});
+                            }}
+                          >
+                            <option value="">Select action...</option>
+                            {availableActions.map((a) => (
+                              <option key={a.value} value={a.value}>{a.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      {selectedAction && selectedAction.configFields.map((field) => (
+                        <div key={field.key} className="flex items-center gap-2">
+                          <label className="text-xs text-muted-foreground w-28 shrink-0">
+                            {field.label}{field.required ? " *" : ""}
+                          </label>
+                          <Input
+                            placeholder={field.placeholder}
+                            value={formConfig[field.key] ?? ""}
+                            onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                            className="flex-1"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 justify-end pt-1">
+                      <Button variant="ghost" size="sm" onClick={resetForm}>Cancel</Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSave}
+                        disabled={saving || !formName.trim() || !formIntegrationId || !formActionType}
+                      >
+                        {saving ? "Saving..." : editing === "new" ? "Create" : "Save"}
+                      </Button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {workflows.length === 0 && editing === null ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No workflows yet. Create one to automate your post-meeting tasks.
+              </p>
+            ) : (
+              <div className="divide-y">
+                {workflows.map((wf) => (
+                  <div key={wf.id} className="flex items-center gap-3 py-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        {wf.icon && <span className="text-sm">{wf.icon}</span>}
+                        <span className="text-sm font-medium">{wf.name}</span>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {getIntegrationTypeName(wf.integration_id)}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">{wf.action_type}</span>
+                      </div>
+                      {wf.description && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{wf.description}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleEnabled(wf)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                          wf.is_enabled ? "bg-primary" : "bg-input"
+                        }`}
+                        title={wf.is_enabled ? "Enabled" : "Disabled"}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow-lg ring-0 transition duration-200 ease-in-out ${
+                            wf.is_enabled ? "translate-x-4" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => startEdit(wf)}
+                        disabled={editing !== null}
+                        title="Edit"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => deleteWorkflow(wf.id)}
+                        disabled={editing !== null}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
@@ -579,6 +1071,7 @@ export function SettingsPage() {
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="api-keys">API Keys</TabsTrigger>
             <TabsTrigger value="integrations">Integrations</TabsTrigger>
+            <TabsTrigger value="workflows">Workflows</TabsTrigger>
             <TabsTrigger value="models">Models</TabsTrigger>
             <TabsTrigger value="categories">Categories</TabsTrigger>
             <TabsTrigger value="insight-types">Insight Types</TabsTrigger>
@@ -695,9 +1188,9 @@ export function SettingsPage() {
           <div className="flex flex-col gap-8 p-8 max-w-3xl">
             <Card>
               <CardHeader>
-                <CardTitle>Project Management</CardTitle>
+                <CardTitle>Project Management (Legacy)</CardTitle>
                 <CardDescription>
-                  Connect to Linear or Asana to create tickets from meeting action items.
+                  API keys for the legacy Linear/Asana ticket creation UI. For workflow-based integrations, use the cards below.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -718,6 +1211,13 @@ export function SettingsPage() {
                 />
               </CardContent>
             </Card>
+            <IntegrationsManager />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="workflows" className="flex-1 mt-0 overflow-auto">
+          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+            <WorkflowsManager />
           </div>
         </TabsContent>
 

@@ -365,6 +365,42 @@ pub struct NewRecipe {
     pub output_format: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Integration {
+    pub id: String,
+    pub integration_type: String,
+    pub name: String,
+    pub credentials_json: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Workflow {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    pub integration_id: String,
+    pub action_type: String,
+    pub config_json: String,
+    pub is_enabled: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowRun {
+    pub id: String,
+    pub meeting_id: String,
+    pub workflow_id: String,
+    pub status: String,
+    pub result_json: Option<String>,
+    pub error: Option<String>,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub workflow_name: Option<String>,
+    pub workflow_icon: Option<String>,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -670,6 +706,37 @@ impl Database {
                 is_builtin INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS integrations (
+                id TEXT PRIMARY KEY,
+                integration_type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                credentials_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS workflows (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                icon TEXT,
+                integration_id TEXT NOT NULL REFERENCES integrations(id) ON DELETE CASCADE,
+                action_type TEXT NOT NULL,
+                config_json TEXT NOT NULL DEFAULT '{}',
+                is_enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS workflow_runs (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                result_json TEXT,
+                error TEXT,
+                started_at TEXT NOT NULL DEFAULT (datetime('now')),
+                completed_at TEXT
             );
             ",
         )?;
@@ -2932,5 +2999,393 @@ impl Database {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
+    }
+
+    pub fn create_integration(
+        &self,
+        integration_type: &str,
+        name: &str,
+        credentials_json: &str,
+    ) -> Result<Integration> {
+        let conn = self.lock_conn()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO integrations (id, integration_type, name, credentials_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, integration_type, name, credentials_json, now],
+        )?;
+
+        Ok(Integration {
+            id,
+            integration_type: integration_type.to_string(),
+            name: name.to_string(),
+            credentials_json: credentials_json.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn get_integration(&self, id: &str) -> Result<Integration> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, integration_type, name, credentials_json, created_at
+             FROM integrations WHERE id = ?1",
+        )?;
+
+        let integration = stmt
+            .query_row(params![id], |row| {
+                Ok(Integration {
+                    id: row.get(0)?,
+                    integration_type: row.get(1)?,
+                    name: row.get(2)?,
+                    credentials_json: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Integration not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(integration)
+    }
+
+    pub fn list_integrations(&self) -> Result<Vec<Integration>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, integration_type, name, credentials_json, created_at
+             FROM integrations ORDER BY created_at DESC",
+        )?;
+
+        let integrations = stmt
+            .query_map([], |row| {
+                Ok(Integration {
+                    id: row.get(0)?,
+                    integration_type: row.get(1)?,
+                    name: row.get(2)?,
+                    credentials_json: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(integrations)
+    }
+
+    pub fn list_integrations_safe(&self) -> Result<Vec<Integration>> {
+        let mut integrations = self.list_integrations()?;
+        for i in &mut integrations {
+            i.credentials_json = String::new();
+        }
+        Ok(integrations)
+    }
+
+    pub fn update_integration(
+        &self,
+        id: &str,
+        name: &str,
+        credentials_json: &str,
+    ) -> Result<Integration> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE integrations SET name = ?1, credentials_json = ?2 WHERE id = ?3",
+            params![name, credentials_json, id],
+        )?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, integration_type, name, credentials_json, created_at
+             FROM integrations WHERE id = ?1",
+        )?;
+
+        let integration = stmt
+            .query_row(params![id], |row| {
+                Ok(Integration {
+                    id: row.get(0)?,
+                    integration_type: row.get(1)?,
+                    name: row.get(2)?,
+                    credentials_json: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Integration not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(integration)
+    }
+
+    pub fn delete_integration(&self, id: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "DELETE FROM workflow_runs WHERE workflow_id IN (SELECT id FROM workflows WHERE integration_id = ?1)",
+            params![id],
+        )?;
+        conn.execute("DELETE FROM workflows WHERE integration_id = ?1", params![id])?;
+        conn.execute("DELETE FROM integrations WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn create_workflow(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        icon: Option<&str>,
+        integration_id: &str,
+        action_type: &str,
+        config_json: &str,
+    ) -> Result<Workflow> {
+        let conn = self.lock_conn()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO workflows (id, name, description, icon, integration_id, action_type, config_json, is_enabled, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)",
+            params![id, name, description, icon, integration_id, action_type, config_json, now],
+        )?;
+
+        Ok(Workflow {
+            id,
+            name: name.to_string(),
+            description: description.map(|s| s.to_string()),
+            icon: icon.map(|s| s.to_string()),
+            integration_id: integration_id.to_string(),
+            action_type: action_type.to_string(),
+            config_json: config_json.to_string(),
+            is_enabled: true,
+            created_at: now,
+        })
+    }
+
+    pub fn get_workflow(&self, id: &str) -> Result<Workflow> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, icon, integration_id, action_type, config_json, is_enabled, created_at
+             FROM workflows WHERE id = ?1",
+        )?;
+
+        let workflow = stmt
+            .query_row(params![id], |row| {
+                Ok(Workflow {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    icon: row.get(3)?,
+                    integration_id: row.get(4)?,
+                    action_type: row.get(5)?,
+                    config_json: row.get(6)?,
+                    is_enabled: row.get::<_, i32>(7)? != 0,
+                    created_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Workflow not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(workflow)
+    }
+
+    pub fn list_workflows(&self) -> Result<Vec<Workflow>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, icon, integration_id, action_type, config_json, is_enabled, created_at
+             FROM workflows ORDER BY created_at DESC",
+        )?;
+
+        let workflows = stmt
+            .query_map([], |row| {
+                Ok(Workflow {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    icon: row.get(3)?,
+                    integration_id: row.get(4)?,
+                    action_type: row.get(5)?,
+                    config_json: row.get(6)?,
+                    is_enabled: row.get::<_, i32>(7)? != 0,
+                    created_at: row.get(8)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(workflows)
+    }
+
+    pub fn update_workflow(
+        &self,
+        id: &str,
+        name: &str,
+        description: Option<&str>,
+        icon: Option<&str>,
+        action_type: &str,
+        config_json: &str,
+        is_enabled: bool,
+    ) -> Result<Workflow> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE workflows SET name = ?1, description = ?2, icon = ?3, action_type = ?4, config_json = ?5, is_enabled = ?6 WHERE id = ?7",
+            params![name, description, icon, action_type, config_json, is_enabled as i32, id],
+        )?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, icon, integration_id, action_type, config_json, is_enabled, created_at
+             FROM workflows WHERE id = ?1",
+        )?;
+
+        let workflow = stmt
+            .query_row(params![id], |row| {
+                Ok(Workflow {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    icon: row.get(3)?,
+                    integration_id: row.get(4)?,
+                    action_type: row.get(5)?,
+                    config_json: row.get(6)?,
+                    is_enabled: row.get::<_, i32>(7)? != 0,
+                    created_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Workflow not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(workflow)
+    }
+
+    pub fn delete_workflow(&self, id: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute("DELETE FROM workflows WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn create_workflow_run(
+        &self,
+        meeting_id: &str,
+        workflow_id: &str,
+    ) -> Result<WorkflowRun> {
+        let conn = self.lock_conn()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO workflow_runs (id, meeting_id, workflow_id, status, started_at)
+             VALUES (?1, ?2, ?3, 'pending', ?4)",
+            params![id, meeting_id, workflow_id, now],
+        )?;
+
+        Ok(WorkflowRun {
+            id,
+            meeting_id: meeting_id.to_string(),
+            workflow_id: workflow_id.to_string(),
+            status: "pending".to_string(),
+            result_json: None,
+            error: None,
+            started_at: now,
+            completed_at: None,
+            workflow_name: None,
+            workflow_icon: None,
+        })
+    }
+
+    pub fn get_workflow_run(&self, id: &str) -> Result<WorkflowRun> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT wr.id, wr.meeting_id, wr.workflow_id, wr.status, wr.result_json, wr.error, wr.started_at, wr.completed_at, w.name, w.icon
+             FROM workflow_runs wr
+             LEFT JOIN workflows w ON w.id = wr.workflow_id
+             WHERE wr.id = ?1",
+        )?;
+
+        let run = stmt
+            .query_row(params![id], |row| {
+                Ok(WorkflowRun {
+                    id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    workflow_id: row.get(2)?,
+                    status: row.get(3)?,
+                    result_json: row.get(4)?,
+                    error: row.get(5)?,
+                    started_at: row.get(6)?,
+                    completed_at: row.get(7)?,
+                    workflow_name: row.get(8)?,
+                    workflow_icon: row.get(9)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("WorkflowRun not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(run)
+    }
+
+    pub fn update_workflow_run_status(
+        &self,
+        id: &str,
+        status: &str,
+        result_json: Option<&str>,
+        error: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.lock_conn()?;
+        let completed_at = if status == "completed" || status == "failed" {
+            Some(chrono::Utc::now().to_rfc3339())
+        } else {
+            None
+        };
+
+        conn.execute(
+            "UPDATE workflow_runs SET status = ?1, result_json = ?2, error = ?3, completed_at = ?4 WHERE id = ?5",
+            params![status, result_json, error, completed_at, id],
+        )?;
+
+        Ok(())
+    }
+
+    pub fn list_workflow_runs_for_meeting(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Vec<WorkflowRun>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT wr.id, wr.meeting_id, wr.workflow_id, wr.status, wr.result_json, wr.error, wr.started_at, wr.completed_at, w.name, w.icon
+             FROM workflow_runs wr
+             LEFT JOIN workflows w ON w.id = wr.workflow_id
+             WHERE wr.meeting_id = ?1
+             ORDER BY wr.started_at DESC",
+        )?;
+
+        let runs = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok(WorkflowRun {
+                    id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    workflow_id: row.get(2)?,
+                    status: row.get(3)?,
+                    result_json: row.get(4)?,
+                    error: row.get(5)?,
+                    started_at: row.get(6)?,
+                    completed_at: row.get(7)?,
+                    workflow_name: row.get(8)?,
+                    workflow_icon: row.get(9)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(runs)
     }
 }

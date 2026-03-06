@@ -199,3 +199,36 @@ export interface InsightWithActionItem {
   meeting_title: string | null;
   meeting_start_time: string | null;
 }
+
+export interface Integration {
+  id: string;
+  integration_type: string;
+  name: string;
+  credentials_json: string;
+  created_at: string;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  integration_id: string;
+  action_type: string;
+  config_json: string;
+  is_enabled: boolean;
+  created_at: string;
+}
+
+export interface WorkflowRun {
+  id: string;
+  meeting_id: string;
+  workflow_id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  result_json: string | null;
+  error: string | null;
+  started_at: string;
+  completed_at: string | null;
+  workflow_name: string | null;
+  workflow_icon: string | null;
+}
