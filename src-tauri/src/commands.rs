@@ -307,47 +307,6 @@ pub fn search_transcripts(
     db.search_transcripts(&query).map_err(|e| e.to_string())
 }
 
-// Prompt commands
-#[tauri::command]
-pub fn create_prompt(
-    db: State<'_, DbState>,
-    name: String,
-    content: String,
-    is_favorite: bool,
-    is_auto_run: bool,
-) -> Result<Prompt, String> {
-    db.create_prompt(NewPrompt {
-        name,
-        content,
-        is_favorite,
-        is_auto_run,
-    })
-    .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn list_prompts(db: State<'_, DbState>) -> Result<Vec<Prompt>, String> {
-    db.list_prompts().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn delete_prompt(db: State<'_, DbState>, id: String) -> Result<(), String> {
-    db.delete_prompt(&id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn update_prompt(
-    db: State<'_, DbState>,
-    id: String,
-    name: String,
-    content: String,
-    is_favorite: bool,
-    is_auto_run: bool,
-) -> Result<Prompt, String> {
-    db.update_prompt(&id, &name, &content, is_favorite, is_auto_run)
-        .map_err(|e| e.to_string())
-}
-
 #[tauri::command]
 pub fn create_recipe(
     db: State<'_, DbState>,
@@ -420,6 +379,7 @@ pub async fn run_recipe(
 
 // Template commands
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn create_template(
     db: State<'_, DbState>,
     name: String,
@@ -428,6 +388,8 @@ pub fn create_template(
     sections: String,
     auto_apply_rules: String,
     prompt: String,
+    is_favorite: bool,
+    is_auto_run: bool,
 ) -> Result<Template, String> {
     db.create_template(NewTemplate {
         name,
@@ -436,6 +398,8 @@ pub fn create_template(
         sections,
         auto_apply_rules,
         prompt,
+        is_favorite,
+        is_auto_run,
     })
     .map_err(|e| e.to_string())
 }
@@ -801,11 +765,11 @@ async fn run_transcription_pipeline(
         }
     }
 
-    // Run auto-run prompts (summaries) if any are configured
+    // Run auto-run templates (summaries) if any are configured
     {
         let llm = llm_state.read().await;
         if let Some(first_model) = llm.all_models().first().cloned() {
-            match summarization::run_auto_prompts(
+            match summarization::run_auto_templates(
                 &db,
                 &llm,
                 &meeting_id,
@@ -821,8 +785,8 @@ async fn run_transcription_pipeline(
                     );
                     let _ = app.emit("summaries-updated", &meeting_id);
                 }
-                Ok(_) => tracing::info!("No auto-run prompts configured"),
-                Err(e) => tracing::warn!("Auto-run prompts failed: {e}"),
+                Ok(_) => tracing::info!("No auto-run templates configured"),
+                Err(e) => tracing::warn!("Auto-run templates failed: {e}"),
             }
         } else {
             tracing::info!("No LLM providers configured, skipping auto-run prompts");
@@ -1074,12 +1038,12 @@ pub async fn generate_summary(
     db: State<'_, DbState>,
     llm: State<'_, LlmState>,
     meeting_id: String,
-    prompt_id: String,
+    template_id: String,
     provider: String,
     model: String,
 ) -> Result<Summary, String> {
     let llm = llm.read().await;
-    summarization::summarize_meeting(&db, &llm, &meeting_id, &prompt_id, &provider, &model)
+    summarization::summarize_meeting(&db, &llm, &meeting_id, &template_id, &provider, &model)
         .await
         .map_err(|e| e.to_string())
 }
@@ -1184,15 +1148,18 @@ pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
         ("TL;DR", "Give a 2-3 sentence TL;DR of this meeting. What was it about and what was the outcome?", true, false),
     ];
 
-    let existing = db.list_prompts().map_err(|e| e.to_string())?;
+    let existing = db.list_templates().map_err(|e| e.to_string())?;
     for (name, content, is_favorite, is_auto_run) in defaults {
-        // Skip if a prompt with this name already exists
-        if existing.iter().any(|p| p.name == name) {
+        if existing.iter().any(|t| t.name == name) {
             continue;
         }
-        db.create_prompt(NewPrompt {
+        db.create_template(NewTemplate {
             name: name.to_string(),
-            content: content.to_string(),
+            description: String::new(),
+            category_id: None,
+            sections: "[]".to_string(),
+            auto_apply_rules: "{}".to_string(),
+            prompt: content.to_string(),
             is_favorite,
             is_auto_run,
         })

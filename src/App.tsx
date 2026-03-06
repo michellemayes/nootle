@@ -6,7 +6,6 @@ import { Onboarding } from "@/components/Onboarding";
 import { MeetingLibrary } from "@/pages/MeetingLibrary";
 import { RecordingView } from "@/pages/RecordingView";
 import { MeetingDetail } from "@/pages/MeetingDetail";
-import { PromptsPage } from "@/pages/Prompts";
 import { TemplatesPage } from "@/pages/Templates";
 
 import { SettingsPage } from "@/pages/Settings";
@@ -82,14 +81,6 @@ function App() {
             element={
               <Layout>
                 <MeetingDetail />
-              </Layout>
-            }
-          />
-          <Route
-            path="/prompts"
-            element={
-              <Layout>
-                <PromptsPage />
               </Layout>
             }
           />

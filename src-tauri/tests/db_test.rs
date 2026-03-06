@@ -1,6 +1,6 @@
 use nootle_app_lib::db::{
-    Database, NewCategory, NewLinearTicket, NewMeeting, NewPrompt, NewRecipe, NewSummary,
-    NewTemplate, NewTranscriptSegment, UpdateTemplate,
+    Database, NewCategory, NewLinearTicket, NewMeeting, NewRecipe, NewSummary, NewTemplate,
+    NewTranscriptSegment, UpdateTemplate,
 };
 
 #[test]
@@ -12,7 +12,6 @@ fn test_database_initializes_tables() {
     assert!(tables.contains(&"summaries".to_string()));
     assert!(tables.contains(&"categories".to_string()));
     assert!(tables.contains(&"templates".to_string()));
-    assert!(tables.contains(&"prompts".to_string()));
     assert!(tables.contains(&"recipes".to_string()));
 }
 
@@ -175,32 +174,6 @@ fn test_transcript_segments() {
 }
 
 #[test]
-fn test_prompts_crud() {
-    let db = Database::new_in_memory().unwrap();
-    let prompt = db
-        .create_prompt(NewPrompt {
-            name: "Action Items".into(),
-            content: "List action items".into(),
-            is_favorite: true,
-            is_auto_run: true,
-        })
-        .unwrap();
-    assert!(prompt.is_favorite);
-    db.create_prompt(NewPrompt {
-        name: "Summary".into(),
-        content: "Summarize".into(),
-        is_favorite: false,
-        is_auto_run: false,
-    })
-    .unwrap();
-    let all = db.list_prompts().unwrap();
-    assert_eq!(all.len(), 2);
-    let auto = db.get_auto_run_prompts().unwrap();
-    assert_eq!(auto.len(), 1);
-    assert_eq!(auto[0].name, "Action Items");
-}
-
-#[test]
 fn test_summaries() {
     let db = Database::new_in_memory().unwrap();
     let meeting = db
@@ -213,7 +186,7 @@ fn test_summaries() {
         .unwrap();
     db.create_summary(NewSummary {
         meeting_id: meeting.id.clone(),
-        prompt_id: None,
+        template_id: None,
         provider: "openai".into(),
         model: "gpt-4o".into(),
         content: "Key points...".into(),
@@ -238,7 +211,7 @@ fn test_create_and_list_linear_tickets() {
     let summary = db
         .create_summary(NewSummary {
             meeting_id: meeting.id.clone(),
-            prompt_id: None,
+            template_id: None,
             provider: "openai".into(),
             model: "gpt-4o".into(),
             content: "Action items for ticket creation".into(),
@@ -320,6 +293,8 @@ fn test_templates_crud() {
             sections: r#"["Blockers","Updates"]"#.into(),
             auto_apply_rules: "{}".into(),
             prompt: "Summarize the standup.".into(),
+            is_favorite: false,
+            is_auto_run: false,
         })
         .unwrap();
     assert_eq!(custom.name, "Standup");
@@ -339,6 +314,8 @@ fn test_templates_crud() {
             sections: r#"["Blockers","Updates","Next Steps"]"#.to_string(),
             auto_apply_rules: "{}".to_string(),
             prompt: "Updated prompt.".to_string(),
+            is_favorite: true,
+            is_auto_run: false,
         })
         .unwrap();
     assert_eq!(updated.name, "Daily Sync");

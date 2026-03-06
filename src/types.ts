@@ -44,15 +44,6 @@ export interface MeetingTagEntry {
   tag: Tag;
 }
 
-export interface Prompt {
-  id: string;
-  name: string;
-  content: string;
-  is_favorite: boolean;
-  is_auto_run: boolean;
-  created_at: string;
-}
-
 export interface Template {
   id: string;
   name: string;
@@ -62,13 +53,15 @@ export interface Template {
   auto_apply_rules: string;
   prompt: string;
   is_builtin: boolean;
+  is_favorite: boolean;
+  is_auto_run: boolean;
   created_at: string;
 }
 
 export interface Summary {
   id: string;
   meeting_id: string;
-  prompt_id: string | null;
+  template_id: string | null;
   provider: string;
   model: string;
   content: string;

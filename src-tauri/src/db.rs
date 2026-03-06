@@ -75,24 +75,6 @@ pub struct Tag {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Prompt {
-    pub id: String,
-    pub name: String,
-    pub content: String,
-    pub is_favorite: bool,
-    pub is_auto_run: bool,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NewPrompt {
-    pub name: String,
-    pub content: String,
-    pub is_favorite: bool,
-    pub is_auto_run: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Template {
     pub id: String,
     pub name: String,
@@ -102,6 +84,8 @@ pub struct Template {
     pub auto_apply_rules: String,
     pub prompt: String,
     pub is_builtin: bool,
+    pub is_favorite: bool,
+    pub is_auto_run: bool,
     pub created_at: String,
 }
 
@@ -113,6 +97,8 @@ pub struct NewTemplate {
     pub sections: String,
     pub auto_apply_rules: String,
     pub prompt: String,
+    pub is_favorite: bool,
+    pub is_auto_run: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,13 +110,15 @@ pub struct UpdateTemplate {
     pub sections: String,
     pub auto_apply_rules: String,
     pub prompt: String,
+    pub is_favorite: bool,
+    pub is_auto_run: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Summary {
     pub id: String,
     pub meeting_id: String,
-    pub prompt_id: Option<String>,
+    pub template_id: Option<String>,
     pub provider: String,
     pub model: String,
     pub content: String,
@@ -140,7 +128,7 @@ pub struct Summary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewSummary {
     pub meeting_id: String,
-    pub prompt_id: Option<String>,
+    pub template_id: Option<String>,
     pub provider: String,
     pub model: String,
     pub content: String,
@@ -458,19 +446,10 @@ impl Database {
                 confidence REAL NOT NULL DEFAULT 1.0
             );
 
-            CREATE TABLE IF NOT EXISTS prompts (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                content TEXT NOT NULL,
-                is_favorite INTEGER NOT NULL DEFAULT 0,
-                is_auto_run INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
             CREATE TABLE IF NOT EXISTS summaries (
                 id TEXT PRIMARY KEY,
                 meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-                prompt_id TEXT REFERENCES prompts(id),
+                prompt_id TEXT,
                 provider TEXT NOT NULL,
                 model TEXT NOT NULL,
                 content TEXT NOT NULL,
@@ -742,6 +721,8 @@ impl Database {
         let mut has_description = false;
         let mut has_prompt = false;
         let mut has_is_builtin = false;
+        let mut has_is_favorite = false;
+        let mut has_is_auto_run = false;
 
         let mut stmt = conn.prepare("PRAGMA table_info(templates)")?;
         let columns = stmt
@@ -753,6 +734,8 @@ impl Database {
                 "description" => has_description = true,
                 "prompt" => has_prompt = true,
                 "is_builtin" => has_is_builtin = true,
+                "is_favorite" => has_is_favorite = true,
+                "is_auto_run" => has_is_auto_run = true,
                 _ => {}
             }
         }
@@ -775,6 +758,73 @@ impl Database {
                 [],
             )?;
         }
+        if !has_is_favorite {
+            conn.execute(
+                "ALTER TABLE templates ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        if !has_is_auto_run {
+            conn.execute(
+                "ALTER TABLE templates ADD COLUMN is_auto_run INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+
+        // Migrate existing prompts into templates (one-time migration)
+        let has_prompts_table: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='prompts'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+
+        if has_prompts_table {
+            let prompt_count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM prompts", [], |row| row.get(0))
+                .unwrap_or(0);
+
+            if prompt_count > 0 {
+                let now = chrono::Utc::now().to_rfc3339();
+                let mut prompt_stmt = conn
+                    .prepare("SELECT id, name, content, is_favorite, is_auto_run FROM prompts")?;
+                let prompts: Vec<(String, String, String, i32, i32)> = prompt_stmt
+                    .query_map([], |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                        ))
+                    })?
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+
+                for (id, name, content, is_favorite, is_auto_run) in prompts {
+                    // Skip if a template with this name already exists
+                    let exists: bool = conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM templates WHERE name = ?1",
+                            params![name],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .map(|c| c > 0)
+                        .unwrap_or(false);
+                    if exists {
+                        continue;
+                    }
+                    conn.execute(
+                        "INSERT INTO templates (id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at)
+                         VALUES (?1, ?2, '', NULL, '[]', '{}', ?3, 0, ?4, ?5, ?6)",
+                        params![id, name, content, is_favorite, is_auto_run, now],
+                    )?;
+                }
+            }
+            conn.execute("DROP TABLE IF EXISTS prompts", [])?;
+        }
+
         Ok(())
     }
 
@@ -1701,164 +1751,18 @@ impl Database {
         Ok(segments)
     }
 
-    // --- Prompts ---
-
-    pub fn create_prompt(&self, new: NewPrompt) -> Result<Prompt> {
-        let conn = self.lock_conn()?;
-        let id = uuid::Uuid::new_v4().to_string();
-        let now = chrono::Utc::now().to_rfc3339();
-        let is_favorite = new.is_favorite as i32;
-        let is_auto_run = new.is_auto_run as i32;
-
-        conn.execute(
-            "INSERT INTO prompts (id, name, content, is_favorite, is_auto_run, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, new.name, new.content, is_favorite, is_auto_run, now],
-        )?;
-
-        Ok(Prompt {
-            id,
-            name: new.name,
-            content: new.content,
-            is_favorite: new.is_favorite,
-            is_auto_run: new.is_auto_run,
-            created_at: now,
-        })
-    }
-
-    pub fn list_prompts(&self) -> Result<Vec<Prompt>> {
-        let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, name, content, is_favorite, is_auto_run, created_at
-             FROM prompts ORDER BY created_at DESC",
-        )?;
-
-        let prompts = stmt
-            .query_map([], |row| {
-                Ok(Prompt {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    content: row.get(2)?,
-                    is_favorite: row.get::<_, i32>(3)? != 0,
-                    is_auto_run: row.get::<_, i32>(4)? != 0,
-                    created_at: row.get(5)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
-        Ok(prompts)
-    }
-
-    pub fn get_prompt(&self, id: &str) -> Result<Prompt> {
-        let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, name, content, is_favorite, is_auto_run, created_at
-             FROM prompts WHERE id = ?1",
-        )?;
-
-        let prompt = stmt
-            .query_row(params![id], |row| {
-                Ok(Prompt {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    content: row.get(2)?,
-                    is_favorite: row.get::<_, i32>(3)? != 0,
-                    is_auto_run: row.get::<_, i32>(4)? != 0,
-                    created_at: row.get(5)?,
-                })
-            })
-            .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => {
-                    NootleError::Other(format!("Prompt not found: {}", id))
-                }
-                other => NootleError::Database(other),
-            })?;
-
-        Ok(prompt)
-    }
-
-    pub fn get_auto_run_prompts(&self) -> Result<Vec<Prompt>> {
-        let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, name, content, is_favorite, is_auto_run, created_at
-             FROM prompts WHERE is_auto_run = 1 ORDER BY created_at DESC",
-        )?;
-
-        let prompts = stmt
-            .query_map([], |row| {
-                Ok(Prompt {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    content: row.get(2)?,
-                    is_favorite: row.get::<_, i32>(3)? != 0,
-                    is_auto_run: row.get::<_, i32>(4)? != 0,
-                    created_at: row.get(5)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
-        Ok(prompts)
-    }
-
-    pub fn delete_prompt(&self, id: &str) -> Result<()> {
-        let conn = self.lock_conn()?;
-        conn.execute("DELETE FROM prompts WHERE id = ?1", params![id])?;
-        Ok(())
-    }
-
-    pub fn update_prompt(
-        &self,
-        id: &str,
-        name: &str,
-        content: &str,
-        is_favorite: bool,
-        is_auto_run: bool,
-    ) -> Result<Prompt> {
-        let conn = self.lock_conn()?;
-        let is_fav = is_favorite as i32;
-        let is_auto = is_auto_run as i32;
-
-        conn.execute(
-            "UPDATE prompts SET name = ?1, content = ?2, is_favorite = ?3, is_auto_run = ?4 WHERE id = ?5",
-            params![name, content, is_fav, is_auto, id],
-        )?;
-
-        let mut stmt = conn.prepare(
-            "SELECT id, name, content, is_favorite, is_auto_run, created_at
-             FROM prompts WHERE id = ?1",
-        )?;
-
-        let prompt = stmt
-            .query_row(params![id], |row| {
-                Ok(Prompt {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    content: row.get(2)?,
-                    is_favorite: row.get::<_, i32>(3)? != 0,
-                    is_auto_run: row.get::<_, i32>(4)? != 0,
-                    created_at: row.get(5)?,
-                })
-            })
-            .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => {
-                    NootleError::Other(format!("Prompt not found: {}", id))
-                }
-                other => NootleError::Database(other),
-            })?;
-
-        Ok(prompt)
-    }
-
     // --- Templates ---
 
     pub fn create_template(&self, new: NewTemplate) -> Result<Template> {
         let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
+        let is_fav = new.is_favorite as i32;
+        let is_auto = new.is_auto_run as i32;
 
         conn.execute(
-            "INSERT INTO templates (id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
+            "INSERT INTO templates (id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?10)",
             params![
                 id,
                 new.name,
@@ -1867,6 +1771,8 @@ impl Database {
                 new.sections,
                 new.auto_apply_rules,
                 new.prompt,
+                is_fav,
+                is_auto,
                 now
             ],
         )?;
@@ -1880,6 +1786,8 @@ impl Database {
             auto_apply_rules: new.auto_apply_rules,
             prompt: new.prompt,
             is_builtin: false,
+            is_favorite: new.is_favorite,
+            is_auto_run: new.is_auto_run,
             created_at: now,
         })
     }
@@ -1887,7 +1795,7 @@ impl Database {
     pub fn list_templates(&self) -> Result<Vec<Template>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at
+            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
              FROM templates ORDER BY is_builtin DESC, created_at DESC",
         )?;
 
@@ -1902,7 +1810,70 @@ impl Database {
                     auto_apply_rules: row.get(5)?,
                     prompt: row.get(6)?,
                     is_builtin: row.get::<_, i32>(7)? != 0,
-                    created_at: row.get(8)?,
+                    is_favorite: row.get::<_, i32>(8)? != 0,
+                    is_auto_run: row.get::<_, i32>(9)? != 0,
+                    created_at: row.get(10)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(templates)
+    }
+
+    pub fn get_template(&self, id: &str) -> Result<Template> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+             FROM templates WHERE id = ?1",
+        )?;
+
+        let template = stmt
+            .query_row(params![id], |row| {
+                Ok(Template {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    category_id: row.get(3)?,
+                    sections: row.get(4)?,
+                    auto_apply_rules: row.get(5)?,
+                    prompt: row.get(6)?,
+                    is_builtin: row.get::<_, i32>(7)? != 0,
+                    is_favorite: row.get::<_, i32>(8)? != 0,
+                    is_auto_run: row.get::<_, i32>(9)? != 0,
+                    created_at: row.get(10)?,
+                })
+            })
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    NootleError::Other(format!("Template not found: {}", id))
+                }
+                other => NootleError::Database(other),
+            })?;
+
+        Ok(template)
+    }
+
+    pub fn get_auto_run_templates(&self) -> Result<Vec<Template>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+             FROM templates WHERE is_auto_run = 1 ORDER BY created_at DESC",
+        )?;
+
+        let templates = stmt
+            .query_map([], |row| {
+                Ok(Template {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    category_id: row.get(3)?,
+                    sections: row.get(4)?,
+                    auto_apply_rules: row.get(5)?,
+                    prompt: row.get(6)?,
+                    is_builtin: row.get::<_, i32>(7)? != 0,
+                    is_favorite: row.get::<_, i32>(8)? != 0,
+                    is_auto_run: row.get::<_, i32>(9)? != 0,
+                    created_at: row.get(10)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1930,14 +1901,16 @@ impl Database {
 
     pub fn update_template(&self, params: &UpdateTemplate) -> Result<Template> {
         let conn = self.lock_conn()?;
+        let is_fav = params.is_favorite as i32;
+        let is_auto = params.is_auto_run as i32;
 
         conn.execute(
-            "UPDATE templates SET name = ?1, description = ?2, category_id = ?3, sections = ?4, auto_apply_rules = ?5, prompt = ?6 WHERE id = ?7",
-            rusqlite::params![params.name, params.description, params.category_id, params.sections, params.auto_apply_rules, params.prompt, params.id],
+            "UPDATE templates SET name = ?1, description = ?2, category_id = ?3, sections = ?4, auto_apply_rules = ?5, prompt = ?6, is_favorite = ?7, is_auto_run = ?8 WHERE id = ?9",
+            rusqlite::params![params.name, params.description, params.category_id, params.sections, params.auto_apply_rules, params.prompt, is_fav, is_auto, params.id],
         )?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at
+            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
              FROM templates WHERE id = ?1",
         )?;
 
@@ -1952,7 +1925,9 @@ impl Database {
                     auto_apply_rules: row.get(5)?,
                     prompt: row.get(6)?,
                     is_builtin: row.get::<_, i32>(7)? != 0,
-                    created_at: row.get(8)?,
+                    is_favorite: row.get::<_, i32>(8)? != 0,
+                    is_auto_run: row.get::<_, i32>(9)? != 0,
+                    created_at: row.get(10)?,
                 })
             })
             .map_err(|e| match e {
@@ -1975,13 +1950,13 @@ impl Database {
         conn.execute(
             "INSERT INTO summaries (id, meeting_id, prompt_id, provider, model, content, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, new.meeting_id, new.prompt_id, new.provider, new.model, new.content, now],
+            params![id, new.meeting_id, new.template_id, new.provider, new.model, new.content, now],
         )?;
 
         Ok(Summary {
             id,
             meeting_id: new.meeting_id,
-            prompt_id: new.prompt_id,
+            template_id: new.template_id,
             provider: new.provider,
             model: new.model,
             content: new.content,
@@ -2001,7 +1976,7 @@ impl Database {
                 Ok(Summary {
                     id: row.get(0)?,
                     meeting_id: row.get(1)?,
-                    prompt_id: row.get(2)?,
+                    template_id: row.get(2)?,
                     provider: row.get(3)?,
                     model: row.get(4)?,
                     content: row.get(5)?,
@@ -2078,7 +2053,7 @@ impl Database {
             Ok(Summary {
                 id: row.get(0)?,
                 meeting_id: row.get(1)?,
-                prompt_id: row.get(2)?,
+                template_id: row.get(2)?,
                 provider: row.get(3)?,
                 model: row.get(4)?,
                 content: row.get(5)?,
