@@ -44,8 +44,8 @@ fn parse_creds_and_config(
 ) -> std::result::Result<(serde_json::Value, serde_json::Value), String> {
     let creds = serde_json::from_str(&integration.credentials_json)
         .map_err(|e| format!("Invalid credentials: {e}"))?;
-    let config = serde_json::from_str(&workflow.config_json)
-        .map_err(|e| format!("Invalid config: {e}"))?;
+    let config =
+        serde_json::from_str(&workflow.config_json).map_err(|e| format!("Invalid config: {e}"))?;
     Ok((creds, config))
 }
 
@@ -162,10 +162,7 @@ async fn execute_notion(
         .as_str()
         .ok_or("Missing database_id in workflow config")?;
 
-    let content = render_template(
-        "{{summary}}\n\n## Action Items\n{{action_items}}",
-        context,
-    );
+    let content = render_template("{{summary}}\n\n## Action Items\n{{action_items}}", context);
 
     let client = reqwest::Client::new();
     let resp = client

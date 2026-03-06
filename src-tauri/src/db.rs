@@ -1216,7 +1216,6 @@ impl Database {
         Ok(())
     }
 
-
     pub fn create_category(&self, new: NewCategory) -> Result<Category> {
         let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
@@ -1760,7 +1759,6 @@ impl Database {
         Ok(())
     }
 
-
     pub fn create_transcript_segment(
         &self,
         new: NewTranscriptSegment,
@@ -1816,7 +1814,6 @@ impl Database {
 
         Ok(segments)
     }
-
 
     pub fn create_template(&self, new: NewTemplate) -> Result<Template> {
         let conn = self.lock_conn()?;
@@ -2005,7 +2002,6 @@ impl Database {
         Ok(template)
     }
 
-
     pub fn create_summary(&self, new: NewSummary) -> Result<Summary> {
         let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
@@ -2051,7 +2047,6 @@ impl Database {
 
         Ok(summaries)
     }
-
 
     pub fn create_linear_ticket(&self, params: NewLinearTicket<'_>) -> Result<LinearTicket> {
         let conn = self.lock_conn()?;
@@ -3126,7 +3121,10 @@ impl Database {
             "DELETE FROM workflow_runs WHERE workflow_id IN (SELECT id FROM workflows WHERE integration_id = ?1)",
             params![id],
         )?;
-        conn.execute("DELETE FROM workflows WHERE integration_id = ?1", params![id])?;
+        conn.execute(
+            "DELETE FROM workflows WHERE integration_id = ?1",
+            params![id],
+        )?;
         conn.execute("DELETE FROM integrations WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -3220,6 +3218,7 @@ impl Database {
         Ok(workflows)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn update_workflow(
         &self,
         id: &str,
@@ -3271,11 +3270,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn create_workflow_run(
-        &self,
-        meeting_id: &str,
-        workflow_id: &str,
-    ) -> Result<WorkflowRun> {
+    pub fn create_workflow_run(&self, meeting_id: &str, workflow_id: &str) -> Result<WorkflowRun> {
         let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
@@ -3356,10 +3351,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn list_workflow_runs_for_meeting(
-        &self,
-        meeting_id: &str,
-    ) -> Result<Vec<WorkflowRun>> {
+    pub fn list_workflow_runs_for_meeting(&self, meeting_id: &str) -> Result<Vec<WorkflowRun>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT wr.id, wr.meeting_id, wr.workflow_id, wr.status, wr.result_json, wr.error, wr.started_at, wr.completed_at, w.name, w.icon

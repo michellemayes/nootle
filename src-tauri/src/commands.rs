@@ -1324,7 +1324,6 @@ pub fn set_linear_setting(
         .map_err(|e| e.to_string())
 }
 
-
 #[tauri::command]
 pub async fn get_available_models() -> Result<serde_json::Value, String> {
     serde_json::to_value(model_registry::MODEL_REGISTRY).map_err(|e| e.to_string())
@@ -1373,7 +1372,6 @@ pub async fn delete_model(model_id: String) -> Result<(), String> {
         model_registry::get_model(&model_id).ok_or_else(|| format!("Unknown model: {model_id}"))?;
     model_download::delete_model_files(model)
 }
-
 
 /// Shared RAG helper: embed query, search chunks, call LLM with retrieved context.
 #[allow(clippy::too_many_arguments)]
@@ -1689,7 +1687,6 @@ pub async fn set_app_setting(
     db.set_setting(&key, &value).map_err(|e| e.to_string())
 }
 
-
 #[tauri::command]
 pub fn create_chat_conversation(db: State<'_, DbState>) -> Result<ChatConversation, String> {
     db.create_chat_conversation().map_err(|e| e.to_string())
@@ -1824,7 +1821,6 @@ pub fn update_chat_conversation_title(
     db.update_chat_conversation_title(&id, &title)
         .map_err(|e| e.to_string())
 }
-
 
 #[tauri::command]
 pub fn save_meeting_notes(
@@ -2009,8 +2005,15 @@ pub fn create_workflow(
     action_type: String,
     config_json: String,
 ) -> Result<crate::db::Workflow, String> {
-    db.create_workflow(&name, description.as_deref(), icon.as_deref(), &integration_id, &action_type, &config_json)
-        .map_err(|e| e.to_string())
+    db.create_workflow(
+        &name,
+        description.as_deref(),
+        icon.as_deref(),
+        &integration_id,
+        &action_type,
+        &config_json,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2018,6 +2021,7 @@ pub fn list_workflows(db: State<'_, DbState>) -> Result<Vec<crate::db::Workflow>
     db.list_workflows().map_err(|e| e.to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn update_workflow(
     db: State<'_, DbState>,
@@ -2029,8 +2033,16 @@ pub fn update_workflow(
     config_json: String,
     is_enabled: bool,
 ) -> Result<crate::db::Workflow, String> {
-    db.update_workflow(&id, &name, description.as_deref(), icon.as_deref(), &action_type, &config_json, is_enabled)
-        .map_err(|e| e.to_string())
+    db.update_workflow(
+        &id,
+        &name,
+        description.as_deref(),
+        icon.as_deref(),
+        &action_type,
+        &config_json,
+        is_enabled,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2043,7 +2055,8 @@ pub fn list_workflow_runs(
     db: State<'_, DbState>,
     meeting_id: String,
 ) -> Result<Vec<crate::db::WorkflowRun>, String> {
-    db.list_workflow_runs_for_meeting(&meeting_id).map_err(|e| e.to_string())
+    db.list_workflow_runs_for_meeting(&meeting_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
