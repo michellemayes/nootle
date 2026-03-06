@@ -28,7 +28,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
 import { TagEditor } from "@/components/TagEditor";
-import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List, StickyNote, Sparkles, PanelLeftClose, PanelLeftOpen, Copy, CheckCheck } from "lucide-react";
+import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List, StickyNote, Sparkles, PanelLeftClose, PanelLeftOpen, Copy, CheckCheck, Zap, AlertTriangle } from "lucide-react";
+import { useWorkflows, useWorkflowRuns } from "@/hooks/useWorkflows";
 
 function CopyButton({ text, className = "" }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false);
@@ -729,6 +730,8 @@ export function MeetingDetail() {
   const { defaultTeamId, defaultProjectId } = useLinearSettings();
   const [linearTeamId, setLinearTeamId] = useState<string | null>(null);
   const { projects: linearProjects } = useLinearProjects(linearTeamId);
+  const { workflows, runWorkflow } = useWorkflows();
+  const { runs, refresh: refreshRuns } = useWorkflowRuns(id);
   const [chatOpen, setChatOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -952,9 +955,47 @@ export function MeetingDetail() {
           </div>
           <Badge variant="outline">{statusLabel(meeting.status)}</Badge>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
-          <MessageSquare className="h-4 w-4" /> Ask Nootle
-        </Button>
+        <div className="flex items-center gap-2">
+          {workflows.filter(w => w.is_enabled).length > 0 && (
+            <div className="flex items-center gap-2">
+              {workflows.filter(w => w.is_enabled).map((w) => {
+                const recentRun = runs.find(r => r.workflow_id === w.id);
+                const isRunning = recentRun?.status === "running" || recentRun?.status === "pending";
+                const succeeded = recentRun?.status === "completed";
+                const failed = recentRun?.status === "failed";
+
+                return (
+                  <Button
+                    key={w.id}
+                    variant="outline"
+                    size="sm"
+                    disabled={isRunning}
+                    onClick={async () => {
+                      await runWorkflow(id!, w.id);
+                      refreshRuns();
+                    }}
+                    className="text-xs gap-1.5"
+                    title={w.description || w.name}
+                  >
+                    {isRunning ? (
+                      <RotateCw className="h-3 w-3 animate-spin" />
+                    ) : succeeded ? (
+                      <Check className="h-3 w-3 text-green-500" />
+                    ) : failed ? (
+                      <AlertTriangle className="h-3 w-3 text-red-500" />
+                    ) : (
+                      <Zap className="h-3 w-3" />
+                    )}
+                    {w.name}
+                  </Button>
+                );
+              })}
+            </div>
+          )}
+          <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
+            <MessageSquare className="h-4 w-4" /> Ask Nootle
+          </Button>
+        </div>
       </div>
 
       {/* Two-column layout */}
@@ -1033,6 +1074,7 @@ export function MeetingDetail() {
                 <TabsTrigger value="insights">Insights</TabsTrigger>
                 {scratchNotes.length > 0 && <TabsTrigger value="highlights">Highlights</TabsTrigger>}
                 <TabsTrigger value="analytics">Analytics</TabsTrigger>
+                <TabsTrigger value="workflows">Workflows</TabsTrigger>
               </TabsList>
             </div>
             <TabsContent value="notes" className="flex flex-1 flex-col mt-0">
@@ -1181,6 +1223,50 @@ export function MeetingDetail() {
             </TabsContent>
             <TabsContent value="analytics" className="flex flex-1 flex-col mt-0">
               <AnalyticsPanel meetingId={id!} providers={providers} models={models} />
+            </TabsContent>
+            <TabsContent value="workflows" className="flex flex-1 flex-col mt-0">
+              <ScrollArea className="flex-1">
+                <div className="p-5 space-y-3">
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
+                    <Zap className="h-4 w-4" />
+                    Workflow Runs
+                  </h3>
+                  {runs.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No workflow runs yet. Configure workflows in Settings and run them from the header buttons.
+                    </p>
+                  ) : (
+                    runs.map((run) => (
+                      <div key={run.id} className="rounded-lg border px-4 py-3 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{run.workflow_name ?? "Workflow"}</span>
+                          <Badge variant={
+                            run.status === "completed" ? "secondary" :
+                            run.status === "failed" ? "destructive" :
+                            "outline"
+                          }>
+                            {run.status}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(run.started_at).toLocaleString()}
+                        </p>
+                        {run.error && (
+                          <p className="text-xs text-destructive">{run.error}</p>
+                        )}
+                        {run.result_json && run.status === "completed" && (() => {
+                          try {
+                            const result = JSON.parse(run.result_json);
+                            return (
+                              <p className="text-xs text-muted-foreground">{result.message}</p>
+                            );
+                          } catch { return null; }
+                        })()}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
             </TabsContent>
           </Tabs>
         </div>
