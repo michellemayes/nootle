@@ -38,6 +38,17 @@ pub async fn execute_workflow(
     }
 }
 
+fn parse_creds_and_config(
+    integration: &crate::db::Integration,
+    workflow: &crate::db::Workflow,
+) -> std::result::Result<(serde_json::Value, serde_json::Value), String> {
+    let creds = serde_json::from_str(&integration.credentials_json)
+        .map_err(|e| format!("Invalid credentials: {e}"))?;
+    let config = serde_json::from_str(&workflow.config_json)
+        .map_err(|e| format!("Invalid config: {e}"))?;
+    Ok((creds, config))
+}
+
 fn render_template(template: &str, context: &WorkflowContext) -> String {
     let action_items_text = context
         .action_items
@@ -93,10 +104,7 @@ async fn execute_slack(
     integration: &crate::db::Integration,
     context: &WorkflowContext,
 ) -> std::result::Result<WorkflowResult, String> {
-    let creds: serde_json::Value = serde_json::from_str(&integration.credentials_json)
-        .map_err(|e| format!("Invalid credentials: {e}"))?;
-    let config: serde_json::Value =
-        serde_json::from_str(&workflow.config_json).map_err(|e| format!("Invalid config: {e}"))?;
+    let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
     let token = creds["bot_token"]
         .as_str()
@@ -145,10 +153,7 @@ async fn execute_notion(
     integration: &crate::db::Integration,
     context: &WorkflowContext,
 ) -> std::result::Result<WorkflowResult, String> {
-    let creds: serde_json::Value = serde_json::from_str(&integration.credentials_json)
-        .map_err(|e| format!("Invalid credentials: {e}"))?;
-    let config: serde_json::Value =
-        serde_json::from_str(&workflow.config_json).map_err(|e| format!("Invalid config: {e}"))?;
+    let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
     let token = creds["api_key"]
         .as_str()
@@ -208,10 +213,7 @@ async fn execute_confluence(
     integration: &crate::db::Integration,
     context: &WorkflowContext,
 ) -> std::result::Result<WorkflowResult, String> {
-    let creds: serde_json::Value = serde_json::from_str(&integration.credentials_json)
-        .map_err(|e| format!("Invalid credentials: {e}"))?;
-    let config: serde_json::Value =
-        serde_json::from_str(&workflow.config_json).map_err(|e| format!("Invalid config: {e}"))?;
+    let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
     let email = creds["email"]
         .as_str()
@@ -270,10 +272,7 @@ async fn execute_github(
     integration: &crate::db::Integration,
     context: &WorkflowContext,
 ) -> std::result::Result<WorkflowResult, String> {
-    let creds: serde_json::Value = serde_json::from_str(&integration.credentials_json)
-        .map_err(|e| format!("Invalid credentials: {e}"))?;
-    let config: serde_json::Value =
-        serde_json::from_str(&workflow.config_json).map_err(|e| format!("Invalid config: {e}"))?;
+    let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
     let token = creds["token"]
         .as_str()
@@ -335,10 +334,7 @@ async fn execute_linear(
     integration: &crate::db::Integration,
     context: &WorkflowContext,
 ) -> std::result::Result<WorkflowResult, String> {
-    let creds: serde_json::Value = serde_json::from_str(&integration.credentials_json)
-        .map_err(|e| format!("Invalid credentials: {e}"))?;
-    let config: serde_json::Value =
-        serde_json::from_str(&workflow.config_json).map_err(|e| format!("Invalid config: {e}"))?;
+    let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
     let api_key = creds["api_key"]
         .as_str()
@@ -407,10 +403,7 @@ async fn execute_asana(
     integration: &crate::db::Integration,
     context: &WorkflowContext,
 ) -> std::result::Result<WorkflowResult, String> {
-    let creds: serde_json::Value = serde_json::from_str(&integration.credentials_json)
-        .map_err(|e| format!("Invalid credentials: {e}"))?;
-    let config: serde_json::Value =
-        serde_json::from_str(&workflow.config_json).map_err(|e| format!("Invalid config: {e}"))?;
+    let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
     let token = creds["token"]
         .as_str()

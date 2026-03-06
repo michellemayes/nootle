@@ -1967,8 +1967,6 @@ pub async fn get_meeting_analytics(
     }))
 }
 
-// --- Integrations ---
-
 #[tauri::command]
 pub fn create_integration(
     db: State<'_, DbState>,
@@ -2000,8 +1998,6 @@ pub fn update_integration(
 pub fn delete_integration(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_integration(&id).map_err(|e| e.to_string())
 }
-
-// --- Workflows ---
 
 #[tauri::command]
 pub fn create_workflow(
@@ -2062,7 +2058,6 @@ pub async fn run_workflow(
         .map_err(|e| e.to_string())?;
     let meeting = db.get_meeting(&meeting_id).map_err(|e| e.to_string())?;
 
-    // Build context from meeting data
     let summaries = db
         .get_summaries_for_meeting(&meeting_id)
         .map_err(|e| e.to_string())?;
@@ -2088,27 +2083,24 @@ pub async fn run_workflow(
         action_items,
     };
 
-    // Create run record
     let run = db
         .create_workflow_run(&meeting_id, &workflow_id)
         .map_err(|e| e.to_string())?;
 
-    // Update status to running
     db.update_workflow_run_status(&run.id, "running", None, None)
         .map_err(|e| e.to_string())?;
 
-    // Execute
     match crate::workflows::execute_workflow(&workflow, &integration, &context).await {
         Ok(result) => {
             let result_json = serde_json::to_string(&result).unwrap_or_default();
             db.update_workflow_run_status(&run.id, "completed", Some(&result_json), None)
                 .map_err(|e| e.to_string())?;
-            db.get_workflow_run(&run.id).map_err(|e| e.to_string())
         }
         Err(e) => {
             db.update_workflow_run_status(&run.id, "failed", None, Some(&e))
                 .map_err(|e| e.to_string())?;
-            db.get_workflow_run(&run.id).map_err(|e| e.to_string())
         }
     }
+
+    db.get_workflow_run(&run.id).map_err(|e| e.to_string())
 }

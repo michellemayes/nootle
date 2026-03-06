@@ -3001,8 +3001,6 @@ impl Database {
         }
     }
 
-    // ── Integrations CRUD ──────────────────────────────────────────────
-
     pub fn create_integration(
         &self,
         integration_type: &str,
@@ -3077,26 +3075,11 @@ impl Database {
         Ok(integrations)
     }
 
-    /// Like `list_integrations` but redacts credentials for frontend use.
     pub fn list_integrations_safe(&self) -> Result<Vec<Integration>> {
-        let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, integration_type, name, created_at
-             FROM integrations ORDER BY created_at DESC",
-        )?;
-
-        let integrations = stmt
-            .query_map([], |row| {
-                Ok(Integration {
-                    id: row.get(0)?,
-                    integration_type: row.get(1)?,
-                    name: row.get(2)?,
-                    credentials_json: String::new(),
-                    created_at: row.get(3)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
+        let mut integrations = self.list_integrations()?;
+        for i in &mut integrations {
+            i.credentials_json = String::new();
+        }
         Ok(integrations)
     }
 
@@ -3139,19 +3122,14 @@ impl Database {
 
     pub fn delete_integration(&self, id: &str) -> Result<()> {
         let conn = self.lock_conn()?;
-        // Delete workflow runs for workflows belonging to this integration
         conn.execute(
             "DELETE FROM workflow_runs WHERE workflow_id IN (SELECT id FROM workflows WHERE integration_id = ?1)",
             params![id],
         )?;
-        // Delete workflows belonging to this integration
         conn.execute("DELETE FROM workflows WHERE integration_id = ?1", params![id])?;
-        // Delete the integration
         conn.execute("DELETE FROM integrations WHERE id = ?1", params![id])?;
         Ok(())
     }
-
-    // ── Workflows CRUD ─────────────────────────────────────────────────
 
     pub fn create_workflow(
         &self,
@@ -3292,8 +3270,6 @@ impl Database {
         conn.execute("DELETE FROM workflows WHERE id = ?1", params![id])?;
         Ok(())
     }
-
-    // ── Workflow Runs CRUD ─────────────────────────────────────────────
 
     pub fn create_workflow_run(
         &self,

@@ -31,6 +31,21 @@ import { TagEditor } from "@/components/TagEditor";
 import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List, StickyNote, Sparkles, PanelLeftClose, PanelLeftOpen, Copy, CheckCheck, Zap, AlertTriangle } from "lucide-react";
 import { useWorkflows, useWorkflowRuns } from "@/hooks/useWorkflows";
 
+function runStatusVariant(status: string): "secondary" | "destructive" | "outline" {
+  if (status === "completed") return "secondary";
+  if (status === "failed") return "destructive";
+  return "outline";
+}
+
+function parseResultMessage(json: string | null): string | null {
+  if (!json) return null;
+  try {
+    return (JSON.parse(json) as { message?: string }).message ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function CopyButton({ text, className = "" }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
@@ -956,9 +971,7 @@ export function MeetingDetail() {
           <Badge variant="outline">{statusLabel(meeting.status)}</Badge>
         </div>
         <div className="flex items-center gap-2">
-          {workflows.filter(w => w.is_enabled).length > 0 && (
-            <div className="flex items-center gap-2">
-              {workflows.filter(w => w.is_enabled).map((w) => {
+          {workflows.filter(w => w.is_enabled).map((w) => {
                 const recentRun = runs.find(r => r.workflow_id === w.id);
                 const isRunning = recentRun?.status === "running" || recentRun?.status === "pending";
                 const succeeded = recentRun?.status === "completed";
@@ -993,9 +1006,7 @@ export function MeetingDetail() {
                     {w.name}
                   </Button>
                 );
-              })}
-            </div>
-          )}
+          })}
           <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
             <MessageSquare className="h-4 w-4" /> Ask Nootle
           </Button>
@@ -1244,11 +1255,7 @@ export function MeetingDetail() {
                       <div key={run.id} className="rounded-lg border px-4 py-3 space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-medium">{run.workflow_name ?? "Workflow"}</span>
-                          <Badge variant={
-                            run.status === "completed" ? "secondary" :
-                            run.status === "failed" ? "destructive" :
-                            "outline"
-                          }>
+                          <Badge variant={runStatusVariant(run.status)}>
                             {run.status}
                           </Badge>
                         </div>
@@ -1258,14 +1265,9 @@ export function MeetingDetail() {
                         {run.error && (
                           <p className="text-xs text-destructive">{run.error}</p>
                         )}
-                        {run.result_json && run.status === "completed" && (() => {
-                          try {
-                            const result = JSON.parse(run.result_json);
-                            return (
-                              <p className="text-xs text-muted-foreground">{result.message}</p>
-                            );
-                          } catch { return null; }
-                        })()}
+                        {run.status === "completed" && parseResultMessage(run.result_json) && (
+                          <p className="text-xs text-muted-foreground">{parseResultMessage(run.result_json)}</p>
+                        )}
                       </div>
                     ))
                   )}

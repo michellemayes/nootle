@@ -19,6 +19,7 @@ import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus, Link, Unlink } from "luci
 import { formatBytes } from "@/lib/utils";
 import { useIntegrations } from "@/hooks/useIntegrations";
 import { useWorkflows } from "@/hooks/useWorkflows";
+import type { Workflow } from "@/types";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter"];
 
@@ -280,7 +281,7 @@ function WorkflowsManager() {
     setEditing("new");
   };
 
-  const startEdit = (wf: { id: string; name: string; description: string | null; icon: string | null; integration_id: string; action_type: string; config_json: string }) => {
+  const startEdit = (wf: Workflow) => {
     setEditing(wf.id);
     setFormName(wf.name);
     setFormDescription(wf.description ?? "");
@@ -326,7 +327,7 @@ function WorkflowsManager() {
     }
   };
 
-  const handleToggleEnabled = async (wf: { id: string; name: string; description: string | null; icon: string | null; action_type: string; config_json: string; is_enabled: boolean }) => {
+  const handleToggleEnabled = async (wf: Workflow) => {
     await updateWorkflow(
       wf.id,
       wf.name,

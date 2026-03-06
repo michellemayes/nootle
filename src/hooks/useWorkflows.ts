@@ -82,7 +82,7 @@ export function useWorkflows() {
 
   const runWorkflow = useCallback(
     async (meetingId: string, workflowId: string) => {
-      return await invoke<WorkflowRun>("run_workflow", {
+      return invoke<WorkflowRun>("run_workflow", {
         meetingId,
         workflowId,
       });
