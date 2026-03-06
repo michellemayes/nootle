@@ -44,6 +44,7 @@ All notable changes to this project will be documented in this file.
 
 ### Refactoring
 
+- Verify features, fix bugs, deduplicate code (#55) ([a47e3a3](https://github.com/michellemayes/nootle/commit/a47e3a33cfd2922f5eaa39980bc9ef921371c1a9))
 - Merge prompts into templates for simplified UX (#54) ([33e3bde](https://github.com/michellemayes/nootle/commit/33e3bdea687e9c84bffa52bf90aa5de6c1c444f7))
 
 
