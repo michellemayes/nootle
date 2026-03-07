@@ -493,7 +493,9 @@ async fn execute_obsidian(
         _ => std::collections::HashMap::new(),
     };
 
-    let subfolder = config["subfolder"].as_str().unwrap_or("");
+    let subfolder = config["subfolder"]
+        .as_str()
+        .ok_or("Missing subfolder in workflow config")?;
     let filename_template = config["filename_template"]
         .as_str()
         .unwrap_or("{{date}} - {{title}}");
@@ -539,20 +541,23 @@ async fn execute_obsidian(
         result
     };
 
-    // Build speakers list for frontmatter
-    let speakers_yaml: String = speaker_map
+    // Build speakers list for frontmatter from action item assignees
+    let mut unique_speakers = std::collections::BTreeSet::new();
+    for ai in &context.action_items {
+        if let Some(ref assignee) = ai.assignee {
+            unique_speakers.insert(assignee.clone());
+        }
+    }
+
+    let speakers_yaml: String = unique_speakers
         .iter()
-        .map(|(raw, mapped)| {
-            if raw != mapped {
+        .map(|name| {
+            if let Some(mapped) = speaker_map.get(name.as_str()) {
                 format!("  - \"[[{mapped}]]\"")
             } else {
-                format!("  - \"[[{mapped}]]\"")
+                format!("  - \"{name}\"")
             }
         })
-        .chain(
-            // If there are no speaker mappings, we still produce nothing extra
-            std::iter::empty::<String>(),
-        )
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -562,7 +567,7 @@ async fn execute_obsidian(
         date = date,
         title = context.meeting_title,
     );
-    if !speaker_map.is_empty() {
+    if !unique_speakers.is_empty() {
         frontmatter.push_str("speakers:\n");
         frontmatter.push_str(&speakers_yaml);
         frontmatter.push('\n');
@@ -623,7 +628,7 @@ async fn execute_obsidian(
     let path_str = file_path.to_string_lossy().to_string();
 
     Ok(WorkflowResult {
-        message: format!("Note created in Obsidian vault"),
+        message: format!("Note created: {}.md", filename),
         output: Some(path_str),
     })
 }
