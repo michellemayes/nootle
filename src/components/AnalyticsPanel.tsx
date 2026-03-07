@@ -4,9 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { BarChart3, RotateCw, Users, Timer, MessageCircleQuestion, Zap } from "lucide-react";
-import type { ModelInfo } from "@/types";
 import { formatMs } from "@/lib/utils";
-import { useLLMSelection } from "@/hooks/useLLMSelection";
+import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 
 const barColors = [
   "bg-blue-500",
@@ -19,12 +18,8 @@ const barColors = [
 
 export function AnalyticsPanel({
   meetingId,
-  providers,
-  models,
 }: {
   meetingId: string;
-  providers: string[];
-  models: ModelInfo[];
 }) {
   const {
     speakers,
@@ -36,7 +31,7 @@ export function AnalyticsPanel({
     computeSentiment,
   } = useAnalytics(meetingId);
 
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [computing, setComputing] = useState(false);
   const [analyzingSentiment, setAnalyzingSentiment] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -229,28 +224,6 @@ export function AnalyticsPanel({
 
         <div className="border-t pt-4 space-y-2">
           <h3 className="text-sm font-semibold">Sentiment Analysis</h3>
-          <div className="flex gap-2">
-            <select
-              value={selectedProvider}
-              onChange={(e) => changeProvider(e.target.value)}
-              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Provider</option>
-              {providers.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Model</option>
-              {filteredModels.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </div>
           <Button
             variant={hasSentiment ? "outline" : "default"}
             size="sm"

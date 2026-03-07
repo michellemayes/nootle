@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/hooks/useTheme";
+import { LLMSelectionProvider } from "@/contexts/LLMSelectionContext";
 import { Sidebar } from "@/components/Sidebar";
 import { Onboarding } from "@/components/Onboarding";
 import { MeetingLibrary } from "@/pages/MeetingLibrary";
@@ -42,6 +43,7 @@ function App() {
 
   return (
     <ThemeProvider>
+      <LLMSelectionProvider>
       <BrowserRouter>
         <Routes>
           <Route
@@ -110,6 +112,7 @@ function App() {
           />
         </Routes>
       </BrowserRouter>
+      </LLMSelectionProvider>
     </ThemeProvider>
   );
 }

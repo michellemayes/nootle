@@ -16,14 +16,13 @@ import { useTranscript } from "@/hooks/useTranscripts";
 import { useSummaries } from "@/hooks/useSummaries";
 import { useInsights } from "@/hooks/useInsights";
 import { useTemplates } from "@/hooks/useTemplates";
-import { useLLM } from "@/hooks/useLLM";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import { formatMs, formatDate, statusLabel } from "@/lib/utils";
-import { useLLMSelection } from "@/hooks/useLLMSelection";
+import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useTags } from "@/hooks/useTags";
 import { useScratchPad } from "@/hooks/useScratchPad";
-import type { LinearTicket, LinearTeam, LinearProject, ModelInfo, InsightWithActionItem, Tag } from "@/types";
+import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Tag } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
@@ -230,12 +229,8 @@ function InsightSection({
 
 function InsightsPanel({
   meetingId,
-  providers,
-  models,
 }: {
   meetingId: string;
-  providers: string[];
-  models: ModelInfo[];
 }) {
   const {
     insights,
@@ -249,7 +244,7 @@ function InsightsPanel({
     updateActionItem,
   } = useInsights(meetingId);
 
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel, providers } = useGlobalLLMSelection();
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
 
@@ -292,26 +287,6 @@ function InsightsPanel({
     <div className="flex flex-1 flex-col min-h-0">
       {/* Toolbar — always visible at top */}
       <div className="flex items-center gap-2 border-b px-5 py-2 flex-wrap">
-        <select
-          value={selectedProvider}
-          onChange={(e) => changeProvider(e.target.value)}
-          className="h-7 rounded-md border bg-transparent px-2 text-xs"
-        >
-          <option value="">Provider</option>
-          {providers.map((p) => (
-            <option key={p} value={p}>{p}</option>
-          ))}
-        </select>
-        <select
-          value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value)}
-          className="h-7 rounded-md border bg-transparent px-2 text-xs"
-        >
-          <option value="">Model</option>
-          {filteredModels.map((m) => (
-            <option key={m.id} value={m.id}>{m.name}</option>
-          ))}
-        </select>
         <Button
           size="sm"
           variant="ghost"
@@ -395,8 +370,6 @@ function CreateTicketButton({
   projects,
   defaultTeamId,
   defaultProjectId,
-  providers,
-  models,
   onFetchTeams,
   onTeamChange,
   onCreate,
@@ -407,8 +380,6 @@ function CreateTicketButton({
   projects: LinearProject[];
   defaultTeamId: string | null;
   defaultProjectId: string | null;
-  providers: string[];
-  models: ModelInfo[];
   onFetchTeams: () => void;
   onTeamChange: (teamId: string | null) => void;
   onCreate: (
@@ -422,7 +393,7 @@ function CreateTicketButton({
   const [open, setOpen] = useState(false);
   const [teamId, setTeamId] = useState(defaultTeamId ?? "");
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -517,27 +488,6 @@ function CreateTicketButton({
               </option>
             ))}
           </select>
-          <div className="flex gap-2">
-            <select
-              value={selectedProvider}
-              onChange={(e) => changeProvider(e.target.value)}
-              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              {providers.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Model</option>
-              {filteredModels.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </div>
           {error && (
             <p className="text-xs text-destructive">{error}</p>
           )}
@@ -568,18 +518,14 @@ function NotesPanel({
   meetingId,
   rawNotes,
   enrichedNotes,
-  providers,
-  models,
   onRefresh,
 }: {
   meetingId: string;
   rawNotes: string | null;
   enrichedNotes: string | null;
-  providers: string[];
-  models: ModelInfo[];
   onRefresh: () => void;
 }) {
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [enriching, setEnriching] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"original" | "enriched">("enriched");
@@ -634,26 +580,6 @@ function NotesPanel({
       <div className="flex items-center gap-2 border-b px-5 py-2">
         {!hasEnriched && (
           <>
-            <select
-              value={selectedProvider}
-              onChange={(e) => changeProvider(e.target.value)}
-              className="h-7 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Provider</option>
-              {providers.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="h-7 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Model</option>
-              {filteredModels.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
             <Button
               size="sm"
               variant="ghost"
@@ -734,7 +660,6 @@ export function MeetingDetail() {
   const { segments, loading: transcriptLoading } = useTranscript(id!);
   const { summaries, generateSummary } = useSummaries(id!);
   const { templates } = useTemplates();
-  const { models, providers } = useLLM();
   const { storedProviders: storedApiProviders } = useApiKeys();
   const { tags: allTags, getMeetingTags, addMeetingTag, removeMeetingTag, createTag } = useTags();
   const { notes: scratchNotes } = useScratchPad(id ?? null);
@@ -753,7 +678,7 @@ export function MeetingDetail() {
   const [generating, setGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState("");
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [compactTranscript, setCompactTranscript] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(true);
 
@@ -1097,8 +1022,6 @@ export function MeetingDetail() {
                 meetingId={id!}
                 rawNotes={meeting.raw_notes}
                 enrichedNotes={meeting.enriched_notes}
-                providers={providers}
-                models={models}
                 onRefresh={refreshMeeting}
               />
             </TabsContent>
@@ -1141,26 +1064,6 @@ export function MeetingDetail() {
                   <option value="">Template</option>
                   {templates.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-                <select
-                  value={selectedProvider}
-                  onChange={(e) => changeProvider(e.target.value)}
-                  className="h-7 rounded-md border bg-transparent px-2 text-xs"
-                >
-                  <option value="">Provider</option>
-                  {providers.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="h-7 rounded-md border bg-transparent px-2 text-xs"
-                >
-                  <option value="">Model</option>
-                  {filteredModels.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
                 <div className="relative">
@@ -1215,8 +1118,6 @@ export function MeetingDetail() {
                                 projects={linearProjects}
                                 defaultTeamId={defaultTeamId}
                                 defaultProjectId={defaultProjectId}
-                                providers={providers}
-                                models={models}
                                 onFetchTeams={fetchTeams}
                                 onTeamChange={setLinearTeamId}
                                 onCreate={createTicket}
@@ -1234,10 +1135,10 @@ export function MeetingDetail() {
               </ScrollArea>
             </TabsContent>
             <TabsContent value="insights" className="flex flex-1 flex-col mt-0">
-              <InsightsPanel meetingId={id!} providers={providers} models={models} />
+              <InsightsPanel meetingId={id!} />
             </TabsContent>
             <TabsContent value="analytics" className="flex flex-1 flex-col mt-0">
-              <AnalyticsPanel meetingId={id!} providers={providers} models={models} />
+              <AnalyticsPanel meetingId={id!} />
             </TabsContent>
             <TabsContent value="workflows" className="flex flex-1 flex-col mt-0">
               <ScrollArea className="flex-1">
