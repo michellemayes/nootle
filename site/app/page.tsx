@@ -2,6 +2,7 @@ import { Navbar } from "@/components/Navbar";
 import { Hero } from "@/components/Hero";
 import { AppMockup } from "@/components/AppMockup";
 import { Features } from "@/components/Features";
+import { Integrations } from "@/components/Integrations";
 import { HowItWorks } from "@/components/HowItWorks";
 import { SponsorCTA } from "@/components/SponsorCTA";
 
@@ -17,6 +18,7 @@ export default function Home() {
       <Hero />
       <AppMockup />
       <Features />
+      <Integrations />
       <HowItWorks />
       <SponsorCTA />
       <footer className="py-8 text-center text-[var(--color-text-secondary)] text-sm">
