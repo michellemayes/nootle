@@ -1,5 +1,5 @@
 use crate::error::{NootleError, Result};
-use rusqlite::{ffi::sqlite3_auto_extension, params, Connection};
+use rusqlite::{ffi::sqlite3_auto_extension, params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sqlite_vec::sqlite3_vec_init;
 use std::sync::{Mutex, MutexGuard};
@@ -3012,6 +3012,28 @@ impl Database {
         )?;
         conn.execute("DELETE FROM integrations WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn get_integration_by_type(&self, integration_type: &str) -> Result<Option<Integration>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, integration_type, name, credentials_json, created_at
+             FROM integrations WHERE integration_type = ?1 LIMIT 1",
+        )?;
+
+        let integration = stmt
+            .query_row(params![integration_type], |row| {
+                Ok(Integration {
+                    id: row.get(0)?,
+                    integration_type: row.get(1)?,
+                    name: row.get(2)?,
+                    credentials_json: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })
+            .optional()?;
+
+        Ok(integration)
     }
 
     pub fn create_workflow(

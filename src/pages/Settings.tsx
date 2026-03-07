@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
-import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import { useModelDownload } from "@/hooks/useModelDownload";
 import { useTheme } from "@/hooks/useTheme";
 
@@ -638,55 +637,6 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
   );
 }
 
-function LinearDefaults() {
-  const { teams, loading: teamsLoading, fetchTeams } = useLinearTeams();
-  const { defaultTeamId, defaultProjectId, saveDefaultTeam, saveDefaultProject } =
-    useLinearSettings();
-  const { projects, loading: projectsLoading } = useLinearProjects(defaultTeamId);
-
-  useEffect(() => {
-    fetchTeams();
-  }, [fetchTeams]);
-
-  return (
-    <div className="space-y-3 border-t pt-4">
-      <p className="text-sm font-medium">Defaults</p>
-      <div className="flex items-center gap-3">
-        <label className="w-20 shrink-0 text-sm text-muted-foreground">Team</label>
-        <select
-          value={defaultTeamId ?? ""}
-          onChange={(e) => saveDefaultTeam(e.target.value)}
-          disabled={teamsLoading}
-          className="h-8 flex-1 rounded-md border bg-transparent px-2 text-sm"
-        >
-          <option value="">Select team</option>
-          {teams.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} ({t.key})
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="flex items-center gap-3">
-        <label className="w-20 shrink-0 text-sm text-muted-foreground">Project</label>
-        <select
-          value={defaultProjectId ?? ""}
-          onChange={(e) => saveDefaultProject(e.target.value)}
-          disabled={projectsLoading || !defaultTeamId}
-          className="h-8 flex-1 rounded-md border bg-transparent px-2 text-sm"
-        >
-          <option value="">None (optional)</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
-  );
-}
-
 function InsightTypesManager() {
   const { types, createInsightType, updateInsightType, deleteInsightType } = useInsightTypes();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -951,7 +901,7 @@ export function SettingsPage() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="border-b px-8 py-4">
+      <div className="border-b px-6 py-4">
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Configure API keys and application settings
@@ -959,7 +909,7 @@ export function SettingsPage() {
       </div>
 
       <Tabs defaultValue="general" className="flex flex-1 flex-col overflow-hidden">
-        <div className="border-b px-8">
+        <div className="border-b px-6">
           <TabsList className="h-10">
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="api-keys">API Keys</TabsTrigger>
@@ -973,7 +923,7 @@ export function SettingsPage() {
         </div>
 
         <TabsContent value="general" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+          <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <Card>
               <CardHeader>
                 <CardTitle>Appearance</CardTitle>
@@ -1051,7 +1001,7 @@ export function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="api-keys" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+          <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <Card>
               <CardHeader>
                 <CardTitle>API Keys</CardTitle>
@@ -1078,57 +1028,32 @@ export function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="integrations" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-8 max-w-3xl">
-            <Card>
-              <CardHeader>
-                <CardTitle>Project Management (Legacy)</CardTitle>
-                <CardDescription>
-                  API keys for the legacy Linear/Asana ticket creation UI. For workflow-based integrations, use the cards below.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ApiKeyRow
-                  provider="linear"
-                  isStored={storedProviders.includes("linear")}
-                  onSave={(key) => storeKey("linear", key)}
-                  onDelete={() => deleteKey("linear")}
-                />
-                {storedProviders.includes("linear") && (
-                  <LinearDefaults />
-                )}
-                <ApiKeyRow
-                  provider="asana"
-                  isStored={storedProviders.includes("asana")}
-                  onSave={(key) => storeKey("asana", key)}
-                  onDelete={() => deleteKey("asana")}
-                />
-              </CardContent>
-            </Card>
+          <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <IntegrationsManager />
           </div>
         </TabsContent>
 
         <TabsContent value="workflows" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+          <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <WorkflowsManager />
           </div>
         </TabsContent>
 
         <TabsContent value="models" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+          <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <ModelManagementCard />
           </div>
         </TabsContent>
 
 
         <TabsContent value="insight-types" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+          <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <InsightTypesManager />
           </div>
         </TabsContent>
 
         <TabsContent value="about" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-8 max-w-3xl">
+          <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <Card>
               <CardHeader>
                 <CardTitle>About</CardTitle>

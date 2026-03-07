@@ -83,35 +83,36 @@ export function AccentColorPicker() {
           );
         })}
 
-        {/* Custom color picker */}
-        <button
-          type="button"
-          title="Custom color"
-          onClick={() => colorInputRef.current?.click()}
-          className="relative h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          style={{
-            background: isCustom
-              ? `oklch(0.55 ${accentChroma} ${accentHue})`
-              : "conic-gradient(from 0deg, oklch(0.65 0.2 0), oklch(0.65 0.2 60), oklch(0.65 0.2 120), oklch(0.65 0.2 180), oklch(0.65 0.2 240), oklch(0.65 0.2 300), oklch(0.65 0.2 360))",
-            borderColor: isCustom
-              ? `oklch(0.55 ${accentChroma} ${accentHue})`
-              : "transparent",
-          }}
-        >
-          {isCustom && (
-            <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white" strokeWidth={3} />
-          )}
-        </button>
-        <input
-          ref={colorInputRef}
-          type="color"
-          className="sr-only"
-          tabIndex={-1}
-          onChange={(e) => {
-            const { hue, chroma } = hexToHueChroma(e.target.value);
-            setAccentColor(hue, Math.max(chroma, 0.05));
-          }}
-        />
+        <div className="relative">
+          <button
+            type="button"
+            title="Custom color"
+            onClick={() => colorInputRef.current?.click()}
+            className="relative h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            style={{
+              background: isCustom
+                ? `oklch(0.55 ${accentChroma} ${accentHue})`
+                : "conic-gradient(from 0deg, oklch(0.65 0.2 0), oklch(0.65 0.2 60), oklch(0.65 0.2 120), oklch(0.65 0.2 180), oklch(0.65 0.2 240), oklch(0.65 0.2 300), oklch(0.65 0.2 360))",
+              borderColor: isCustom
+                ? `oklch(0.55 ${accentChroma} ${accentHue})`
+                : "transparent",
+            }}
+          >
+            {isCustom && (
+              <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white" strokeWidth={3} />
+            )}
+          </button>
+          <input
+            ref={colorInputRef}
+            type="color"
+            className="absolute top-0 left-0 h-7 w-7 cursor-pointer opacity-0"
+            tabIndex={-1}
+            onChange={(e) => {
+              const { hue, chroma } = hexToHueChroma(e.target.value);
+              setAccentColor(hue, Math.max(chroma, 0.05));
+            }}
+          />
+        </div>
       </div>
     </div>
   );

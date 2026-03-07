@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence, useInView } from "framer-motion";
 
 // --- Data ---
 
@@ -37,21 +37,21 @@ const meetings = [
 ];
 
 const transcriptLines = [
-  { time: "00:42", speaker: "Sarah", color: "text-blue-500", text: "I think we should prioritize the onboarding flow this sprint." },
-  { time: "01:15", speaker: "James", color: "text-green-500", text: "Agreed. The drop-off rate on step three is way too high." },
-  { time: "01:38", speaker: "Sarah", color: "text-blue-500", text: "Exactly. I've got some wireframes we can look at after this." },
-  { time: "02:04", speaker: "Priya", color: "text-amber-500", text: "Can we also revisit the notification settings? Users keep asking about that." },
-  { time: "02:31", speaker: "James", color: "text-green-500", text: "Good call. Let's timebox that for 30 minutes after the onboarding discussion." },
-  { time: "03:12", speaker: "Sarah", color: "text-blue-500", text: "Sounds good. I'll share my screen now." },
+  { time: "00:42", speaker: "Speaker 1", color: "text-blue-500", text: "I think we should prioritize the onboarding flow this sprint." },
+  { time: "01:15", speaker: "Speaker 2", color: "text-green-500", text: "Agreed. The drop-off rate on step three is way too high." },
+  { time: "01:38", speaker: "Speaker 1", color: "text-blue-500", text: "Exactly. I've got some wireframes we can look at after this." },
+  { time: "02:04", speaker: "Speaker 3", color: "text-amber-500", text: "Can we also revisit the notification settings? Users keep asking about that." },
+  { time: "02:31", speaker: "Speaker 2", color: "text-green-500", text: "Good call. Let's timebox that for 30 minutes after the onboarding discussion." },
+  { time: "03:12", speaker: "Speaker 1", color: "text-blue-500", text: "Sounds good. I'll share my screen now." },
 ];
 
 const summaryContent = `## Meeting Summary
 
 **Sprint Planning** covered three main topics:
 
-- **Onboarding flow** — The team agreed to prioritize the onboarding redesign this sprint. Sarah has wireframes ready to share. The drop-off rate at step 3 is the primary concern.
+- **Onboarding flow** — The team agreed to prioritize the onboarding redesign this sprint. Speaker 1 has wireframes ready to share. The drop-off rate at step 3 is the primary concern.
 
-- **Notification settings** — Priya flagged ongoing user requests for more granular notification controls. The team will timebox a 30-minute discussion.
+- **Notification settings** — Speaker 3 flagged ongoing user requests for more granular notification controls. The team will timebox a 30-minute discussion.
 
 - **Timeline** — Sprint ends March 8. Design review scheduled for Wednesday.`;
 
@@ -61,13 +61,13 @@ const insightsData = {
     { text: "Timebox notification settings discussion to 30 minutes", time: "02:31" },
   ],
   actionItems: [
-    { text: "Share onboarding wireframes with team", assignee: "Sarah", done: false },
-    { text: "Analyze step 3 drop-off data", assignee: "James", done: true },
-    { text: "Draft notification settings proposal", assignee: "Priya", done: false },
+    { text: "Share onboarding wireframes with team", assignee: "Speaker 1", done: false },
+    { text: "Analyze step 3 drop-off data", assignee: "Speaker 2", done: true },
+    { text: "Draft notification settings proposal", assignee: "Speaker 3", done: false },
   ],
   keyMoments: [
     { text: "Team aligned on sprint priorities", time: "01:15" },
-    { text: "Priya surfaced recurring user feedback on notifications", time: "02:04" },
+    { text: "Speaker 3 surfaced recurring user feedback on notifications", time: "02:04" },
   ],
 };
 
@@ -76,9 +76,9 @@ const analyticsData = {
   speakers: 3,
   words: 2847,
   speakerBreakdown: [
-    { name: "Sarah", pct: 42, color: "bg-blue-400" },
-    { name: "James", pct: 35, color: "bg-green-400" },
-    { name: "Priya", pct: 23, color: "bg-amber-400" },
+    { name: "Speaker 1", pct: 42, color: "bg-blue-400" },
+    { name: "Speaker 2", pct: 35, color: "bg-green-400" },
+    { name: "Speaker 3", pct: 23, color: "bg-amber-400" },
   ],
 };
 
@@ -87,11 +87,11 @@ const notesContent = `# Sprint Planning Notes
 ## Priorities
 - Onboarding flow redesign is the top priority
 - Step 3 drop-off rate needs immediate attention
-- Sarah has wireframes ready for review
+- Speaker 1 has wireframes ready for review
 
 ## Notifications
 - Users requesting more granular controls
-- Priya to lead the discussion
+- Speaker 3 to lead the discussion
 - Timeboxed to 30 minutes
 
 ## Timeline
@@ -345,7 +345,7 @@ function LibraryView({ onSelectMeeting }: { onSelectMeeting: (id: string) => voi
   );
 }
 
-type TabId = "notes" | "summaries" | "insights" | "analytics";
+type TabId = "notes" | "summaries" | "insights" | "analytics" | "workflows";
 
 function DetailView({
   meeting,
@@ -354,6 +354,8 @@ function DetailView({
   onTabChange,
   transcriptVisible,
   onToggleTranscript,
+  askNootleOpen,
+  onToggleAskNootle,
 }: {
   meeting: (typeof meetings)[number];
   onBack: () => void;
@@ -361,12 +363,15 @@ function DetailView({
   onTabChange: (tab: TabId) => void;
   transcriptVisible: boolean;
   onToggleTranscript: () => void;
+  askNootleOpen: boolean;
+  onToggleAskNootle: () => void;
 }) {
   const tabs: { id: TabId; label: string }[] = [
     { id: "notes", label: "Notes" },
     { id: "summaries", label: "Summaries" },
     { id: "insights", label: "Insights" },
     { id: "analytics", label: "Analytics" },
+    { id: "workflows", label: "Workflows" },
   ];
 
   return (
@@ -387,14 +392,21 @@ function DetailView({
           </div>
           <StatusBadge status={meeting.status} />
         </div>
-        <button className="flex items-center gap-1 text-[10px] border border-gray-200 rounded-md px-2 py-1 text-gray-600 hover:bg-gray-50 transition-colors">
+        <button
+          onClick={onToggleAskNootle}
+          className={`flex items-center gap-1 text-[10px] border rounded-md px-2 py-1 transition-colors ${
+            askNootleOpen
+              ? "border-purple-300 bg-purple-50 text-purple-700"
+              : "border-gray-200 text-gray-600 hover:bg-gray-50"
+          }`}
+        >
           <MessageIcon className="w-3 h-3" />
           Ask Nootle
         </button>
       </div>
 
-      {/* Two-column layout */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      {/* Two-column layout + Ask Nootle panel */}
+      <div className="flex flex-1 min-h-0 overflow-hidden relative">
         {/* Transcript column */}
         <AnimatePresence>
           {transcriptVisible && (
@@ -425,6 +437,21 @@ function DetailView({
                   </div>
                 ))}
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Ask Nootle slide-over */}
+        <AnimatePresence>
+          {askNootleOpen && (
+            <motion.div
+              initial={{ x: "100%", opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: "100%", opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="absolute right-0 top-0 bottom-0 w-[55%] bg-white border-l border-gray-200 z-20 shadow-lg"
+            >
+              <AskNootlePanel />
             </motion.div>
           )}
         </AnimatePresence>
@@ -472,6 +499,7 @@ function DetailView({
                 {activeTab === "summaries" && <SummariesTab />}
                 {activeTab === "insights" && <InsightsTab />}
                 {activeTab === "analytics" && <AnalyticsTab />}
+                {activeTab === "workflows" && <WorkflowsTab />}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -670,13 +698,196 @@ function AnalyticsTab() {
   );
 }
 
+const workflowsData = [
+  {
+    name: "Post to Slack",
+    target: "#sprint-planning",
+    status: "Sent" as const,
+    icon: "💬",
+  },
+  {
+    name: "Create Linear tickets",
+    target: "3 action items",
+    status: "Created" as const,
+    icon: "🎫",
+  },
+  {
+    name: "Update Notion page",
+    target: "Sprint Planning Notes",
+    status: "Updated" as const,
+    icon: "📝",
+  },
+  {
+    name: "Email summary",
+    target: "team@company.com",
+    status: "Pending" as const,
+    icon: "✉️",
+  },
+];
+
+function WorkflowsTab() {
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex items-center gap-1.5 mb-1">
+        <SparklesIcon className="w-3 h-3 text-gray-400" />
+        <span className="text-[10px] font-semibold text-gray-800">Post-meeting Workflows</span>
+        <span className="text-[9px] bg-gray-100 text-gray-500 px-1 py-0.5 rounded font-medium">
+          {workflowsData.length}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {workflowsData.map((wf) => (
+          <div key={wf.name} className="flex items-center gap-2.5 border border-gray-200 rounded-md p-2.5">
+            <span className="text-sm">{wf.icon}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-medium text-gray-900">{wf.name}</p>
+              <p className="text-[9px] text-gray-400 truncate">{wf.target}</p>
+            </div>
+            <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+              wf.status === "Pending"
+                ? "bg-amber-50 text-amber-600"
+                : "bg-green-50 text-green-600"
+            }`}>
+              {wf.status}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const askNootleChatMessages = [
+  {
+    role: "user" as const,
+    text: "What were the action items from this meeting?",
+    recipe: "Extract action items",
+  },
+  {
+    role: "assistant" as const,
+    text: "Here are the 3 action items from Sprint Planning:\n\n1. Share onboarding wireframes with team — Speaker 1\n2. Analyze step 3 drop-off data — Speaker 2 (done)\n3. Draft notification settings proposal — Speaker 3",
+  },
+];
+
+function AskNootlePanel() {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200">
+        <div className="flex items-center gap-1.5">
+          <SparklesIcon className="w-3 h-3 text-purple-500" />
+          <span className="text-[10px] font-semibold text-gray-800">Ask Nootle</span>
+        </div>
+        <span className="text-[9px] text-gray-400">about this meeting</span>
+      </div>
+
+      {/* Recipe pills */}
+      <div className="flex gap-1.5 px-3 py-2 border-b border-gray-100 overflow-hidden">
+        {["Extract action items", "Write follow-up email", "List decisions"].map((recipe) => (
+          <span
+            key={recipe}
+            className={`shrink-0 text-[9px] px-2 py-0.5 rounded-full border ${
+              recipe === "Extract action items"
+                ? "border-purple-200 bg-purple-50 text-purple-600 font-medium"
+                : "border-gray-200 text-gray-500"
+            }`}
+          >
+            {recipe}
+          </span>
+        ))}
+      </div>
+
+      {/* Chat messages */}
+      <div className="flex-1 overflow-auto px-3 py-2 space-y-2.5">
+        {askNootleChatMessages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div
+              className={`max-w-[90%] rounded-lg px-2.5 py-1.5 text-[10px] leading-relaxed ${
+                msg.role === "user"
+                  ? "bg-gray-900 text-white"
+                  : "bg-gray-100 text-gray-700"
+              }`}
+            >
+              {msg.role === "user" && msg.recipe && (
+                <div className="flex items-center gap-1 mb-0.5">
+                  <SparklesIcon className="w-2.5 h-2.5 text-purple-300" />
+                  <span className="text-[8px] text-purple-300">{msg.recipe}</span>
+                </div>
+              )}
+              {msg.text.split("\n").map((line, j) => (
+                <p key={j} className={j > 0 ? "mt-1" : ""}>{line}</p>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Input */}
+      <div className="px-3 py-2 border-t border-gray-200">
+        <div className="flex items-center gap-1.5 border border-gray-200 rounded-md px-2 py-1.5">
+          <span className="text-[10px] text-gray-400 flex-1">Ask about this meeting...</span>
+          <div className="w-4 h-4 rounded bg-gray-900 flex items-center justify-center">
+            <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- Main component ---
+
+// Auto-tour sequence: library → open meeting → cycle tabs → back to library
+const tourSteps: { view: "library" | "detail"; tab?: TabId; transcript?: boolean; askNootle?: boolean }[] = [
+  { view: "library" },
+  { view: "detail", tab: "notes", transcript: true },
+  { view: "detail", tab: "summaries", transcript: true },
+  { view: "detail", tab: "insights", transcript: true },
+  { view: "detail", tab: "analytics", transcript: false },
+  { view: "detail", tab: "workflows", transcript: false },
+  { view: "detail", tab: "workflows", transcript: false, askNootle: true },
+];
+
+const TOUR_INTERVAL = 2250;
 
 export function AppMockup() {
   const [currentView, setCurrentView] = useState<"library" | "detail">("library");
   const [activeTab, setActiveTab] = useState<TabId>("notes");
   const [transcriptVisible, setTranscriptVisible] = useState(true);
   const [activeMeetingId, setSelectedMeetingId] = useState<string>("1");
+  const [askNootleOpen, setAskNootleOpen] = useState(false);
+  const [autoTourPaused, setAutoTourPaused] = useState(false);
+  const tourIndexRef = useRef(0);
+  const sectionRef = useRef<HTMLElement>(null);
+  const isInView = useInView(sectionRef, { amount: 0.3 });
+
+  const applyTourStep = useCallback((index: number) => {
+    const step = tourSteps[index];
+    setCurrentView(step.view);
+    if (step.tab) setActiveTab(step.tab);
+    if (step.transcript !== undefined) setTranscriptVisible(step.transcript);
+    if (step.view === "detail") setSelectedMeetingId("1");
+    setAskNootleOpen(!!step.askNootle);
+  }, []);
+
+  // Auto-tour timer
+  useEffect(() => {
+    if (autoTourPaused || !isInView) return;
+    const timer = setInterval(() => {
+      tourIndexRef.current = (tourIndexRef.current + 1) % tourSteps.length;
+      applyTourStep(tourIndexRef.current);
+    }, TOUR_INTERVAL);
+    return () => clearInterval(timer);
+  }, [autoTourPaused, isInView, applyTourStep]);
+
+  // Pause tour on user interaction, resume after 10s idle
+  const pauseTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  function handleUserInteraction() {
+    setAutoTourPaused(true);
+    clearTimeout(pauseTimeoutRef.current);
+    pauseTimeoutRef.current = setTimeout(() => setAutoTourPaused(false), 10000);
+  }
 
   const activeMeeting = meetings.find((m) => m.id === activeMeetingId) ?? meetings[0];
   const titleBarText = currentView === "library"
@@ -684,12 +895,13 @@ export function AppMockup() {
     : `${activeMeeting.title} — ${activeMeeting.date}`;
 
   function handleSelectMeeting(id: string) {
+    handleUserInteraction();
     setSelectedMeetingId(id);
     setCurrentView("detail");
   }
 
   return (
-    <section className="py-24 px-6">
+    <section ref={sectionRef} className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
         <motion.h2
           className="font-[family-name:var(--font-syne)] text-4xl md:text-5xl font-bold text-center mb-4"
@@ -758,11 +970,13 @@ export function AppMockup() {
                   >
                     <DetailView
                       meeting={activeMeeting}
-                      onBack={() => setCurrentView("library")}
+                      onBack={() => { handleUserInteraction(); setCurrentView("library"); }}
                       activeTab={activeTab}
-                      onTabChange={setActiveTab}
+                      onTabChange={(tab) => { handleUserInteraction(); setActiveTab(tab); }}
                       transcriptVisible={transcriptVisible}
-                      onToggleTranscript={() => setTranscriptVisible((v) => !v)}
+                      onToggleTranscript={() => { handleUserInteraction(); setTranscriptVisible((v) => !v); }}
+                      askNootleOpen={askNootleOpen}
+                      onToggleAskNootle={() => { handleUserInteraction(); setAskNootleOpen((v) => !v); }}
                     />
                   </motion.div>
                 )}

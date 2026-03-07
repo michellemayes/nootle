@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Polish UI for native macOS feel (#62) ([25a8183](https://github.com/michellemayes/nootle/commit/25a818331cecdefece7329bfd5df9c0065f59ad9))
+- Unify legacy PM settings into integrations tab (#60) ([29e1055](https://github.com/michellemayes/nootle/commit/29e105509f6cb387bbfda79cfe8868915454e1b9))
+- Position color picker popover relative to its trigger button (#59) ([1fed49e](https://github.com/michellemayes/nootle/commit/1fed49e97c57e0c7e316e0c8575de00957e743f6))
+- Enable scrolling and use grid layout on templates page (#58) ([986b88f](https://github.com/michellemayes/nootle/commit/986b88f93904ffcb1c5738d35d3450e521a582c7))
 - Resolve cargo fmt and clippy warnings (#57) ([c416ba5](https://github.com/michellemayes/nootle/commit/c416ba5926d9bfbfcf3f579a195e17cc5c70f652))
 - Remove keychain dependency, add inline tag editing, fix chat input (#53) ([e2d6f3d](https://github.com/michellemayes/nootle/commit/e2d6f3d09518326a3013a3259dd6bfe00403e52f))
 - Set default-run to nootle-app for tauri dev ([e296cb3](https://github.com/michellemayes/nootle/commit/e296cb3cd101e1b2186467742655d1ff55a60132))
@@ -26,6 +30,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Add integrations, app demo auto-tour, and Ask Nootle panel (#63) ([74dc460](https://github.com/michellemayes/nootle/commit/74dc460debbabb7575c3391a03bdf279a8b01d9d))
 - Post-meeting workflows (#56) ([e0d1b5c](https://github.com/michellemayes/nootle/commit/e0d1b5c5eee666cbe291d36e4f7e33337976013a))
 - Add Granola-parity features (templates, recipes, tags, scratch pad) (#51) ([403bc27](https://github.com/michellemayes/nootle/commit/403bc273ad1a033a6fdf235c76747dfe9a798dab))
 - Switch lander feature icons to lucide-react (#48) ([765a8e9](https://github.com/michellemayes/nootle/commit/765a8e9f9dcbafa5487fae240d761f22ef3141da))

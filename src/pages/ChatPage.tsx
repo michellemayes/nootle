@@ -9,8 +9,7 @@ import { Markdown } from "@/components/Markdown";
 import { ThinkingDots } from "@/components/ThinkingDots";
 import { useChatConversations, useChatMessages } from "@/hooks/useChatHistory";
 import { useLabels } from "@/hooks/useLabels";
-import { useLLM } from "@/hooks/useLLM";
-import { useLLMSelection } from "@/hooks/useLLMSelection";
+import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import type { ChatSource, GlobalChatResponse } from "@/types";
 import { Plus, Trash2, MessageSquare, Send } from "lucide-react";
 import { SourceCitation } from "@/components/SourceCitation";
@@ -22,8 +21,7 @@ export function ChatPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const { messages: dbMessages, refresh: refreshMessages } = useChatMessages(activeId);
   const { labels } = useLabels();
-  const { models, providers } = useLLM();
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
 
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
@@ -200,26 +198,6 @@ export function ChatPage() {
             className="h-7 rounded-md border bg-transparent px-2 text-xs"
             title="To date"
           />
-          <select
-            value={selectedProvider}
-            onChange={(e) => changeProvider(e.target.value)}
-            className="h-7 rounded-md border bg-transparent px-2 text-xs"
-          >
-            <option value="">Provider</option>
-            {providers.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-          <select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-            className="h-7 rounded-md border bg-transparent px-2 text-xs"
-          >
-            <option value="">Model</option>
-            {filteredModels.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
         </div>
 
         {/* Messages area */}
@@ -296,7 +274,7 @@ export function ChatPage() {
             <div className="border-t p-4">
               {!selectedProvider || !selectedModel ? (
                 <p className="text-sm text-muted-foreground text-center py-2">
-                  Select a provider and model above, or add an API key in Settings to start chatting.
+                  Select a model in the sidebar, or add an API key in Settings to start chatting.
                 </p>
               ) : (
                 <div className="flex gap-2">
