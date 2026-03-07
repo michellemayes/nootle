@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Reduce excessive padding on help page cards (#61) ([8c386cf](https://github.com/michellemayes/nootle/commit/8c386cf7c1f9489b7debabd33992ca841ec02e7b))
 - Polish UI for native macOS feel (#62) ([25a8183](https://github.com/michellemayes/nootle/commit/25a818331cecdefece7329bfd5df9c0065f59ad9))
 - Unify legacy PM settings into integrations tab (#60) ([29e1055](https://github.com/michellemayes/nootle/commit/29e105509f6cb387bbfda79cfe8868915454e1b9))
 - Position color picker popover relative to its trigger button (#59) ([1fed49e](https://github.com/michellemayes/nootle/commit/1fed49e97c57e0c7e316e0c8575de00957e743f6))
