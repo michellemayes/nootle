@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Add vertical padding to tab bar containers (#68) ([a2f302d](https://github.com/michellemayes/nootle/commit/a2f302dcd76372ac20aa1e041d402e8b3db83e9c))
 - Restore Ask Nootle as side drawer instead of inline panel (#69) ([b924723](https://github.com/michellemayes/nootle/commit/b92472324307932971a315904d1311905eee0dd0))
 - Reset release-please manifest version to 0.0.0 (#66) ([9aef94a](https://github.com/michellemayes/nootle/commit/9aef94a1f8f47513c516ecdbffcb0ce9ffa110d8))
 - Reduce excessive padding on help page cards (#61) ([8c386cf](https://github.com/michellemayes/nootle/commit/8c386cf7c1f9489b7debabd33992ca841ec02e7b))
