@@ -166,7 +166,7 @@ export function TemplatesPage() {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-8">
+    <div className="flex flex-1 flex-col gap-6 overflow-auto p-8">
       <Tabs defaultValue="templates">
         <div className="flex items-center justify-between">
           <div>
@@ -183,7 +183,6 @@ export function TemplatesPage() {
 
         <Separator className="mt-4" />
 
-        {/* Templates Tab */}
         <TabsContent value="templates">
           <div className="flex flex-col gap-6 pt-4">
             <div className="flex justify-end">
@@ -330,7 +329,7 @@ export function TemplatesPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <AnimatePresence>
                   {templates.map((template) => (
                     <motion.div
@@ -340,68 +339,65 @@ export function TemplatesPage() {
                       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
                       layout
                     >
-                      <Card>
+                      <Card className="h-full">
                         <CardContent>
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-medium">{template.name}</h3>
-                                {template.is_favorite && (
-                                  <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                                )}
-                                {template.is_auto_run && (
-                                  <span
-                                    className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded"
-                                    title="Auto-run"
-                                  >
-                                    Auto
-                                  </span>
-                                )}
-                                {template.is_builtin && (
-                                  <Badge variant="outline" className="text-xs">
-                                    Built-in
-                                  </Badge>
-                                )}
-                                {getCategoryName(template.category_id) && (
-                                  <Badge variant="secondary">
-                                    {getCategoryName(template.category_id)}
-                                  </Badge>
-                                )}
-                              </div>
-                              {template.description && (
-                                <p className="mt-1 text-sm text-muted-foreground">
-                                  {template.description}
-                                </p>
-                              )}
-                              {template.prompt && (
-                                <div className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
-                                  <Sparkles className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                                  <span className="line-clamp-1">{template.prompt}</span>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                className="text-muted-foreground hover:text-foreground"
-                                onClick={() => startEditing(template)}
-                                title="Edit"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              {!template.is_builtin && (
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <h3 className="font-medium leading-snug">{template.name}</h3>
+                              <div className="flex items-center gap-1 shrink-0">
                                 <Button
                                   variant="ghost"
                                   size="icon-sm"
-                                  className="text-muted-foreground hover:text-destructive"
-                                  onClick={() => deleteTemplate(template.id)}
-                                  title="Delete"
+                                  className="text-muted-foreground hover:text-foreground"
+                                  onClick={() => startEditing(template)}
+                                  title="Edit"
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Pencil className="h-3.5 w-3.5" />
                                 </Button>
+                                {!template.is_builtin && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    className="text-muted-foreground hover:text-destructive"
+                                    onClick={() => deleteTemplate(template.id)}
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {template.is_favorite && (
+                                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                              )}
+                              {template.is_auto_run && (
+                                <span className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded">
+                                  Auto
+                                </span>
+                              )}
+                              {template.is_builtin && (
+                                <Badge variant="outline" className="text-xs">
+                                  Built-in
+                                </Badge>
+                              )}
+                              {getCategoryName(template.category_id) && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {getCategoryName(template.category_id)}
+                                </Badge>
                               )}
                             </div>
+                            {template.description && (
+                              <p className="text-sm text-muted-foreground line-clamp-2">
+                                {template.description}
+                              </p>
+                            )}
+                            {template.prompt && (
+                              <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                                <Sparkles className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                                <span className="line-clamp-2">{template.prompt}</span>
+                              </div>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
@@ -413,7 +409,6 @@ export function TemplatesPage() {
           </div>
         </TabsContent>
 
-        {/* Recipes Tab */}
         <TabsContent value="recipes">
           <div className="flex flex-col gap-6 pt-4">
             <div className="flex justify-end">
@@ -548,7 +543,7 @@ export function TemplatesPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <AnimatePresence>
                   {recipes.map((recipe) => (
                     <motion.div
@@ -562,49 +557,49 @@ export function TemplatesPage() {
                       }}
                       layout
                     >
-                      <Card>
+                      <Card className="h-full">
                         <CardContent>
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-medium">{recipe.name}</h3>
-                                <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
-                                  /{recipe.slash_command}
-                                </code>
-                                {recipe.is_builtin && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    Built-in
-                                  </Badge>
-                                )}
-                              </div>
-                              {recipe.description && (
-                                <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
-                                  {recipe.description}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                className="text-muted-foreground hover:text-foreground"
-                                onClick={() => startEditingRecipe(recipe)}
-                                title="Edit"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              {!recipe.is_builtin && (
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <h3 className="font-medium leading-snug">{recipe.name}</h3>
+                              <div className="flex items-center gap-1 shrink-0">
                                 <Button
                                   variant="ghost"
                                   size="icon-sm"
-                                  className="text-muted-foreground hover:text-destructive"
-                                  onClick={() => deleteRecipe(recipe.id)}
-                                  title="Delete"
+                                  className="text-muted-foreground hover:text-foreground"
+                                  onClick={() => startEditingRecipe(recipe)}
+                                  title="Edit"
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Pencil className="h-3.5 w-3.5" />
                                 </Button>
+                                {!recipe.is_builtin && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    className="text-muted-foreground hover:text-destructive"
+                                    onClick={() => deleteRecipe(recipe.id)}
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
+                                /{recipe.slash_command}
+                              </code>
+                              {recipe.is_builtin && (
+                                <Badge variant="secondary" className="text-xs">
+                                  Built-in
+                                </Badge>
                               )}
                             </div>
+                            {recipe.description && (
+                              <p className="text-sm text-muted-foreground line-clamp-2">
+                                {recipe.description}
+                              </p>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
