@@ -875,10 +875,10 @@ export function MeetingDetail() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex flex-1 flex-col"
+      className="flex flex-1 flex-col min-h-0"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-6 py-4">
+      <div className="shrink-0 flex items-center justify-between border-b px-6 py-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
             <ArrowLeft className="h-4 w-4" /> Back
@@ -968,7 +968,7 @@ export function MeetingDetail() {
       </div>
 
       {/* Two-column layout */}
-      <div ref={containerRef} className="flex flex-1 overflow-hidden">
+      <div ref={containerRef} className="flex flex-1 min-h-0 overflow-hidden">
         {!transcriptCollapsed && (<>
           <div className="flex flex-col" style={{ width: `${transcriptWidth}%` }}>
             <div className="flex items-center justify-between px-8 border-b h-12">
@@ -1214,7 +1214,7 @@ export function MeetingDetail() {
       </div>
 
       {/* Audio player */}
-      <div className="border-t px-8 py-3">
+      <div className="shrink-0 border-t px-8 py-3">
         {audioSrc && <audio ref={audioRef} src={audioSrc} preload="metadata" />}
         <div className="flex items-center gap-4">
           <Button
