@@ -2,9 +2,9 @@ import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, X } from "lucide-react";
-import type { Tag } from "@/types";
+import type { Label } from "@/types";
 
-const TAG_COLORS = [
+const LABEL_COLORS = [
   "#4EEABB",
   "#C084FC",
   "#E879A8",
@@ -15,60 +15,60 @@ const TAG_COLORS = [
   "#94A3B8",
 ];
 
-export function TagEditor({
+export function LabelEditor({
   meetingId,
-  meetingTags,
-  allTags,
-  onAddTag,
-  onRemoveTag,
-  onCreateTag,
+  meetingLabels,
+  allLabels,
+  onAddLabel,
+  onRemoveLabel,
+  onCreateLabel,
 }: {
   meetingId: string;
-  meetingTags: Tag[];
-  allTags: Tag[];
-  onAddTag: (meetingId: string, tagId: string) => Promise<void>;
-  onRemoveTag: (meetingId: string, tagId: string) => Promise<void>;
-  onCreateTag: (name: string, color: string) => Promise<Tag>;
+  meetingLabels: Label[];
+  allLabels: Label[];
+  onAddLabel: (meetingId: string, labelId: string) => Promise<void>;
+  onRemoveLabel: (meetingId: string, labelId: string) => Promise<void>;
+  onCreateLabel: (name: string, color: string) => Promise<Label>;
 }) {
-  const [newTagName, setNewTagName] = useState("");
-  const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0]);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[0]);
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const meetingTagIds = new Set(meetingTags.map((t) => t.id));
+  const meetingLabelIds = new Set(meetingLabels.map((t) => t.id));
 
-  const handleToggleTag = async (tagId: string) => {
-    if (meetingTagIds.has(tagId)) {
-      await onRemoveTag(meetingId, tagId);
+  const handleToggleLabel = async (labelId: string) => {
+    if (meetingLabelIds.has(labelId)) {
+      await onRemoveLabel(meetingId, labelId);
     } else {
-      await onAddTag(meetingId, tagId);
+      await onAddLabel(meetingId, labelId);
     }
   };
 
-  const handleCreateTag = async () => {
-    const name = newTagName.trim();
+  const handleCreateLabel = async () => {
+    const name = newLabelName.trim();
     if (!name) return;
     try {
-      const tag = await onCreateTag(name, newTagColor);
-      await onAddTag(meetingId, tag.id);
-      setNewTagName("");
-      setNewTagColor(TAG_COLORS[0]);
+      const label = await onCreateLabel(name, newLabelColor);
+      await onAddLabel(meetingId, label.id);
+      setNewLabelName("");
+      setNewLabelColor(LABEL_COLORS[0]);
     } catch {
-      // Tag name may already exist
+      // Label name may already exist
     }
   };
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      {meetingTags.map((tag) => (
+      {meetingLabels.map((label) => (
         <span
-          key={tag.id}
+          key={label.id}
           className="inline-flex items-center gap-1 rounded-full pl-2 pr-1 py-0.5 text-[11px] font-medium text-white"
-          style={{ backgroundColor: tag.color }}
+          style={{ backgroundColor: label.color }}
         >
-          {tag.name}
+          {label.name}
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onRemoveTag(meetingId, tag.id);
+              onRemoveLabel(meetingId, label.id);
             }}
             className="rounded-full p-0.5 hover:bg-black/20 transition-colors"
           >
@@ -83,59 +83,59 @@ export function TagEditor({
             className="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/40 px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
           >
             <Plus className="h-3 w-3" />
-            Tag
+            Label
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-64 p-3" align="start" onClick={(e) => e.stopPropagation()}>
           <div className="space-y-3">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tags</p>
-            {allTags.length > 0 && (
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Labels</p>
+            {allLabels.length > 0 && (
               <div className="space-y-1 max-h-40 overflow-y-auto">
-                {allTags.map((tag) => (
+                {allLabels.map((label) => (
                   <label
-                    key={tag.id}
+                    key={label.id}
                     className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent cursor-pointer"
                   >
                     <Checkbox
-                      checked={meetingTagIds.has(tag.id)}
-                      onCheckedChange={() => handleToggleTag(tag.id)}
+                      checked={meetingLabelIds.has(label.id)}
+                      onCheckedChange={() => handleToggleLabel(label.id)}
                     />
                     <span
                       className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: tag.color }}
+                      style={{ backgroundColor: label.color }}
                     />
-                    <span className="text-sm truncate">{tag.name}</span>
+                    <span className="text-sm truncate">{label.name}</span>
                   </label>
                 ))}
               </div>
             )}
             <div className="border-t pt-3 space-y-2">
-              <p className="text-xs text-muted-foreground">Create new tag</p>
+              <p className="text-xs text-muted-foreground">Create new label</p>
               <div className="flex gap-2">
                 <input
-                  value={newTagName}
-                  onChange={(e) => setNewTagName(e.target.value)}
+                  value={newLabelName}
+                  onChange={(e) => setNewLabelName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") handleCreateTag();
+                    if (e.key === "Enter") handleCreateLabel();
                   }}
-                  placeholder="Tag name"
+                  placeholder="Label name"
                   className="flex-1 h-7 rounded border bg-transparent px-2 text-sm"
                 />
                 <button
-                  onClick={handleCreateTag}
-                  disabled={!newTagName.trim()}
+                  onClick={handleCreateLabel}
+                  disabled={!newLabelName.trim()}
                   className="h-7 rounded bg-primary px-2 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 >
                   Add
                 </button>
               </div>
               <div className="flex gap-1.5 flex-wrap">
-                {TAG_COLORS.map((color) => (
+                {LABEL_COLORS.map((color) => (
                   <button
                     key={color}
-                    onClick={() => setNewTagColor(color)}
+                    onClick={() => setNewLabelColor(color)}
                     className={`h-5 w-5 rounded-full border-2 transition-all ${
-                      newTagColor === color
+                      newLabelColor === color
                         ? "border-foreground scale-110"
                         : "border-transparent hover:border-muted-foreground/40"
                     }`}
