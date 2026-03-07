@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Reset release-please manifest version to 0.0.0 (#66) ([9aef94a](https://github.com/michellemayes/nootle/commit/9aef94a1f8f47513c516ecdbffcb0ce9ffa110d8))
 - Reduce excessive padding on help page cards (#61) ([8c386cf](https://github.com/michellemayes/nootle/commit/8c386cf7c1f9489b7debabd33992ca841ec02e7b))
 - Polish UI for native macOS feel (#62) ([25a8183](https://github.com/michellemayes/nootle/commit/25a818331cecdefece7329bfd5df9c0065f59ad9))
 - Unify legacy PM settings into integrations tab (#60) ([29e1055](https://github.com/michellemayes/nootle/commit/29e105509f6cb387bbfda79cfe8868915454e1b9))
