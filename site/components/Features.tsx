@@ -92,10 +92,11 @@ export function Features() {
           {features.map((feature, i) => (
             <motion.div
               key={feature.title}
-              className="group relative p-8 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] hover:border-transparent transition-all duration-300"
+              className="group relative p-8 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] overflow-hidden"
               whileHover={{
                 boxShadow: `0 0 30px -5px ${feature.accent}33`,
-                borderColor: `${feature.accent}44`,
+                y: -3,
+                transition: { duration: 0.15 },
               }}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -103,7 +104,13 @@ export function Features() {
               transition={{ duration: 0.4, delay: i * 0.1 }}
             >
               <div
-                className="inline-flex items-center justify-center w-12 h-12 rounded-xl mb-5"
+                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
+                style={{
+                  background: `radial-gradient(circle at 30% 20%, ${feature.accent}10 0%, transparent 60%)`,
+                }}
+              />
+              <div
+                className="relative inline-flex items-center justify-center w-12 h-12 rounded-xl mb-5"
                 style={{ backgroundColor: `color-mix(in srgb, ${feature.accent} 15%, var(--color-bg))` }}
               >
                 <feature.icon
@@ -111,10 +118,10 @@ export function Features() {
                   style={{ color: feature.accent }}
                 />
               </div>
-              <h3 className="font-[family-name:var(--font-syne)] text-xl font-bold mb-2 text-[var(--color-text)]">
+              <h3 className="relative font-[family-name:var(--font-syne)] text-xl font-bold mb-2 text-[var(--color-text)]">
                 {feature.title}
               </h3>
-              <p className="text-[var(--color-text-secondary)] text-base leading-relaxed">
+              <p className="relative text-[var(--color-text-secondary)] text-base leading-relaxed">
                 {feature.description}
               </p>
             </motion.div>

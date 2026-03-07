@@ -14,7 +14,7 @@ const steps = [
     number: "02",
     title: "Record & transcribe",
     description:
-      "Real-time transcription with speaker labels. Captures both your mic and system audio.",
+      "Real-time transcription with speaker diarization. Captures both your mic and system audio.",
     accent: "var(--color-blue)",
   },
   {
@@ -23,6 +23,13 @@ const steps = [
     description:
       "Browse transcripts, get AI summaries, and ask follow-up questions about anything discussed.",
     accent: "var(--color-magenta)",
+  },
+  {
+    number: "04",
+    title: "Run workflows",
+    description:
+      "Automatically push notes to Slack, create Linear tickets, update Notion pages, or send email summaries.",
+    accent: "var(--color-mint)",
   },
 ];
 
