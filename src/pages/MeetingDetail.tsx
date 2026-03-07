@@ -680,6 +680,35 @@ export function MeetingDetail() {
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [compactTranscript, setCompactTranscript] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(true);
+  const [transcriptWidth, setTranscriptWidth] = useState(50);
+  const resizingRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const preventSelect = (e: Event) => {
+      if (resizingRef.current) e.preventDefault();
+    };
+    const onMouseMove = (e: MouseEvent) => {
+      if (!resizingRef.current || !containerRef.current) return;
+      e.preventDefault();
+      const rect = containerRef.current.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      setTranscriptWidth(Math.min(70, Math.max(20, pct)));
+    };
+    const onMouseUp = () => {
+      resizingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("selectstart", preventSelect);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("selectstart", preventSelect);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
 
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const audioRef = useCallback((node: HTMLAudioElement | null) => {
@@ -938,10 +967,9 @@ export function MeetingDetail() {
       </div>
 
       {/* Two-column layout */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Transcript - collapsible left column */}
-        {!transcriptCollapsed && (
-          <div className="flex w-1/2 max-w-[50%] flex-col border-r">
+      <div ref={containerRef} className="flex flex-1 overflow-hidden">
+        {!transcriptCollapsed && (<>
+          <div className="flex flex-col" style={{ width: `${transcriptWidth}%` }}>
             <div className="flex items-center justify-between px-8 border-b h-12">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                 Transcript
@@ -993,10 +1021,17 @@ export function MeetingDetail() {
               </div>
             </ScrollArea>
           </div>
-        )}
+          <div
+            className="w-1.5 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors border-r"
+            onMouseDown={() => {
+              resizingRef.current = true;
+              document.body.style.cursor = "col-resize";
+              document.body.style.userSelect = "none";
+            }}
+          />
+        </>)}
 
-        {/* Right column - Summaries, Insights & Notes */}
-        <div className={`flex flex-col min-w-0 ${transcriptCollapsed ? "flex-1" : "w-96"}`}>
+        <div className={`flex flex-col min-w-0 ${transcriptCollapsed ? "flex-1" : "flex-1"}`}>
           <Tabs defaultValue="notes" className="flex flex-1 flex-col">
             <div className="px-4 border-b flex items-center h-12 gap-2">
               <Button
