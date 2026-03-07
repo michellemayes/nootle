@@ -22,14 +22,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useTemplates } from "@/hooks/useTemplates";
-import { useCategories } from "@/hooks/useCategories";
+
 import { useRecipes } from "@/hooks/useRecipes";
 import { FileText, Pencil, Trash2, Sparkles, Star, ChefHat } from "lucide-react";
 import type { Template, Recipe } from "@/types";
 
 export function TemplatesPage() {
   const { templates, loading, createTemplate, updateTemplate, deleteTemplate } = useTemplates();
-  const { categories } = useCategories();
+
   const {
     recipes,
     loading: recipesLoading,
@@ -41,7 +41,7 @@ export function TemplatesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [newCategoryId, setNewCategoryId] = useState<string>("");
+
   const [newSections, setNewSections] = useState("");
   const [newAutoRules, setNewAutoRules] = useState("");
   const [newPrompt, setNewPrompt] = useState("");
@@ -65,7 +65,6 @@ export function TemplatesPage() {
         editingTemplate.id,
         newName,
         newDescription,
-        newCategoryId || null,
         newSections,
         newAutoRules,
         newPrompt,
@@ -73,7 +72,7 @@ export function TemplatesPage() {
         newAutoRun,
       );
     } else {
-      await createTemplate(newName, newDescription, newCategoryId || null, newSections, newAutoRules, newPrompt, newFavorite, newAutoRun);
+      await createTemplate(newName, newDescription, newSections, newAutoRules, newPrompt, newFavorite, newAutoRun);
     }
     resetForm();
   };
@@ -81,7 +80,6 @@ export function TemplatesPage() {
   const resetForm = () => {
     setNewName("");
     setNewDescription("");
-    setNewCategoryId("");
     setNewSections("");
     setNewAutoRules("");
     setNewPrompt("");
@@ -95,7 +93,6 @@ export function TemplatesPage() {
     setEditingTemplate(template);
     setNewName(template.name);
     setNewDescription(template.description);
-    setNewCategoryId(template.category_id ?? "");
     setNewSections(template.sections);
     setNewAutoRules(template.auto_apply_rules);
     setNewPrompt(template.prompt);
@@ -104,10 +101,6 @@ export function TemplatesPage() {
     setDialogOpen(true);
   };
 
-  const getCategoryName = (categoryId: string | null) => {
-    if (!categoryId) return null;
-    return categories.find((c) => c.id === categoryId)?.name ?? null;
-  };
 
   const validateSlashCommand = (value: string): boolean => {
     const valid = /^[a-zA-Z0-9-]+$/.test(value);
@@ -265,23 +258,7 @@ export function TemplatesPage() {
                         Auto-run after recording
                       </label>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        Category
-                      </label>
-                      <select
-                        value={newCategoryId}
-                        onChange={(e) => setNewCategoryId(e.target.value)}
-                        className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-                      >
-                        <option value="">None</option>
-                        {categories.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">
                         Sections (JSON)
@@ -362,11 +339,7 @@ export function TemplatesPage() {
                                     Built-in
                                   </Badge>
                                 )}
-                                {getCategoryName(template.category_id) && (
-                                  <Badge variant="secondary">
-                                    {getCategoryName(template.category_id)}
-                                  </Badge>
-                                )}
+
                               </div>
                               {template.description && (
                                 <p className="mt-1 text-sm text-muted-foreground">

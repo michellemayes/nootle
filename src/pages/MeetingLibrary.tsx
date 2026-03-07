@@ -16,9 +16,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -27,9 +24,6 @@ import {
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuSub,
-  ContextMenuSubTrigger,
-  ContextMenuSubContent,
   ContextMenuSeparator,
 } from "@/components/ui/context-menu";
 import { Button } from "@/components/ui/button";
@@ -38,14 +32,11 @@ import {
   deleteMeeting,
   archiveMeeting,
   unarchiveMeeting,
-  updateMeetingCategory,
 } from "@/hooks/useMeetings";
-import { useCategories } from "@/hooks/useCategories";
-import { useTags } from "@/hooks/useTags";
+import { useLabels } from "@/hooks/useLabels";
 import { MeetingActionMenuItems } from "@/components/MeetingActionMenuItems";
 import { DeleteMeetingDialog } from "@/components/DeleteMeetingDialog";
-import { NewCategoryDialog } from "@/components/NewCategoryDialog";
-import { TagEditor } from "@/components/TagEditor";
+import { LabelEditor } from "@/components/LabelEditor";
 import type { Meeting } from "@/types";
 import {
   Search,
@@ -84,49 +75,41 @@ function statusColor(
 export function MeetingLibrary() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string | undefined>(
-    undefined,
-  );
   const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
     return (localStorage.getItem("meetingViewMode") as "grid" | "list") || "grid";
   });
   const [showArchived, setShowArchived] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Meeting | null>(null);
-  const [newCategoryTarget, setNewCategoryTarget] = useState<Meeting | null>(
-    null,
-  );
   const [loadingMessage] = useState(
     () =>
       LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)],
   );
-  const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
+  const [activeLabelIds, setActiveLabelIds] = useState<Set<string>>(new Set());
   const { meetings, loading, refresh } = useMeetings(
-    categoryFilter,
     search || undefined,
     showArchived,
   );
-  const { categories, createCategory } = useCategories();
-  const { tags, meetingTagsMap, addMeetingTag, removeMeetingTag, createTag } = useTags();
+  const { labels, meetingLabelsMap, addMeetingLabel, removeMeetingLabel, createLabel } = useLabels();
 
-  const toggleTag = useCallback((tagId: string) => {
-    setActiveTagIds((prev) => {
+  const toggleLabel = useCallback((labelId: string) => {
+    setActiveLabelIds((prev) => {
       const next = new Set(prev);
-      if (next.has(tagId)) {
-        next.delete(tagId);
+      if (next.has(labelId)) {
+        next.delete(labelId);
       } else {
-        next.add(tagId);
+        next.add(labelId);
       }
       return next;
     });
   }, []);
 
-  // Filter meetings by active tags (AND logic: meeting must have ALL selected tags)
-  const filteredMeetings = activeTagIds.size === 0
+  // Filter meetings by active labels (AND logic: meeting must have ALL selected labels)
+  const filteredMeetings = activeLabelIds.size === 0
     ? meetings
     : meetings.filter((meeting) => {
-        const meetingTags = meetingTagsMap[meeting.id] ?? [];
-        const meetingTagIds = new Set(meetingTags.map((t) => t.id));
-        return Array.from(activeTagIds).every((tagId) => meetingTagIds.has(tagId));
+        const meetingLabels = meetingLabelsMap[meeting.id] ?? [];
+        const meetingLabelIds = new Set(meetingLabels.map((t) => t.id));
+        return Array.from(activeLabelIds).every((labelId) => meetingLabelIds.has(labelId));
       });
 
   const handleViewModeChange = useCallback((mode: "grid" | "list") => {
@@ -157,25 +140,6 @@ export function MeetingLibrary() {
     refresh();
   }, [deleteTarget, refresh]);
 
-  const handleCategorySelect = useCallback(
-    async (meeting: Meeting, categoryId: string | null) => {
-      await updateMeetingCategory(meeting.id, categoryId);
-      refresh();
-    },
-    [refresh],
-  );
-
-  const handleNewCategory = useCallback(
-    async (name: string, color: string) => {
-      if (!newCategoryTarget) return;
-      const category = await createCategory(name, color);
-      await updateMeetingCategory(newCategoryTarget.id, category.id);
-      setNewCategoryTarget(null);
-      refresh();
-    },
-    [newCategoryTarget, createCategory, refresh],
-  );
-
   const renderMenuItems = useCallback(
     (
       meeting: Meeting,
@@ -185,45 +149,27 @@ export function MeetingLibrary() {
           onClick?: () => void;
           className?: string;
         }>;
-        MenuSub: React.ComponentType<{ children: React.ReactNode }>;
-        MenuSubTrigger: React.ComponentType<{
-          children: React.ReactNode;
-          className?: string;
-        }>;
-        MenuSubContent: React.ComponentType<{
-          children: React.ReactNode;
-          className?: string;
-        }>;
         MenuSeparator: React.ComponentType<{ className?: string }>;
       },
     ) => (
       <MeetingActionMenuItems
         meeting={meeting}
-        categories={categories}
         onArchive={() => handleArchive(meeting)}
         onUnarchive={() => handleUnarchive(meeting)}
         onDelete={() => setDeleteTarget(meeting)}
-        onCategorySelect={(catId) => handleCategorySelect(meeting, catId)}
-        onNewCategory={() => setNewCategoryTarget(meeting)}
         {...primitives}
       />
     ),
-    [categories, handleArchive, handleUnarchive, handleCategorySelect],
+    [handleArchive, handleUnarchive],
   );
 
   const dropdownPrimitives = {
     MenuItem: DropdownMenuItem,
-    MenuSub: DropdownMenuSub,
-    MenuSubTrigger: DropdownMenuSubTrigger,
-    MenuSubContent: DropdownMenuSubContent,
     MenuSeparator: DropdownMenuSeparator,
   };
 
   const contextPrimitives = {
     MenuItem: ContextMenuItem,
-    MenuSub: ContextMenuSub,
-    MenuSubTrigger: ContextMenuSubTrigger,
-    MenuSubContent: ContextMenuSubContent,
     MenuSeparator: ContextMenuSeparator,
   };
 
@@ -248,33 +194,6 @@ export function MeetingLibrary() {
             className="pl-9"
           />
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
-              {categoryFilter
-                ? categories.find((c) => c.id === categoryFilter)?.name ??
-                  "Category"
-                : "All Categories"}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setCategoryFilter(undefined)}>
-              All Categories
-            </DropdownMenuItem>
-            {categories.map((cat) => (
-              <DropdownMenuItem
-                key={cat.id}
-                onClick={() => setCategoryFilter(cat.id)}
-              >
-                <span
-                  className="mr-2 inline-block h-2 w-2 rounded-full"
-                  style={{ backgroundColor: cat.color }}
-                />
-                {cat.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
         <Button
           variant={showArchived ? "secondary" : "outline"}
           size="sm"
@@ -305,14 +224,14 @@ export function MeetingLibrary() {
         </div>
       </div>
 
-      {tags.length > 0 && (
+      {labels.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          {tags.map((tag) => {
-            const isActive = activeTagIds.has(tag.id);
+          {labels.map((label) => {
+            const isActive = activeLabelIds.has(label.id);
             return (
               <button
-                key={tag.id}
-                onClick={() => toggleTag(tag.id)}
+                key={label.id}
+                onClick={() => toggleLabel(label.id)}
                 className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors border ${
                   isActive
                     ? "text-white border-transparent"
@@ -320,21 +239,21 @@ export function MeetingLibrary() {
                 }`}
                 style={
                   isActive
-                    ? { backgroundColor: tag.color, borderColor: tag.color }
+                    ? { backgroundColor: label.color, borderColor: label.color }
                     : undefined
                 }
               >
                 <span
                   className="inline-block h-2 w-2 rounded-full shrink-0"
-                  style={{ backgroundColor: tag.color }}
+                  style={{ backgroundColor: label.color }}
                 />
-                {tag.name}
+                {label.name}
               </button>
             );
           })}
-          {activeTagIds.size > 0 && (
+          {activeLabelIds.size > 0 && (
             <button
-              onClick={() => setActiveTagIds(new Set())}
+              onClick={() => setActiveLabelIds(new Set())}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               Clear filters
@@ -423,13 +342,13 @@ export function MeetingLibrary() {
                         </span>
                       </div>
                       <div onClick={(e) => e.stopPropagation()}>
-                        <TagEditor
+                        <LabelEditor
                           meetingId={meeting.id}
-                          meetingTags={meetingTagsMap[meeting.id] ?? []}
-                          allTags={tags}
-                          onAddTag={addMeetingTag}
-                          onRemoveTag={removeMeetingTag}
-                          onCreateTag={createTag}
+                          meetingLabels={meetingLabelsMap[meeting.id] ?? []}
+                          allLabels={labels}
+                          onAddLabel={addMeetingLabel}
+                          onRemoveLabel={removeMeetingLabel}
+                          onCreateLabel={(name, color) => createLabel(name, color, null)}
                         />
                       </div>
                     </CardContent>
@@ -454,28 +373,14 @@ export function MeetingLibrary() {
                   <h3 className="flex-1 font-medium truncate">
                     {meeting.title}
                   </h3>
-                  {meeting.category_id && (() => {
-                    const cat = categories.find(
-                      (c) => c.id === meeting.category_id,
-                    );
-                    return cat ? (
-                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <span
-                          className="inline-block h-2 w-2 rounded-full"
-                          style={{ backgroundColor: cat.color }}
-                        />
-                        {cat.name}
-                      </span>
-                    ) : null;
-                  })()}
                   <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                    <TagEditor
+                    <LabelEditor
                       meetingId={meeting.id}
-                      meetingTags={meetingTagsMap[meeting.id] ?? []}
-                      allTags={tags}
-                      onAddTag={addMeetingTag}
-                      onRemoveTag={removeMeetingTag}
-                      onCreateTag={createTag}
+                      meetingLabels={meetingLabelsMap[meeting.id] ?? []}
+                      allLabels={labels}
+                      onAddLabel={addMeetingLabel}
+                      onRemoveLabel={removeMeetingLabel}
+                      onCreateLabel={(name, color) => createLabel(name, color, null)}
                     />
                   </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -517,11 +422,6 @@ export function MeetingLibrary() {
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         meetingTitle={deleteTarget?.title ?? ""}
         onConfirm={handleDelete}
-      />
-      <NewCategoryDialog
-        open={newCategoryTarget !== null}
-        onOpenChange={(open) => !open && setNewCategoryTarget(null)}
-        onSubmit={handleNewCategory}
       />
     </div>
   );

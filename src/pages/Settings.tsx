@@ -11,7 +11,7 @@ import { useLLM } from "@/hooks/useLLM";
 import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import { useModelDownload } from "@/hooks/useModelDownload";
 import { useTheme } from "@/hooks/useTheme";
-import { useCategories } from "@/hooks/useCategories";
+
 import { useInsightTypes } from "@/hooks/useInsightTypes";
 import { useAppVersion } from "@/hooks/useAppVersion";
 import { AccentColorPicker } from "@/components/AccentColorPicker";
@@ -894,113 +894,6 @@ function InsightTypesManager() {
   );
 }
 
-function CategoriesManager() {
-  const { categories, createCategory, updateCategory, deleteCategory } = useCategories();
-  const [newName, setNewName] = useState("");
-  const [newColor, setNewColor] = useState("#6366f1");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editColor, setEditColor] = useState("");
-
-  const handleCreate = async () => {
-    if (!newName.trim()) return;
-    await createCategory(newName.trim(), newColor);
-    setNewName("");
-    setNewColor("#6366f1");
-  };
-
-  const startEditing = (cat: { id: string; name: string; color: string }) => {
-    setEditingId(cat.id);
-    setEditName(cat.name);
-    setEditColor(cat.color);
-  };
-
-  const handleSaveEdit = async (id: string, icon: string) => {
-    if (!editName.trim()) return;
-    await updateCategory(id, editName.trim(), editColor, icon);
-    setEditingId(null);
-  };
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Categories</CardTitle>
-        <CardDescription>Organize meetings into categories with colors</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="divide-y">
-          {categories.map((cat) => (
-            <div key={cat.id} className="flex items-center gap-3 py-3">
-              {editingId === cat.id ? (
-                <>
-                  <input
-                    type="color"
-                    value={editColor}
-                    onChange={(e) => setEditColor(e.target.value)}
-                    className="h-6 w-6 rounded border-0 cursor-pointer"
-                  />
-                  <Input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="h-8 flex-1"
-                    onKeyDown={(e) => e.key === "Enter" && handleSaveEdit(cat.id, cat.icon)}
-                  />
-                  <Button size="sm" onClick={() => handleSaveEdit(cat.id, cat.icon)}>
-                    Save
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
-                    Cancel
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <div
-                    className="h-4 w-4 rounded-full shrink-0"
-                    style={{ backgroundColor: cat.color }}
-                  />
-                  <span className="flex-1 text-sm">{cat.name}</span>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => startEditing(cat)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => deleteCategory(cat.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 pt-2 border-t">
-          <input
-            type="color"
-            value={newColor}
-            onChange={(e) => setNewColor(e.target.value)}
-            className="h-6 w-6 rounded border-0 cursor-pointer"
-          />
-          <Input
-            placeholder="New category name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            className="h-8 flex-1"
-            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-          />
-          <Button size="sm" onClick={handleCreate} disabled={!newName.trim()}>
-            <Plus className="h-4 w-4 mr-1" /> Add
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 export function SettingsPage() {
   const { storedProviders, storeKey, deleteKey } = useApiKeys();
@@ -1073,7 +966,7 @@ export function SettingsPage() {
             <TabsTrigger value="integrations">Integrations</TabsTrigger>
             <TabsTrigger value="workflows">Workflows</TabsTrigger>
             <TabsTrigger value="models">Models</TabsTrigger>
-            <TabsTrigger value="categories">Categories</TabsTrigger>
+
             <TabsTrigger value="insight-types">Insight Types</TabsTrigger>
             <TabsTrigger value="about">About / MCP</TabsTrigger>
           </TabsList>
@@ -1227,11 +1120,6 @@ export function SettingsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="categories" className="flex-1 mt-0 overflow-auto">
-          <div className="flex flex-col gap-8 p-8 max-w-3xl">
-            <CategoriesManager />
-          </div>
-        </TabsContent>
 
         <TabsContent value="insight-types" className="flex-1 mt-0 overflow-auto">
           <div className="flex flex-col gap-8 p-8 max-w-3xl">
