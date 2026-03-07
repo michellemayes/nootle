@@ -34,6 +34,7 @@ pub async fn execute_workflow(
         "github" => execute_github(workflow, integration, context).await,
         "linear" => execute_linear(workflow, integration, context).await,
         "asana" => execute_asana(workflow, integration, context).await,
+        "obsidian" => execute_obsidian(workflow, integration, context).await,
         other => Err(format!("Unknown integration type: {other}")),
     }
 }
@@ -457,5 +458,172 @@ async fn execute_asana(
     Ok(WorkflowResult {
         message: format!("Created {} Asana task(s)", created.len()),
         output: Some(created.join("\n")),
+    })
+}
+
+fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => c,
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+async fn execute_obsidian(
+    workflow: &crate::db::Workflow,
+    integration: &crate::db::Integration,
+    context: &WorkflowContext,
+) -> std::result::Result<WorkflowResult, String> {
+    let (creds, config) = parse_creds_and_config(integration, workflow)?;
+
+    let vault_path = creds["vault_path"]
+        .as_str()
+        .ok_or("Missing vault_path in Obsidian credentials")?;
+
+    let speaker_map: std::collections::HashMap<String, String> = match creds.get("speaker_map") {
+        Some(serde_json::Value::Object(obj)) => {
+            serde_json::from_value(serde_json::Value::Object(obj.clone())).unwrap_or_default()
+        }
+        Some(serde_json::Value::String(s)) => {
+            serde_json::from_str(s).unwrap_or_default()
+        }
+        _ => std::collections::HashMap::new(),
+    };
+
+    let subfolder = config["subfolder"].as_str().unwrap_or("");
+    let filename_template = config["filename_template"]
+        .as_str()
+        .unwrap_or("{{date}} - {{title}}");
+    let note_template = config["note_template"].as_str();
+
+    // Extract date portion from meeting_date (split on 'T', take first part)
+    let date = context
+        .meeting_date
+        .split('T')
+        .next()
+        .unwrap_or(&context.meeting_date);
+
+    // Build sanitized filename from template
+    let raw_filename = filename_template
+        .replace("{{date}}", date)
+        .replace("{{title}}", &context.meeting_title);
+    let filename = sanitize_filename(&raw_filename);
+
+    // Create directory
+    let dir_path = if subfolder.is_empty() {
+        std::path::PathBuf::from(vault_path)
+    } else {
+        std::path::PathBuf::from(vault_path).join(subfolder)
+    };
+    tokio::fs::create_dir_all(&dir_path)
+        .await
+        .map_err(|e| format!("Failed to create directory: {e}"))?;
+
+    // Deduplicate filename if file already exists
+    let mut file_path = dir_path.join(format!("{filename}.md"));
+    let mut counter = 2u32;
+    while file_path.exists() {
+        file_path = dir_path.join(format!("{filename} ({counter}).md"));
+        counter += 1;
+    }
+
+    // Helper closure: replace speaker names with wikilinks using speaker_map
+    let replace_speakers = |text: &str| -> String {
+        let mut result = text.to_string();
+        for (raw_name, mapped_name) in &speaker_map {
+            result = result.replace(raw_name, &format!("[[{mapped_name}]]"));
+        }
+        result
+    };
+
+    // Build speakers list for frontmatter
+    let speakers_yaml: String = speaker_map
+        .iter()
+        .map(|(raw, mapped)| {
+            if raw != mapped {
+                format!("  - \"[[{mapped}]]\"")
+            } else {
+                format!("  - \"[[{mapped}]]\"")
+            }
+        })
+        .chain(
+            // If there are no speaker mappings, we still produce nothing extra
+            std::iter::empty::<String>(),
+        )
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Build YAML frontmatter
+    let mut frontmatter = format!(
+        "---\ndate: {date}\ntitle: \"{title}\"\ntags:\n  - meeting\n  - nootle\n",
+        date = date,
+        title = context.meeting_title,
+    );
+    if !speaker_map.is_empty() {
+        frontmatter.push_str("speakers:\n");
+        frontmatter.push_str(&speakers_yaml);
+        frontmatter.push('\n');
+    }
+    frontmatter.push_str("---\n");
+
+    // Build body
+    let body = if let Some(tmpl) = note_template {
+        render_template(tmpl, context)
+    } else {
+        let summary_text = context
+            .summary
+            .as_deref()
+            .unwrap_or("No summary available");
+        let summary_with_links = replace_speakers(summary_text);
+
+        let action_items_text = context
+            .action_items
+            .iter()
+            .map(|ai| {
+                let assignee_part = ai
+                    .assignee
+                    .as_deref()
+                    .map(|a| {
+                        let display = speaker_map
+                            .get(a)
+                            .map(|m| format!("[[{m}]]"))
+                            .unwrap_or_else(|| a.to_string());
+                        format!(" ({display})")
+                    })
+                    .unwrap_or_default();
+
+                let due_part = ai
+                    .due_date
+                    .as_deref()
+                    .map(|d| format!(" [due: {d}]"))
+                    .unwrap_or_default();
+
+                format!("- [ ] {}{}{}", ai.content, assignee_part, due_part)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        format!(
+            "# {title}\n\n## Summary\n\n{summary}\n\n## Action Items\n\n{actions}\n",
+            title = context.meeting_title,
+            summary = summary_with_links,
+            actions = action_items_text,
+        )
+    };
+
+    let full_content = format!("{frontmatter}\n{body}");
+
+    tokio::fs::write(&file_path, full_content)
+        .await
+        .map_err(|e| format!("Failed to write Obsidian note: {e}"))?;
+
+    let path_str = file_path.to_string_lossy().to_string();
+
+    Ok(WorkflowResult {
+        message: format!("Note created in Obsidian vault"),
+        output: Some(path_str),
     })
 }
