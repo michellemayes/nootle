@@ -30,6 +30,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Add integrations, app demo auto-tour, and Ask Nootle panel (#63) ([74dc460](https://github.com/michellemayes/nootle/commit/74dc460debbabb7575c3391a03bdf279a8b01d9d))
 - Post-meeting workflows (#56) ([e0d1b5c](https://github.com/michellemayes/nootle/commit/e0d1b5c5eee666cbe291d36e4f7e33337976013a))
 - Add Granola-parity features (templates, recipes, tags, scratch pad) (#51) ([403bc27](https://github.com/michellemayes/nootle/commit/403bc273ad1a033a6fdf235c76747dfe9a798dab))
 - Switch lander feature icons to lucide-react (#48) ([765a8e9](https://github.com/michellemayes/nootle/commit/765a8e9f9dcbafa5487fae240d761f22ef3141da))
