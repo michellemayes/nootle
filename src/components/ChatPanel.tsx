@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { MotionButton } from "@/components/MotionButton";
@@ -31,6 +31,42 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Resize state
+  const [width, setWidth] = useState(320);
+  const isResizing = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    startX.current = e.clientX;
+    startWidth.current = width;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [width]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing.current) return;
+      const delta = startX.current - e.clientX;
+      const newWidth = Math.min(Math.max(startWidth.current + delta, 256), 640);
+      setWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      if (!isResizing.current) return;
+      isResizing.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -154,8 +190,14 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
 
   return (
         <div
-          className="flex w-80 shrink-0 flex-col border-l bg-background"
+          style={{ width }}
+          className="relative flex shrink-0 flex-col border-l bg-background"
         >
+          {/* Resize handle */}
+          <div
+            onMouseDown={handleResizeStart}
+            className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 z-10"
+          />
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b">
             <h3 className="font-semibold">Ask Nootle</h3>
