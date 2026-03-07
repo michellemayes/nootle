@@ -66,7 +66,7 @@ const tabs = [
 export function HelpPage() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="border-b px-8 py-4">
+      <div className="border-b px-6 py-4">
         <h1 className="text-2xl font-bold tracking-tight">Help</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Learn how to use Nootle and get the most out of your meetings
@@ -74,7 +74,7 @@ export function HelpPage() {
       </div>
 
       <Tabs defaultValue="getting-started" className="flex flex-1 flex-col overflow-hidden">
-        <div className="border-b px-8">
+        <div className="border-b px-6">
           <TabsList className="h-10">
             {tabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value}>
@@ -86,7 +86,7 @@ export function HelpPage() {
 
         {tabs.map((tab) => (
           <TabsContent key={tab.value} value={tab.value} className="flex-1 mt-0 overflow-auto">
-            <div className="flex flex-col gap-8 p-8 max-w-3xl">
+            <div className="flex flex-col gap-8 p-6 max-w-3xl">
               {"quickStart" in tab && tab.quickStart && <McpQuickStart />}
               <Card>
                 <CardContent className="pt-6">

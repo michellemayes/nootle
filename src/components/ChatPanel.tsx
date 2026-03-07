@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { useChat } from "@/hooks/useChat";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useRecipes } from "@/hooks/useRecipes";
-import { X, Slash } from "lucide-react";
+import { X, Zap } from "lucide-react";
 
 interface ChatPanelProps {
   meetingId: string;
@@ -225,7 +225,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
                       onMouseEnter={() => setSelectedSlashIndex(i)}
                       onClick={() => handleRunRecipe(recipe.id, recipe.name)}
                     >
-                      <Slash className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">/{recipe.slash_command}</span>

@@ -228,7 +228,7 @@ export function MeetingLibrary() {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-8">
+    <div className="flex flex-1 flex-col gap-5 overflow-auto p-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Meetings</h1>
