@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { useLLM } from "@/hooks/useLLM";
 import type { ModelInfo } from "@/types";
 
@@ -54,21 +54,27 @@ export function LLMSelectionProvider({ children }: { children: React.ReactNode }
     localStorage.setItem("llm_model", model);
   }, []);
 
-  const filteredModels = models.filter((m) => m.provider === selectedProvider);
+  const filteredModels = useMemo(
+    () => models.filter((m) => m.provider === selectedProvider),
+    [models, selectedProvider],
+  );
+
+  const value = useMemo(
+    () => ({
+      providers,
+      models,
+      selectedProvider,
+      selectedModel,
+      filteredModels,
+      changeProvider,
+      setSelectedModel,
+      loading,
+    }),
+    [providers, models, selectedProvider, selectedModel, filteredModels, changeProvider, setSelectedModel, loading],
+  );
 
   return (
-    <LLMSelectionContext.Provider
-      value={{
-        providers,
-        models,
-        selectedProvider,
-        selectedModel,
-        filteredModels,
-        changeProvider,
-        setSelectedModel,
-        loading,
-      }}
-    >
+    <LLMSelectionContext.Provider value={value}>
       {children}
     </LLMSelectionContext.Provider>
   );

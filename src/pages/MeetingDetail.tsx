@@ -285,7 +285,6 @@ function InsightsPanel({
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
-      {/* Toolbar — always visible at top */}
       <div className="flex items-center gap-2 border-b px-5 py-2 flex-wrap">
         <Button
           size="sm"
@@ -1054,7 +1053,6 @@ export function MeetingDetail() {
               </TabsContent>
             )}
             <TabsContent value="summaries" className="flex flex-1 flex-col mt-0">
-              {/* Compact generate toolbar */}
               <div className="flex items-center gap-2 border-b px-5 py-2 flex-wrap">
                 <select
                   value={selectedTemplate}
@@ -1215,7 +1213,6 @@ export function MeetingDetail() {
         {!audioSrc && !audioLoading && meeting?.audio_path && (
           <p className="text-xs text-muted-foreground mt-1">Audio file not found</p>
         )}
-        {/* Chat panel — inline drawer */}
         <ChatPanel
           meetingId={id!}
           open={chatOpen}
