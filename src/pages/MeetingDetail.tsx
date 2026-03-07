@@ -1015,7 +1015,10 @@ export function MeetingDetail() {
         </div>
       </div>
 
+      {/* Main content + chat drawer */}
+      <div className="flex flex-1 overflow-hidden">
       {/* Two-column layout */}
+      <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex flex-1 overflow-hidden">
         {/* Transcript - collapsible left column */}
         {!transcriptCollapsed && (
@@ -1318,12 +1321,15 @@ export function MeetingDetail() {
         )}
       </div>
 
-      {/* Chat panel */}
+      </div>{/* end two-column + audio wrapper */}
+
+      {/* Chat panel - inline drawer */}
       <ChatPanel
         meetingId={id!}
         open={chatOpen}
         onClose={() => setChatOpen(false)}
       />
+      </div>{/* end main content + chat drawer */}
     </motion.div>
   );
 }
