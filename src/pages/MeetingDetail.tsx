@@ -875,8 +875,9 @@ export function MeetingDetail() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex flex-1 flex-col min-h-0"
+      className="flex flex-1 flex-col min-h-0 overflow-hidden"
     >
+    <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between border-b px-6 py-4">
         <div className="flex items-center gap-4">
@@ -1249,12 +1250,13 @@ export function MeetingDetail() {
         {!audioSrc && !audioLoading && meeting?.audio_path && (
           <p className="text-xs text-muted-foreground mt-1">Audio file not found</p>
         )}
-        <ChatPanel
-          meetingId={id!}
-          open={chatOpen}
-          onClose={() => setChatOpen(false)}
-        />
       </div>
+    </div>
+      <ChatPanel
+        meetingId={id!}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+      />
     </motion.div>
   );
 }
