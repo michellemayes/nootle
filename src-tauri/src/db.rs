@@ -10,7 +10,6 @@ pub struct Meeting {
     pub title: String,
     pub start_time: String,
     pub end_time: Option<String>,
-    pub category_id: Option<String>,
     pub audio_path: Option<String>,
     pub status: String,
     pub calendar_event_id: Option<String>,
@@ -24,7 +23,6 @@ pub struct Meeting {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewMeeting {
     pub title: String,
-    pub category_id: Option<String>,
     pub calendar_event_id: Option<String>,
     pub template_id: Option<String>,
 }
@@ -51,26 +49,11 @@ pub struct NewTranscriptSegment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Category {
+pub struct Label {
     pub id: String,
     pub name: String,
     pub color: String,
-    pub icon: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NewCategory {
-    pub name: String,
-    pub color: Option<String>,
     pub icon: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Tag {
-    pub id: String,
-    pub name: String,
-    pub color: String,
     pub created_at: String,
 }
 
@@ -79,7 +62,6 @@ pub struct Template {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub category_id: Option<String>,
     pub sections: String,
     pub auto_apply_rules: String,
     pub prompt: String,
@@ -93,7 +75,6 @@ pub struct Template {
 pub struct NewTemplate {
     pub name: String,
     pub description: String,
-    pub category_id: Option<String>,
     pub sections: String,
     pub auto_apply_rules: String,
     pub prompt: String,
@@ -107,7 +88,6 @@ pub struct UpdateTemplate {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub category_id: Option<String>,
     pub sections: String,
     pub auto_apply_rules: String,
     pub prompt: String,
@@ -452,12 +432,18 @@ impl Database {
         let conn = self.lock_conn()?;
         conn.execute_batch(
             "
-            CREATE TABLE IF NOT EXISTS categories (
+            CREATE TABLE IF NOT EXISTS labels (
                 id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
+                name TEXT NOT NULL UNIQUE,
                 color TEXT NOT NULL DEFAULT '#6366f1',
-                icon TEXT NOT NULL DEFAULT '📋',
+                icon TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS meeting_labels (
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                label_id TEXT NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+                PRIMARY KEY (meeting_id, label_id)
             );
 
             CREATE TABLE IF NOT EXISTS meetings (
@@ -465,7 +451,6 @@ impl Database {
                 title TEXT NOT NULL,
                 start_time TEXT NOT NULL,
                 end_time TEXT,
-                category_id TEXT REFERENCES categories(id),
                 audio_path TEXT,
                 status TEXT NOT NULL DEFAULT 'recording',
                 calendar_event_id TEXT,
@@ -519,7 +504,6 @@ impl Database {
             CREATE TABLE IF NOT EXISTS templates (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
-                category_id TEXT REFERENCES categories(id),
                 sections TEXT NOT NULL DEFAULT '[]',
                 auto_apply_rules TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -675,19 +659,6 @@ impl Database {
                 back_and_forth_ratio REAL NOT NULL DEFAULT 0.0
             );
 
-            CREATE TABLE IF NOT EXISTS tags (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                color TEXT NOT NULL DEFAULT '#6366f1',
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS meeting_tags (
-                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-                tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-                PRIMARY KEY (meeting_id, tag_id)
-            );
-
             CREATE TABLE IF NOT EXISTS scratch_notes (
                 id TEXT PRIMARY KEY,
                 meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
@@ -757,6 +728,88 @@ impl Database {
 
         Self::seed_builtin_templates(&conn)?;
 
+        // Migration: tags+categories → labels
+        let has_labels: bool = conn
+            .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='labels'")
+            .and_then(|mut s| s.exists([]))
+            .unwrap_or(false);
+
+        if !has_labels {
+            conn.execute_batch("
+                -- Create labels table
+                CREATE TABLE labels (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    color TEXT NOT NULL DEFAULT '#6366f1',
+                    icon TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+
+                CREATE TABLE meeting_labels (
+                    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                    label_id TEXT NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+                    PRIMARY KEY (meeting_id, label_id)
+                );
+
+                -- Migrate tags → labels
+                INSERT OR IGNORE INTO labels (id, name, color, created_at)
+                    SELECT id, name, color, created_at FROM tags;
+
+                -- Migrate categories → labels (with icon)
+                INSERT OR IGNORE INTO labels (id, name, color, icon, created_at)
+                    SELECT id, name, color, icon, created_at FROM categories;
+
+                -- Migrate meeting_tags → meeting_labels
+                INSERT OR IGNORE INTO meeting_labels (meeting_id, label_id)
+                    SELECT meeting_id, tag_id FROM meeting_tags;
+
+                -- Migrate category_id assignments → meeting_labels
+                INSERT OR IGNORE INTO meeting_labels (meeting_id, label_id)
+                    SELECT id, category_id FROM meetings WHERE category_id IS NOT NULL;
+
+                -- Recreate meetings without category_id
+                CREATE TABLE meetings_new (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    start_time TEXT NOT NULL,
+                    end_time TEXT,
+                    audio_path TEXT,
+                    status TEXT NOT NULL DEFAULT 'recording',
+                    calendar_event_id TEXT,
+                    raw_notes TEXT,
+                    enriched_notes TEXT,
+                    template_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                INSERT INTO meetings_new SELECT id, title, start_time, end_time, audio_path, status, calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at FROM meetings;
+                DROP TABLE meetings;
+                ALTER TABLE meetings_new RENAME TO meetings;
+
+                -- Recreate templates without category_id
+                CREATE TABLE templates_new (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    sections TEXT NOT NULL DEFAULT '[]',
+                    auto_apply_rules TEXT NOT NULL DEFAULT '{}',
+                    prompt TEXT NOT NULL DEFAULT '',
+                    is_builtin INTEGER NOT NULL DEFAULT 0,
+                    is_favorite INTEGER NOT NULL DEFAULT 0,
+                    is_auto_run INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                INSERT INTO templates_new SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at FROM templates;
+                DROP TABLE templates;
+                ALTER TABLE templates_new RENAME TO templates;
+
+                -- Drop old tables
+                DROP TABLE IF EXISTS meeting_tags;
+                DROP TABLE IF EXISTS tags;
+                DROP TABLE IF EXISTS categories;
+            ")?;
+        }
+
         Self::seed_builtin_recipes(&conn)?;
 
         Ok(())
@@ -786,57 +839,38 @@ impl Database {
     }
 
     fn run_template_migrations(conn: &rusqlite::Connection) -> Result<()> {
-        let mut has_description = false;
-        let mut has_prompt = false;
-        let mut has_is_builtin = false;
-        let mut has_is_favorite = false;
-        let mut has_is_auto_run = false;
-
         let mut stmt = conn.prepare("PRAGMA table_info(templates)")?;
-        let columns = stmt
+        let existing_columns: std::collections::HashSet<String> = stmt
             .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+            .collect::<std::result::Result<_, _>>()?;
 
-        for col in &columns {
-            match col.as_str() {
-                "description" => has_description = true,
-                "prompt" => has_prompt = true,
-                "is_builtin" => has_is_builtin = true,
-                "is_favorite" => has_is_favorite = true,
-                "is_auto_run" => has_is_auto_run = true,
-                _ => {}
-            }
-        }
-
-        if !has_description {
-            conn.execute(
+        let migrations: &[(&str, &str)] = &[
+            (
+                "description",
                 "ALTER TABLE templates ADD COLUMN description TEXT NOT NULL DEFAULT ''",
-                [],
-            )?;
-        }
-        if !has_prompt {
-            conn.execute(
+            ),
+            (
+                "prompt",
                 "ALTER TABLE templates ADD COLUMN prompt TEXT NOT NULL DEFAULT ''",
-                [],
-            )?;
-        }
-        if !has_is_builtin {
-            conn.execute(
+            ),
+            (
+                "is_builtin",
                 "ALTER TABLE templates ADD COLUMN is_builtin INTEGER NOT NULL DEFAULT 0",
-                [],
-            )?;
-        }
-        if !has_is_favorite {
-            conn.execute(
+            ),
+            (
+                "is_favorite",
                 "ALTER TABLE templates ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
-                [],
-            )?;
-        }
-        if !has_is_auto_run {
-            conn.execute(
+            ),
+            (
+                "is_auto_run",
                 "ALTER TABLE templates ADD COLUMN is_auto_run INTEGER NOT NULL DEFAULT 0",
-                [],
-            )?;
+            ),
+        ];
+
+        for (column, sql) in migrations {
+            if !existing_columns.contains(*column) {
+                conn.execute(sql, [])?;
+            }
         }
 
         // Migrate existing prompts into templates (one-time migration)
@@ -884,8 +918,8 @@ impl Database {
                         continue;
                     }
                     conn.execute(
-                        "INSERT INTO templates (id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at)
-                         VALUES (?1, ?2, '', NULL, '[]', '{}', ?3, 0, ?4, ?5, ?6)",
+                        "INSERT INTO templates (id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at)
+                         VALUES (?1, ?2, '', '[]', '{}', ?3, 0, ?4, ?5, ?6)",
                         params![id, name, content, is_favorite, is_auto_run, now],
                     )?;
                 }
@@ -961,8 +995,8 @@ impl Database {
         for (name, description, prompt, sections) in builtins {
             let id = uuid::Uuid::new_v4().to_string();
             conn.execute(
-                "INSERT INTO templates (id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, created_at)
-                 VALUES (?1, ?2, ?3, NULL, ?4, '{}', ?5, 1, ?6)",
+                "INSERT INTO templates (id, name, description, sections, auto_apply_rules, prompt, is_builtin, created_at)
+                 VALUES (?1, ?2, ?3, ?4, '{}', ?5, 1, ?6)",
                 params![id, name, description, sections, prompt, now],
             )?;
         }
@@ -987,9 +1021,9 @@ impl Database {
         let status = "recording";
 
         conn.execute(
-            "INSERT INTO meetings (id, title, start_time, category_id, status, calendar_event_id, template_id, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![id, new.title, now, new.category_id, status, new.calendar_event_id, new.template_id, now, now],
+            "INSERT INTO meetings (id, title, start_time, status, calendar_event_id, template_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![id, new.title, now, status, new.calendar_event_id, new.template_id, now, now],
         )?;
 
         Ok(Meeting {
@@ -997,7 +1031,6 @@ impl Database {
             title: new.title,
             start_time: now.clone(),
             end_time: None,
-            category_id: new.category_id,
             audio_path: None,
             status: status.to_string(),
             calendar_event_id: new.calendar_event_id,
@@ -1012,7 +1045,7 @@ impl Database {
     pub fn get_meeting(&self, id: &str) -> Result<Meeting> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at
+            "SELECT id, title, start_time, end_time, audio_path, status, calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at
              FROM meetings WHERE id = ?1",
         )?;
 
@@ -1023,15 +1056,14 @@ impl Database {
                     title: row.get(1)?,
                     start_time: row.get(2)?,
                     end_time: row.get(3)?,
-                    category_id: row.get(4)?,
-                    audio_path: row.get(5)?,
-                    status: row.get(6)?,
-                    calendar_event_id: row.get(7)?,
-                    raw_notes: row.get(8)?,
-                    enriched_notes: row.get(9)?,
-                    template_id: row.get(10)?,
-                    created_at: row.get(11)?,
-                    updated_at: row.get(12)?,
+                    audio_path: row.get(4)?,
+                    status: row.get(5)?,
+                    calendar_event_id: row.get(6)?,
+                    raw_notes: row.get(7)?,
+                    enriched_notes: row.get(8)?,
+                    template_id: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
                 })
             })
             .map_err(|e| match e {
@@ -1046,14 +1078,13 @@ impl Database {
 
     pub fn list_meetings(
         &self,
-        category_id: Option<&str>,
         search: Option<&str>,
         include_archived: bool,
     ) -> Result<Vec<Meeting>> {
         let conn = self.lock_conn()?;
 
         let mut sql = String::from(
-            "SELECT id, title, start_time, end_time, category_id, audio_path, status, calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at
+            "SELECT id, title, start_time, end_time, audio_path, status, calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at
              FROM meetings"
         );
         let mut conditions: Vec<String> = Vec::new();
@@ -1061,11 +1092,6 @@ impl Database {
 
         if !include_archived {
             conditions.push("status != 'archived'".to_string());
-        }
-
-        if let Some(cat_id) = category_id {
-            conditions.push(format!("category_id = ?{}", param_values.len() + 1));
-            param_values.push(Box::new(cat_id.to_string()));
         }
 
         if let Some(query) = search {
@@ -1097,15 +1123,14 @@ impl Database {
                     title: row.get(1)?,
                     start_time: row.get(2)?,
                     end_time: row.get(3)?,
-                    category_id: row.get(4)?,
-                    audio_path: row.get(5)?,
-                    status: row.get(6)?,
-                    calendar_event_id: row.get(7)?,
-                    raw_notes: row.get(8)?,
-                    enriched_notes: row.get(9)?,
-                    template_id: row.get(10)?,
-                    created_at: row.get(11)?,
-                    updated_at: row.get(12)?,
+                    audio_path: row.get(4)?,
+                    status: row.get(5)?,
+                    calendar_event_id: row.get(6)?,
+                    raw_notes: row.get(7)?,
+                    enriched_notes: row.get(8)?,
+                    template_id: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1139,18 +1164,6 @@ impl Database {
         conn.execute(
             "UPDATE meetings SET title = ?1, updated_at = ?2 WHERE id = ?3",
             params![title, now, id],
-        )?;
-
-        Ok(())
-    }
-
-    pub fn update_meeting_category(&self, id: &str, category_id: Option<&str>) -> Result<()> {
-        let conn = self.lock_conn()?;
-        let now = chrono::Utc::now().to_rfc3339();
-
-        conn.execute(
-            "UPDATE meetings SET category_id = ?1, updated_at = ?2 WHERE id = ?3",
-            params![category_id, now, id],
         )?;
 
         Ok(())
@@ -1216,37 +1229,33 @@ impl Database {
         Ok(())
     }
 
-    pub fn create_category(&self, new: NewCategory) -> Result<Category> {
+    pub fn create_label(&self, name: &str, color: &str, icon: Option<&str>) -> Result<Label> {
         let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
-        let color = new.color.unwrap_or_else(|| "#6366f1".to_string());
-        let icon = new.icon.unwrap_or_else(|| "\u{1F4CB}".to_string());
 
         conn.execute(
-            "INSERT INTO categories (id, name, color, icon, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, new.name, color, icon, now],
+            "INSERT INTO labels (id, name, color, icon, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, name, color, icon, now],
         )?;
 
-        Ok(Category {
+        Ok(Label {
             id,
-            name: new.name,
-            color,
-            icon,
+            name: name.to_string(),
+            color: color.to_string(),
+            icon: icon.map(|s| s.to_string()),
             created_at: now,
         })
     }
 
-    pub fn list_categories(&self) -> Result<Vec<Category>> {
+    pub fn list_labels(&self) -> Result<Vec<Label>> {
         let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, name, color, icon, created_at FROM categories ORDER BY name ASC",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, color, icon, created_at FROM labels ORDER BY name ASC")?;
 
-        let categories = stmt
+        let labels = stmt
             .query_map([], |row| {
-                Ok(Category {
+                Ok(Label {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     color: row.get(2)?,
@@ -1256,26 +1265,26 @@ impl Database {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
-        Ok(categories)
+        Ok(labels)
     }
 
-    pub fn update_category(
+    pub fn update_label(
         &self,
         id: &str,
         name: &str,
         color: &str,
-        icon: &str,
-    ) -> Result<Category> {
+        icon: Option<&str>,
+    ) -> Result<Label> {
         let conn = self.lock_conn()?;
         conn.execute(
-            "UPDATE categories SET name = ?1, color = ?2, icon = ?3 WHERE id = ?4",
+            "UPDATE labels SET name = ?1, color = ?2, icon = ?3 WHERE id = ?4",
             params![name, color, icon, id],
         )?;
         let mut stmt =
-            conn.prepare("SELECT id, name, color, icon, created_at FROM categories WHERE id = ?1")?;
-        let category = stmt
+            conn.prepare("SELECT id, name, color, icon, created_at FROM labels WHERE id = ?1")?;
+        let label = stmt
             .query_row(params![id], |row| {
-                Ok(Category {
+                Ok(Label {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     color: row.get(2)?,
@@ -1285,172 +1294,81 @@ impl Database {
             })
             .map_err(|e| match e {
                 rusqlite::Error::QueryReturnedNoRows => {
-                    NootleError::Other(format!("Category not found: {}", id))
+                    NootleError::Other(format!("Label not found: {}", id))
                 }
                 other => NootleError::Database(other),
             })?;
-        Ok(category)
+        Ok(label)
     }
 
-    pub fn delete_category(&self, id: &str) -> Result<()> {
+    pub fn delete_label(&self, id: &str) -> Result<()> {
         let conn = self.lock_conn()?;
-        conn.execute("DELETE FROM categories WHERE id = ?1", params![id])?;
+        conn.execute("DELETE FROM labels WHERE id = ?1", params![id])?;
         Ok(())
     }
 
-    pub fn create_tag(&self, name: &str, color: &str) -> Result<Tag> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
-        let id = uuid::Uuid::new_v4().to_string();
-        let now = chrono::Utc::now().to_rfc3339();
-
+    pub fn add_meeting_label(&self, meeting_id: &str, label_id: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
         conn.execute(
-            "INSERT INTO tags (id, name, color, created_at) VALUES (?1, ?2, ?3, ?4)",
-            params![id, name, color, now],
-        )?;
-
-        Ok(Tag {
-            id,
-            name: name.to_string(),
-            color: color.to_string(),
-            created_at: now,
-        })
-    }
-
-    pub fn list_tags(&self) -> Result<Vec<Tag>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
-        let mut stmt =
-            conn.prepare("SELECT id, name, color, created_at FROM tags ORDER BY name ASC")?;
-
-        let tags = stmt
-            .query_map([], |row| {
-                Ok(Tag {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    color: row.get(2)?,
-                    created_at: row.get(3)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
-        Ok(tags)
-    }
-
-    pub fn update_tag(&self, id: &str, name: &str, color: &str) -> Result<Tag> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
-        conn.execute(
-            "UPDATE tags SET name = ?1, color = ?2 WHERE id = ?3",
-            params![name, color, id],
-        )?;
-        let mut stmt =
-            conn.prepare("SELECT id, name, color, created_at FROM tags WHERE id = ?1")?;
-        let tag = stmt
-            .query_row(params![id], |row| {
-                Ok(Tag {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    color: row.get(2)?,
-                    created_at: row.get(3)?,
-                })
-            })
-            .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => {
-                    NootleError::Other(format!("Tag not found: {}", id))
-                }
-                other => NootleError::Database(other),
-            })?;
-        Ok(tag)
-    }
-
-    pub fn delete_tag(&self, id: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
-        conn.execute("DELETE FROM tags WHERE id = ?1", params![id])?;
-        Ok(())
-    }
-
-    pub fn add_meeting_tag(&self, meeting_id: &str, tag_id: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
-        conn.execute(
-            "INSERT OR IGNORE INTO meeting_tags (meeting_id, tag_id) VALUES (?1, ?2)",
-            params![meeting_id, tag_id],
+            "INSERT OR IGNORE INTO meeting_labels (meeting_id, label_id) VALUES (?1, ?2)",
+            params![meeting_id, label_id],
         )?;
         Ok(())
     }
 
-    pub fn remove_meeting_tag(&self, meeting_id: &str, tag_id: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+    pub fn remove_meeting_label(&self, meeting_id: &str, label_id: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
         conn.execute(
-            "DELETE FROM meeting_tags WHERE meeting_id = ?1 AND tag_id = ?2",
-            params![meeting_id, tag_id],
+            "DELETE FROM meeting_labels WHERE meeting_id = ?1 AND label_id = ?2",
+            params![meeting_id, label_id],
         )?;
         Ok(())
     }
 
-    pub fn get_meeting_tags(&self, meeting_id: &str) -> Result<Vec<Tag>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+    pub fn get_meeting_labels(&self, meeting_id: &str) -> Result<Vec<Label>> {
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT t.id, t.name, t.color, t.created_at
-             FROM tags t
-             INNER JOIN meeting_tags mt ON mt.tag_id = t.id
-             WHERE mt.meeting_id = ?1
-             ORDER BY t.name ASC",
+            "SELECT l.id, l.name, l.color, l.icon, l.created_at
+             FROM labels l
+             INNER JOIN meeting_labels ml ON ml.label_id = l.id
+             WHERE ml.meeting_id = ?1
+             ORDER BY l.name ASC",
         )?;
 
-        let tags = stmt
+        let labels = stmt
             .query_map(params![meeting_id], |row| {
-                Ok(Tag {
+                Ok(Label {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     color: row.get(2)?,
-                    created_at: row.get(3)?,
+                    icon: row.get(3)?,
+                    created_at: row.get(4)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
-        Ok(tags)
+        Ok(labels)
     }
 
-    pub fn get_all_meeting_tags(&self) -> Result<Vec<(String, Tag)>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+    pub fn get_all_meeting_labels(&self) -> Result<Vec<(String, Label)>> {
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT mt.meeting_id, t.id, t.name, t.color, t.created_at
-             FROM meeting_tags mt
-             INNER JOIN tags t ON mt.tag_id = t.id
-             ORDER BY t.name ASC",
+            "SELECT ml.meeting_id, l.id, l.name, l.color, l.icon, l.created_at
+             FROM meeting_labels ml
+             INNER JOIN labels l ON ml.label_id = l.id
+             ORDER BY l.name ASC",
         )?;
 
         let results = stmt
             .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
-                    Tag {
+                    Label {
                         id: row.get(1)?,
                         name: row.get(2)?,
                         color: row.get(3)?,
-                        created_at: row.get(4)?,
+                        icon: row.get(4)?,
+                        created_at: row.get(5)?,
                     },
                 ))
             })?
@@ -1465,10 +1383,7 @@ impl Database {
         content: &str,
         timestamp_ms: i64,
     ) -> Result<ScratchNote> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -1487,10 +1402,7 @@ impl Database {
     }
 
     pub fn get_scratch_notes(&self, meeting_id: &str) -> Result<Vec<ScratchNote>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, meeting_id, content, timestamp_ms, created_at
              FROM scratch_notes
@@ -1514,10 +1426,7 @@ impl Database {
     }
 
     pub fn delete_scratch_note(&self, id: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         conn.execute("DELETE FROM scratch_notes WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -1578,10 +1487,7 @@ impl Database {
     }
 
     pub fn create_recipe(&self, new: NewRecipe) -> Result<Recipe> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -1605,10 +1511,7 @@ impl Database {
     }
 
     pub fn list_recipes(&self) -> Result<Vec<Recipe>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
              FROM recipes ORDER BY is_builtin DESC, name ASC",
@@ -1634,10 +1537,7 @@ impl Database {
     }
 
     pub fn get_recipe(&self, id: &str) -> Result<Recipe> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
              FROM recipes WHERE id = ?1",
@@ -1668,10 +1568,7 @@ impl Database {
     }
 
     pub fn get_recipe_by_command(&self, slash_command: &str) -> Result<Recipe> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
              FROM recipes WHERE slash_command = ?1",
@@ -1710,10 +1607,7 @@ impl Database {
         prompt_template: &str,
         output_format: &str,
     ) -> Result<Recipe> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
 
         conn.execute(
@@ -1751,10 +1645,7 @@ impl Database {
     }
 
     pub fn delete_recipe(&self, id: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         conn.execute("DELETE FROM recipes WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -1823,13 +1714,12 @@ impl Database {
         let is_auto = new.is_auto_run as i32;
 
         conn.execute(
-            "INSERT INTO templates (id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?10)",
+            "INSERT INTO templates (id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8, ?9)",
             params![
                 id,
                 new.name,
                 new.description,
-                new.category_id,
                 new.sections,
                 new.auto_apply_rules,
                 new.prompt,
@@ -1843,7 +1733,6 @@ impl Database {
             id,
             name: new.name,
             description: new.description,
-            category_id: new.category_id,
             sections: new.sections,
             auto_apply_rules: new.auto_apply_rules,
             prompt: new.prompt,
@@ -1857,7 +1746,7 @@ impl Database {
     pub fn list_templates(&self) -> Result<Vec<Template>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
              FROM templates ORDER BY is_builtin DESC, created_at DESC",
         )?;
 
@@ -1867,14 +1756,13 @@ impl Database {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     description: row.get(2)?,
-                    category_id: row.get(3)?,
-                    sections: row.get(4)?,
-                    auto_apply_rules: row.get(5)?,
-                    prompt: row.get(6)?,
-                    is_builtin: row.get::<_, i32>(7)? != 0,
-                    is_favorite: row.get::<_, i32>(8)? != 0,
-                    is_auto_run: row.get::<_, i32>(9)? != 0,
-                    created_at: row.get(10)?,
+                    sections: row.get(3)?,
+                    auto_apply_rules: row.get(4)?,
+                    prompt: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    is_favorite: row.get::<_, i32>(7)? != 0,
+                    is_auto_run: row.get::<_, i32>(8)? != 0,
+                    created_at: row.get(9)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1885,7 +1773,7 @@ impl Database {
     pub fn get_template(&self, id: &str) -> Result<Template> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
              FROM templates WHERE id = ?1",
         )?;
 
@@ -1895,14 +1783,13 @@ impl Database {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     description: row.get(2)?,
-                    category_id: row.get(3)?,
-                    sections: row.get(4)?,
-                    auto_apply_rules: row.get(5)?,
-                    prompt: row.get(6)?,
-                    is_builtin: row.get::<_, i32>(7)? != 0,
-                    is_favorite: row.get::<_, i32>(8)? != 0,
-                    is_auto_run: row.get::<_, i32>(9)? != 0,
-                    created_at: row.get(10)?,
+                    sections: row.get(3)?,
+                    auto_apply_rules: row.get(4)?,
+                    prompt: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    is_favorite: row.get::<_, i32>(7)? != 0,
+                    is_auto_run: row.get::<_, i32>(8)? != 0,
+                    created_at: row.get(9)?,
                 })
             })
             .map_err(|e| match e {
@@ -1918,7 +1805,7 @@ impl Database {
     pub fn get_auto_run_templates(&self) -> Result<Vec<Template>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
              FROM templates WHERE is_auto_run = 1 ORDER BY created_at DESC",
         )?;
 
@@ -1928,14 +1815,13 @@ impl Database {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     description: row.get(2)?,
-                    category_id: row.get(3)?,
-                    sections: row.get(4)?,
-                    auto_apply_rules: row.get(5)?,
-                    prompt: row.get(6)?,
-                    is_builtin: row.get::<_, i32>(7)? != 0,
-                    is_favorite: row.get::<_, i32>(8)? != 0,
-                    is_auto_run: row.get::<_, i32>(9)? != 0,
-                    created_at: row.get(10)?,
+                    sections: row.get(3)?,
+                    auto_apply_rules: row.get(4)?,
+                    prompt: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    is_favorite: row.get::<_, i32>(7)? != 0,
+                    is_auto_run: row.get::<_, i32>(8)? != 0,
+                    created_at: row.get(9)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1967,12 +1853,12 @@ impl Database {
         let is_auto = params.is_auto_run as i32;
 
         conn.execute(
-            "UPDATE templates SET name = ?1, description = ?2, category_id = ?3, sections = ?4, auto_apply_rules = ?5, prompt = ?6, is_favorite = ?7, is_auto_run = ?8 WHERE id = ?9",
-            rusqlite::params![params.name, params.description, params.category_id, params.sections, params.auto_apply_rules, params.prompt, is_fav, is_auto, params.id],
+            "UPDATE templates SET name = ?1, description = ?2, sections = ?3, auto_apply_rules = ?4, prompt = ?5, is_favorite = ?6, is_auto_run = ?7 WHERE id = ?8",
+            rusqlite::params![params.name, params.description, params.sections, params.auto_apply_rules, params.prompt, is_fav, is_auto, params.id],
         )?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, category_id, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
              FROM templates WHERE id = ?1",
         )?;
 
@@ -1982,14 +1868,13 @@ impl Database {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     description: row.get(2)?,
-                    category_id: row.get(3)?,
-                    sections: row.get(4)?,
-                    auto_apply_rules: row.get(5)?,
-                    prompt: row.get(6)?,
-                    is_builtin: row.get::<_, i32>(7)? != 0,
-                    is_favorite: row.get::<_, i32>(8)? != 0,
-                    is_auto_run: row.get::<_, i32>(9)? != 0,
-                    created_at: row.get(10)?,
+                    sections: row.get(3)?,
+                    auto_apply_rules: row.get(4)?,
+                    prompt: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    is_favorite: row.get::<_, i32>(7)? != 0,
+                    is_auto_run: row.get::<_, i32>(8)? != 0,
+                    created_at: row.get(9)?,
                 })
             })
             .map_err(|e| match e {
@@ -2259,7 +2144,7 @@ impl Database {
         &self,
         query_embedding: &[f32],
         limit: usize,
-        category_ids: &[String],
+        label_ids: &[String],
         date_from: Option<&str>,
         date_to: Option<&str>,
     ) -> Result<Vec<ChunkSearchResult>> {
@@ -2280,25 +2165,25 @@ impl Database {
         param_values.push(Box::new(query_bytes));
         // Over-fetch 4x when filters are active so post-filter still yields enough results.
         // With strict filters on a small dataset, the caller may receive fewer than `limit` rows.
-        let k = if category_ids.is_empty() && date_from.is_none() && date_to.is_none() {
+        let k = if label_ids.is_empty() && date_from.is_none() && date_to.is_none() {
             limit as i64
         } else {
             (limit as i64) * 4
         };
         param_values.push(Box::new(k));
 
-        if !category_ids.is_empty() {
-            let placeholders: Vec<String> = category_ids
+        if !label_ids.is_empty() {
+            let placeholders: Vec<String> = label_ids
                 .iter()
                 .enumerate()
                 .map(|(i, _)| format!("?{}", param_values.len() + i + 1))
                 .collect();
             sql.push_str(&format!(
-                " AND m.category_id IN ({})",
+                " AND m.id IN (SELECT meeting_id FROM meeting_labels WHERE label_id IN ({}))",
                 placeholders.join(", ")
             ));
-            for cat_id in category_ids {
-                param_values.push(Box::new(cat_id.clone()));
+            for label_id in label_ids {
+                param_values.push(Box::new(label_id.clone()));
             }
         }
 

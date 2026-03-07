@@ -10,9 +10,6 @@ use crate::db::Database;
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListMeetingsParams {
-    /// Optional category ID to filter meetings by
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub category_id: Option<String>,
     /// Optional search query to filter meetings by title
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search: Option<String>,
@@ -45,9 +42,9 @@ impl NootleMcpServer {
         }
     }
 
-    /// List meetings with optional category and search filters
+    /// List meetings with optional search filter
     #[tool(
-        description = "List meetings with optional category_id and search filters. Returns meeting metadata (id, title, start_time, status, etc)."
+        description = "List meetings with optional search filter. Returns meeting metadata (id, title, start_time, status, etc)."
     )]
     fn list_meetings(
         &self,
@@ -55,11 +52,7 @@ impl NootleMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let meetings = self
             .db
-            .list_meetings(
-                params.category_id.as_deref(),
-                params.search.as_deref(),
-                false,
-            )
+            .list_meetings(params.search.as_deref(), false)
             .map_err(|e| {
                 McpError::internal_error(format!("Failed to list meetings: {}", e), None)
             })?;
@@ -153,7 +146,7 @@ impl ServerHandler for NootleMcpServer {
         _ctx: rmcp::service::RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
         // List all meetings and create a resource entry for each transcript
-        let meetings = self.db.list_meetings(None, None, false).map_err(|e| {
+        let meetings = self.db.list_meetings(None, false).map_err(|e| {
             McpError::internal_error(format!("Failed to list meetings: {}", e), None)
         })?;
 
@@ -269,7 +262,6 @@ mod tests {
         let meeting = db
             .create_meeting(NewMeeting {
                 title: "Test Meeting".to_string(),
-                category_id: None,
                 calendar_event_id: None,
                 template_id: None,
             })
@@ -322,10 +314,7 @@ mod tests {
         let db = setup_test_db();
         let server = NootleMcpServer::new(db);
 
-        let params = ListMeetingsParams {
-            category_id: None,
-            search: None,
-        };
+        let params = ListMeetingsParams { search: None };
         let result = server.list_meetings(Parameters(params));
         assert!(result.is_ok());
         let result = result.unwrap();

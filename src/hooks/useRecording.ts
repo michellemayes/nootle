@@ -22,31 +22,27 @@ export function useRecording() {
   }, [checkRecording]);
 
   useEffect(() => {
-    if (isRecording) {
-      timerRef.current = setInterval(() => {
-        setElapsed((prev) => prev + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+    if (!isRecording) {
       setElapsed(0);
+      return;
     }
+    timerRef.current = setInterval(() => {
+      setElapsed((prev) => prev + 1);
+    }, 1000);
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
+        timerRef.current = null;
       }
     };
   }, [isRecording]);
 
   const startRecording = useCallback(
-    async (title: string, categoryId?: string, calendarEventId?: string, templateId?: string) => {
+    async (title: string, calendarEventId?: string, templateId?: string) => {
       setError(null);
       try {
         const meeting = await invoke<Meeting>("start_recording", {
           title,
-          categoryId: categoryId ?? null,
           calendarEventId: calendarEventId ?? null,
           templateId: templateId ?? null,
         });

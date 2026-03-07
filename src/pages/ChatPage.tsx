@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from "@/components/Markdown";
 import { ThinkingDots } from "@/components/ThinkingDots";
 import { useChatConversations, useChatMessages } from "@/hooks/useChatHistory";
-import { useCategories } from "@/hooks/useCategories";
+import { useLabels } from "@/hooks/useLabels";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import type { ChatSource, GlobalChatResponse } from "@/types";
 import { Plus, Trash2, MessageSquare, Send } from "lucide-react";
@@ -20,14 +20,14 @@ export function ChatPage() {
     useChatConversations();
   const [activeId, setActiveId] = useState<string | null>(null);
   const { messages: dbMessages, refresh: refreshMessages } = useChatMessages(activeId);
-  const { categories } = useCategories();
+  const { labels } = useLabels();
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
 
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedLabel, setSelectedLabel] = useState("");
   const [dateFromValue, setDateFromValue] = useState("");
   const [dateToValue, setDateToValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -80,7 +80,7 @@ export function ChatPage() {
         message: msg,
         provider: selectedProvider,
         model: selectedModel,
-        categoryIds: selectedCategory ? [selectedCategory] : [],
+        labelIds: selectedLabel ? [selectedLabel] : [],
         dateFrom: getDateFrom(),
         dateTo: getDateTo(),
       });
@@ -174,12 +174,12 @@ export function ChatPage() {
         {/* Filters bar */}
         <div className="flex items-center gap-3 px-4 h-12 border-b">
           <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
+            value={selectedLabel}
+            onChange={(e) => setSelectedLabel(e.target.value)}
             className="h-7 rounded-md border bg-transparent px-2 text-xs"
           >
-            <option value="">All categories</option>
-            {categories.map((c) => (
+            <option value="">All labels</option>
+            {labels.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
@@ -223,30 +223,30 @@ export function ChatPage() {
                   </p>
                 </div>
               )}
-              {dbMessages.map((msg) => (
-                <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-lg px-4 py-2.5 ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
-                    }`}
+              {dbMessages.map((msg) => {
+                const sources = msg.role === "assistant" ? parseSources(msg.sources_json) : [];
+                return (
+                  <motion.div
+                    key={msg.id}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
-                    {msg.role === "assistant" ? (
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <Markdown content={msg.content} />
-                      </div>
-                    ) : (
-                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                    )}
-                    {msg.role === "assistant" && (() => {
-                      const sources = parseSources(msg.sources_json);
-                      return sources.length > 0 ? (
+                    <div
+                      className={`max-w-[80%] rounded-lg px-4 py-2.5 ${
+                        msg.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted"
+                      }`}
+                    >
+                      {msg.role === "assistant" ? (
+                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                          <Markdown content={msg.content} />
+                        </div>
+                      ) : (
+                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                      )}
+                      {sources.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
                           {sources.map((s, i) => (
                             <SourceCitation
@@ -256,11 +256,11 @@ export function ChatPage() {
                             />
                           ))}
                         </div>
-                      ) : null;
-                    })()}
-                  </div>
-                </motion.div>
-              ))}
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
               {loading && (
                 <div className="flex justify-start">
                   <div className="bg-muted rounded-lg px-4 py-2.5">

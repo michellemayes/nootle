@@ -50,16 +50,11 @@ fn validate_provider(provider: &str) -> Result<(), String> {
 #[tauri::command]
 pub fn list_meetings(
     db: State<'_, DbState>,
-    category_id: Option<String>,
     search: Option<String>,
     include_archived: Option<bool>,
 ) -> Result<Vec<Meeting>, String> {
-    db.list_meetings(
-        category_id.as_deref(),
-        search.as_deref(),
-        include_archived.unwrap_or(false),
-    )
-    .map_err(|e| e.to_string())
+    db.list_meetings(search.as_deref(), include_archived.unwrap_or(false))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -108,58 +103,11 @@ pub fn update_meeting_title(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn update_meeting_category(
-    db: State<'_, DbState>,
-    id: String,
-    category_id: Option<String>,
-) -> Result<(), String> {
-    db.update_meeting_category(&id, category_id.as_deref())
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn create_category(
-    db: State<'_, DbState>,
-    name: String,
-    color: Option<String>,
-    icon: Option<String>,
-) -> Result<Category, String> {
-    if let Some(ref c) = color {
-        validate_hex_color(c)?;
-    }
-    db.create_category(NewCategory { name, color, icon })
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn list_categories(db: State<'_, DbState>) -> Result<Vec<Category>, String> {
-    db.list_categories().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn update_category(
-    db: State<'_, DbState>,
-    id: String,
-    name: String,
-    color: String,
-    icon: String,
-) -> Result<Category, String> {
-    validate_hex_color(&color)?;
-    db.update_category(&id, &name, &color, &icon)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn delete_category(db: State<'_, DbState>, id: String) -> Result<(), String> {
-    db.delete_category(&id).map_err(|e| e.to_string())
-}
-
 fn validate_hex_color(color: &str) -> Result<(), String> {
-    let valid = color.len() == 7
+    if color.len() == 7
         && color.starts_with('#')
-        && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
-    if valid {
+        && color[1..].chars().all(|ch| ch.is_ascii_hexdigit())
+    {
         Ok(())
     } else {
         Err(format!("Invalid hex color: {}", color))
@@ -193,70 +141,82 @@ fn get_linear_api_key(db: &Database) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn create_tag(db: State<'_, DbState>, name: String, color: String) -> Result<Tag, String> {
+pub fn create_label(
+    db: State<'_, DbState>,
+    name: String,
+    color: String,
+    icon: Option<String>,
+) -> Result<Label, String> {
     validate_hex_color(&color)?;
-    db.create_tag(&name, &color).map_err(|e| e.to_string())
+    db.create_label(&name, &color, icon.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn list_tags(db: State<'_, DbState>) -> Result<Vec<Tag>, String> {
-    db.list_tags().map_err(|e| e.to_string())
+pub fn list_labels(db: State<'_, DbState>) -> Result<Vec<Label>, String> {
+    db.list_labels().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn update_tag(
+pub fn update_label(
     db: State<'_, DbState>,
     id: String,
     name: String,
     color: String,
-) -> Result<Tag, String> {
+    icon: Option<String>,
+) -> Result<Label, String> {
     validate_hex_color(&color)?;
-    db.update_tag(&id, &name, &color).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn delete_tag(db: State<'_, DbState>, id: String) -> Result<(), String> {
-    db.delete_tag(&id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn add_meeting_tag(
-    db: State<'_, DbState>,
-    meeting_id: String,
-    tag_id: String,
-) -> Result<(), String> {
-    db.add_meeting_tag(&meeting_id, &tag_id)
+    db.update_label(&id, &name, &color, icon.as_deref())
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn remove_meeting_tag(
+pub fn delete_label(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_label(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_meeting_label(
     db: State<'_, DbState>,
     meeting_id: String,
-    tag_id: String,
+    label_id: String,
 ) -> Result<(), String> {
-    db.remove_meeting_tag(&meeting_id, &tag_id)
+    db.add_meeting_label(&meeting_id, &label_id)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn get_meeting_tags(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<Tag>, String> {
-    db.get_meeting_tags(&meeting_id).map_err(|e| e.to_string())
+pub fn remove_meeting_label(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    label_id: String,
+) -> Result<(), String> {
+    db.remove_meeting_label(&meeting_id, &label_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_meeting_labels(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<Label>, String> {
+    db.get_meeting_labels(&meeting_id)
+        .map_err(|e| e.to_string())
 }
 
 #[derive(serde::Serialize)]
-pub struct MeetingTagEntry {
+pub struct MeetingLabelEntry {
     pub meeting_id: String,
-    pub tag: Tag,
+    pub label: Label,
 }
 
 #[tauri::command]
-pub fn get_all_meeting_tags(db: State<'_, DbState>) -> Result<Vec<MeetingTagEntry>, String> {
-    db.get_all_meeting_tags()
+pub fn get_all_meeting_labels(db: State<'_, DbState>) -> Result<Vec<MeetingLabelEntry>, String> {
+    db.get_all_meeting_labels()
         .map(|entries| {
             entries
                 .into_iter()
-                .map(|(meeting_id, tag)| MeetingTagEntry { meeting_id, tag })
+                .map(|(meeting_id, label)| MeetingLabelEntry { meeting_id, label })
                 .collect()
         })
         .map_err(|e| e.to_string())
@@ -373,7 +333,6 @@ pub fn create_template(
     db: State<'_, DbState>,
     name: String,
     description: String,
-    category_id: Option<String>,
     sections: String,
     auto_apply_rules: String,
     prompt: String,
@@ -383,7 +342,6 @@ pub fn create_template(
     db.create_template(NewTemplate {
         name,
         description,
-        category_id,
         sections,
         auto_apply_rules,
         prompt,
@@ -423,7 +381,6 @@ pub async fn start_recording(
     recording: State<'_, RecordingState>,
     embedding_state: State<'_, EmbeddingState>,
     title: String,
-    category_id: Option<String>,
     calendar_event_id: Option<String>,
     template_id: Option<String>,
 ) -> Result<Meeting, String> {
@@ -453,7 +410,6 @@ pub async fn start_recording(
     let meeting = db
         .create_meeting(NewMeeting {
             title,
-            category_id,
             calendar_event_id,
             template_id,
         })
@@ -1107,7 +1063,6 @@ pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
         db.create_template(NewTemplate {
             name: name.to_string(),
             description: String::new(),
-            category_id: None,
             sections: "[]".to_string(),
             auto_apply_rules: "{}".to_string(),
             prompt: content.to_string(),
@@ -1402,7 +1357,7 @@ async fn rag_chat(
     history: Vec<ChatMessage>,
     provider: &str,
     model: &str,
-    category_ids: &[String],
+    label_ids: &[String],
     date_from: Option<&str>,
     date_to: Option<&str>,
 ) -> Result<(String, Vec<serde_json::Value>), String> {
@@ -1417,7 +1372,7 @@ async fn rag_chat(
     drop(engine_lock);
 
     let results = db
-        .search_similar_chunks(&query_embedding, 10, category_ids, date_from, date_to)
+        .search_similar_chunks(&query_embedding, 10, label_ids, date_from, date_to)
         .map_err(|e| e.to_string())?;
 
     if results.is_empty() {
@@ -1493,9 +1448,7 @@ pub async fn embed_all_meetings(
     db: State<'_, DbState>,
     embedding_state: State<'_, EmbeddingState>,
 ) -> Result<(), String> {
-    let meetings = db
-        .list_meetings(None, None, false)
-        .map_err(|e| e.to_string())?;
+    let meetings = db.list_meetings(None, false).map_err(|e| e.to_string())?;
     let total = meetings.len();
 
     let mut engine_lock = embedding_state.lock().await;
@@ -1740,7 +1693,7 @@ pub async fn send_chat_message(
     message: String,
     provider: String,
     model: String,
-    category_ids: Vec<String>,
+    label_ids: Vec<String>,
     date_from: Option<String>,
     date_to: Option<String>,
 ) -> Result<serde_json::Value, String> {
@@ -1772,7 +1725,7 @@ pub async fn send_chat_message(
         history,
         &provider,
         &model,
-        &category_ids,
+        &label_ids,
         date_from.as_deref(),
         date_to.as_deref(),
     )

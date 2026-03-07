@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Markdown } from "@/components/Markdown";
 import { useGlobalChat } from "@/hooks/useGlobalChat";
-import { useCategories } from "@/hooks/useCategories";
+import { useLabels } from "@/hooks/useLabels";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import {
   X,
@@ -37,14 +37,14 @@ export function GlobalChatPanel() {
     embeddingStatus,
     embedAllMeetings,
   } = useGlobalChat();
-  const { categories } = useCategories();
+  const { labels } = useLabels();
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const navigate = useNavigate();
   const location = useLocation();
   const onChatPage = location.pathname === "/chat";
 
   const [input, setInput] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState(""); // "" = all
+  const [selectedLabel, setSelectedLabel] = useState(""); // "" = all
   const [selectedDatePreset, setSelectedDatePreset] = useState(3); // "All time"
   const [embedding, setEmbedding] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -80,12 +80,12 @@ export function GlobalChatPanel() {
     const dateFrom = preset.days
       ? new Date(Date.now() - preset.days * 86400000).toISOString()
       : null;
-    setFilters(selectedCategory ? [selectedCategory] : [], dateFrom, null);
+    setFilters(selectedLabel ? [selectedLabel] : [], dateFrom, null);
   };
 
-  const handleCategoryChange = (catId: string) => {
-    setSelectedCategory(catId);
-    setFilters(catId ? [catId] : [], currentDateFrom(), null);
+  const handleLabelChange = (labelId: string) => {
+    setSelectedLabel(labelId);
+    setFilters(labelId ? [labelId] : [], currentDateFrom(), null);
   };
 
   const handleEmbedAll = async () => {
@@ -120,7 +120,6 @@ export function GlobalChatPanel() {
       window.removeEventListener("mouseup", handleUp);
     };
   }, [isDragging]);
-
 
   const modelNotReady =
     embeddingStatus && !embeddingStatus.model_available;
@@ -187,14 +186,14 @@ export function GlobalChatPanel() {
             <div className="flex flex-col gap-2 px-4 py-2 border-b">
               <div className="flex items-center gap-2">
                 <select
-                  value={selectedCategory}
-                  onChange={(e) => handleCategoryChange(e.target.value)}
+                  value={selectedLabel}
+                  onChange={(e) => handleLabelChange(e.target.value)}
                   className="h-7 flex-1 rounded-md border bg-transparent px-2 text-xs"
                 >
-                  <option value="">All Categories</option>
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
+                  <option value="">All Labels</option>
+                  {labels.map((label) => (
+                    <option key={label.id} value={label.id}>
+                      {label.name}
                     </option>
                   ))}
                 </select>

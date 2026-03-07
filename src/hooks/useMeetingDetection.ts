@@ -10,7 +10,6 @@ export function useMeetingDetection() {
     try {
       await invoke("start_recording", {
         title: "Detected Meeting",
-        categoryId: null,
         calendarEventId: null,
         templateId: null,
       });
@@ -25,22 +24,17 @@ export function useMeetingDetection() {
       "meeting-detected-notify",
       async (event) => {
         if (!("Notification" in window)) return;
+        if (Notification.permission === "denied") return;
 
-        let permission = Notification.permission;
-        if (permission === "denied") return;
-
-        if (permission !== "granted") {
-          permission = await Notification.requestPermission();
+        if (Notification.permission !== "granted") {
+          const result = await Notification.requestPermission();
+          if (result !== "granted") return;
         }
 
-        if (permission === "granted") {
-          const n = new Notification(event.payload.title, {
-            body: event.payload.body,
-          });
-          n.onclick = () => {
-            startRecording();
-          };
-        }
+        const n = new Notification(event.payload.title, {
+          body: event.payload.body,
+        });
+        n.onclick = () => startRecording();
       },
     );
 

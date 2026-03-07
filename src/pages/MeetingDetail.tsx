@@ -20,13 +20,13 @@ import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings 
 import { formatMs, formatDate, statusLabel } from "@/lib/utils";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
-import { useTags } from "@/hooks/useTags";
+import { useLabels } from "@/hooks/useLabels";
 import { useScratchPad } from "@/hooks/useScratchPad";
-import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Tag } from "@/types";
+import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
-import { TagEditor } from "@/components/TagEditor";
+import { LabelEditor } from "@/components/LabelEditor";
 import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List, StickyNote, Sparkles, PanelLeftClose, PanelLeftOpen, Copy, CheckCheck, Zap, AlertTriangle } from "lucide-react";
 import { useWorkflows, useWorkflowRuns } from "@/hooks/useWorkflows";
 
@@ -62,7 +62,6 @@ function CopyButton({ text, className = "" }: { text: string; className?: string
     </button>
   );
 }
-
 
 const speakerColors = [
   "text-blue-400",
@@ -660,9 +659,9 @@ export function MeetingDetail() {
   const { summaries, generateSummary } = useSummaries(id!);
   const { templates } = useTemplates();
   const { storedProviders: storedApiProviders } = useApiKeys();
-  const { tags: allTags, getMeetingTags, addMeetingTag, removeMeetingTag, createTag } = useTags();
+  const { labels: allLabels, getMeetingLabels, addMeetingLabel, removeMeetingLabel, createLabel } = useLabels();
   const { notes: scratchNotes } = useScratchPad(id ?? null);
-  const [meetingTags, setMeetingTags] = useState<Tag[]>([]);
+  const [meetingLabels, setMeetingLabels] = useState<Label[]>([]);
   const hasLinear = storedApiProviders.includes("linear");
   const { tickets, createTicket } = useLinearTickets(id!);
   const { teams, fetchTeams } = useLinearTeams();
@@ -728,20 +727,20 @@ export function MeetingDetail() {
 
   useEffect(() => {
     if (!id) return;
-    getMeetingTags(id).then(setMeetingTags).catch(() => {});
-  }, [id, getMeetingTags]);
+    getMeetingLabels(id).then(setMeetingLabels).catch(() => {});
+  }, [id, getMeetingLabels]);
 
-  const handleAddMeetingTag = useCallback(async (meetingId: string, tagId: string) => {
-    await addMeetingTag(meetingId, tagId);
-    const updated = await getMeetingTags(meetingId);
-    setMeetingTags(updated);
-  }, [addMeetingTag, getMeetingTags]);
+  const handleAddMeetingLabel = useCallback(async (meetingId: string, labelId: string) => {
+    await addMeetingLabel(meetingId, labelId);
+    const updated = await getMeetingLabels(meetingId);
+    setMeetingLabels(updated);
+  }, [addMeetingLabel, getMeetingLabels]);
 
-  const handleRemoveMeetingTag = useCallback(async (meetingId: string, tagId: string) => {
-    await removeMeetingTag(meetingId, tagId);
-    const updated = await getMeetingTags(meetingId);
-    setMeetingTags(updated);
-  }, [removeMeetingTag, getMeetingTags]);
+  const handleRemoveMeetingLabel = useCallback(async (meetingId: string, labelId: string) => {
+    await removeMeetingLabel(meetingId, labelId);
+    const updated = await getMeetingLabels(meetingId);
+    setMeetingLabels(updated);
+  }, [removeMeetingLabel, getMeetingLabels]);
 
   // Listen for auto-generated title updates from the backend
   useEffect(() => {
@@ -913,13 +912,13 @@ export function MeetingDetail() {
               {formatDate(meeting.start_time, "long")}
             </p>
             <div className="mt-1.5">
-            <TagEditor
+            <LabelEditor
               meetingId={meeting.id}
-              meetingTags={meetingTags}
-              allTags={allTags}
-              onAddTag={handleAddMeetingTag}
-              onRemoveTag={handleRemoveMeetingTag}
-              onCreateTag={createTag}
+              meetingLabels={meetingLabels}
+              allLabels={allLabels}
+              onAddLabel={handleAddMeetingLabel}
+              onRemoveLabel={handleRemoveMeetingLabel}
+              onCreateLabel={(name, color) => createLabel(name, color, null)}
             />
             </div>
           </div>

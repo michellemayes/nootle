@@ -11,7 +11,7 @@ export function useGlobalChat() {
   const [messages, setMessages] = useState<GlobalChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [categoryIds, setCategoryIds] = useState<string[]>([]);
+  const [labelIds, setLabelIds] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState<string | null>(null);
   const [dateTo, setDateTo] = useState<string | null>(null);
   const [embeddingStatus, setEmbeddingStatus] =
@@ -58,7 +58,7 @@ export function useGlobalChat() {
           message,
           provider,
           model,
-          categoryIds,
+          labelIds,
           dateFrom,
           dateTo,
         });
@@ -77,7 +77,7 @@ export function useGlobalChat() {
         setLoading(false);
       }
     },
-    [categoryIds, dateFrom, dateTo],
+    [labelIds, dateFrom, dateTo],
   );
 
   const clearMessages = useCallback(() => {
@@ -87,8 +87,8 @@ export function useGlobalChat() {
   }, []);
 
   const setFilters = useCallback(
-    (cats: string[], from: string | null, to: string | null) => {
-      setCategoryIds(cats);
+    (labels: string[], from: string | null, to: string | null) => {
+      setLabelIds(labels);
       setDateFrom(from);
       setDateTo(to);
       // Clear conversation when filters change
@@ -114,7 +114,7 @@ export function useGlobalChat() {
     error,
     sendMessage,
     clearMessages,
-    categoryIds,
+    labelIds,
     dateFrom,
     dateTo,
     setFilters,

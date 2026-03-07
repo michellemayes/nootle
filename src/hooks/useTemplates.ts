@@ -28,7 +28,6 @@ export function useTemplates() {
     async (
       name: string,
       description: string,
-      categoryId: string | null,
       sections: string,
       autoApplyRules: string,
       prompt: string,
@@ -38,7 +37,6 @@ export function useTemplates() {
       const template = await invoke<Template>("create_template", {
         name,
         description,
-        categoryId,
         sections,
         autoApplyRules,
         prompt,
@@ -64,7 +62,6 @@ export function useTemplates() {
       id: string,
       name: string,
       description: string,
-      categoryId: string | null,
       sections: string,
       autoApplyRules: string,
       prompt: string,
@@ -76,7 +73,6 @@ export function useTemplates() {
           id,
           name,
           description,
-          categoryId,
           sections,
           autoApplyRules,
           prompt,

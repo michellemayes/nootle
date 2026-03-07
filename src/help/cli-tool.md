@@ -45,7 +45,7 @@ nootle-cli embeddings status
 
 | Command | Description |
 |---------|-------------|
-| `meetings list` | List meetings (supports `--category`, `--search`, `--archived`) |
+| `meetings list` | List meetings (supports `--label`, `--search`, `--archived`) |
 | `meetings get <id>` | Get a meeting by ID |
 | `meetings transcript <id>` | Get the transcript for a meeting |
 | `search <query>` | Full-text search across all transcripts |

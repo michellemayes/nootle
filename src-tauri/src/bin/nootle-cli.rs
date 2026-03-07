@@ -43,11 +43,6 @@ enum Commands {
         #[command(subcommand)]
         action: SummariesAction,
     },
-    /// List categories
-    Categories {
-        #[command(subcommand)]
-        action: CategoriesAction,
-    },
     /// List and query templates
     Templates {
         #[command(subcommand)]
@@ -69,9 +64,6 @@ enum Commands {
 enum MeetingsAction {
     /// List meetings
     List {
-        /// Filter by category ID
-        #[arg(long)]
-        category: Option<String>,
         /// Search by title
         #[arg(long)]
         search: Option<String>,
@@ -131,12 +123,6 @@ enum SummariesAction {
         /// Meeting ID
         meeting_id: String,
     },
-}
-
-#[derive(Subcommand)]
-enum CategoriesAction {
-    /// List all categories
-    List,
 }
 
 #[derive(Subcommand)]
@@ -212,13 +198,8 @@ fn run_command(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match command {
         Commands::Meetings { action } => match action {
-            MeetingsAction::List {
-                category,
-                search,
-                archived,
-            } => {
-                let meetings =
-                    db.list_meetings(category.as_deref(), search.as_deref(), *archived)?;
+            MeetingsAction::List { search, archived } => {
+                let meetings = db.list_meetings(search.as_deref(), *archived)?;
                 print_json(&meetings, pretty);
             }
             MeetingsAction::Get { id } => {
@@ -276,12 +257,6 @@ fn run_command(
             SummariesAction::Get { meeting_id } => {
                 let summaries = db.get_summaries_for_meeting(meeting_id)?;
                 print_json(&summaries, pretty);
-            }
-        },
-        Commands::Categories { action } => match action {
-            CategoriesAction::List => {
-                let categories = db.list_categories()?;
-                print_json(&categories, pretty);
             }
         },
         Commands::Templates { action } => match action {
