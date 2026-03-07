@@ -650,3 +650,130 @@ async fn execute_obsidian(
         output: Some(path_str),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_filename_basic() {
+        assert_eq!(sanitize_filename("My Meeting"), "My Meeting");
+    }
+
+    #[test]
+    fn test_sanitize_filename_strips_invalid_chars() {
+        assert_eq!(sanitize_filename("Q1: Review / Planning"), "Q1_ Review _ Planning");
+    }
+
+    #[test]
+    fn test_sanitize_filename_all_special() {
+        assert_eq!(sanitize_filename("a\\b:c*d?e\"f<g>h|i"), "a_b_c_d_e_f_g_h_i");
+    }
+
+    #[test]
+    fn test_sanitize_filename_empty() {
+        assert_eq!(sanitize_filename(""), "untitled");
+    }
+
+    #[test]
+    fn test_sanitize_filename_dots() {
+        assert_eq!(sanitize_filename("."), "untitled");
+        assert_eq!(sanitize_filename(".."), "untitled");
+    }
+
+    #[tokio::test]
+    async fn test_execute_obsidian_creates_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let vault_path = tmp.path().to_str().unwrap();
+
+        let integration = crate::db::Integration {
+            id: "int-1".to_string(),
+            integration_type: "obsidian".to_string(),
+            name: "Obsidian".to_string(),
+            credentials_json: serde_json::json!({
+                "vault_path": vault_path,
+                "speaker_map": { "Speaker 1": "Michelle Mayes" }
+            }).to_string(),
+            created_at: "2026-03-07".to_string(),
+        };
+
+        let workflow = crate::db::Workflow {
+            id: "wf-1".to_string(),
+            name: "Export to Obsidian".to_string(),
+            description: None,
+            icon: None,
+            integration_id: "int-1".to_string(),
+            action_type: "create_note".to_string(),
+            config_json: serde_json::json!({
+                "subfolder": "Meetings"
+            }).to_string(),
+            is_enabled: true,
+            created_at: "2026-03-07".to_string(),
+        };
+
+        let context = WorkflowContext {
+            meeting_title: "Weekly Standup".to_string(),
+            meeting_date: "2026-03-07T10:00:00".to_string(),
+            summary: Some("Discussed Q1 roadmap. Speaker 1 will lead the effort.".to_string()),
+            action_items: vec![
+                ActionItemContext {
+                    content: "Review PR #42".to_string(),
+                    assignee: Some("Speaker 1".to_string()),
+                    due_date: Some("2026-03-10".to_string()),
+                },
+            ],
+        };
+
+        let result = execute_obsidian(&workflow, &integration, &context).await.unwrap();
+        assert!(result.message.contains("Note created"));
+
+        let file_path = tmp.path().join("Meetings").join("2026-03-07 - Weekly Standup.md");
+        assert!(file_path.exists(), "File should exist at {:?}", file_path);
+
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        assert!(content.contains("date: 2026-03-07"));
+        assert!(content.contains("title: \"Weekly Standup\""));
+        assert!(content.contains("[[Michelle Mayes]]"));
+        assert!(content.contains("- [ ] Review PR #42"));
+        assert!(content.contains("[due: 2026-03-10]"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_obsidian_deduplicates_filename() {
+        let tmp = tempfile::tempdir().unwrap();
+        let vault_path = tmp.path().to_str().unwrap();
+        let meetings_dir = tmp.path().join("Meetings");
+        std::fs::create_dir_all(&meetings_dir).unwrap();
+        std::fs::write(meetings_dir.join("2026-03-07 - Standup.md"), "existing").unwrap();
+
+        let integration = crate::db::Integration {
+            id: "int-1".to_string(),
+            integration_type: "obsidian".to_string(),
+            name: "Obsidian".to_string(),
+            credentials_json: serde_json::json!({ "vault_path": vault_path }).to_string(),
+            created_at: "2026-03-07".to_string(),
+        };
+
+        let workflow = crate::db::Workflow {
+            id: "wf-1".to_string(),
+            name: "Export".to_string(),
+            description: None,
+            icon: None,
+            integration_id: "int-1".to_string(),
+            action_type: "create_note".to_string(),
+            config_json: serde_json::json!({ "subfolder": "Meetings" }).to_string(),
+            is_enabled: true,
+            created_at: "2026-03-07".to_string(),
+        };
+
+        let context = WorkflowContext {
+            meeting_title: "Standup".to_string(),
+            meeting_date: "2026-03-07".to_string(),
+            summary: Some("Summary".to_string()),
+            action_items: vec![],
+        };
+
+        let result = execute_obsidian(&workflow, &integration, &context).await.unwrap();
+        assert!(result.output.unwrap().contains("(2)"));
+    }
+}
