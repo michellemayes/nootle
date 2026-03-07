@@ -1287,7 +1287,13 @@ impl Database {
         Ok(labels)
     }
 
-    pub fn update_label(&self, id: &str, name: &str, color: &str, icon: Option<&str>) -> Result<Label> {
+    pub fn update_label(
+        &self,
+        id: &str,
+        name: &str,
+        color: &str,
+        icon: Option<&str>,
+    ) -> Result<Label> {
         let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE labels SET name = ?1, color = ?2, icon = ?3 WHERE id = ?4",
