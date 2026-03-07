@@ -74,7 +74,7 @@ export function HelpPage() {
       </div>
 
       <Tabs defaultValue="getting-started" className="flex flex-1 flex-col overflow-hidden">
-        <div className="border-b px-6">
+        <div className="border-b px-6 py-4">
           <TabsList className="h-10">
             {tabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value}>

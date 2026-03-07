@@ -909,7 +909,7 @@ export function SettingsPage() {
       </div>
 
       <Tabs defaultValue="general" className="flex flex-1 flex-col overflow-hidden">
-        <div className="border-b px-6">
+        <div className="border-b px-6 py-4">
           <TabsList className="h-10">
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="api-keys">API Keys</TabsTrigger>
