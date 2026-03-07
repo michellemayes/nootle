@@ -167,10 +167,29 @@ fn validate_hex_color(color: &str) -> Result<(), String> {
 }
 
 fn get_linear_api_key(db: &Database) -> Result<String, String> {
-    db.get_linear_setting("api_key")
+    // Check legacy linear_settings table first
+    if let Some(key) = db
+        .get_linear_setting("api_key")
         .map_err(|e| e.to_string())?
         .filter(|k| !k.is_empty())
-        .ok_or_else(|| "Linear API key not configured".to_string())
+    {
+        return Ok(key);
+    }
+    // Fall back to integrations table
+    if let Some(integration) = db
+        .get_integration_by_type("linear")
+        .map_err(|e| e.to_string())?
+    {
+        if let Ok(creds) = serde_json::from_str::<serde_json::Value>(&integration.credentials_json)
+        {
+            if let Some(key) = creds.get("api_key").and_then(|v| v.as_str()) {
+                if !key.is_empty() {
+                    return Ok(key.to_string());
+                }
+            }
+        }
+    }
+    Err("Linear API key not configured".to_string())
 }
 
 #[tauri::command]
