@@ -38,6 +38,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Make Ask Nootle chat sidebar resizable (#74) ([82d2918](https://github.com/michellemayes/nootle/commit/82d2918cb473e965d26d82395cd3fd4caae7ab80))
 - Make macOS title bar transparent to match app background (#72) ([807856c](https://github.com/michellemayes/nootle/commit/807856cc53ff4300b610fb173907ca03d4bc1aae))
 - Consolidate tags and categories into unified labels (#65) ([8378982](https://github.com/michellemayes/nootle/commit/83789827c91e187d1c5197e992b2e0b7767d1a47))
 - Add integrations, app demo auto-tour, and Ask Nootle panel (#63) ([74dc460](https://github.com/michellemayes/nootle/commit/74dc460debbabb7575c3391a03bdf279a8b01d9d))
