@@ -150,15 +150,11 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
 
   const isLoading = loading || recipeLoading;
 
+  if (!open) return null;
+
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ x: "100%" }}
-          animate={{ x: 0 }}
-          exit={{ x: "100%" }}
-          transition={{ type: "spring", damping: 25, stiffness: 200 }}
-          className="fixed inset-y-0 right-0 z-50 flex w-96 flex-col border-l bg-background shadow-xl"
+        <div
+          className="flex w-80 shrink-0 flex-col border-l bg-background"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -280,8 +276,6 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
               Clear conversation
             </Button>
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        </div>
   );
 }

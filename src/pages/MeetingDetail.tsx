@@ -1215,14 +1215,13 @@ export function MeetingDetail() {
         {!audioSrc && !audioLoading && meeting?.audio_path && (
           <p className="text-xs text-muted-foreground mt-1">Audio file not found</p>
         )}
+        {/* Chat panel — inline drawer */}
+        <ChatPanel
+          meetingId={id!}
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+        />
       </div>
-
-      {/* Chat panel */}
-      <ChatPanel
-        meetingId={id!}
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-      />
     </motion.div>
   );
 }
