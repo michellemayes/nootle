@@ -111,7 +111,7 @@ export function RecordingView() {
   useEffect(() => {
     if (!hasStarted) {
       setHasStarted(true);
-      startRecording(latestTitleRef.current, undefined, undefined, selectedTemplateId || undefined).catch(() => {
+      startRecording(latestTitleRef.current, undefined, selectedTemplateId || undefined).catch(() => {
         // Error is captured in useRecording's error state
       });
     }

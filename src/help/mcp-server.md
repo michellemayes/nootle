@@ -31,7 +31,7 @@ Once connected, Claude has access to three tools:
 
 Lists all your recorded meetings. Supports optional filtering.
 
-- **category_id** (optional) — filter by meeting category
+- **label_id** (optional) — filter by meeting label
 - **search** (optional) — search meetings by title
 
 Example: Ask Claude *"What meetings did I record this week?"*

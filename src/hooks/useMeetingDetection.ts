@@ -10,7 +10,6 @@ export function useMeetingDetection() {
     try {
       await invoke("start_recording", {
         title: "Detected Meeting",
-        categoryId: null,
         calendarEventId: null,
         templateId: null,
       });

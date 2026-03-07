@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from "@/components/Markdown";
 import { ThinkingDots } from "@/components/ThinkingDots";
 import { useChatConversations, useChatMessages } from "@/hooks/useChatHistory";
-import { useCategories } from "@/hooks/useCategories";
+import { useLabels } from "@/hooks/useLabels";
 import { useLLM } from "@/hooks/useLLM";
 import { useLLMSelection } from "@/hooks/useLLMSelection";
 import type { ChatSource, GlobalChatResponse } from "@/types";
@@ -21,7 +21,7 @@ export function ChatPage() {
     useChatConversations();
   const [activeId, setActiveId] = useState<string | null>(null);
   const { messages: dbMessages, refresh: refreshMessages } = useChatMessages(activeId);
-  const { categories } = useCategories();
+  const { labels } = useLabels();
   const { models, providers } = useLLM();
   const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
 
@@ -29,7 +29,7 @@ export function ChatPage() {
   const [titleDraft, setTitleDraft] = useState("");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedLabel, setSelectedLabel] = useState("");
   const [dateFromValue, setDateFromValue] = useState("");
   const [dateToValue, setDateToValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -82,7 +82,7 @@ export function ChatPage() {
         message: msg,
         provider: selectedProvider,
         model: selectedModel,
-        categoryIds: selectedCategory ? [selectedCategory] : [],
+        categoryIds: selectedLabel ? [selectedLabel] : [],
         dateFrom: getDateFrom(),
         dateTo: getDateTo(),
       });
@@ -176,12 +176,12 @@ export function ChatPage() {
         {/* Filters bar */}
         <div className="flex items-center gap-3 px-4 h-12 border-b">
           <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
+            value={selectedLabel}
+            onChange={(e) => setSelectedLabel(e.target.value)}
             className="h-7 rounded-md border bg-transparent px-2 text-xs"
           >
-            <option value="">All categories</option>
-            {categories.map((c) => (
+            <option value="">All labels</option>
+            {labels.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
