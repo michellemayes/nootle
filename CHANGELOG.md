@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Enable scrolling in tabs and scroll areas with proper flex constraints (#71) ([92fea32](https://github.com/michellemayes/nootle/commit/92fea3284a3bd73f2315e15bccafe9f0009ef174))
 - Correct layout spacing and scrolling in meeting detail and templates (#70) ([afc0026](https://github.com/michellemayes/nootle/commit/afc00268e19cf0baff2055b1a6f24974aa337309))
 - Make meeting detail content scrollable with sticky player (#67) ([2520a21](https://github.com/michellemayes/nootle/commit/2520a21c52f65cec2fcdbe4e258db73523428d6d))
 - Add vertical padding to tab bar containers (#68) ([a2f302d](https://github.com/michellemayes/nootle/commit/a2f302dcd76372ac20aa1e041d402e8b3db83e9c))
