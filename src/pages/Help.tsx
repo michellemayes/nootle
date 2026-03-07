@@ -86,7 +86,7 @@ export function HelpPage() {
 
         {tabs.map((tab) => (
           <TabsContent key={tab.value} value={tab.value} className="flex-1 mt-0 overflow-auto">
-            <div className="flex flex-col gap-8 p-6 max-w-3xl">
+            <div className="flex flex-col gap-6 px-6 py-4 max-w-3xl">
               {"quickStart" in tab && tab.quickStart && <McpQuickStart />}
               <Card>
                 <CardContent className="pt-6">
