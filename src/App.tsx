@@ -22,7 +22,7 @@ function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar />
-      <main className="flex flex-1 flex-col overflow-hidden">{children}</main>
+      <main className="flex flex-1 flex-col overflow-hidden pt-8">{children}</main>
       <GlobalChatPanel />
     </div>
   );
