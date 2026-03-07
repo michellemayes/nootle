@@ -166,7 +166,7 @@ export function TemplatesPage() {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-6 overflow-auto p-8">
+    <div className="flex flex-1 flex-col gap-6 overflow-auto p-6">
       <Tabs defaultValue="templates">
         <div className="flex items-center justify-between">
           <div>

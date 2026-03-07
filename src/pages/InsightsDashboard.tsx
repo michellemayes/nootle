@@ -397,7 +397,7 @@ export function InsightsDashboard() {
       className="flex flex-1 flex-col"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-8 py-4">
+      <div className="flex items-center justify-between border-b px-6 py-4">
         <h1 className="text-xl font-bold">Insights</h1>
         <div className="flex items-center gap-3">
           <select
@@ -438,7 +438,7 @@ export function InsightsDashboard() {
         </div>
       ) : (
         <ScrollArea className="flex-1">
-          <div className="space-y-8 p-8">
+          <div className="space-y-8 p-6">
             {insightTypes
               .filter((t) => typeFilter === undefined || typeFilter === t.slug)
               .map((t) => (

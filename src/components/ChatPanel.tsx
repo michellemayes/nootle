@@ -10,7 +10,7 @@ import { useChat } from "@/hooks/useChat";
 import { useLLM } from "@/hooks/useLLM";
 import { useLLMSelection } from "@/hooks/useLLMSelection";
 import { useRecipes } from "@/hooks/useRecipes";
-import { X, Slash } from "lucide-react";
+import { X, Zap } from "lucide-react";
 
 interface ChatPanelProps {
   meetingId: string;
@@ -160,7 +160,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
           animate={{ x: 0 }}
           exit={{ x: "100%" }}
           transition={{ type: "spring", damping: 25, stiffness: 200 }}
-          className="fixed inset-y-0 right-0 z-50 flex w-96 flex-col border-l bg-background shadow-xl"
+          className="flex w-96 shrink-0 flex-col border-l bg-background"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -259,7 +259,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
                       onMouseEnter={() => setSelectedSlashIndex(i)}
                       onClick={() => handleRunRecipe(recipe.id, recipe.name)}
                     >
-                      <Slash className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">/{recipe.slash_command}</span>
