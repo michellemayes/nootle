@@ -502,6 +502,12 @@ async fn execute_obsidian(
     let subfolder = config["subfolder"]
         .as_str()
         .ok_or("Missing subfolder in workflow config")?;
+
+    // Reject path traversal in subfolder
+    if subfolder.split('/').any(|part| part == "..") || subfolder.split('\\').any(|part| part == "..") {
+        return Err(format!("Subfolder '{}' contains path traversal", subfolder));
+    }
+
     let filename_template = config["filename_template"]
         .as_str()
         .unwrap_or("{{date}} - {{title}}");
@@ -583,7 +589,7 @@ async fn execute_obsidian(
     let mut frontmatter = format!(
         "---\ndate: {date}\ntitle: \"{title}\"\ntags:\n  - meeting\n  - nootle\n",
         date = date,
-        title = context.meeting_title,
+        title = context.meeting_title.replace('"', "\\\""),
     );
     if !unique_speakers.is_empty() {
         frontmatter.push_str("speakers:\n");

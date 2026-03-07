@@ -265,9 +265,18 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
                       />
                       <Button variant="ghost" size="sm" onClick={() => {
                         const keys = (fields._speakerKeys ?? "").split(",").filter(Boolean);
+                        const vals = keys.map((_, j) => fields[`_speakerVal_${j}`] ?? "");
                         keys.splice(i, 1);
-                        const next: Record<string, string> = { ...fields, _speakerKeys: keys.join(",") };
-                        delete next[`_speakerVal_${i}`];
+                        vals.splice(i, 1);
+                        const next: Record<string, string> = {};
+                        // Copy non-speaker fields
+                        for (const [k, v] of Object.entries(fields)) {
+                          if (!k.startsWith("_speakerVal_") && k !== "_speakerKeys") {
+                            next[k] = v;
+                          }
+                        }
+                        next._speakerKeys = keys.join(",");
+                        keys.forEach((_, j) => { next[`_speakerVal_${j}`] = vals[j]; });
                         setFields(next);
                       }}>
                         <Trash2 className="h-3.5 w-3.5" />
