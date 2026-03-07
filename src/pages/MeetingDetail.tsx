@@ -926,7 +926,7 @@ export function MeetingDetail() {
       className="flex flex-1 flex-col"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-8 py-4">
+      <div className="flex items-center justify-between border-b px-6 py-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
             <ArrowLeft className="h-4 w-4" /> Back
@@ -959,6 +959,7 @@ export function MeetingDetail() {
             <p className="text-sm text-muted-foreground">
               {formatDate(meeting.start_time, "long")}
             </p>
+            <div className="mt-1.5">
             <TagEditor
               meetingId={meeting.id}
               meetingTags={meetingTags}
@@ -967,6 +968,7 @@ export function MeetingDetail() {
               onRemoveTag={handleRemoveMeetingTag}
               onCreateTag={createTag}
             />
+            </div>
           </div>
           <Badge variant="outline">{statusLabel(meeting.status)}</Badge>
         </div>
