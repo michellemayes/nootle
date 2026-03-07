@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   ollama: "Ollama",
   linear: "Linear",
   asana: "Asana",
+  obsidian: "Obsidian",
 };
 
 function getMcpConfig(exePath: string) {
@@ -60,6 +62,7 @@ const INTEGRATION_TYPES = [
   { type: "linear", name: "Linear", fields: [{ key: "api_key", label: "API Key", placeholder: "lin_api_..." }] },
   { type: "asana", name: "Asana", fields: [{ key: "token", label: "Token", placeholder: "Enter Asana token" }] },
   { type: "email", name: "Email", fields: [] },
+  { type: "obsidian", name: "Obsidian", fields: [{ key: "vault_path", label: "Vault Path", placeholder: "/path/to/vault" }] },
 ] as const;
 
 const ACTION_TYPES_BY_INTEGRATION: Record<string, { value: string; label: string; configFields: { key: string; label: string; placeholder: string; required: boolean }[] }[]> = {
@@ -87,6 +90,11 @@ const ACTION_TYPES_BY_INTEGRATION: Record<string, { value: string; label: string
     { key: "subject", label: "Subject", placeholder: "Optional subject line", required: false },
     { key: "body", label: "Body", placeholder: "Optional body template", required: false },
   ] }],
+  obsidian: [{ value: "create_note", label: "Create Note", configFields: [
+    { key: "subfolder", label: "Subfolder", placeholder: "Meetings", required: true },
+    { key: "filename_template", label: "Filename Template", placeholder: "{{date}} - {{title}}", required: false },
+    { key: "note_template", label: "Note Template", placeholder: "Optional custom template", required: false },
+  ] }],
 };
 
 function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnect }: {
@@ -102,6 +110,31 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
   const isEmail = intType.type === "email";
 
   const handleConnect = async () => {
+    if (intType.type === "obsidian") {
+      const speakerMap: Record<string, string> = {};
+      const keys = (fields._speakerKeys ?? "").split(",").filter(Boolean);
+      keys.forEach((key, i) => {
+        const value = fields[`_speakerVal_${i}`]?.trim();
+        if (key.trim() && value) {
+          speakerMap[key.trim()] = value;
+        }
+      });
+      if (!fields.vault_path?.trim()) {
+        return;
+      }
+      setSaving(true);
+      try {
+        await onConnect("obsidian", "Obsidian", {
+          vault_path: fields.vault_path,
+          speaker_map: JSON.stringify(speakerMap),
+        });
+        setFields({});
+        setExpanded(false);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     if (isEmail) {
       setSaving(true);
       try {
@@ -175,15 +208,81 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
               {intType.fields.map((field) => (
                 <div key={field.key} className="flex items-center gap-2">
                   <label className="text-xs text-muted-foreground w-24 shrink-0">{field.label}</label>
-                  <Input
-                    type="password"
-                    placeholder={field.placeholder}
-                    value={fields[field.key] ?? ""}
-                    onChange={(e) => setFields((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                    className="flex-1"
-                  />
+                  {field.key === "vault_path" ? (
+                    <div className="flex gap-2 flex-1">
+                      <Input
+                        readOnly
+                        placeholder={field.placeholder}
+                        value={fields[field.key] ?? ""}
+                        className="flex-1"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          const selected = await open({ directory: true, title: "Select Obsidian Vault" });
+                          if (selected) {
+                            setFields((prev) => ({ ...prev, [field.key]: selected as string }));
+                          }
+                        }}
+                      >
+                        Browse
+                      </Button>
+                    </div>
+                  ) : (
+                    <Input
+                      type="password"
+                      placeholder={field.placeholder}
+                      value={fields[field.key] ?? ""}
+                      onChange={(e) => setFields((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                      className="flex-1"
+                    />
+                  )}
                 </div>
               ))}
+              {intType.type === "obsidian" && (
+                <div className="space-y-2 pt-2">
+                  <label className="text-xs text-muted-foreground font-medium">Speaker Mapping</label>
+                  <p className="text-[11px] text-muted-foreground">Map transcript labels to names. Mapped names become [[wikilinks]] in Obsidian.</p>
+                  {(fields._speakerKeys ?? "").split(",").filter(Boolean).map((key, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <Input
+                        placeholder="Speaker 1"
+                        value={key}
+                        onChange={(e) => {
+                          const keys = (fields._speakerKeys ?? "").split(",").filter(Boolean);
+                          keys[i] = e.target.value;
+                          setFields((prev) => ({ ...prev, _speakerKeys: keys.join(",") }));
+                        }}
+                        className="flex-1"
+                      />
+                      <span className="text-xs text-muted-foreground">→</span>
+                      <Input
+                        placeholder="Person Name"
+                        value={fields[`_speakerVal_${i}`] ?? ""}
+                        onChange={(e) => setFields((prev) => ({ ...prev, [`_speakerVal_${i}`]: e.target.value }))}
+                        className="flex-1"
+                      />
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        const keys = (fields._speakerKeys ?? "").split(",").filter(Boolean);
+                        keys.splice(i, 1);
+                        const next: Record<string, string> = { ...fields, _speakerKeys: keys.join(",") };
+                        delete next[`_speakerVal_${i}`];
+                        setFields(next);
+                      }}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const keys = (fields._speakerKeys ?? "").split(",").filter(Boolean);
+                    keys.push("");
+                    setFields((prev) => ({ ...prev, _speakerKeys: keys.join(",") }));
+                  }}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Speaker
+                  </Button>
+                </div>
+              )}
               <div className="flex gap-2 justify-end pt-1">
                 <Button variant="ghost" size="sm" onClick={() => { setExpanded(false); setFields({}); }}>
                   Cancel
