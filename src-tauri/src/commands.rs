@@ -104,10 +104,10 @@ pub fn update_meeting_title(
 }
 
 fn validate_hex_color(color: &str) -> Result<(), String> {
-    let valid = color.len() == 7
+    if color.len() == 7
         && color.starts_with('#')
-        && color[1..].chars().all(|ch| ch.is_ascii_hexdigit());
-    if valid {
+        && color[1..].chars().all(|ch| ch.is_ascii_hexdigit())
+    {
         Ok(())
     } else {
         Err(format!("Invalid hex color: {}", color))

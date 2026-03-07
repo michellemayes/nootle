@@ -73,4 +73,3 @@ export async function updateMeetingTitle(
 ): Promise<void> {
   await invoke("update_meeting_title", { id, title });
 }
-

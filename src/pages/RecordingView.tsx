@@ -282,26 +282,26 @@ export function RecordingView() {
             >
               <ScrollArea className="h-[200px] border-t">
                 <div ref={scrollRef} className="px-6 py-3 space-y-1.5">
-                  {segments.length === 0 ? (
-                    transcriptionStatus?.available === false ? (
-                      <div className="text-xs text-muted-foreground italic">
-                        <p>{transcriptionStatus.reason}</p>
-                        <p className="mt-1">
-                          <Link
-                            to="/settings"
-                            className="text-primary underline underline-offset-2"
-                          >
-                            Download models in Settings
-                          </Link>{" "}
-                          to enable live transcription.
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground italic">
-                        Listening... words will appear here
+                  {segments.length === 0 && transcriptionStatus?.available === false && (
+                    <div className="text-xs text-muted-foreground italic">
+                      <p>{transcriptionStatus.reason}</p>
+                      <p className="mt-1">
+                        <Link
+                          to="/settings"
+                          className="text-primary underline underline-offset-2"
+                        >
+                          Download models in Settings
+                        </Link>{" "}
+                        to enable live transcription.
                       </p>
-                    )
-                  ) : (
+                    </div>
+                  )}
+                  {segments.length === 0 && transcriptionStatus?.available !== false && (
+                    <p className="text-xs text-muted-foreground italic">
+                      Listening... words will appear here
+                    </p>
+                  )}
+                  {segments.length > 0 &&
                     segments.map((seg) => (
                       <div key={seg.id} className="text-xs">
                         <span className="font-medium text-primary">
@@ -309,8 +309,7 @@ export function RecordingView() {
                         </span>{" "}
                         <span className="text-foreground">{seg.text}</span>
                       </div>
-                    ))
-                  )}
+                    ))}
                 </div>
               </ScrollArea>
             </motion.div>

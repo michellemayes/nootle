@@ -101,7 +101,6 @@ export function TemplatesPage() {
     setDialogOpen(true);
   };
 
-
   const validateSlashCommand = (value: string): boolean => {
     const valid = /^[a-zA-Z0-9-]+$/.test(value);
     if (!valid && value.length > 0) {

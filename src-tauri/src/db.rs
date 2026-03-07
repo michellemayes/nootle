@@ -839,57 +839,38 @@ impl Database {
     }
 
     fn run_template_migrations(conn: &rusqlite::Connection) -> Result<()> {
-        let mut has_description = false;
-        let mut has_prompt = false;
-        let mut has_is_builtin = false;
-        let mut has_is_favorite = false;
-        let mut has_is_auto_run = false;
-
         let mut stmt = conn.prepare("PRAGMA table_info(templates)")?;
-        let columns = stmt
+        let existing_columns: std::collections::HashSet<String> = stmt
             .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+            .collect::<std::result::Result<_, _>>()?;
 
-        for col in &columns {
-            match col.as_str() {
-                "description" => has_description = true,
-                "prompt" => has_prompt = true,
-                "is_builtin" => has_is_builtin = true,
-                "is_favorite" => has_is_favorite = true,
-                "is_auto_run" => has_is_auto_run = true,
-                _ => {}
-            }
-        }
-
-        if !has_description {
-            conn.execute(
+        let migrations: &[(&str, &str)] = &[
+            (
+                "description",
                 "ALTER TABLE templates ADD COLUMN description TEXT NOT NULL DEFAULT ''",
-                [],
-            )?;
-        }
-        if !has_prompt {
-            conn.execute(
+            ),
+            (
+                "prompt",
                 "ALTER TABLE templates ADD COLUMN prompt TEXT NOT NULL DEFAULT ''",
-                [],
-            )?;
-        }
-        if !has_is_builtin {
-            conn.execute(
+            ),
+            (
+                "is_builtin",
                 "ALTER TABLE templates ADD COLUMN is_builtin INTEGER NOT NULL DEFAULT 0",
-                [],
-            )?;
-        }
-        if !has_is_favorite {
-            conn.execute(
+            ),
+            (
+                "is_favorite",
                 "ALTER TABLE templates ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
-                [],
-            )?;
-        }
-        if !has_is_auto_run {
-            conn.execute(
+            ),
+            (
+                "is_auto_run",
                 "ALTER TABLE templates ADD COLUMN is_auto_run INTEGER NOT NULL DEFAULT 0",
-                [],
-            )?;
+            ),
+        ];
+
+        for (column, sql) in migrations {
+            if !existing_columns.contains(*column) {
+                conn.execute(sql, [])?;
+            }
         }
 
         // Migrate existing prompts into templates (one-time migration)
@@ -1402,10 +1383,7 @@ impl Database {
         content: &str,
         timestamp_ms: i64,
     ) -> Result<ScratchNote> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -1424,10 +1402,7 @@ impl Database {
     }
 
     pub fn get_scratch_notes(&self, meeting_id: &str) -> Result<Vec<ScratchNote>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, meeting_id, content, timestamp_ms, created_at
              FROM scratch_notes
@@ -1451,10 +1426,7 @@ impl Database {
     }
 
     pub fn delete_scratch_note(&self, id: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         conn.execute("DELETE FROM scratch_notes WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -1515,10 +1487,7 @@ impl Database {
     }
 
     pub fn create_recipe(&self, new: NewRecipe) -> Result<Recipe> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -1542,10 +1511,7 @@ impl Database {
     }
 
     pub fn list_recipes(&self) -> Result<Vec<Recipe>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
              FROM recipes ORDER BY is_builtin DESC, name ASC",
@@ -1571,10 +1537,7 @@ impl Database {
     }
 
     pub fn get_recipe(&self, id: &str) -> Result<Recipe> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
              FROM recipes WHERE id = ?1",
@@ -1605,10 +1568,7 @@ impl Database {
     }
 
     pub fn get_recipe_by_command(&self, slash_command: &str) -> Result<Recipe> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, name, description, slash_command, prompt_template, output_format, is_builtin, created_at, updated_at
              FROM recipes WHERE slash_command = ?1",
@@ -1647,10 +1607,7 @@ impl Database {
         prompt_template: &str,
         output_format: &str,
     ) -> Result<Recipe> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         let now = chrono::Utc::now().to_rfc3339();
 
         conn.execute(
@@ -1688,10 +1645,7 @@ impl Database {
     }
 
     pub fn delete_recipe(&self, id: &str) -> Result<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| NootleError::Other(format!("Database lock poisoned: {e}")))?;
+        let conn = self.lock_conn()?;
         conn.execute("DELETE FROM recipes WHERE id = ?1", params![id])?;
         Ok(())
     }

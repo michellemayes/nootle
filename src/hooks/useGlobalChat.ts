@@ -58,7 +58,7 @@ export function useGlobalChat() {
           message,
           provider,
           model,
-          labelIds: labelIds,
+          labelIds,
           dateFrom,
           dateTo,
         });

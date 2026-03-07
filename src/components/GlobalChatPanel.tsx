@@ -123,7 +123,6 @@ export function GlobalChatPanel() {
     };
   }, [isDragging]);
 
-
   const modelNotReady =
     embeddingStatus && !embeddingStatus.model_available;
   const needsBackfill =

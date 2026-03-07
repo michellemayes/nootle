@@ -64,7 +64,6 @@ function CopyButton({ text, className = "" }: { text: string; className?: string
   );
 }
 
-
 const speakerColors = [
   "text-blue-400",
   "text-green-400",
