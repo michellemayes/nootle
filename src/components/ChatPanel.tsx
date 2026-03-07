@@ -7,8 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useChat } from "@/hooks/useChat";
-import { useLLM } from "@/hooks/useLLM";
-import { useLLMSelection } from "@/hooks/useLLMSelection";
+import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useRecipes } from "@/hooks/useRecipes";
 import { X, Zap } from "lucide-react";
 
@@ -21,8 +20,7 @@ interface ChatPanelProps {
 export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
   const { messages, loading, error, sendMessage, clearMessages } =
     useChat(meetingId);
-  const { models, providers } = useLLM();
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const { recipes, runRecipe } = useRecipes();
   const [input, setInput] = useState("");
   const [recipeLoading, setRecipeLoading] = useState(false);
@@ -152,15 +150,11 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
 
   const isLoading = loading || recipeLoading;
 
+  if (!open) return null;
+
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ x: "100%" }}
-          animate={{ x: 0 }}
-          exit={{ x: "100%" }}
-          transition={{ type: "spring", damping: 25, stiffness: 200 }}
-          className="flex w-96 shrink-0 flex-col border-l bg-background"
+        <div
+          className="flex w-80 shrink-0 flex-col border-l bg-background"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -168,34 +162,6 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
             <Button variant="ghost" size="icon-sm" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>
-          </div>
-
-          {/* Provider/Model selector */}
-          <div className="flex items-center gap-2 px-4 py-2 border-b">
-            <select
-              value={selectedProvider}
-              onChange={(e) => changeProvider(e.target.value)}
-              className="h-7 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Provider</option>
-              {providers.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="h-7 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Model</option>
-              {filteredModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
           </div>
 
           {/* Messages */}
@@ -310,8 +276,6 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
               Clear conversation
             </Button>
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        </div>
   );
 }

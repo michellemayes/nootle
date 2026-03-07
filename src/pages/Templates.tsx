@@ -5,7 +5,6 @@ import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import {
   Tabs,
   TabsList,
@@ -19,7 +18,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useCategories } from "@/hooks/useCategories";
@@ -57,6 +55,7 @@ export function TemplatesPage() {
   const [recipeOutputFormat, setRecipeOutputFormat] = useState("markdown");
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [slashCommandError, setSlashCommandError] = useState("");
+  const [activeTab, setActiveTab] = useState("templates");
 
   const handleSubmit = async () => {
     if (!newName.trim()) return;
@@ -166,33 +165,29 @@ export function TemplatesPage() {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-6 overflow-auto p-6">
-      <Tabs defaultValue="templates">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Templates & Recipes</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Configure how meetings are summarized and create slash-command workflows
-            </p>
-          </div>
-          <TabsList>
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="border-b px-8 py-4">
+        <h1 className="text-2xl font-bold tracking-tight">Templates & Recipes</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Configure how meetings are summarized and create slash-command workflows
+        </p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col overflow-hidden">
+        <div className="border-b px-8 flex items-center justify-between">
+          <TabsList className="h-10">
             <TabsTrigger value="templates">Templates</TabsTrigger>
             <TabsTrigger value="recipes">Recipes</TabsTrigger>
           </TabsList>
-        </div>
-
-        <Separator className="mt-4" />
-
-        <TabsContent value="templates">
-          <div className="flex flex-col gap-6 pt-4">
-            <div className="flex justify-end">
-              <Dialog open={dialogOpen} onOpenChange={(open) => {
-                if (!open) resetForm();
-                else setDialogOpen(true);
-              }}>
-                <DialogTrigger asChild>
-                  <Button>+ Add Template</Button>
-                </DialogTrigger>
+          {activeTab === "templates" ? (
+            <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>+ Add Template</Button>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => setRecipeDialogOpen(true)}>+ Add Recipe</Button>
+          )}
+            <Dialog open={dialogOpen} onOpenChange={(open) => {
+              if (!open) resetForm();
+              else setDialogOpen(true);
+            }}>
                 <DialogContent className="max-w-lg">
                   <DialogHeader>
                     <DialogTitle>{editingTemplate ? "Edit Template" : "New Template"}</DialogTitle>
@@ -316,8 +311,105 @@ export function TemplatesPage() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
-            </div>
+            <Dialog
+              open={recipeDialogOpen}
+              onOpenChange={(open) => {
+                if (!open) resetRecipeForm();
+                else setRecipeDialogOpen(true);
+              }}
+            >
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingRecipe ? "Edit Recipe" : "New Recipe"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {editingRecipe
+                      ? "Update this recipe's details"
+                      : "Create a reusable AI workflow triggered with a slash command"}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Name</label>
+                    <Input
+                      placeholder="e.g., Write Brief"
+                      value={recipeName}
+                      onChange={(e) => setRecipeName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Slash Command</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">/</span>
+                      <Input
+                        placeholder="e.g., brief"
+                        value={recipeSlashCommand}
+                        onChange={(e) => {
+                          setRecipeSlashCommand(e.target.value);
+                          validateSlashCommand(e.target.value);
+                        }}
+                      />
+                    </div>
+                    {slashCommandError && (
+                      <p className="text-xs text-destructive mt-1">{slashCommandError}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Description</label>
+                    <Input
+                      placeholder="e.g., Turn a brainstorm into a structured brief"
+                      value={recipeDescription}
+                      onChange={(e) => setRecipeDescription(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Prompt Template</label>
+                    <textarea
+                      placeholder="Use variables: {{transcript}}, {{title}}, {{date}}, {{summary}}"
+                      value={recipePromptTemplate}
+                      onChange={(e) => setRecipePromptTemplate(e.target.value)}
+                      rows={6}
+                      className="w-full rounded-md border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Available variables: {"{{transcript}}"}, {"{{title}}"},{" "}
+                      {"{{date}}"}, {"{{summary}}"}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Output Format</label>
+                    <select
+                      value={recipeOutputFormat}
+                      onChange={(e) => setRecipeOutputFormat(e.target.value)}
+                      className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+                    >
+                      <option value="markdown">Markdown</option>
+                      <option value="plain">Plain Text</option>
+                      <option value="json">JSON</option>
+                    </select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={resetRecipeForm}>Cancel</Button>
+                  <MotionButton
+                    onClick={handleRecipeSubmit}
+                    disabled={
+                      !recipeName.trim() ||
+                      !recipeSlashCommand.trim() ||
+                      !recipePromptTemplate.trim() ||
+                      !!slashCommandError
+                    }
+                  >
+                    {editingRecipe ? "Save Changes" : "Create"}
+                  </MotionButton>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+        </div>
 
+        <TabsContent value="templates" className="flex-1 mt-0 overflow-auto">
+          <div className="flex flex-col gap-6 p-8">
             {loading ? (
               <p className="text-sm text-muted-foreground">Loading templates...</p>
             ) : templates.length === 0 ? (
@@ -409,127 +501,8 @@ export function TemplatesPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="recipes">
-          <div className="flex flex-col gap-6 pt-4">
-            <div className="flex justify-end">
-              <Dialog
-                open={recipeDialogOpen}
-                onOpenChange={(open) => {
-                  if (!open) resetRecipeForm();
-                  else setRecipeDialogOpen(true);
-                }}
-              >
-                <DialogTrigger asChild>
-                  <Button>+ Add Recipe</Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-lg">
-                  <DialogHeader>
-                    <DialogTitle>
-                      {editingRecipe ? "Edit Recipe" : "New Recipe"}
-                    </DialogTitle>
-                    <DialogDescription>
-                      {editingRecipe
-                        ? "Update this recipe's details"
-                        : "Create a reusable AI workflow triggered with a slash command"}
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        Name
-                      </label>
-                      <Input
-                        placeholder="e.g., Write Brief"
-                        value={recipeName}
-                        onChange={(e) => setRecipeName(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        Slash Command
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">/</span>
-                        <Input
-                          placeholder="e.g., brief"
-                          value={recipeSlashCommand}
-                          onChange={(e) => {
-                            setRecipeSlashCommand(e.target.value);
-                            validateSlashCommand(e.target.value);
-                          }}
-                        />
-                      </div>
-                      {slashCommandError && (
-                        <p className="text-xs text-destructive mt-1">
-                          {slashCommandError}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        Description
-                      </label>
-                      <Input
-                        placeholder="e.g., Turn a brainstorm into a structured brief"
-                        value={recipeDescription}
-                        onChange={(e) => setRecipeDescription(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        Prompt Template
-                      </label>
-                      <textarea
-                        placeholder="Use variables: {{transcript}}, {{title}}, {{date}}, {{summary}}"
-                        value={recipePromptTemplate}
-                        onChange={(e) =>
-                          setRecipePromptTemplate(e.target.value)
-                        }
-                        rows={6}
-                        className="w-full rounded-md border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Available variables: {"{{transcript}}"}, {"{{title}}"},{" "}
-                        {"{{date}}"}, {"{{summary}}"}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        Output Format
-                      </label>
-                      <select
-                        value={recipeOutputFormat}
-                        onChange={(e) =>
-                          setRecipeOutputFormat(e.target.value)
-                        }
-                        className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-                      >
-                        <option value="markdown">Markdown</option>
-                        <option value="plain">Plain Text</option>
-                        <option value="json">JSON</option>
-                      </select>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={resetRecipeForm}>
-                      Cancel
-                    </Button>
-                    <MotionButton
-                      onClick={handleRecipeSubmit}
-                      disabled={
-                        !recipeName.trim() ||
-                        !recipeSlashCommand.trim() ||
-                        !recipePromptTemplate.trim() ||
-                        !!slashCommandError
-                      }
-                    >
-                      {editingRecipe ? "Save Changes" : "Create"}
-                    </MotionButton>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-
+        <TabsContent value="recipes" className="flex-1 mt-0 overflow-auto">
+          <div className="flex flex-col gap-6 p-8">
             {recipesLoading ? (
               <p className="text-sm text-muted-foreground">
                 Loading recipes...

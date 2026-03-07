@@ -10,8 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { Markdown } from "@/components/Markdown";
 import { useGlobalChat } from "@/hooks/useGlobalChat";
 import { useCategories } from "@/hooks/useCategories";
-import { useLLM } from "@/hooks/useLLM";
-import { useLLMSelection } from "@/hooks/useLLMSelection";
+import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import {
   X,
   MessageSquare,
@@ -39,8 +38,7 @@ export function GlobalChatPanel() {
     embedAllMeetings,
   } = useGlobalChat();
   const { categories } = useCategories();
-  const { models, providers } = useLLM();
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const navigate = useNavigate();
   const location = useLocation();
   const onChatPage = location.pathname === "/chat";
@@ -314,34 +312,6 @@ export function GlobalChatPanel() {
             </ScrollArea>
 
             <Separator />
-
-            {/* Provider/Model selector */}
-            <div className="flex items-center gap-2 px-4 py-2 border-b">
-              <select
-                value={selectedProvider}
-                onChange={(e) => changeProvider(e.target.value)}
-                className="h-7 flex-1 rounded-md border bg-transparent px-2 text-xs"
-              >
-                <option value="">Provider</option>
-                {providers.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="h-7 flex-1 rounded-md border bg-transparent px-2 text-xs"
-              >
-                <option value="">Model</option>
-                {filteredModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
 
             {/* Input */}
             <div className="flex items-center gap-2 p-3">

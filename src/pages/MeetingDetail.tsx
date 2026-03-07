@@ -16,14 +16,13 @@ import { useTranscript } from "@/hooks/useTranscripts";
 import { useSummaries } from "@/hooks/useSummaries";
 import { useInsights } from "@/hooks/useInsights";
 import { useTemplates } from "@/hooks/useTemplates";
-import { useLLM } from "@/hooks/useLLM";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import { formatMs, formatDate, statusLabel } from "@/lib/utils";
-import { useLLMSelection } from "@/hooks/useLLMSelection";
+import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useTags } from "@/hooks/useTags";
 import { useScratchPad } from "@/hooks/useScratchPad";
-import type { LinearTicket, LinearTeam, LinearProject, ModelInfo, InsightWithActionItem, Tag } from "@/types";
+import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Tag } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
@@ -230,12 +229,8 @@ function InsightSection({
 
 function InsightsPanel({
   meetingId,
-  providers,
-  models,
 }: {
   meetingId: string;
-  providers: string[];
-  models: ModelInfo[];
 }) {
   const {
     insights,
@@ -249,7 +244,7 @@ function InsightsPanel({
     updateActionItem,
   } = useInsights(meetingId);
 
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel, providers } = useGlobalLLMSelection();
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
 
@@ -290,28 +285,7 @@ function InsightsPanel({
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
-      {/* Toolbar — always visible at top */}
       <div className="flex items-center gap-2 border-b px-5 py-2 flex-wrap">
-        <select
-          value={selectedProvider}
-          onChange={(e) => changeProvider(e.target.value)}
-          className="h-7 rounded-md border bg-transparent px-2 text-xs"
-        >
-          <option value="">Provider</option>
-          {providers.map((p) => (
-            <option key={p} value={p}>{p}</option>
-          ))}
-        </select>
-        <select
-          value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value)}
-          className="h-7 rounded-md border bg-transparent px-2 text-xs"
-        >
-          <option value="">Model</option>
-          {filteredModels.map((m) => (
-            <option key={m.id} value={m.id}>{m.name}</option>
-          ))}
-        </select>
         <Button
           size="sm"
           variant="ghost"
@@ -395,8 +369,6 @@ function CreateTicketButton({
   projects,
   defaultTeamId,
   defaultProjectId,
-  providers,
-  models,
   onFetchTeams,
   onTeamChange,
   onCreate,
@@ -407,8 +379,6 @@ function CreateTicketButton({
   projects: LinearProject[];
   defaultTeamId: string | null;
   defaultProjectId: string | null;
-  providers: string[];
-  models: ModelInfo[];
   onFetchTeams: () => void;
   onTeamChange: (teamId: string | null) => void;
   onCreate: (
@@ -422,7 +392,7 @@ function CreateTicketButton({
   const [open, setOpen] = useState(false);
   const [teamId, setTeamId] = useState(defaultTeamId ?? "");
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -517,27 +487,6 @@ function CreateTicketButton({
               </option>
             ))}
           </select>
-          <div className="flex gap-2">
-            <select
-              value={selectedProvider}
-              onChange={(e) => changeProvider(e.target.value)}
-              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              {providers.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="h-8 flex-1 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Model</option>
-              {filteredModels.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </div>
           {error && (
             <p className="text-xs text-destructive">{error}</p>
           )}
@@ -568,18 +517,14 @@ function NotesPanel({
   meetingId,
   rawNotes,
   enrichedNotes,
-  providers,
-  models,
   onRefresh,
 }: {
   meetingId: string;
   rawNotes: string | null;
   enrichedNotes: string | null;
-  providers: string[];
-  models: ModelInfo[];
   onRefresh: () => void;
 }) {
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [enriching, setEnriching] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"original" | "enriched">("enriched");
@@ -634,26 +579,6 @@ function NotesPanel({
       <div className="flex items-center gap-2 border-b px-5 py-2">
         {!hasEnriched && (
           <>
-            <select
-              value={selectedProvider}
-              onChange={(e) => changeProvider(e.target.value)}
-              className="h-7 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Provider</option>
-              {providers.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="h-7 rounded-md border bg-transparent px-2 text-xs"
-            >
-              <option value="">Model</option>
-              {filteredModels.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
             <Button
               size="sm"
               variant="ghost"
@@ -734,7 +659,6 @@ export function MeetingDetail() {
   const { segments, loading: transcriptLoading } = useTranscript(id!);
   const { summaries, generateSummary } = useSummaries(id!);
   const { templates } = useTemplates();
-  const { models, providers } = useLLM();
   const { storedProviders: storedApiProviders } = useApiKeys();
   const { tags: allTags, getMeetingTags, addMeetingTag, removeMeetingTag, createTag } = useTags();
   const { notes: scratchNotes } = useScratchPad(id ?? null);
@@ -753,9 +677,38 @@ export function MeetingDetail() {
   const [generating, setGenerating] = useState(false);
   const [justGenerated, setJustGenerated] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState("");
-  const { selectedProvider, selectedModel, setSelectedModel, changeProvider, filteredModels } = useLLMSelection(providers, models);
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [compactTranscript, setCompactTranscript] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(true);
+  const [transcriptWidth, setTranscriptWidth] = useState(50);
+  const resizingRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const preventSelect = (e: Event) => {
+      if (resizingRef.current) e.preventDefault();
+    };
+    const onMouseMove = (e: MouseEvent) => {
+      if (!resizingRef.current || !containerRef.current) return;
+      e.preventDefault();
+      const rect = containerRef.current.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      setTranscriptWidth(Math.min(70, Math.max(20, pct)));
+    };
+    const onMouseUp = () => {
+      resizingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("selectstart", preventSelect);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("selectstart", preventSelect);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
 
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const audioRef = useCallback((node: HTMLAudioElement | null) => {
@@ -1015,14 +968,10 @@ export function MeetingDetail() {
         </div>
       </div>
 
-      {/* Main content + chat drawer */}
-      <div className="flex flex-1 overflow-hidden">
       {/* Two-column layout */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex flex-1 overflow-hidden">
-        {/* Transcript - collapsible left column */}
-        {!transcriptCollapsed && (
-          <div className="flex w-1/2 max-w-[50%] flex-col border-r">
+      <div ref={containerRef} className="flex flex-1 overflow-hidden">
+        {!transcriptCollapsed && (<>
+          <div className="flex flex-col" style={{ width: `${transcriptWidth}%` }}>
             <div className="flex items-center justify-between px-8 border-b h-12">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                 Transcript
@@ -1074,10 +1023,17 @@ export function MeetingDetail() {
               </div>
             </ScrollArea>
           </div>
-        )}
+          <div
+            className="w-1.5 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors border-r"
+            onMouseDown={() => {
+              resizingRef.current = true;
+              document.body.style.cursor = "col-resize";
+              document.body.style.userSelect = "none";
+            }}
+          />
+        </>)}
 
-        {/* Right column - Summaries, Insights & Notes */}
-        <div className={`flex flex-col min-w-0 ${transcriptCollapsed ? "flex-1" : "w-96"}`}>
+        <div className={`flex flex-col min-w-0 ${transcriptCollapsed ? "flex-1" : "flex-1"}`}>
           <Tabs defaultValue="notes" className="flex flex-1 flex-col">
             <div className="px-4 border-b flex items-center h-12 gap-2">
               <Button
@@ -1102,8 +1058,6 @@ export function MeetingDetail() {
                 meetingId={id!}
                 rawNotes={meeting.raw_notes}
                 enrichedNotes={meeting.enriched_notes}
-                providers={providers}
-                models={models}
                 onRefresh={refreshMeeting}
               />
             </TabsContent>
@@ -1136,7 +1090,6 @@ export function MeetingDetail() {
               </TabsContent>
             )}
             <TabsContent value="summaries" className="flex flex-1 flex-col mt-0">
-              {/* Compact generate toolbar */}
               <div className="flex items-center gap-2 border-b px-5 py-2 flex-wrap">
                 <select
                   value={selectedTemplate}
@@ -1146,26 +1099,6 @@ export function MeetingDetail() {
                   <option value="">Template</option>
                   {templates.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-                <select
-                  value={selectedProvider}
-                  onChange={(e) => changeProvider(e.target.value)}
-                  className="h-7 rounded-md border bg-transparent px-2 text-xs"
-                >
-                  <option value="">Provider</option>
-                  {providers.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="h-7 rounded-md border bg-transparent px-2 text-xs"
-                >
-                  <option value="">Model</option>
-                  {filteredModels.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
                 <div className="relative">
@@ -1220,8 +1153,6 @@ export function MeetingDetail() {
                                 projects={linearProjects}
                                 defaultTeamId={defaultTeamId}
                                 defaultProjectId={defaultProjectId}
-                                providers={providers}
-                                models={models}
                                 onFetchTeams={fetchTeams}
                                 onTeamChange={setLinearTeamId}
                                 onCreate={createTicket}
@@ -1239,10 +1170,10 @@ export function MeetingDetail() {
               </ScrollArea>
             </TabsContent>
             <TabsContent value="insights" className="flex flex-1 flex-col mt-0">
-              <InsightsPanel meetingId={id!} providers={providers} models={models} />
+              <InsightsPanel meetingId={id!} />
             </TabsContent>
             <TabsContent value="analytics" className="flex flex-1 flex-col mt-0">
-              <AnalyticsPanel meetingId={id!} providers={providers} models={models} />
+              <AnalyticsPanel meetingId={id!} />
             </TabsContent>
             <TabsContent value="workflows" className="flex flex-1 flex-col mt-0">
               <ScrollArea className="flex-1">
@@ -1319,17 +1250,12 @@ export function MeetingDetail() {
         {!audioSrc && !audioLoading && meeting?.audio_path && (
           <p className="text-xs text-muted-foreground mt-1">Audio file not found</p>
         )}
+        <ChatPanel
+          meetingId={id!}
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+        />
       </div>
-
-      </div>{/* end two-column + audio wrapper */}
-
-      {/* Chat panel - inline drawer */}
-      <ChatPanel
-        meetingId={id!}
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-      />
-      </div>{/* end main content + chat drawer */}
     </motion.div>
   );
 }
