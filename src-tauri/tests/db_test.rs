@@ -1,5 +1,5 @@
 use nootle_app_lib::db::{
-    Database, NewCategory, NewLinearTicket, NewMeeting, NewRecipe, NewSummary, NewTemplate,
+    Database, NewLinearTicket, NewMeeting, NewRecipe, NewSummary, NewTemplate,
     NewTranscriptSegment, UpdateTemplate,
 };
 
@@ -10,7 +10,7 @@ fn test_database_initializes_tables() {
     assert!(tables.contains(&"meetings".to_string()));
     assert!(tables.contains(&"transcripts".to_string()));
     assert!(tables.contains(&"summaries".to_string()));
-    assert!(tables.contains(&"categories".to_string()));
+    assert!(tables.contains(&"labels".to_string()));
     assert!(tables.contains(&"templates".to_string()));
     assert!(tables.contains(&"recipes".to_string()));
 }
@@ -21,7 +21,6 @@ fn test_create_and_get_meeting() {
     let meeting = db
         .create_meeting(NewMeeting {
             title: "Daily Standup".to_string(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
@@ -39,20 +38,18 @@ fn test_list_meetings() {
     let db = Database::new_in_memory().unwrap();
     db.create_meeting(NewMeeting {
         title: "Meeting 1".to_string(),
-        category_id: None,
         calendar_event_id: None,
         template_id: None,
     })
     .unwrap();
     db.create_meeting(NewMeeting {
         title: "Meeting 2".to_string(),
-        category_id: None,
         calendar_event_id: None,
         template_id: None,
     })
     .unwrap();
 
-    let meetings = db.list_meetings(None, None, false).unwrap();
+    let meetings = db.list_meetings(None, false).unwrap();
     assert_eq!(meetings.len(), 2);
 }
 
@@ -62,7 +59,6 @@ fn test_update_meeting_status() {
     let meeting = db
         .create_meeting(NewMeeting {
             title: "Test".to_string(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
@@ -79,7 +75,6 @@ fn test_finalize_meeting() {
     let meeting = db
         .create_meeting(NewMeeting {
             title: "Finalize Test".to_string(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
@@ -108,7 +103,6 @@ fn test_delete_meeting() {
     let meeting = db
         .create_meeting(NewMeeting {
             title: "To Delete".to_string(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
@@ -120,23 +114,14 @@ fn test_delete_meeting() {
 }
 
 #[test]
-fn test_create_and_list_categories() {
+fn test_create_and_list_labels() {
     let db = Database::new_in_memory().unwrap();
-    db.create_category(NewCategory {
-        name: "Standup".into(),
-        color: Some("#22c55e".into()),
-        icon: Some("\u{1F7E2}".into()),
-    })
-    .unwrap();
-    db.create_category(NewCategory {
-        name: "1:1".into(),
-        color: None,
-        icon: None,
-    })
-    .unwrap();
-    let cats = db.list_categories().unwrap();
-    assert_eq!(cats.len(), 2);
-    assert_eq!(cats[0].name, "1:1"); // alphabetical
+    db.create_label("Standup", "#22c55e", Some("\u{1F7E2}"))
+        .unwrap();
+    db.create_label("1:1", "#3B82F6", None).unwrap();
+    let labels = db.list_labels().unwrap();
+    assert_eq!(labels.len(), 2);
+    assert_eq!(labels[0].name, "1:1"); // alphabetical
 }
 
 #[test]
@@ -145,7 +130,6 @@ fn test_transcript_segments() {
     let meeting = db
         .create_meeting(NewMeeting {
             title: "Test".into(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
@@ -179,7 +163,6 @@ fn test_summaries() {
     let meeting = db
         .create_meeting(NewMeeting {
             title: "Test".into(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
@@ -203,7 +186,6 @@ fn test_create_and_list_linear_tickets() {
     let meeting = db
         .create_meeting(NewMeeting {
             title: "Linear Sync".into(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
@@ -248,7 +230,6 @@ fn test_search_transcripts() {
     let m1 = db
         .create_meeting(NewMeeting {
             title: "Sprint Review".into(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
@@ -289,7 +270,6 @@ fn test_templates_crud() {
         .create_template(NewTemplate {
             name: "Standup".into(),
             description: "Quick daily sync".into(),
-            category_id: None,
             sections: r#"["Blockers","Updates"]"#.into(),
             auto_apply_rules: "{}".into(),
             prompt: "Summarize the standup.".into(),
@@ -310,7 +290,6 @@ fn test_templates_crud() {
             id: custom.id.clone(),
             name: "Daily Sync".to_string(),
             description: "Updated description".to_string(),
-            category_id: None,
             sections: r#"["Blockers","Updates","Next Steps"]"#.to_string(),
             auto_apply_rules: "{}".to_string(),
             prompt: "Updated prompt.".to_string(),
@@ -355,7 +334,6 @@ fn test_meeting_with_template_id() {
     let meeting = db
         .create_meeting(NewMeeting {
             title: "Templated Meeting".into(),
-            category_id: None,
             calendar_event_id: None,
             template_id: Some(template_id.clone()),
         })
@@ -367,66 +345,64 @@ fn test_meeting_with_template_id() {
 }
 
 #[test]
-fn test_create_and_list_tags() {
+fn test_create_and_list_labels_via_crud() {
     let db = Database::new_in_memory().unwrap();
-    let tag = db.create_tag("Engineering", "#4EEABB").unwrap();
-    assert_eq!(tag.name, "Engineering");
-    assert_eq!(tag.color, "#4EEABB");
-    let tags = db.list_tags().unwrap();
-    assert_eq!(tags.len(), 1);
+    let label = db.create_label("Engineering", "#4EEABB", None).unwrap();
+    assert_eq!(label.name, "Engineering");
+    assert_eq!(label.color, "#4EEABB");
+    let labels = db.list_labels().unwrap();
+    assert_eq!(labels.len(), 1);
 }
 
 #[test]
-fn test_update_tag() {
+fn test_update_label() {
     let db = Database::new_in_memory().unwrap();
-    let tag = db.create_tag("Engineering", "#4EEABB").unwrap();
-    let updated = db.update_tag(&tag.id, "Eng", "#C084FC").unwrap();
+    let label = db.create_label("Engineering", "#4EEABB", None).unwrap();
+    let updated = db.update_label(&label.id, "Eng", "#C084FC", None).unwrap();
     assert_eq!(updated.name, "Eng");
     assert_eq!(updated.color, "#C084FC");
 }
 
 #[test]
-fn test_delete_tag() {
+fn test_delete_label() {
     let db = Database::new_in_memory().unwrap();
-    let tag = db.create_tag("Engineering", "#4EEABB").unwrap();
-    db.delete_tag(&tag.id).unwrap();
-    let tags = db.list_tags().unwrap();
-    assert_eq!(tags.len(), 0);
+    let label = db.create_label("Engineering", "#4EEABB", None).unwrap();
+    db.delete_label(&label.id).unwrap();
+    let labels = db.list_labels().unwrap();
+    assert_eq!(labels.len(), 0);
 }
 
 #[test]
-fn test_meeting_tags() {
+fn test_meeting_labels() {
     let db = Database::new_in_memory().unwrap();
     let meeting = db
         .create_meeting(NewMeeting {
             title: "Test".into(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
         .unwrap();
-    let tag1 = db.create_tag("Engineering", "#4EEABB").unwrap();
-    let tag2 = db.create_tag("Sprint 42", "#C084FC").unwrap();
+    let label1 = db.create_label("Engineering", "#4EEABB", None).unwrap();
+    let label2 = db.create_label("Sprint 42", "#C084FC", None).unwrap();
 
-    db.add_meeting_tag(&meeting.id, &tag1.id).unwrap();
-    db.add_meeting_tag(&meeting.id, &tag2.id).unwrap();
+    db.add_meeting_label(&meeting.id, &label1.id).unwrap();
+    db.add_meeting_label(&meeting.id, &label2.id).unwrap();
 
-    let tags = db.get_meeting_tags(&meeting.id).unwrap();
-    assert_eq!(tags.len(), 2);
+    let labels = db.get_meeting_labels(&meeting.id).unwrap();
+    assert_eq!(labels.len(), 2);
 
-    db.remove_meeting_tag(&meeting.id, &tag1.id).unwrap();
-    let tags = db.get_meeting_tags(&meeting.id).unwrap();
-    assert_eq!(tags.len(), 1);
-    assert_eq!(tags[0].name, "Sprint 42");
+    db.remove_meeting_label(&meeting.id, &label1.id).unwrap();
+    let labels = db.get_meeting_labels(&meeting.id).unwrap();
+    assert_eq!(labels.len(), 1);
+    assert_eq!(labels[0].name, "Sprint 42");
 }
 
 #[test]
-fn test_get_all_meeting_tags() {
+fn test_get_all_meeting_labels() {
     let db = Database::new_in_memory().unwrap();
     let m1 = db
         .create_meeting(NewMeeting {
             title: "Meeting 1".into(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
@@ -434,16 +410,15 @@ fn test_get_all_meeting_tags() {
     let m2 = db
         .create_meeting(NewMeeting {
             title: "Meeting 2".into(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
         .unwrap();
-    let tag = db.create_tag("Shared", "#3B82F6").unwrap();
-    db.add_meeting_tag(&m1.id, &tag.id).unwrap();
-    db.add_meeting_tag(&m2.id, &tag.id).unwrap();
+    let label = db.create_label("Shared", "#3B82F6", None).unwrap();
+    db.add_meeting_label(&m1.id, &label.id).unwrap();
+    db.add_meeting_label(&m2.id, &label.id).unwrap();
 
-    let all = db.get_all_meeting_tags().unwrap();
+    let all = db.get_all_meeting_labels().unwrap();
     assert_eq!(all.len(), 2);
 }
 
@@ -453,7 +428,6 @@ fn test_scratch_notes() {
     let meeting = db
         .create_meeting(NewMeeting {
             title: "Test".into(),
-            category_id: None,
             calendar_event_id: None,
             template_id: None,
         })
