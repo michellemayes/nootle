@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Make meeting detail content scrollable with sticky player (#67) ([2520a21](https://github.com/michellemayes/nootle/commit/2520a21c52f65cec2fcdbe4e258db73523428d6d))
 - Add vertical padding to tab bar containers (#68) ([a2f302d](https://github.com/michellemayes/nootle/commit/a2f302dcd76372ac20aa1e041d402e8b3db83e9c))
 - Restore Ask Nootle as side drawer instead of inline panel (#69) ([b924723](https://github.com/michellemayes/nootle/commit/b92472324307932971a315904d1311905eee0dd0))
 - Reset release-please manifest version to 0.0.0 (#66) ([9aef94a](https://github.com/michellemayes/nootle/commit/9aef94a1f8f47513c516ecdbffcb0ce9ffa110d8))
