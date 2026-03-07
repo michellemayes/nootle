@@ -3,7 +3,6 @@ export interface Meeting {
   title: string;
   start_time: string;
   end_time: string | null;
-  category_id: string | null;
   audio_path: string | null;
   status: "recording" | "transcribing" | "summarized" | "archived" | "idle";
   calendar_event_id: string | null;
@@ -24,31 +23,23 @@ export interface TranscriptSegment {
   confidence: number;
 }
 
-export interface Category {
+export interface Label {
   id: string;
   name: string;
   color: string;
-  icon: string;
+  icon: string | null;
   created_at: string;
 }
 
-export interface Tag {
-  id: string;
-  name: string;
-  color: string;
-  created_at: string;
-}
-
-export interface MeetingTagEntry {
+export interface MeetingLabelEntry {
   meeting_id: string;
-  tag: Tag;
+  label: Label;
 }
 
 export interface Template {
   id: string;
   name: string;
   description: string;
-  category_id: string | null;
   sections: string;
   auto_apply_rules: string;
   prompt: string;

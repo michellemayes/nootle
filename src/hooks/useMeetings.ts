@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Meeting } from "@/types";
 
-export function useMeetings(categoryId?: string, search?: string, includeArchived?: boolean) {
+export function useMeetings(search?: string, includeArchived?: boolean) {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -12,7 +12,6 @@ export function useMeetings(categoryId?: string, search?: string, includeArchive
       setLoading(true);
       setError(null);
       const result = await invoke<Meeting[]>("list_meetings", {
-        categoryId: categoryId ?? null,
         search: search ?? null,
         includeArchived: includeArchived ?? false,
       });
@@ -22,7 +21,7 @@ export function useMeetings(categoryId?: string, search?: string, includeArchive
     } finally {
       setLoading(false);
     }
-  }, [categoryId, search, includeArchived]);
+  }, [search, includeArchived]);
 
   useEffect(() => {
     refresh();
@@ -75,9 +74,3 @@ export async function updateMeetingTitle(
   await invoke("update_meeting_title", { id, title });
 }
 
-export async function updateMeetingCategory(
-  id: string,
-  categoryId: string | null,
-): Promise<void> {
-  await invoke("update_meeting_category", { id, categoryId });
-}

@@ -41,12 +41,11 @@ export function useRecording() {
   }, [isRecording]);
 
   const startRecording = useCallback(
-    async (title: string, categoryId?: string, calendarEventId?: string, templateId?: string) => {
+    async (title: string, calendarEventId?: string, templateId?: string) => {
       setError(null);
       try {
         const meeting = await invoke<Meeting>("start_recording", {
           title,
-          categoryId: categoryId ?? null,
           calendarEventId: calendarEventId ?? null,
           templateId: templateId ?? null,
         });
