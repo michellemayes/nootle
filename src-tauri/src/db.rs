@@ -10,7 +10,6 @@ pub struct Meeting {
     pub title: String,
     pub start_time: String,
     pub end_time: Option<String>,
-    pub category_id: Option<String>,
     pub audio_path: Option<String>,
     pub status: String,
     pub calendar_event_id: Option<String>,
@@ -24,7 +23,6 @@ pub struct Meeting {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewMeeting {
     pub title: String,
-    pub category_id: Option<String>,
     pub calendar_event_id: Option<String>,
     pub template_id: Option<String>,
 }
@@ -51,26 +49,11 @@ pub struct NewTranscriptSegment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Category {
+pub struct Label {
     pub id: String,
     pub name: String,
     pub color: String,
-    pub icon: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NewCategory {
-    pub name: String,
-    pub color: Option<String>,
     pub icon: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Tag {
-    pub id: String,
-    pub name: String,
-    pub color: String,
     pub created_at: String,
 }
 
@@ -79,7 +62,6 @@ pub struct Template {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub category_id: Option<String>,
     pub sections: String,
     pub auto_apply_rules: String,
     pub prompt: String,
@@ -93,7 +75,6 @@ pub struct Template {
 pub struct NewTemplate {
     pub name: String,
     pub description: String,
-    pub category_id: Option<String>,
     pub sections: String,
     pub auto_apply_rules: String,
     pub prompt: String,
@@ -107,7 +88,6 @@ pub struct UpdateTemplate {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub category_id: Option<String>,
     pub sections: String,
     pub auto_apply_rules: String,
     pub prompt: String,
@@ -452,12 +432,18 @@ impl Database {
         let conn = self.lock_conn()?;
         conn.execute_batch(
             "
-            CREATE TABLE IF NOT EXISTS categories (
+            CREATE TABLE IF NOT EXISTS labels (
                 id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
+                name TEXT NOT NULL UNIQUE,
                 color TEXT NOT NULL DEFAULT '#6366f1',
-                icon TEXT NOT NULL DEFAULT '📋',
+                icon TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS meeting_labels (
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                label_id TEXT NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+                PRIMARY KEY (meeting_id, label_id)
             );
 
             CREATE TABLE IF NOT EXISTS meetings (
@@ -465,7 +451,6 @@ impl Database {
                 title TEXT NOT NULL,
                 start_time TEXT NOT NULL,
                 end_time TEXT,
-                category_id TEXT REFERENCES categories(id),
                 audio_path TEXT,
                 status TEXT NOT NULL DEFAULT 'recording',
                 calendar_event_id TEXT,
@@ -519,7 +504,6 @@ impl Database {
             CREATE TABLE IF NOT EXISTS templates (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
-                category_id TEXT REFERENCES categories(id),
                 sections TEXT NOT NULL DEFAULT '[]',
                 auto_apply_rules TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -675,19 +659,6 @@ impl Database {
                 back_and_forth_ratio REAL NOT NULL DEFAULT 0.0
             );
 
-            CREATE TABLE IF NOT EXISTS tags (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                color TEXT NOT NULL DEFAULT '#6366f1',
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS meeting_tags (
-                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-                tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-                PRIMARY KEY (meeting_id, tag_id)
-            );
-
             CREATE TABLE IF NOT EXISTS scratch_notes (
                 id TEXT PRIMARY KEY,
                 meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
@@ -756,6 +727,88 @@ impl Database {
         );
 
         Self::seed_builtin_templates(&conn)?;
+
+        // Migration: tags+categories → labels
+        let has_labels: bool = conn
+            .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='labels'")
+            .and_then(|mut s| s.exists([]))
+            .unwrap_or(false);
+
+        if !has_labels {
+            conn.execute_batch("
+                -- Create labels table
+                CREATE TABLE labels (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    color TEXT NOT NULL DEFAULT '#6366f1',
+                    icon TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+
+                CREATE TABLE meeting_labels (
+                    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                    label_id TEXT NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+                    PRIMARY KEY (meeting_id, label_id)
+                );
+
+                -- Migrate tags → labels
+                INSERT OR IGNORE INTO labels (id, name, color, created_at)
+                    SELECT id, name, color, created_at FROM tags;
+
+                -- Migrate categories → labels (with icon)
+                INSERT OR IGNORE INTO labels (id, name, color, icon, created_at)
+                    SELECT id, name, color, icon, created_at FROM categories;
+
+                -- Migrate meeting_tags → meeting_labels
+                INSERT OR IGNORE INTO meeting_labels (meeting_id, label_id)
+                    SELECT meeting_id, tag_id FROM meeting_tags;
+
+                -- Migrate category_id assignments → meeting_labels
+                INSERT OR IGNORE INTO meeting_labels (meeting_id, label_id)
+                    SELECT id, category_id FROM meetings WHERE category_id IS NOT NULL;
+
+                -- Recreate meetings without category_id
+                CREATE TABLE meetings_new (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    start_time TEXT NOT NULL,
+                    end_time TEXT,
+                    audio_path TEXT,
+                    status TEXT NOT NULL DEFAULT 'recording',
+                    calendar_event_id TEXT,
+                    raw_notes TEXT,
+                    enriched_notes TEXT,
+                    template_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                INSERT INTO meetings_new SELECT id, title, start_time, end_time, audio_path, status, calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at FROM meetings;
+                DROP TABLE meetings;
+                ALTER TABLE meetings_new RENAME TO meetings;
+
+                -- Recreate templates without category_id
+                CREATE TABLE templates_new (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    sections TEXT NOT NULL DEFAULT '[]',
+                    auto_apply_rules TEXT NOT NULL DEFAULT '{}',
+                    prompt TEXT NOT NULL DEFAULT '',
+                    is_builtin INTEGER NOT NULL DEFAULT 0,
+                    is_favorite INTEGER NOT NULL DEFAULT 0,
+                    is_auto_run INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                INSERT INTO templates_new SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at FROM templates;
+                DROP TABLE templates;
+                ALTER TABLE templates_new RENAME TO templates;
+
+                -- Drop old tables
+                DROP TABLE IF EXISTS meeting_tags;
+                DROP TABLE IF EXISTS tags;
+                DROP TABLE IF EXISTS categories;
+            ")?;
+        }
 
         Self::seed_builtin_recipes(&conn)?;
 
