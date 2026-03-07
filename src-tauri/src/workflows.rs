@@ -462,14 +462,20 @@ async fn execute_asana(
 }
 
 fn sanitize_filename(name: &str) -> String {
-    name.chars()
+    let sanitized: String = name
+        .chars()
         .map(|c| match c {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
             _ => c,
         })
         .collect::<String>()
         .trim()
-        .to_string()
+        .to_string();
+    if sanitized.is_empty() || sanitized == "." || sanitized == ".." {
+        "untitled".to_string()
+    } else {
+        sanitized
+    }
 }
 
 async fn execute_obsidian(
@@ -520,9 +526,21 @@ async fn execute_obsidian(
     } else {
         std::path::PathBuf::from(vault_path).join(subfolder)
     };
+
+    // Ensure subfolder doesn't escape vault path via ../ traversal
+    let vault_canonical = std::fs::canonicalize(vault_path)
+        .map_err(|e| format!("Invalid vault path {}: {e}", vault_path))?;
     tokio::fs::create_dir_all(&dir_path)
         .await
-        .map_err(|e| format!("Failed to create directory: {e}"))?;
+        .map_err(|e| format!("Failed to create directory {}: {e}", dir_path.display()))?;
+    let dir_canonical = std::fs::canonicalize(&dir_path)
+        .map_err(|e| format!("Failed to resolve directory {}: {e}", dir_path.display()))?;
+    if !dir_canonical.starts_with(&vault_canonical) {
+        return Err(format!(
+            "Subfolder '{}' escapes vault path '{}'",
+            subfolder, vault_path
+        ));
+    }
 
     // Deduplicate filename if file already exists
     let mut file_path = dir_path.join(format!("{filename}.md"));
