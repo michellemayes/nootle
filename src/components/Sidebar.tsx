@@ -69,7 +69,7 @@ export function Sidebar() {
       transition={{ duration: 0.4, ease: "easeInOut" }}
     >
       {/* Logo */}
-      <div className="flex items-center gap-2 px-5 pt-6 pb-4 [-webkit-app-region:drag]">
+      <div className="flex items-center gap-2 px-5 pt-10 pb-4 [-webkit-app-region:drag]">
         <motion.div
           className="cursor-pointer [-webkit-app-region:no-drag]"
           whileHover={{ rotate: [0, -3, 3, 0] }}
