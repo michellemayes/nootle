@@ -2190,7 +2190,7 @@ impl Database {
         &self,
         query_embedding: &[f32],
         limit: usize,
-        category_ids: &[String],
+        label_ids: &[String],
         date_from: Option<&str>,
         date_to: Option<&str>,
     ) -> Result<Vec<ChunkSearchResult>> {
@@ -2211,25 +2211,25 @@ impl Database {
         param_values.push(Box::new(query_bytes));
         // Over-fetch 4x when filters are active so post-filter still yields enough results.
         // With strict filters on a small dataset, the caller may receive fewer than `limit` rows.
-        let k = if category_ids.is_empty() && date_from.is_none() && date_to.is_none() {
+        let k = if label_ids.is_empty() && date_from.is_none() && date_to.is_none() {
             limit as i64
         } else {
             (limit as i64) * 4
         };
         param_values.push(Box::new(k));
 
-        if !category_ids.is_empty() {
-            let placeholders: Vec<String> = category_ids
+        if !label_ids.is_empty() {
+            let placeholders: Vec<String> = label_ids
                 .iter()
                 .enumerate()
                 .map(|(i, _)| format!("?{}", param_values.len() + i + 1))
                 .collect();
             sql.push_str(&format!(
-                " AND m.category_id IN ({})",
+                " AND m.id IN (SELECT meeting_id FROM meeting_labels WHERE label_id IN ({}))",
                 placeholders.join(", ")
             ));
-            for cat_id in category_ids {
-                param_values.push(Box::new(cat_id.clone()));
+            for label_id in label_ids {
+                param_values.push(Box::new(label_id.clone()));
             }
         }
 

@@ -82,7 +82,7 @@ export function ChatPage() {
         message: msg,
         provider: selectedProvider,
         model: selectedModel,
-        categoryIds: selectedLabel ? [selectedLabel] : [],
+        labelIds: selectedLabel ? [selectedLabel] : [],
         dateFrom: getDateFrom(),
         dateTo: getDateTo(),
       });

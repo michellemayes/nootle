@@ -1338,7 +1338,7 @@ async fn rag_chat(
     history: Vec<ChatMessage>,
     provider: &str,
     model: &str,
-    category_ids: &[String],
+    label_ids: &[String],
     date_from: Option<&str>,
     date_to: Option<&str>,
 ) -> Result<(String, Vec<serde_json::Value>), String> {
@@ -1353,7 +1353,7 @@ async fn rag_chat(
     drop(engine_lock);
 
     let results = db
-        .search_similar_chunks(&query_embedding, 10, category_ids, date_from, date_to)
+        .search_similar_chunks(&query_embedding, 10, label_ids, date_from, date_to)
         .map_err(|e| e.to_string())?;
 
     if results.is_empty() {
@@ -1674,7 +1674,7 @@ pub async fn send_chat_message(
     message: String,
     provider: String,
     model: String,
-    category_ids: Vec<String>,
+    label_ids: Vec<String>,
     date_from: Option<String>,
     date_to: Option<String>,
 ) -> Result<serde_json::Value, String> {
@@ -1706,7 +1706,7 @@ pub async fn send_chat_message(
         history,
         &provider,
         &model,
-        &category_ids,
+        &label_ids,
         date_from.as_deref(),
         date_to.as_deref(),
     )
