@@ -875,7 +875,7 @@ export function MeetingDetail() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex flex-1 flex-col min-h-0 overflow-hidden"
+      className="flex flex-1 min-h-0 overflow-hidden"
     >
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
@@ -971,7 +971,7 @@ export function MeetingDetail() {
       {/* Two-column layout */}
       <div ref={containerRef} className="flex flex-1 min-h-0 overflow-hidden">
         {!transcriptCollapsed && (<>
-          <div className="flex flex-col" style={{ width: `${transcriptWidth}%` }}>
+          <div className="flex flex-col overflow-hidden" style={{ width: `${transcriptWidth}%` }}>
             <div className="flex items-center justify-between px-8 border-b h-12">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                 Transcript
@@ -1033,8 +1033,8 @@ export function MeetingDetail() {
           />
         </>)}
 
-        <div className={`flex flex-col min-w-0 ${transcriptCollapsed ? "flex-1" : "flex-1"}`}>
-          <Tabs defaultValue="notes" className="flex flex-1 flex-col">
+        <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
+          <Tabs defaultValue="notes" className="flex flex-1 flex-col overflow-hidden">
             <div className="px-4 border-b flex items-center h-12 gap-2">
               <Button
                 variant="ghost"

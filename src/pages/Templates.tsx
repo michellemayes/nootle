@@ -158,7 +158,7 @@ export function TemplatesPage() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="border-b px-8 py-4">
+      <div className="border-b px-6 py-4">
         <h1 className="text-2xl font-bold tracking-tight">Templates & Recipes</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Configure how meetings are summarized and create slash-command workflows
@@ -166,7 +166,7 @@ export function TemplatesPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col overflow-hidden">
-        <div className="border-b px-8 flex items-center justify-between">
+        <div className="border-b px-6 py-4 flex items-center justify-between">
           <TabsList className="h-10">
             <TabsTrigger value="templates">Templates</TabsTrigger>
             <TabsTrigger value="recipes">Recipes</TabsTrigger>
