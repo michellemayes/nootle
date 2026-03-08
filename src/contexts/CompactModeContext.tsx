@@ -1,12 +1,11 @@
 import { createContext, useContext, useState, useEffect, useMemo } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { currentMonitor } from "@tauri-apps/api/window";
+import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
 
 interface CompactModeContextValue {
   isCompact: boolean;
 }
 
-const CompactModeContext = createContext<CompactModeContextValue>({ isCompact: false });
+const CompactModeContext = createContext<CompactModeContextValue | null>(null);
 
 export function CompactModeProvider({ children }: { children: React.ReactNode }) {
   const [isCompact, setIsCompact] = useState(false);
@@ -44,5 +43,7 @@ export function CompactModeProvider({ children }: { children: React.ReactNode })
 }
 
 export function useCompactMode() {
-  return useContext(CompactModeContext);
+  const ctx = useContext(CompactModeContext);
+  if (!ctx) throw new Error("useCompactMode must be used within CompactModeProvider");
+  return ctx;
 }
