@@ -468,13 +468,11 @@ fn sanitize_filename(name: &str) -> String {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
             _ => c,
         })
-        .collect::<String>()
-        .trim()
-        .to_string();
-    if sanitized.is_empty() || sanitized == "." || sanitized == ".." {
-        "untitled".to_string()
-    } else {
-        sanitized
+        .collect();
+    let sanitized = sanitized.trim();
+    match sanitized {
+        "" | "." | ".." => "untitled".to_string(),
+        s => s.to_string(),
     }
 }
 
@@ -490,22 +488,20 @@ async fn execute_obsidian(
         .ok_or("Missing vault_path in Obsidian credentials")?;
 
     let speaker_map: std::collections::HashMap<String, String> = match creds.get("speaker_map") {
-        Some(serde_json::Value::Object(obj)) => {
-            serde_json::from_value(serde_json::Value::Object(obj.clone())).unwrap_or_default()
-        }
-        Some(serde_json::Value::String(s)) => {
-            serde_json::from_str(s).unwrap_or_default()
-        }
-        _ => std::collections::HashMap::new(),
+        Some(serde_json::Value::String(s)) => serde_json::from_str(s).unwrap_or_default(),
+        Some(v) => serde_json::from_value(v.clone()).unwrap_or_default(),
+        None => std::collections::HashMap::new(),
     };
 
     let subfolder = config["subfolder"]
         .as_str()
         .ok_or("Missing subfolder in workflow config")?;
 
-    // Reject path traversal in subfolder
-    if subfolder.split('/').any(|part| part == "..") || subfolder.split('\\').any(|part| part == "..") {
-        return Err(format!("Subfolder '{}' contains path traversal", subfolder));
+    let has_traversal = subfolder
+        .split(&['/', '\\'])
+        .any(|part| part == "..");
+    if has_traversal {
+        return Err(format!("Subfolder '{subfolder}' contains path traversal"));
     }
 
     let filename_template = config["filename_template"]
@@ -513,42 +509,34 @@ async fn execute_obsidian(
         .unwrap_or("{{date}} - {{title}}");
     let note_template = config["note_template"].as_str();
 
-    // Extract date portion from meeting_date (split on 'T', take first part)
     let date = context
         .meeting_date
         .split('T')
         .next()
         .unwrap_or(&context.meeting_date);
 
-    // Build sanitized filename from template
     let raw_filename = filename_template
         .replace("{{date}}", date)
         .replace("{{title}}", &context.meeting_title);
     let filename = sanitize_filename(&raw_filename);
 
-    // Create directory
     let dir_path = if subfolder.is_empty() {
         std::path::PathBuf::from(vault_path)
     } else {
         std::path::PathBuf::from(vault_path).join(subfolder)
     };
 
-    // Ensure subfolder doesn't escape vault path via ../ traversal
     let vault_canonical = std::fs::canonicalize(vault_path)
-        .map_err(|e| format!("Invalid vault path {}: {e}", vault_path))?;
+        .map_err(|e| format!("Invalid vault path {vault_path}: {e}"))?;
     tokio::fs::create_dir_all(&dir_path)
         .await
         .map_err(|e| format!("Failed to create directory {}: {e}", dir_path.display()))?;
     let dir_canonical = std::fs::canonicalize(&dir_path)
         .map_err(|e| format!("Failed to resolve directory {}: {e}", dir_path.display()))?;
     if !dir_canonical.starts_with(&vault_canonical) {
-        return Err(format!(
-            "Subfolder '{}' escapes vault path '{}'",
-            subfolder, vault_path
-        ));
+        return Err(format!("Subfolder '{subfolder}' escapes vault path '{vault_path}'"));
     }
 
-    // Deduplicate filename if file already exists
     let mut file_path = dir_path.join(format!("{filename}.md"));
     let mut counter = 2u32;
     while file_path.exists() {
@@ -556,7 +544,6 @@ async fn execute_obsidian(
         counter += 1;
     }
 
-    // Helper closure: replace speaker names with wikilinks using speaker_map
     let replace_speakers = |text: &str| -> String {
         let mut result = text.to_string();
         for (raw_name, mapped_name) in &speaker_map {
@@ -565,31 +552,24 @@ async fn execute_obsidian(
         result
     };
 
-    // Build speakers list for frontmatter from action item assignees
-    let mut unique_speakers = std::collections::BTreeSet::new();
-    for ai in &context.action_items {
-        if let Some(ref assignee) = ai.assignee {
-            unique_speakers.insert(assignee.clone());
-        }
-    }
+    let unique_speakers: std::collections::BTreeSet<String> = context
+        .action_items
+        .iter()
+        .filter_map(|ai| ai.assignee.clone())
+        .collect();
 
     let speakers_yaml: String = unique_speakers
         .iter()
-        .map(|name| {
-            if let Some(mapped) = speaker_map.get(name.as_str()) {
-                format!("  - \"[[{mapped}]]\"")
-            } else {
-                format!("  - \"{name}\"")
-            }
+        .map(|name| match speaker_map.get(name.as_str()) {
+            Some(mapped) => format!("  - \"[[{mapped}]]\""),
+            None => format!("  - \"{name}\""),
         })
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Build YAML frontmatter
+    let escaped_title = context.meeting_title.replace('"', "\\\"");
     let mut frontmatter = format!(
-        "---\ndate: {date}\ntitle: \"{title}\"\ntags:\n  - meeting\n  - nootle\n",
-        date = date,
-        title = context.meeting_title.replace('"', "\\\""),
+        "---\ndate: {date}\ntitle: \"{escaped_title}\"\ntags:\n  - meeting\n  - nootle\n",
     );
     if !unique_speakers.is_empty() {
         frontmatter.push_str("speakers:\n");
@@ -598,7 +578,6 @@ async fn execute_obsidian(
     }
     frontmatter.push_str("---\n");
 
-    // Build body
     let body = if let Some(tmpl) = note_template {
         render_template(tmpl, context)
     } else {
@@ -612,25 +591,18 @@ async fn execute_obsidian(
             .action_items
             .iter()
             .map(|ai| {
-                let assignee_part = ai
-                    .assignee
-                    .as_deref()
-                    .map(|a| {
-                        let display = speaker_map
-                            .get(a)
-                            .map(|m| format!("[[{m}]]"))
-                            .unwrap_or_else(|| a.to_string());
-                        format!(" ({display})")
-                    })
-                    .unwrap_or_default();
+                let assignee_part = ai.assignee.as_deref().map(|a| {
+                    let display = speaker_map
+                        .get(a)
+                        .map_or_else(|| a.to_string(), |m| format!("[[{m}]]"));
+                    format!(" ({display})")
+                }).unwrap_or_default();
 
-                let due_part = ai
-                    .due_date
-                    .as_deref()
+                let due_part = ai.due_date.as_deref()
                     .map(|d| format!(" [due: {d}]"))
                     .unwrap_or_default();
 
-                format!("- [ ] {}{}{}", ai.content, assignee_part, due_part)
+                format!("- [ ] {}{assignee_part}{due_part}", ai.content)
             })
             .collect::<Vec<_>>()
             .join("\n");

@@ -109,32 +109,9 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
   const isConnected = !!connectedIntegration;
   const isEmail = intType.type === "email";
 
+  const speakerKeys = (fields._speakerKeys ?? "").split(",").filter(Boolean);
+
   const handleConnect = async () => {
-    if (intType.type === "obsidian") {
-      const speakerMap: Record<string, string> = {};
-      const keys = (fields._speakerKeys ?? "").split(",").filter(Boolean);
-      keys.forEach((key, i) => {
-        const value = fields[`_speakerVal_${i}`]?.trim();
-        if (key.trim() && value) {
-          speakerMap[key.trim()] = value;
-        }
-      });
-      if (!fields.vault_path?.trim()) {
-        return;
-      }
-      setSaving(true);
-      try {
-        await onConnect("obsidian", "Obsidian", {
-          vault_path: fields.vault_path,
-          speaker_map: JSON.stringify(speakerMap),
-        });
-        setFields({});
-        setExpanded(false);
-      } finally {
-        setSaving(false);
-      }
-      return;
-    }
     if (isEmail) {
       setSaving(true);
       try {
@@ -148,11 +125,28 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
       setExpanded(true);
       return;
     }
+
     const hasAllRequired = intType.fields.every((f) => fields[f.key]?.trim());
     if (!hasAllRequired) return;
+
+    let creds: Record<string, string> = fields;
+    if (intType.type === "obsidian") {
+      const speakerMap: Record<string, string> = {};
+      speakerKeys.forEach((key, i) => {
+        const value = fields[`_speakerVal_${i}`]?.trim();
+        if (key.trim() && value) {
+          speakerMap[key.trim()] = value;
+        }
+      });
+      creds = {
+        vault_path: fields.vault_path,
+        speaker_map: JSON.stringify(speakerMap),
+      };
+    }
+
     setSaving(true);
     try {
-      await onConnect(intType.type, intType.name, fields);
+      await onConnect(intType.type, intType.name, creds);
       setFields({});
       setExpanded(false);
     } finally {
@@ -244,15 +238,15 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
                 <div className="space-y-2 pt-2">
                   <label className="text-xs text-muted-foreground font-medium">Speaker Mapping</label>
                   <p className="text-[11px] text-muted-foreground">Map transcript labels to names. Mapped names become [[wikilinks]] in Obsidian.</p>
-                  {(fields._speakerKeys ?? "").split(",").filter(Boolean).map((key, i) => (
+                  {speakerKeys.map((key, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <Input
                         placeholder="Speaker 1"
                         value={key}
                         onChange={(e) => {
-                          const keys = (fields._speakerKeys ?? "").split(",").filter(Boolean);
-                          keys[i] = e.target.value;
-                          setFields((prev) => ({ ...prev, _speakerKeys: keys.join(",") }));
+                          const updated = [...speakerKeys];
+                          updated[i] = e.target.value;
+                          setFields((prev) => ({ ...prev, _speakerKeys: updated.join(",") }));
                         }}
                         className="flex-1"
                       />
@@ -264,19 +258,14 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
                         className="flex-1"
                       />
                       <Button variant="ghost" size="sm" onClick={() => {
-                        const keys = (fields._speakerKeys ?? "").split(",").filter(Boolean);
-                        const vals = keys.map((_, j) => fields[`_speakerVal_${j}`] ?? "");
-                        keys.splice(i, 1);
-                        vals.splice(i, 1);
-                        const next: Record<string, string> = {};
-                        // Copy non-speaker fields
-                        for (const [k, v] of Object.entries(fields)) {
-                          if (!k.startsWith("_speakerVal_") && k !== "_speakerKeys") {
-                            next[k] = v;
-                          }
-                        }
-                        next._speakerKeys = keys.join(",");
-                        keys.forEach((_, j) => { next[`_speakerVal_${j}`] = vals[j]; });
+                        const vals = speakerKeys.map((_, j) => fields[`_speakerVal_${j}`] ?? "");
+                        const nextKeys = speakerKeys.filter((_, j) => j !== i);
+                        const nextVals = vals.filter((_, j) => j !== i);
+                        const next: Record<string, string> = Object.fromEntries(
+                          Object.entries(fields).filter(([k]) => !k.startsWith("_speakerVal_") && k !== "_speakerKeys")
+                        );
+                        next._speakerKeys = nextKeys.join(",");
+                        nextVals.forEach((v, j) => { next[`_speakerVal_${j}`] = v; });
                         setFields(next);
                       }}>
                         <Trash2 className="h-3.5 w-3.5" />
@@ -284,9 +273,7 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
                     </div>
                   ))}
                   <Button variant="outline" size="sm" onClick={() => {
-                    const keys = (fields._speakerKeys ?? "").split(",").filter(Boolean);
-                    keys.push("");
-                    setFields((prev) => ({ ...prev, _speakerKeys: keys.join(",") }));
+                    setFields((prev) => ({ ...prev, _speakerKeys: [...speakerKeys, ""].join(",") }));
                   }}>
                     <Plus className="h-3.5 w-3.5 mr-1" /> Add Speaker
                   </Button>
