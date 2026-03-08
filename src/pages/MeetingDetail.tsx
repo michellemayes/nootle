@@ -686,6 +686,10 @@ export function MeetingDetail() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (isCompact) setTranscriptCollapsed(true);
+  }, [isCompact]);
+
+  useEffect(() => {
     const preventSelect = (e: Event) => {
       if (resizingRef.current) e.preventDefault();
     };

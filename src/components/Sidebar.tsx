@@ -60,7 +60,7 @@ export function Sidebar() {
 
   return (
     <motion.aside
-      className={cn("flex h-screen flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] shadow-[1px_0_0_0_var(--sidebar-border)] transition-all duration-200", isCompact ? "w-12" : "w-60")}
+      className={cn("flex h-screen flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] shadow-[1px_0_0_0_var(--sidebar-border)] transition-all duration-200 ease-out", isCompact ? "w-12" : "w-60")}
       animate={
         wiggleSidebar
           ? {
@@ -108,7 +108,7 @@ export function Sidebar() {
             className={({ isActive }) =>
               cn(
                 "flex items-center rounded-md transition-colors",
-                isCompact ? "justify-center px-0 py-2" : "gap-3 px-3 py-2",
+                isCompact ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
                 "text-sm font-medium",
                 isActive
                   ? "bg-accent text-accent-foreground"

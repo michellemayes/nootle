@@ -24,12 +24,12 @@ export function CompactModeProvider({ children }: { children: React.ReactNode })
 
     checkCompact();
 
-    const unlisten = appWindow.onResized(async () => {
-      await checkCompact();
-    });
+    const unlistenResize = appWindow.onResized(() => checkCompact());
+    const unlistenMove = appWindow.onMoved(() => checkCompact());
 
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenResize.then((fn) => fn());
+      unlistenMove.then((fn) => fn());
     };
   }, []);
 
