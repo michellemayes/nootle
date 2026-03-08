@@ -675,6 +675,7 @@ export function MeetingDetail() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const [justGenerated, setJustGenerated] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
@@ -848,11 +849,13 @@ export function MeetingDetail() {
   const handleGenerate = async () => {
     if (!selectedTemplate || !selectedProvider || !selectedModel) return;
     setGenerating(true);
+    setGenerateError(null);
     try {
       await generateSummary(selectedTemplate, selectedProvider, selectedModel);
       setJustGenerated(true);
       setTimeout(() => setJustGenerated(false), 100);
-    } catch {
+    } catch (err) {
+      setGenerateError(String(err));
     } finally {
       setGenerating(false);
     }
@@ -1143,6 +1146,13 @@ export function MeetingDetail() {
                   </div>
                 </div>
               </div>
+
+              {generateError && (
+                <div className="flex items-center gap-2 border-b px-5 py-2 text-xs text-destructive">
+                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                  {generateError}
+                </div>
+              )}
 
               <ScrollArea className="flex-1">
                 {summaries.length === 0 ? (
