@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -31,6 +31,42 @@ export function ChatPage() {
   const [dateFromValue, setDateFromValue] = useState("");
   const [dateToValue, setDateToValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Resize state for conversation list
+  const [sidebarWidth, setSidebarWidth] = useState(256);
+  const isResizing = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    startX.current = e.clientX;
+    startWidth.current = sidebarWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing.current) return;
+      const delta = e.clientX - startX.current;
+      const newWidth = Math.min(Math.max(startWidth.current + delta, 180), 480);
+      setSidebarWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      if (!isResizing.current) return;
+      isResizing.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
 
   useEffect(() => {
     if (conversations.length > 0 && !activeId) {
@@ -106,7 +142,10 @@ export function ChatPage() {
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* Left panel - conversation list */}
-      <div className="flex w-64 flex-col border-r bg-card">
+      <div
+        style={{ width: sidebarWidth }}
+        className="relative flex shrink-0 flex-col border-r bg-background"
+      >
         <div className="flex items-center justify-between px-4 h-12 border-b">
           <h2 className="text-sm font-semibold">Conversations</h2>
           <Button variant="ghost" size="icon-sm" onClick={handleNewConversation}>
@@ -121,7 +160,7 @@ export function ChatPage() {
             {conversations.map((conv) => (
               <div
                 key={conv.id}
-                className={`group flex items-center gap-2 rounded-md px-3 py-2 cursor-pointer transition-colors ${
+                className={`group flex items-center gap-2 rounded-md px-3 py-2 cursor-pointer transition-colors min-w-0 ${
                   activeId === conv.id
                     ? "bg-accent text-accent-foreground"
                     : "text-muted-foreground hover:bg-accent/50"
@@ -144,7 +183,7 @@ export function ChatPage() {
                   />
                 ) : (
                   <span
-                    className="flex-1 truncate text-sm"
+                    className="flex-1 min-w-0 truncate text-sm"
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       setTitleDraft(conv.title);
@@ -167,6 +206,11 @@ export function ChatPage() {
             ))}
           </div>
         </ScrollArea>
+        {/* Resize handle */}
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 z-10"
+        />
       </div>
 
       {/* Right panel - chat */}
