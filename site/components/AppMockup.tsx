@@ -237,41 +237,39 @@ const navItems = [
   { icon: MicIcon, label: "Meetings", active: true },
   { icon: LightbulbIcon, label: "Insights", active: false },
   { icon: MessageIcon, label: "Chat", active: false },
-  { icon: SparklesIcon, label: "Prompts", active: false },
+  { icon: SparklesIcon, label: "Templates", active: false },
   { icon: SettingsIcon, label: "Settings", active: false },
   { icon: HelpIcon, label: "Help", active: false },
 ];
 
 function Sidebar() {
   return (
-    <div className="w-44 flex flex-col border-r border-gray-200 bg-white shrink-0">
+    <div className="w-48 flex flex-col shadow-[1px_0_0_0_rgba(120,113,108,0.15)] bg-stone-100/80 backdrop-blur-xl shrink-0">
       {/* Logo */}
       <div className="flex items-center gap-2 px-3 pt-4 pb-3">
-        <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#4EEABB] to-[#C084FC] flex items-center justify-center text-white text-[10px] font-bold">
-          N
-        </div>
-        <span className="text-sm font-semibold tracking-tight text-gray-900">Nootle</span>
+        <img src="/nootle-icon.png" alt="Nootle" className="w-6 h-6 rounded-lg" />
+        <span className="text-sm font-semibold tracking-tight text-stone-900">Nootle</span>
       </div>
 
       {/* Record button */}
       <div className="px-2 pb-2">
-        <button className="w-full flex items-center gap-1.5 bg-gray-900 text-white text-[11px] font-medium py-1.5 px-2.5 rounded-md text-left">
+        <button className="w-full flex items-center gap-1.5 bg-stone-900 text-white text-[11px] font-medium py-1.5 px-2.5 rounded-md text-left">
           <CircleIcon className="w-3 h-3" />
           Record Something
         </button>
       </div>
 
-      <div className="border-t border-gray-200 mx-2" />
+      <div className="border-t border-stone-200 mx-2" />
 
       {/* Navigation */}
       <nav className="flex flex-col gap-0.5 px-2 pt-2 text-[11px]">
         {navItems.map((item) => (
           <div
             key={item.label}
-            className={`flex items-center gap-2 px-2 py-1.5 rounded-md ${
+            className={`flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors ${
               item.active
-                ? "bg-gray-100 text-gray-900 font-medium"
-                : "text-gray-500 hover:bg-gray-50"
+                ? "bg-stone-200/60 text-stone-900 font-medium"
+                : "text-stone-500 hover:bg-stone-200/40 hover:text-stone-700"
             }`}
           >
             <item.icon className="w-3.5 h-3.5" />
@@ -281,9 +279,18 @@ function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="mt-auto flex items-center justify-between px-3 py-3">
-        <span className="text-[9px] text-gray-400">Nootle v0.1.0</span>
-        <MoonIcon className="w-3 h-3 text-gray-400" />
+      <div className="mt-auto space-y-1.5 px-2 pb-3">
+        {/* Model selector */}
+        <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-stone-500 rounded-md hover:bg-stone-200/40 transition-colors">
+          <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" />
+          </svg>
+          <span className="truncate">Claude Opus 4.6</span>
+        </div>
+        <div className="flex items-center justify-between px-2">
+          <span className="text-[9px] text-stone-400">v0.1.0</span>
+          <MoonIcon className="w-3 h-3 text-stone-400" />
+        </div>
       </div>
     </div>
   );
@@ -291,8 +298,8 @@ function Sidebar() {
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    Done: "bg-gray-100 text-gray-600",
-    Archived: "bg-gray-100 text-gray-400",
+    Done: "bg-stone-100 text-stone-600",
+    Archived: "bg-stone-100 text-stone-400",
     Recording: "bg-red-100 text-red-600",
   };
   return (
@@ -307,14 +314,14 @@ function LibraryView({ onSelectMeeting }: { onSelectMeeting: (id: string) => voi
     <div className="flex-1 flex flex-col min-w-0 p-4 overflow-hidden">
       {/* Header */}
       <div className="mb-3">
-        <h2 className="text-sm font-bold text-gray-900">Meetings</h2>
-        <p className="text-[10px] text-gray-400">Your recorded meetings and transcriptions</p>
+        <h2 className="text-sm font-bold text-stone-900">Meetings</h2>
+        <p className="text-[10px] text-stone-400">Your recorded meetings and transcriptions</p>
       </div>
 
       {/* Search */}
       <div className="relative mb-3">
-        <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-        <div className="w-full border border-gray-200 rounded-md pl-7 pr-2 py-1.5 text-[10px] text-gray-400">
+        <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400" />
+        <div className="w-full border border-stone-200 rounded-md pl-7 pr-2 py-1.5 text-[10px] text-stone-400">
           Search meetings...
         </div>
       </div>
@@ -325,15 +332,15 @@ function LibraryView({ onSelectMeeting }: { onSelectMeeting: (id: string) => voi
           <button
             key={m.id}
             onClick={() => onSelectMeeting(m.id)}
-            className="text-left border border-gray-200 rounded-lg p-3 hover:bg-gray-50 hover:shadow-sm transition-all cursor-pointer group"
+            className="text-left rounded-xl border border-stone-200 shadow-sm p-3 hover:bg-stone-100/40 hover:shadow-md transition-all cursor-pointer group"
           >
             <div className="flex items-start justify-between gap-1 mb-1.5">
-              <h3 className="text-[11px] font-medium text-gray-900 leading-snug line-clamp-2 group-hover:text-gray-700">
+              <h3 className="text-[11px] font-medium text-stone-900 leading-snug line-clamp-2 group-hover:text-stone-700">
                 {m.title}
               </h3>
               <StatusBadge status={m.status} />
             </div>
-            <div className="flex items-center gap-1.5 text-[9px] text-gray-400">
+            <div className="flex items-center gap-1.5 text-[9px] text-stone-400">
               <span>{m.date}</span>
               <span>&middot;</span>
               <span>{m.duration}</span>
@@ -377,27 +384,27 @@ function DetailView({
   return (
     <div className="flex-1 flex flex-col min-w-0">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2">
-        <div className="flex items-center gap-2">
+      <div className="shrink-0 flex items-center justify-between border-b border-stone-200 px-4 py-3">
+        <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-700 transition-colors"
+            className="flex items-center gap-1 text-[10px] text-stone-600 hover:bg-stone-100/40 rounded-md px-1.5 py-1 transition-colors"
           >
             <ArrowLeftIcon className="w-3 h-3" />
             <span>Back</span>
           </button>
-          <div className="ml-1">
-            <h3 className="text-xs font-bold text-gray-900">{meeting.title}</h3>
-            <p className="text-[9px] text-gray-400">{meeting.date}</p>
+          <div>
+            <h3 className="text-sm font-bold text-stone-900">{meeting.title}</h3>
+            <p className="text-[9px] text-stone-500">{meeting.date}</p>
           </div>
           <StatusBadge status={meeting.status} />
         </div>
         <button
           onClick={onToggleAskNootle}
-          className={`flex items-center gap-1 text-[10px] border rounded-md px-2 py-1 transition-colors ${
+          className={`flex items-center gap-1.5 text-[10px] border rounded-md px-2 py-1 transition-colors ${
             askNootleOpen
-              ? "border-purple-300 bg-purple-50 text-purple-700"
-              : "border-gray-200 text-gray-600 hover:bg-gray-50"
+              ? "border-stone-300 bg-stone-100 text-stone-900"
+              : "border-stone-200 text-stone-600 hover:bg-stone-100/40"
           }`}
         >
           <MessageIcon className="w-3 h-3" />
@@ -406,7 +413,7 @@ function DetailView({
       </div>
 
       {/* Two-column layout + Ask Nootle panel */}
-      <div className="flex flex-1 min-h-0 overflow-hidden relative">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Transcript column */}
         <AnimatePresence>
           {transcriptVisible && (
@@ -415,20 +422,20 @@ function DetailView({
               animate={{ width: "50%", opacity: 1 }}
               exit={{ width: "0%", opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="flex flex-col border-r border-gray-200 overflow-hidden min-w-0"
+              className="flex flex-col border-r border-stone-200 overflow-hidden min-w-0"
             >
-              <div className="flex items-center justify-between px-4 border-b border-gray-200 h-8">
-                <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+              <div className="flex items-center justify-between px-4 border-b border-stone-200 h-8">
+                <h4 className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
                   Transcript
                 </h4>
               </div>
               <div className="flex-1 overflow-hidden px-4 py-2 space-y-2">
                 {transcriptLines.map((line, i) => (
                   <div key={i} className="flex gap-2 text-[10px]">
-                    <span className="text-gray-400 font-mono shrink-0 w-8 pt-0.5 text-[9px]">
+                    <span className="text-stone-400 font-mono shrink-0 w-8 pt-0.5 text-[9px]">
                       {line.time}
                     </span>
-                    <p className="min-w-0 text-gray-700 leading-relaxed">
+                    <p className="min-w-0 text-stone-700 leading-relaxed">
                       <span className={`font-semibold ${line.color} mr-1`}>
                         {line.speaker}:
                       </span>
@@ -441,41 +448,26 @@ function DetailView({
           )}
         </AnimatePresence>
 
-        {/* Ask Nootle slide-over */}
-        <AnimatePresence>
-          {askNootleOpen && (
-            <motion.div
-              initial={{ x: "100%", opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: "100%", opacity: 0 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="absolute right-0 top-0 bottom-0 w-[55%] bg-white border-l border-gray-200 z-20 shadow-lg"
-            >
-              <AskNootlePanel />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {/* Right column - tabs */}
         <div className="flex flex-col flex-1 min-w-0">
           {/* Tab bar */}
-          <div className="flex items-center gap-1 px-2 border-b border-gray-200 h-8">
+          <div className="flex items-center gap-1 px-2 border-b border-stone-200 h-8">
             <button
               onClick={onToggleTranscript}
-              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+              className="p-1 text-stone-400 hover:text-stone-600 transition-colors"
               title={transcriptVisible ? "Hide transcript" : "Show transcript"}
             >
               <PanelLeftIcon className="w-3 h-3" />
             </button>
-            <div className="flex bg-gray-100 rounded-md p-0.5">
+            <div className="flex bg-stone-100 rounded-lg p-0.5">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => onTabChange(tab.id)}
-                  className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+                  className={`px-2 py-0.5 rounded-md text-[10px] transition-colors ${
                     activeTab === tab.id
-                      ? "bg-white text-gray-900 font-medium shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
+                      ? "bg-white text-stone-900 font-medium shadow-sm"
+                      : "text-stone-500 hover:text-stone-700"
                   }`}
                 >
                   {tab.label}
@@ -504,6 +496,21 @@ function DetailView({
             </AnimatePresence>
           </div>
         </div>
+
+        {/* Ask Nootle side panel */}
+        <AnimatePresence>
+          {askNootleOpen && (
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 240, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="shrink-0 flex flex-col border-l border-stone-200 bg-stone-50/80 overflow-hidden"
+            >
+              <AskNootlePanel />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -511,18 +518,18 @@ function DetailView({
 
 function NotesTab() {
   return (
-    <div className="p-4 text-[10px] text-gray-700 leading-relaxed space-y-2">
+    <div className="p-4 text-[10px] text-stone-700 leading-relaxed space-y-2">
       {notesContent.split("\n").map((line, i) => {
         if (line.startsWith("# ")) {
-          return <h3 key={i} className="text-xs font-bold text-gray-900">{line.slice(2)}</h3>;
+          return <h3 key={i} className="text-xs font-bold text-stone-900">{line.slice(2)}</h3>;
         }
         if (line.startsWith("## ")) {
-          return <h4 key={i} className="text-[11px] font-semibold text-gray-800 mt-3">{line.slice(3)}</h4>;
+          return <h4 key={i} className="text-[11px] font-semibold text-stone-800 mt-3">{line.slice(3)}</h4>;
         }
         if (line.startsWith("- ")) {
           return (
             <div key={i} className="flex gap-1.5 pl-2">
-              <span className="text-gray-400 shrink-0">&bull;</span>
+              <span className="text-stone-400 shrink-0">&bull;</span>
               <span>{line.slice(2)}</span>
             </div>
           );
@@ -537,29 +544,29 @@ function NotesTab() {
 function SummariesTab() {
   return (
     <div className="p-4">
-      <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+      <div className="rounded-xl border border-stone-200 shadow-sm p-3 space-y-2">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-[10px] font-medium text-gray-500">Generated Summary</span>
-          <span className="text-[9px] text-gray-400">via Anthropic / Claude</span>
+          <span className="text-[10px] font-medium text-stone-500">Generated Summary</span>
+          <span className="text-[9px] text-stone-400">via Anthropic / Claude</span>
         </div>
-        <div className="text-[10px] text-gray-700 leading-relaxed space-y-2">
+        <div className="text-[10px] text-stone-700 leading-relaxed space-y-2">
           {summaryContent.split("\n").map((line, i) => {
             if (line.startsWith("## ")) {
-              return <h4 key={i} className="text-[11px] font-bold text-gray-900">{line.slice(3)}</h4>;
+              return <h4 key={i} className="text-[11px] font-bold text-stone-900">{line.slice(3)}</h4>;
             }
             if (line.startsWith("- **")) {
               const match = line.match(/^- \*\*(.+?)\*\* — (.+)$/);
               if (match) {
                 return (
                   <div key={i} className="flex gap-1.5 pl-2">
-                    <span className="text-gray-400 shrink-0">&bull;</span>
-                    <span><strong className="font-semibold text-gray-800">{match[1]}</strong> &mdash; {match[2]}</span>
+                    <span className="text-stone-400 shrink-0">&bull;</span>
+                    <span><strong className="font-semibold text-stone-800">{match[1]}</strong> &mdash; {match[2]}</span>
                   </div>
                 );
               }
             }
             if (line.startsWith("**") && line.endsWith("**")) {
-              return <p key={i} className="font-semibold text-gray-800">{line.slice(2, -2)}</p>;
+              return <p key={i} className="font-semibold text-stone-800">{line.slice(2, -2)}</p>;
             }
             if (line.trim() === "") return <div key={i} className="h-1" />;
             return <p key={i}>{line}</p>;
@@ -576,13 +583,13 @@ function InsightsTab() {
       {/* Decisions */}
       <InsightSection
         title="Key Decisions"
-        icon={<LightbulbIcon className="w-3 h-3 text-gray-400" />}
+        icon={<LightbulbIcon className="w-3 h-3 text-stone-400" />}
         count={insightsData.decisions.length}
       >
         {insightsData.decisions.map((d, i) => (
-          <div key={i} className="border border-gray-200 rounded-md p-2 text-[10px]">
-            <p className="text-gray-700">{d.text}</p>
-            <span className="text-[9px] font-mono text-gray-400">{d.time}</span>
+          <div key={i} className="rounded-xl border border-stone-200 shadow-sm p-2 text-[10px]">
+            <p className="text-stone-700">{d.text}</p>
+            <span className="text-[9px] font-mono text-stone-400">{d.time}</span>
           </div>
         ))}
       </InsightSection>
@@ -590,23 +597,23 @@ function InsightsTab() {
       {/* Action Items */}
       <InsightSection
         title="Action Items"
-        icon={<ListChecksIcon className="w-3 h-3 text-gray-400" />}
+        icon={<ListChecksIcon className="w-3 h-3 text-stone-400" />}
         count={insightsData.actionItems.length}
       >
         {insightsData.actionItems.map((item, i) => (
-          <div key={i} className="flex items-start gap-2 border border-gray-200 rounded-md p-2 text-[10px]">
+          <div key={i} className="flex items-start gap-2 rounded-xl border border-stone-200 shadow-sm p-2 text-[10px]">
             <div className={`mt-0.5 flex h-3 w-3 shrink-0 items-center justify-center rounded border ${
               item.done
-                ? "border-gray-900 bg-gray-900 text-white"
-                : "border-gray-300"
+                ? "border-stone-900 bg-stone-900 text-white"
+                : "border-stone-300"
             }`}>
               {item.done && <CheckIcon className="w-2 h-2" />}
             </div>
             <div className="flex-1 min-w-0">
-              <p className={`text-gray-700 ${item.done ? "line-through text-gray-400" : ""}`}>
+              <p className={`text-stone-700 ${item.done ? "line-through text-stone-400" : ""}`}>
                 {item.text}
               </p>
-              <span className="text-[9px] text-gray-400">{item.assignee}</span>
+              <span className="text-[9px] text-stone-400">{item.assignee}</span>
             </div>
           </div>
         ))}
@@ -615,13 +622,13 @@ function InsightsTab() {
       {/* Key Moments */}
       <InsightSection
         title="Key Moments"
-        icon={<StarIcon className="w-3 h-3 text-gray-400" />}
+        icon={<StarIcon className="w-3 h-3 text-stone-400" />}
         count={insightsData.keyMoments.length}
       >
         {insightsData.keyMoments.map((m, i) => (
-          <div key={i} className="border border-gray-200 rounded-md p-2 text-[10px]">
-            <p className="text-gray-700">{m.text}</p>
-            <span className="text-[9px] font-mono text-gray-400">{m.time}</span>
+          <div key={i} className="rounded-xl border border-stone-200 shadow-sm p-2 text-[10px]">
+            <p className="text-stone-700">{m.text}</p>
+            <span className="text-[9px] font-mono text-stone-400">{m.time}</span>
           </div>
         ))}
       </InsightSection>
@@ -644,8 +651,8 @@ function InsightSection({
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5">
         {icon}
-        <span className="text-[10px] font-semibold text-gray-800">{title}</span>
-        <span className="text-[9px] bg-gray-100 text-gray-500 px-1 py-0.5 rounded font-medium">
+        <span className="text-[10px] font-semibold text-stone-800">{title}</span>
+        <span className="text-[9px] bg-stone-100 text-stone-500 px-1 py-0.5 rounded font-medium">
           {count}
         </span>
       </div>
@@ -664,9 +671,9 @@ function AnalyticsTab() {
           { label: "Speakers", value: String(analyticsData.speakers) },
           { label: "Words", value: analyticsData.words.toLocaleString() },
         ].map((stat) => (
-          <div key={stat.label} className="border border-gray-200 rounded-md p-2 text-center">
-            <p className="text-xs font-bold text-gray-900">{stat.value}</p>
-            <p className="text-[9px] text-gray-400">{stat.label}</p>
+          <div key={stat.label} className="rounded-xl border border-stone-200 shadow-sm p-2 text-center">
+            <p className="text-xs font-bold text-stone-900">{stat.value}</p>
+            <p className="text-[9px] text-stone-400">{stat.label}</p>
           </div>
         ))}
       </div>
@@ -674,17 +681,17 @@ function AnalyticsTab() {
       {/* Speaker breakdown */}
       <div className="space-y-2">
         <div className="flex items-center gap-1.5">
-          <BarChartIcon className="w-3 h-3 text-gray-400" />
-          <span className="text-[10px] font-semibold text-gray-800">Speaker Breakdown</span>
+          <BarChartIcon className="w-3 h-3 text-stone-400" />
+          <span className="text-[10px] font-semibold text-stone-800">Speaker Breakdown</span>
         </div>
         <div className="space-y-1.5">
           {analyticsData.speakerBreakdown.map((s) => (
             <div key={s.name} className="space-y-0.5">
               <div className="flex items-center justify-between text-[10px]">
-                <span className="text-gray-700">{s.name}</span>
-                <span className="text-gray-400">{s.pct}%</span>
+                <span className="text-stone-700">{s.name}</span>
+                <span className="text-stone-400">{s.pct}%</span>
               </div>
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full ${s.color}`}
                   style={{ width: `${s.pct}%` }}
@@ -729,19 +736,19 @@ function WorkflowsTab() {
   return (
     <div className="p-4 space-y-3">
       <div className="flex items-center gap-1.5 mb-1">
-        <SparklesIcon className="w-3 h-3 text-gray-400" />
-        <span className="text-[10px] font-semibold text-gray-800">Post-meeting Workflows</span>
-        <span className="text-[9px] bg-gray-100 text-gray-500 px-1 py-0.5 rounded font-medium">
+        <SparklesIcon className="w-3 h-3 text-stone-400" />
+        <span className="text-[10px] font-semibold text-stone-800">Post-meeting Workflows</span>
+        <span className="text-[9px] bg-stone-100 text-stone-500 px-1 py-0.5 rounded font-medium">
           {workflowsData.length}
         </span>
       </div>
       <div className="space-y-2">
         {workflowsData.map((wf) => (
-          <div key={wf.name} className="flex items-center gap-2.5 border border-gray-200 rounded-md p-2.5">
+          <div key={wf.name} className="flex items-center gap-2.5 rounded-xl border border-stone-200 shadow-sm p-2.5">
             <span className="text-sm">{wf.icon}</span>
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-medium text-gray-900">{wf.name}</p>
-              <p className="text-[9px] text-gray-400 truncate">{wf.target}</p>
+              <p className="text-[10px] font-medium text-stone-900">{wf.name}</p>
+              <p className="text-[9px] text-stone-400 truncate">{wf.target}</p>
             </div>
             <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
               wf.status === "Pending"
@@ -761,7 +768,6 @@ const askNootleChatMessages = [
   {
     role: "user" as const,
     text: "What were the action items from this meeting?",
-    recipe: "Extract action items",
   },
   {
     role: "assistant" as const,
@@ -772,47 +778,27 @@ const askNootleChatMessages = [
 function AskNootlePanel() {
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200">
-        <div className="flex items-center gap-1.5">
-          <SparklesIcon className="w-3 h-3 text-purple-500" />
-          <span className="text-[10px] font-semibold text-gray-800">Ask Nootle</span>
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-stone-200">
+        <span className="text-[11px] font-semibold text-stone-900">Ask Nootle</span>
+        <div className="w-4 h-4 flex items-center justify-center text-stone-400 hover:text-stone-600 rounded transition-colors">
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+          </svg>
         </div>
-        <span className="text-[9px] text-gray-400">about this meeting</span>
-      </div>
-
-      {/* Recipe pills */}
-      <div className="flex gap-1.5 px-3 py-2 border-b border-gray-100 overflow-hidden">
-        {["Extract action items", "Write follow-up email", "List decisions"].map((recipe) => (
-          <span
-            key={recipe}
-            className={`shrink-0 text-[9px] px-2 py-0.5 rounded-full border ${
-              recipe === "Extract action items"
-                ? "border-purple-200 bg-purple-50 text-purple-600 font-medium"
-                : "border-gray-200 text-gray-500"
-            }`}
-          >
-            {recipe}
-          </span>
-        ))}
       </div>
 
       {/* Chat messages */}
-      <div className="flex-1 overflow-auto px-3 py-2 space-y-2.5">
+      <div className="flex-1 overflow-auto px-3 py-3 space-y-2.5">
         {askNootleChatMessages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
-              className={`max-w-[90%] rounded-lg px-2.5 py-1.5 text-[10px] leading-relaxed ${
+              className={`max-w-[80%] rounded-lg px-2.5 py-1.5 text-[10px] leading-relaxed whitespace-pre-wrap ${
                 msg.role === "user"
-                  ? "bg-gray-900 text-white"
-                  : "bg-gray-100 text-gray-700"
+                  ? "bg-stone-800 text-white"
+                  : "bg-stone-100 text-stone-700"
               }`}
             >
-              {msg.role === "user" && msg.recipe && (
-                <div className="flex items-center gap-1 mb-0.5">
-                  <SparklesIcon className="w-2.5 h-2.5 text-purple-300" />
-                  <span className="text-[8px] text-purple-300">{msg.recipe}</span>
-                </div>
-              )}
               {msg.text.split("\n").map((line, j) => (
                 <p key={j} className={j > 0 ? "mt-1" : ""}>{line}</p>
               ))}
@@ -821,16 +807,17 @@ function AskNootlePanel() {
         ))}
       </div>
 
+      {/* Separator */}
+      <div className="border-t border-stone-200" />
+
       {/* Input */}
-      <div className="px-3 py-2 border-t border-gray-200">
-        <div className="flex items-center gap-1.5 border border-gray-200 rounded-md px-2 py-1.5">
-          <span className="text-[10px] text-gray-400 flex-1">Ask about this meeting...</span>
-          <div className="w-4 h-4 rounded bg-gray-900 flex items-center justify-center">
-            <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
-            </svg>
-          </div>
+      <div className="flex items-center gap-1.5 px-3 py-2">
+        <div className="flex-1 border border-stone-200 rounded-md px-2 py-1.5 text-[10px] text-stone-400">
+          Ask about this meeting... (type / for recipes)
         </div>
+        <button className="shrink-0 bg-stone-800 text-white text-[10px] font-medium px-2 py-1.5 rounded-md">
+          Ask
+        </button>
       </div>
     </div>
   );
@@ -931,21 +918,21 @@ export function AppMockup() {
           transition={{ duration: 0.6, delay: 0.2 }}
         >
           {/* Window chrome */}
-          <div className="rounded-2xl overflow-hidden shadow-2xl border border-gray-200">
+          <div className="rounded-2xl overflow-hidden shadow-2xl border border-stone-200">
             {/* Title bar */}
-            <div className="bg-gray-100 px-4 py-2.5 flex items-center gap-2 border-b border-gray-200">
+            <div className="bg-stone-100 px-4 py-2.5 flex items-center gap-2 border-b border-stone-200">
               <div className="flex gap-1.5">
                 <div className="w-3 h-3 rounded-full bg-[#FF5F57]" />
                 <div className="w-3 h-3 rounded-full bg-[#FEBC2E]" />
                 <div className="w-3 h-3 rounded-full bg-[#28C840]" />
               </div>
               <div className="flex-1 text-center">
-                <span className="text-xs text-gray-500">{titleBarText}</span>
+                <span className="text-xs text-stone-500">{titleBarText}</span>
               </div>
             </div>
 
             {/* App content */}
-            <div className="flex h-[420px] bg-white select-none">
+            <div className="flex h-[420px] bg-stone-50 select-none">
               <Sidebar />
               <AnimatePresence mode="wait">
                 {currentView === "library" ? (
