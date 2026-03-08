@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Improve sidebar logo and recording button layout (#88) ([3ce3f84](https://github.com/michellemayes/nootle/commit/3ce3f84f68743c05db51b95db8f4db07078750e9))
 - Make generated summaries display immediately and surface errors (#86) ([0bc54a4](https://github.com/michellemayes/nootle/commit/0bc54a455ca0bd68f9b03b2bf2d8ffadf7f7b7e9))
 - Add draggable region to main content top bar (#85) ([0d13d96](https://github.com/michellemayes/nootle/commit/0d13d962144348bef182273c0b038347775c53ba))
 - Remove extra padding above help card content (#80) ([d43e234](https://github.com/michellemayes/nootle/commit/d43e23439a8f37056cad7ea44831630143884edc))
