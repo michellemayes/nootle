@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { SiZoom, SiGooglemeet, SiSlack, SiLinear, SiNotion, SiConfluence, SiGithub, SiAsana } from "react-icons/si";
+import { SiZoom, SiGooglemeet, SiSlack, SiLinear, SiNotion, SiConfluence, SiGithub, SiAsana, SiObsidian } from "react-icons/si";
 import { BsMicrosoftTeams } from "react-icons/bs";
 import { HiOutlineMail } from "react-icons/hi";
 import type { IconType } from "react-icons";
@@ -17,6 +17,7 @@ const integrations: { name: string; color: string; icon: IconType }[] = [
   { name: "Zoom", color: "#2D8CFF", icon: SiZoom },
   { name: "Teams", color: "#6264A7", icon: BsMicrosoftTeams },
   { name: "Google Meet", color: "#00897B", icon: SiGooglemeet },
+  { name: "Obsidian", color: "#7C3AED", icon: SiObsidian },
 ];
 
 export function Integrations() {
