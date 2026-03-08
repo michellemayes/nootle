@@ -498,9 +498,7 @@ async fn execute_obsidian(
         .as_str()
         .ok_or("Missing subfolder in workflow config")?;
 
-    let has_traversal = subfolder
-        .split(&['/', '\\'])
-        .any(|part| part == "..");
+    let has_traversal = subfolder.split(&['/', '\\']).any(|part| part == "..");
     if has_traversal {
         return Err(format!("Subfolder '{subfolder}' contains path traversal"));
     }
@@ -537,7 +535,9 @@ async fn execute_obsidian(
         .await
         .map_err(|e| format!("Failed to resolve directory {}: {e}", dir_path.display()))?;
     if !dir_canonical.starts_with(&vault_canonical) {
-        return Err(format!("Subfolder '{subfolder}' escapes vault path '{vault_path}'"));
+        return Err(format!(
+            "Subfolder '{subfolder}' escapes vault path '{vault_path}'"
+        ));
     }
 
     let mut file_path = dir_path.join(format!("{filename}.md"));
@@ -571,9 +571,8 @@ async fn execute_obsidian(
         .join("\n");
 
     let escaped_title = context.meeting_title.replace('"', "\\\"");
-    let mut frontmatter = format!(
-        "---\ndate: {date}\ntitle: \"{escaped_title}\"\ntags:\n  - meeting\n  - nootle\n",
-    );
+    let mut frontmatter =
+        format!("---\ndate: {date}\ntitle: \"{escaped_title}\"\ntags:\n  - meeting\n  - nootle\n",);
     if !unique_speakers.is_empty() {
         frontmatter.push_str("speakers:\n");
         frontmatter.push_str(&speakers_yaml);
@@ -584,24 +583,27 @@ async fn execute_obsidian(
     let body = if let Some(tmpl) = note_template {
         render_template(tmpl, context)
     } else {
-        let summary_text = context
-            .summary
-            .as_deref()
-            .unwrap_or("No summary available");
+        let summary_text = context.summary.as_deref().unwrap_or("No summary available");
         let summary_with_links = replace_speakers(summary_text);
 
         let action_items_text = context
             .action_items
             .iter()
             .map(|ai| {
-                let assignee_part = ai.assignee.as_deref().map(|a| {
-                    let display = speaker_map
-                        .get(a)
-                        .map_or_else(|| a.to_string(), |m| format!("[[{m}]]"));
-                    format!(" ({display})")
-                }).unwrap_or_default();
+                let assignee_part = ai
+                    .assignee
+                    .as_deref()
+                    .map(|a| {
+                        let display = speaker_map
+                            .get(a)
+                            .map_or_else(|| a.to_string(), |m| format!("[[{m}]]"));
+                        format!(" ({display})")
+                    })
+                    .unwrap_or_default();
 
-                let due_part = ai.due_date.as_deref()
+                let due_part = ai
+                    .due_date
+                    .as_deref()
                     .map(|d| format!(" [due: {d}]"))
                     .unwrap_or_default();
 
@@ -643,12 +645,18 @@ mod tests {
 
     #[test]
     fn test_sanitize_filename_strips_invalid_chars() {
-        assert_eq!(sanitize_filename("Q1: Review / Planning"), "Q1_ Review _ Planning");
+        assert_eq!(
+            sanitize_filename("Q1: Review / Planning"),
+            "Q1_ Review _ Planning"
+        );
     }
 
     #[test]
     fn test_sanitize_filename_all_special() {
-        assert_eq!(sanitize_filename("a\\b:c*d?e\"f<g>h|i"), "a_b_c_d_e_f_g_h_i");
+        assert_eq!(
+            sanitize_filename("a\\b:c*d?e\"f<g>h|i"),
+            "a_b_c_d_e_f_g_h_i"
+        );
     }
 
     #[test]
@@ -674,7 +682,8 @@ mod tests {
             credentials_json: serde_json::json!({
                 "vault_path": vault_path,
                 "speaker_map": { "Speaker 1": "Michelle Mayes" }
-            }).to_string(),
+            })
+            .to_string(),
             created_at: "2026-03-07".to_string(),
         };
 
@@ -687,7 +696,8 @@ mod tests {
             action_type: "create_note".to_string(),
             config_json: serde_json::json!({
                 "subfolder": "Meetings"
-            }).to_string(),
+            })
+            .to_string(),
             is_enabled: true,
             created_at: "2026-03-07".to_string(),
         };
@@ -696,19 +706,22 @@ mod tests {
             meeting_title: "Weekly Standup".to_string(),
             meeting_date: "2026-03-07T10:00:00".to_string(),
             summary: Some("Discussed Q1 roadmap. Speaker 1 will lead the effort.".to_string()),
-            action_items: vec![
-                ActionItemContext {
-                    content: "Review PR #42".to_string(),
-                    assignee: Some("Speaker 1".to_string()),
-                    due_date: Some("2026-03-10".to_string()),
-                },
-            ],
+            action_items: vec![ActionItemContext {
+                content: "Review PR #42".to_string(),
+                assignee: Some("Speaker 1".to_string()),
+                due_date: Some("2026-03-10".to_string()),
+            }],
         };
 
-        let result = execute_obsidian(&workflow, &integration, &context).await.unwrap();
+        let result = execute_obsidian(&workflow, &integration, &context)
+            .await
+            .unwrap();
         assert!(result.message.contains("Note created"));
 
-        let file_path = tmp.path().join("Meetings").join("2026-03-07 - Weekly Standup.md");
+        let file_path = tmp
+            .path()
+            .join("Meetings")
+            .join("2026-03-07 - Weekly Standup.md");
         assert!(file_path.exists(), "File should exist at {:?}", file_path);
 
         let content = std::fs::read_to_string(&file_path).unwrap();
@@ -754,7 +767,9 @@ mod tests {
             action_items: vec![],
         };
 
-        let result = execute_obsidian(&workflow, &integration, &context).await.unwrap();
+        let result = execute_obsidian(&workflow, &integration, &context)
+            .await
+            .unwrap();
         assert!(result.output.unwrap().contains("(2)"));
     }
 }
