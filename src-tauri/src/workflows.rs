@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeSet, HashMap};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorkflowContext {
@@ -487,10 +488,10 @@ async fn execute_obsidian(
         .as_str()
         .ok_or("Missing vault_path in Obsidian credentials")?;
 
-    let speaker_map: std::collections::HashMap<String, String> = match creds.get("speaker_map") {
+    let speaker_map: HashMap<String, String> = match creds.get("speaker_map") {
         Some(serde_json::Value::String(s)) => serde_json::from_str(s).unwrap_or_default(),
         Some(v) => serde_json::from_value(v.clone()).unwrap_or_default(),
-        None => std::collections::HashMap::new(),
+        None => HashMap::new(),
     };
 
     let subfolder = config["subfolder"]
@@ -526,12 +527,14 @@ async fn execute_obsidian(
         std::path::PathBuf::from(vault_path).join(subfolder)
     };
 
-    let vault_canonical = std::fs::canonicalize(vault_path)
+    let vault_canonical = tokio::fs::canonicalize(vault_path)
+        .await
         .map_err(|e| format!("Invalid vault path {vault_path}: {e}"))?;
     tokio::fs::create_dir_all(&dir_path)
         .await
         .map_err(|e| format!("Failed to create directory {}: {e}", dir_path.display()))?;
-    let dir_canonical = std::fs::canonicalize(&dir_path)
+    let dir_canonical = tokio::fs::canonicalize(&dir_path)
+        .await
         .map_err(|e| format!("Failed to resolve directory {}: {e}", dir_path.display()))?;
     if !dir_canonical.starts_with(&vault_canonical) {
         return Err(format!("Subfolder '{subfolder}' escapes vault path '{vault_path}'"));
@@ -539,7 +542,7 @@ async fn execute_obsidian(
 
     let mut file_path = dir_path.join(format!("{filename}.md"));
     let mut counter = 2u32;
-    while file_path.exists() {
+    while tokio::fs::try_exists(&file_path).await.unwrap_or(false) {
         file_path = dir_path.join(format!("{filename} ({counter}).md"));
         counter += 1;
     }
@@ -552,7 +555,7 @@ async fn execute_obsidian(
         result
     };
 
-    let unique_speakers: std::collections::BTreeSet<String> = context
+    let unique_speakers: BTreeSet<String> = context
         .action_items
         .iter()
         .filter_map(|ai| ai.assignee.clone())

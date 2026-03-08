@@ -108,8 +108,9 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
   const [fields, setFields] = useState<Record<string, string>>({});
   const isConnected = !!connectedIntegration;
   const isEmail = intType.type === "email";
+  const isObsidian = intType.type === "obsidian";
 
-  const speakerKeys = (fields._speakerKeys ?? "").split(",").filter(Boolean);
+  const speakerKeys = isObsidian ? (fields._speakerKeys ?? "").split(",").filter(Boolean) : [];
 
   const handleConnect = async () => {
     if (isEmail) {
@@ -130,7 +131,7 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
     if (!hasAllRequired) return;
 
     let creds: Record<string, string> = fields;
-    if (intType.type === "obsidian") {
+    if (isObsidian) {
       const speakerMap: Record<string, string> = {};
       speakerKeys.forEach((key, i) => {
         const value = fields[`_speakerVal_${i}`]?.trim();
@@ -234,7 +235,7 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
                   )}
                 </div>
               ))}
-              {intType.type === "obsidian" && (
+              {isObsidian && (
                 <div className="space-y-2 pt-2">
                   <label className="text-xs text-muted-foreground font-medium">Speaker Mapping</label>
                   <p className="text-[11px] text-muted-foreground">Map transcript labels to names. Mapped names become [[wikilinks]] in Obsidian.</p>
