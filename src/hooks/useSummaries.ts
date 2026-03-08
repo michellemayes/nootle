@@ -43,10 +43,10 @@ export function useSummaries(meetingId: string) {
         provider,
         model,
       });
-      await refresh();
+      setSummaries((prev) => [summary, ...prev]);
       return summary;
     },
-    [meetingId, refresh],
+    [meetingId],
   );
 
   return { summaries, loading, error, refresh, generateSummary };
