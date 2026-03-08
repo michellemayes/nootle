@@ -11,6 +11,8 @@ import type { TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ScratchPad } from "@/components/ScratchPad";
+import { useCompactMode } from "@/contexts/CompactModeContext";
+import { CompactRecordingIndicator } from "@/components/CompactRecordingIndicator";
 import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText } from "lucide-react";
 
 function formatTime(seconds: number): string {
@@ -64,6 +66,7 @@ export function RecordingView() {
   const { isRecording, currentMeeting, elapsed, error, startRecording, stopRecording } =
     useRecording();
   const { templates } = useTemplates();
+  const { isCompact } = useCompactMode();
   const [title, setTitle] = useState("Untitled Recording");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
@@ -168,48 +171,56 @@ export function RecordingView() {
           <span className="text-xs font-medium text-muted-foreground">REC</span>
         </div>
 
-        {isEditingTitle ? (
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={() => setIsEditingTitle(false)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") setIsEditingTitle(false);
-            }}
-            className="text-sm font-semibold border-none bg-transparent h-auto py-0 max-w-xs"
-            autoFocus
-          />
-        ) : (
-          <button
-            className="text-sm font-semibold hover:text-muted-foreground transition-colors truncate max-w-xs"
-            onClick={() => setIsEditingTitle(true)}
-          >
+        {isCompact ? (
+          <span className="text-sm font-semibold truncate max-w-[120px]">
             {title}
-          </button>
-        )}
+          </span>
+        ) : (
+          <>
+            {isEditingTitle ? (
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onBlur={() => setIsEditingTitle(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") setIsEditingTitle(false);
+                }}
+                className="text-sm font-semibold border-none bg-transparent h-auto py-0 max-w-xs"
+                autoFocus
+              />
+            ) : (
+              <button
+                className="text-sm font-semibold hover:text-muted-foreground transition-colors truncate max-w-xs"
+                onClick={() => setIsEditingTitle(true)}
+              >
+                {title}
+              </button>
+            )}
 
-        <div className="flex items-center gap-1.5">
-          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-          <select
-            value={selectedTemplateId}
-            onChange={(e) => setSelectedTemplateId(e.target.value)}
-            className="h-7 rounded-md border bg-transparent px-2 text-xs text-muted-foreground"
-            title="Select template"
-          >
-            <option value="">No template</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </div>
+            <div className="flex items-center gap-1.5">
+              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+              <select
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+                className="h-7 rounded-md border bg-transparent px-2 text-xs text-muted-foreground"
+                title="Select template"
+              >
+                <option value="">No template</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
 
         <span className="font-mono text-sm tabular-nums text-muted-foreground">
           {formatTime(elapsed)}
         </span>
 
-        {isRecording && (
+        {isRecording && !isCompact && (
           <div className="flex items-center gap-[2px] h-4">
             {Array.from({ length: 12 }).map((_, i) => (
               <WaveformBar key={i} index={i} />
@@ -240,7 +251,12 @@ export function RecordingView() {
       </div>
 
       {/* Notes — full width, takes remaining space */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 relative">
+        {isCompact && isRecording && (
+          <div className="absolute top-3 right-3 z-10">
+            <CompactRecordingIndicator />
+          </div>
+        )}
         <textarea
           ref={notesRef}
           value={notes}
