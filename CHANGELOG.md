@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Add draggable region to main content top bar (#85) ([0d13d96](https://github.com/michellemayes/nootle/commit/0d13d962144348bef182273c0b038347775c53ba))
 - Remove extra padding above help card content (#80) ([d43e234](https://github.com/michellemayes/nootle/commit/d43e23439a8f37056cad7ea44831630143884edc))
 - Hide Ask Nootle button when chat panel is open and extend panel to top bar (#79) ([e877f09](https://github.com/michellemayes/nootle/commit/e877f09553401e5c6df3c029306cfa9eef09d805))
 - Clear old analytics before reinserting to prevent duplicate speakers (#77) ([1b84f4e](https://github.com/michellemayes/nootle/commit/1b84f4e8164946c2d26082f1088274a8241a191a))
@@ -42,6 +43,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Hide sidebar expand button until hover and preserve logo aspect ratio (#84) ([8fc3ec2](https://github.com/michellemayes/nootle/commit/8fc3ec20a55ca8498ae0017a054b5219717e21b0))
 - Widen compact threshold and add sidebar collapse toggle (#83) ([96be546](https://github.com/michellemayes/nootle/commit/96be546283b2d2578f3a1556be18bd6043ba9204))
 - Add compact note mode for narrow window use (#82) ([09b279a](https://github.com/michellemayes/nootle/commit/09b279ad330bc3cc26e1f6d2d5a1585252641bad))
 - Update landing page AppMockup to match actual app styling (#78) ([a719034](https://github.com/michellemayes/nootle/commit/a7190340504d5335bb9016613a580d95e28dcfbc))
