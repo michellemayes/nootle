@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Make generated summaries display immediately and surface errors (#86) ([0bc54a4](https://github.com/michellemayes/nootle/commit/0bc54a455ca0bd68f9b03b2bf2d8ffadf7f7b7e9))
 - Add draggable region to main content top bar (#85) ([0d13d96](https://github.com/michellemayes/nootle/commit/0d13d962144348bef182273c0b038347775c53ba))
 - Remove extra padding above help card content (#80) ([d43e234](https://github.com/michellemayes/nootle/commit/d43e23439a8f37056cad7ea44831630143884edc))
 - Hide Ask Nootle button when chat panel is open and extend panel to top bar (#79) ([e877f09](https://github.com/michellemayes/nootle/commit/e877f09553401e5c6df3c029306cfa9eef09d805))
