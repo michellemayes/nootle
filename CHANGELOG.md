@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Clear old analytics before reinserting to prevent duplicate speakers (#77) ([1b84f4e](https://github.com/michellemayes/nootle/commit/1b84f4e8164946c2d26082f1088274a8241a191a))
 - Use PascalCase for titleBarStyle in Tauri v2 config (#73) ([61f0684](https://github.com/michellemayes/nootle/commit/61f0684c1a90e58980c32e3ae69cc7294bb41cfc))
 - Enable scrolling in tabs and scroll areas with proper flex constraints (#71) ([92fea32](https://github.com/michellemayes/nootle/commit/92fea3284a3bd73f2315e15bccafe9f0009ef174))
 - Correct layout spacing and scrolling in meeting detail and templates (#70) ([afc0026](https://github.com/michellemayes/nootle/commit/afc00268e19cf0baff2055b1a6f24974aa337309))
