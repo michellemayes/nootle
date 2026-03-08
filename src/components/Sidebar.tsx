@@ -78,7 +78,7 @@ export function Sidebar() {
           transition={{ duration: 0.4, ease: "easeInOut" }}
           onClick={handleLogoClick}
         >
-          <img src="/nootle-icon.png" alt="Nootle" className="h-8 w-8 rounded-lg object-contain" />
+          <img src="/nootle-icon.png" alt="Nootle" className={cn("rounded-lg object-contain", isCompact ? "h-10 w-10" : "h-8 w-8")} />
         </motion.div>
         {!isCompact && <span className="text-lg font-semibold tracking-tight">Nootle</span>}
         {!isAutoCompact && (
@@ -98,7 +98,7 @@ export function Sidebar() {
       {/* New Recording Button */}
       <div className="px-3 pb-2">
         <MotionButton
-          className={isCompact ? "w-full justify-center" : "w-full justify-start gap-2"}
+          className={isCompact ? "w-full aspect-square justify-center" : "w-full justify-start gap-2"}
           onClick={() => navigate("/recording")}
           title={isCompact ? "Record Something" : undefined}
         >
