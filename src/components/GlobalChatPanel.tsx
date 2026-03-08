@@ -17,6 +17,7 @@ import {
   GripHorizontal,
 } from "lucide-react";
 import { SourceCitation } from "@/components/SourceCitation";
+import { useCompactMode } from "@/contexts/CompactModeContext";
 
 const DATE_PRESETS = [
   { label: "Last 7 days", days: 7 },
@@ -128,7 +129,9 @@ export function GlobalChatPanel() {
     embeddingStatus.model_available &&
     embeddingStatus.embedded < embeddingStatus.total;
 
-  if (onChatPage) return null;
+  const { isCompact } = useCompactMode();
+
+  if (onChatPage || isCompact) return null;
 
   return (
     <>
