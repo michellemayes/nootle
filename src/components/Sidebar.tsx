@@ -71,9 +71,9 @@ export function Sidebar() {
       transition={{ duration: 0.4, ease: "easeInOut" }}
     >
       {/* Logo */}
-      <div className={cn("flex items-center px-5 pt-10 pb-4 [-webkit-app-region:drag]", isCompact ? "justify-center px-2" : "gap-2")}>
+      <div data-tauri-drag-region className={cn("flex items-center px-5 pt-10 pb-4", isCompact ? "justify-center px-2" : "gap-2")}>
         <motion.div
-          className="cursor-pointer [-webkit-app-region:no-drag]"
+          className="cursor-pointer"
           whileHover={{ rotate: [0, -3, 3, 0] }}
           transition={{ duration: 0.4, ease: "easeInOut" }}
           onClick={handleLogoClick}
@@ -85,7 +85,7 @@ export function Sidebar() {
           <button
             onClick={toggleCollapsed}
             className={cn(
-              "[-webkit-app-region:no-drag] rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors",
+              "rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors",
               isCompact ? "opacity-0 group-hover/sidebar:opacity-100 transition-opacity" : "ml-auto",
             )}
             title={isCompact ? "Expand sidebar" : "Collapse sidebar"}
