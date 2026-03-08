@@ -40,6 +40,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Update landing page AppMockup to match actual app styling (#78) ([a719034](https://github.com/michellemayes/nootle/commit/a7190340504d5335bb9016613a580d95e28dcfbc))
 - Make Ask Nootle chat sidebar resizable (#74) ([82d2918](https://github.com/michellemayes/nootle/commit/82d2918cb473e965d26d82395cd3fd4caae7ab80))
 - Make macOS title bar transparent to match app background (#72) ([807856c](https://github.com/michellemayes/nootle/commit/807856cc53ff4300b610fb173907ca03d4bc1aae))
 - Consolidate tags and categories into unified labels (#65) ([8378982](https://github.com/michellemayes/nootle/commit/83789827c91e187d1c5197e992b2e0b7767d1a47))
