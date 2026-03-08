@@ -2786,7 +2786,11 @@ impl Database {
 
     // --- Meeting Analytics ---
 
-    pub fn save_speaker_analytics(&self, meeting_id: &str, analytics: &[SpeakerAnalytics]) -> Result<()> {
+    pub fn save_speaker_analytics(
+        &self,
+        meeting_id: &str,
+        analytics: &[SpeakerAnalytics],
+    ) -> Result<()> {
         let conn = self.lock_conn()?;
         conn.execute(
             "DELETE FROM meeting_analytics WHERE meeting_id = ?1",
@@ -2823,7 +2827,11 @@ impl Database {
         Ok(rows)
     }
 
-    pub fn save_sentiment_segments(&self, meeting_id: &str, segments: &[SentimentSegment]) -> Result<()> {
+    pub fn save_sentiment_segments(
+        &self,
+        meeting_id: &str,
+        segments: &[SentimentSegment],
+    ) -> Result<()> {
         let conn = self.lock_conn()?;
         conn.execute(
             "DELETE FROM sentiment_segments WHERE meeting_id = ?1",
