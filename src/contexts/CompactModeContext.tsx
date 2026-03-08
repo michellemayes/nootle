@@ -1,14 +1,28 @@
-import { createContext, useContext, useState, useEffect, useMemo, useRef } from "react";
+import { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
+
+const STORAGE_KEY = "nootle-sidebar-collapsed";
+const COMPACT_THRESHOLD_RATIO = 0.38;
 
 interface CompactModeContextValue {
   isCompact: boolean;
+  isAutoCompact: boolean;
+  toggleCollapsed: () => void;
 }
 
 const CompactModeContext = createContext<CompactModeContextValue | null>(null);
 
+function readStoredCollapsed(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function CompactModeProvider({ children }: { children: React.ReactNode }) {
-  const [isCompact, setIsCompact] = useState(false);
+  const [isAutoCompact, setIsAutoCompact] = useState(false);
+  const [isManuallyCollapsed, setIsManuallyCollapsed] = useState(readStoredCollapsed);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
@@ -20,8 +34,8 @@ export function CompactModeProvider({ children }: { children: React.ReactNode })
         appWindow.innerSize(),
       ]);
       if (monitor) {
-        const threshold = monitor.size.width * 0.25;
-        setIsCompact(size.width < threshold);
+        const threshold = monitor.size.width * COMPACT_THRESHOLD_RATIO;
+        setIsAutoCompact(size.width < threshold);
       }
     }
 
@@ -42,7 +56,22 @@ export function CompactModeProvider({ children }: { children: React.ReactNode })
     };
   }, []);
 
-  const value = useMemo(() => ({ isCompact }), [isCompact]);
+  const toggleCollapsed = useCallback(() => {
+    setIsManuallyCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(STORAGE_KEY, String(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const isCompact = isAutoCompact || isManuallyCollapsed;
+
+  const value = useMemo(
+    () => ({ isCompact, isAutoCompact, toggleCollapsed }),
+    [isCompact, isAutoCompact, toggleCollapsed],
+  );
 
   return (
     <CompactModeContext.Provider value={value}>
