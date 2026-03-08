@@ -10,7 +10,7 @@ import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { MotionButton } from "@/components/MotionButton";
-import { Mic, Settings, HelpCircle, Circle, Moon, Sun, Lightbulb, MessageSquare, FileText, Bot } from "lucide-react";
+import { Mic, Settings, HelpCircle, Circle, Moon, Sun, Lightbulb, MessageSquare, FileText, Bot, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 const navItems: { to: string; label: string; icon: LucideIcon }[] = [
@@ -27,7 +27,7 @@ export function Sidebar() {
   const { theme, toggleTheme } = useTheme();
   const version = useAppVersion();
   const { selectedProvider, selectedModel, providers, models, filteredModels, changeProvider, setSelectedModel } = useGlobalLLMSelection();
-  const { isCompact } = useCompactMode();
+  const { isCompact, isAutoCompact, toggleCollapsed } = useCompactMode();
   const [wiggleSidebar, setWiggleSidebar] = useState(false);
   const clickCountRef = useRef(0);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -81,6 +81,18 @@ export function Sidebar() {
           <img src="/nootle-icon.png" alt="Nootle" className="h-8 w-8 rounded-lg" />
         </motion.div>
         {!isCompact && <span className="text-lg font-semibold tracking-tight">Nootle</span>}
+        {!isAutoCompact && (
+          <button
+            onClick={toggleCollapsed}
+            className={cn(
+              "[-webkit-app-region:no-drag] rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors",
+              isCompact ? "" : "ml-auto",
+            )}
+            title={isCompact ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {isCompact ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
+        )}
       </div>
 
       {/* New Recording Button */}
