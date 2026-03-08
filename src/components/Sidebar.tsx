@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useAppVersion } from "@/hooks/useAppVersion";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
+import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { MotionButton } from "@/components/MotionButton";
@@ -26,6 +27,7 @@ export function Sidebar() {
   const { theme, toggleTheme } = useTheme();
   const version = useAppVersion();
   const { selectedProvider, selectedModel, providers, models, filteredModels, changeProvider, setSelectedModel } = useGlobalLLMSelection();
+  const { isCompact } = useCompactMode();
   const [wiggleSidebar, setWiggleSidebar] = useState(false);
   const clickCountRef = useRef(0);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -58,7 +60,7 @@ export function Sidebar() {
 
   return (
     <motion.aside
-      className="flex h-screen w-60 flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] shadow-[1px_0_0_0_var(--sidebar-border)]"
+      className={cn("flex h-screen flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] shadow-[1px_0_0_0_var(--sidebar-border)] transition-all duration-200 ease-out", isCompact ? "w-12" : "w-60")}
       animate={
         wiggleSidebar
           ? {
@@ -69,7 +71,7 @@ export function Sidebar() {
       transition={{ duration: 0.4, ease: "easeInOut" }}
     >
       {/* Logo */}
-      <div className="flex items-center gap-2 px-5 pt-10 pb-4 [-webkit-app-region:drag]">
+      <div className={cn("flex items-center px-5 pt-10 pb-4 [-webkit-app-region:drag]", isCompact ? "justify-center px-2" : "gap-2")}>
         <motion.div
           className="cursor-pointer [-webkit-app-region:no-drag]"
           whileHover={{ rotate: [0, -3, 3, 0] }}
@@ -78,17 +80,18 @@ export function Sidebar() {
         >
           <img src="/nootle-icon.png" alt="Nootle" className="h-8 w-8 rounded-lg" />
         </motion.div>
-        <span className="text-lg font-semibold tracking-tight">Nootle</span>
+        {!isCompact && <span className="text-lg font-semibold tracking-tight">Nootle</span>}
       </div>
 
       {/* New Recording Button */}
       <div className="px-3 pb-2">
         <MotionButton
-          className="w-full justify-start gap-2"
+          className={isCompact ? "w-full justify-center" : "w-full justify-start gap-2"}
           onClick={() => navigate("/recording")}
+          title={isCompact ? "Record Something" : undefined}
         >
           <Circle className="h-4 w-4" />
-          Record Something
+          {!isCompact && "Record Something"}
         </MotionButton>
       </div>
 
@@ -101,9 +104,12 @@ export function Sidebar() {
             key={item.to}
             to={item.to}
             end={item.to === "/"}
+            title={isCompact ? item.label : undefined}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center rounded-md transition-colors",
+                isCompact ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
+                "text-sm font-medium",
                 isActive
                   ? "bg-accent text-accent-foreground"
                   : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -117,62 +123,64 @@ export function Sidebar() {
             >
               <item.icon className="h-4 w-4" />
             </motion.span>
-            {item.label}
+            {!isCompact && item.label}
           </NavLink>
         ))}
       </nav>
 
       {/* Footer */}
-      <div className="space-y-2 px-3 pb-4">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors">
-              <Bot className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">
-                {selectedModel
-                  ? models.find((m) => m.id === selectedModel)?.name ?? selectedModel
-                  : "No model selected"}
-              </span>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent side="top" align="start" className="w-56 p-2">
-            <div className="space-y-2">
-              <select
-                value={selectedProvider}
-                onChange={(e) => changeProvider(e.target.value)}
-                className="h-7 w-full rounded-md border bg-transparent px-2 text-xs"
-              >
-                <option value="">Provider</option>
-                {providers.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="h-7 w-full rounded-md border bg-transparent px-2 text-xs"
-              >
-                <option value="">Model</option>
-                {filteredModels.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
-            </div>
-          </PopoverContent>
-        </Popover>
-        <div className="flex items-center justify-between px-2">
-          <p className="text-xs text-muted-foreground">v{version}</p>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleTheme}
-            title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-            className="h-8 w-8 p-0"
-          >
-            {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-          </Button>
+      {!isCompact && (
+        <div className="space-y-2 px-3 pb-4">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors">
+                <Bot className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  {selectedModel
+                    ? models.find((m) => m.id === selectedModel)?.name ?? selectedModel
+                    : "No model selected"}
+                </span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent side="top" align="start" className="w-56 p-2">
+              <div className="space-y-2">
+                <select
+                  value={selectedProvider}
+                  onChange={(e) => changeProvider(e.target.value)}
+                  className="h-7 w-full rounded-md border bg-transparent px-2 text-xs"
+                >
+                  <option value="">Provider</option>
+                  {providers.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="h-7 w-full rounded-md border bg-transparent px-2 text-xs"
+                >
+                  <option value="">Model</option>
+                  {filteredModels.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+            </PopoverContent>
+          </Popover>
+          <div className="flex items-center justify-between px-2">
+            <p className="text-xs text-muted-foreground">v{version}</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleTheme}
+              title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+              className="h-8 w-8 p-0"
+            >
+              {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
     </motion.aside>
   );
 }

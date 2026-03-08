@@ -15,6 +15,7 @@ import { GlobalChatPanel } from "@/components/GlobalChatPanel";
 import { InsightsDashboard } from "@/pages/InsightsDashboard";
 import { ChatPage } from "@/pages/ChatPage";
 import { useMeetingDetection } from "@/hooks/useMeetingDetection";
+import { CompactModeProvider } from "@/contexts/CompactModeContext";
 
 function Layout({ children }: { children: React.ReactNode }) {
   useMeetingDetection();
@@ -43,6 +44,7 @@ function App() {
 
   return (
     <ThemeProvider>
+      <CompactModeProvider>
       <LLMSelectionProvider>
       <BrowserRouter>
         <Routes>
@@ -113,6 +115,7 @@ function App() {
         </Routes>
       </BrowserRouter>
       </LLMSelectionProvider>
+      </CompactModeProvider>
     </ThemeProvider>
   );
 }

@@ -15,7 +15,7 @@
         "title": "Nootle",
         "width": 1200,
         "height": 800,
-        "minWidth": 900,
+        "minWidth": 300,
         "minHeight": 600,
         "decorations": true,
         "transparent": false,

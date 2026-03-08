@@ -27,7 +27,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
 import { LabelEditor } from "@/components/LabelEditor";
-import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List, StickyNote, Sparkles, PanelLeftClose, PanelLeftOpen, Copy, CheckCheck, Zap, AlertTriangle } from "lucide-react";
+import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List, StickyNote, Sparkles, PanelLeftClose, PanelLeftOpen, Copy, CheckCheck, Zap, AlertTriangle, BarChart3 } from "lucide-react";
+import { useCompactMode } from "@/contexts/CompactModeContext";
 import { useWorkflows, useWorkflowRuns } from "@/hooks/useWorkflows";
 
 function runStatusVariant(status: string): "secondary" | "destructive" | "outline" {
@@ -677,11 +678,16 @@ export function MeetingDetail() {
   const [justGenerated, setJustGenerated] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
+  const { isCompact } = useCompactMode();
   const [compactTranscript, setCompactTranscript] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(true);
   const [transcriptWidth, setTranscriptWidth] = useState(50);
   const resizingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isCompact) setTranscriptCollapsed(true);
+  }, [isCompact]);
 
   useEffect(() => {
     const preventSelect = (e: Event) => {
@@ -912,6 +918,7 @@ export function MeetingDetail() {
             <p className="text-sm text-muted-foreground">
               {formatDate(meeting.start_time, "long")}
             </p>
+            {!isCompact && (
             <div className="mt-1.5">
             <LabelEditor
               meetingId={meeting.id}
@@ -922,9 +929,11 @@ export function MeetingDetail() {
               onCreateLabel={(name, color) => createLabel(name, color, null)}
             />
             </div>
+            )}
           </div>
           <Badge variant="outline">{statusLabel(meeting.status)}</Badge>
         </div>
+        {!isCompact && (
         <div className="flex items-center gap-2">
           {workflows.filter(w => w.is_enabled).map((w) => {
                 const recentRun = runs.find(r => r.workflow_id === w.id);
@@ -968,6 +977,7 @@ export function MeetingDetail() {
             </Button>
           )}
         </div>
+        )}
       </div>
 
       {/* Two-column layout */}
@@ -1047,12 +1057,26 @@ export function MeetingDetail() {
                 {transcriptCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
               </Button>
               <TabsList>
-                <TabsTrigger value="notes">Notes</TabsTrigger>
-                <TabsTrigger value="summaries">Summaries</TabsTrigger>
-                <TabsTrigger value="insights">Insights</TabsTrigger>
-                {scratchNotes.length > 0 && <TabsTrigger value="highlights">Highlights</TabsTrigger>}
-                <TabsTrigger value="analytics">Analytics</TabsTrigger>
-                <TabsTrigger value="workflows">Workflows</TabsTrigger>
+                <TabsTrigger value="notes" title="Notes">
+                  {isCompact ? <FileText className="h-4 w-4" /> : "Notes"}
+                </TabsTrigger>
+                <TabsTrigger value="summaries" title="Summaries">
+                  {isCompact ? <Sparkles className="h-4 w-4" /> : "Summaries"}
+                </TabsTrigger>
+                <TabsTrigger value="insights" title="Insights">
+                  {isCompact ? <Lightbulb className="h-4 w-4" /> : "Insights"}
+                </TabsTrigger>
+                {scratchNotes.length > 0 && (
+                  <TabsTrigger value="highlights" title="Highlights">
+                    {isCompact ? <StickyNote className="h-4 w-4" /> : "Highlights"}
+                  </TabsTrigger>
+                )}
+                <TabsTrigger value="analytics" title="Analytics">
+                  {isCompact ? <BarChart3 className="h-4 w-4" /> : "Analytics"}
+                </TabsTrigger>
+                <TabsTrigger value="workflows" title="Workflows">
+                  {isCompact ? <Zap className="h-4 w-4" /> : "Workflows"}
+                </TabsTrigger>
               </TabsList>
             </div>
             <TabsContent value="notes" className="flex flex-1 flex-col mt-0">
@@ -1232,6 +1256,7 @@ export function MeetingDetail() {
               <Play className="h-4 w-4" />
             )}
           </Button>
+          {!isCompact && (
           <div
             className="flex-1 cursor-pointer"
             onClick={audioSrc ? seekAudio : undefined}
@@ -1245,6 +1270,7 @@ export function MeetingDetail() {
               />
             </div>
           </div>
+          )}
           <span className="text-xs font-mono text-muted-foreground tabular-nums">
             {formatPlayerTime(currentTime)} / {formatPlayerTime(duration)}
           </span>
