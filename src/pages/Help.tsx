@@ -89,7 +89,7 @@ export function HelpPage() {
             <div className="flex flex-col gap-6 px-6 py-4 max-w-3xl">
               {"quickStart" in tab && tab.quickStart && <McpQuickStart />}
               <Card>
-                <CardContent className="pt-6">
+                <CardContent>
                   <div className="prose prose-sm dark:prose-invert max-w-none">
                     <Markdown content={tab.content} />
                   </div>
