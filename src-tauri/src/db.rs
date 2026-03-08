@@ -2786,11 +2786,15 @@ impl Database {
 
     // --- Meeting Analytics ---
 
-    pub fn save_speaker_analytics(&self, analytics: &[SpeakerAnalytics]) -> Result<()> {
+    pub fn save_speaker_analytics(&self, meeting_id: &str, analytics: &[SpeakerAnalytics]) -> Result<()> {
         let conn = self.lock_conn()?;
+        conn.execute(
+            "DELETE FROM meeting_analytics WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
         for a in analytics {
             conn.execute(
-                "INSERT OR REPLACE INTO meeting_analytics (id, meeting_id, speaker_label, talk_time_ms, turn_count, interruption_count, avg_turn_length_ms, longest_monologue_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO meeting_analytics (id, meeting_id, speaker_label, talk_time_ms, turn_count, interruption_count, avg_turn_length_ms, longest_monologue_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![a.id, a.meeting_id, a.speaker_label, a.talk_time_ms, a.turn_count, a.interruption_count, a.avg_turn_length_ms, a.longest_monologue_ms],
             )?;
         }
@@ -2819,11 +2823,15 @@ impl Database {
         Ok(rows)
     }
 
-    pub fn save_sentiment_segments(&self, segments: &[SentimentSegment]) -> Result<()> {
+    pub fn save_sentiment_segments(&self, meeting_id: &str, segments: &[SentimentSegment]) -> Result<()> {
         let conn = self.lock_conn()?;
+        conn.execute(
+            "DELETE FROM sentiment_segments WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
         for s in segments {
             conn.execute(
-                "INSERT OR REPLACE INTO sentiment_segments (id, meeting_id, start_ms, end_ms, sentiment, score) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO sentiment_segments (id, meeting_id, start_ms, end_ms, sentiment, score) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![s.id, s.meeting_id, s.start_ms, s.end_ms, s.sentiment, s.score],
             )?;
         }

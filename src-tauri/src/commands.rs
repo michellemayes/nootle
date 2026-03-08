@@ -829,7 +829,7 @@ pub async fn stop_recording(
                     &db_analytics,
                     &meeting_id_analytics,
                 )?;
-                db_analytics.save_speaker_analytics(&speaker_analytics)?;
+                db_analytics.save_speaker_analytics(&meeting_id_analytics, &speaker_analytics)?;
 
                 let transcripts = db_analytics.get_transcript(&meeting_id_analytics)?;
                 let texts: Vec<String> = transcripts.iter().map(|t| t.text.clone()).collect();
@@ -1883,7 +1883,7 @@ pub async fn compute_meeting_analytics(
     let speaker_analytics =
         crate::analytics::compute_speaker_analytics(&db, &meeting_id).map_err(|e| e.to_string())?;
 
-    db.save_speaker_analytics(&speaker_analytics)
+    db.save_speaker_analytics(&meeting_id, &speaker_analytics)
         .map_err(|e| e.to_string())?;
 
     let transcripts = db.get_transcript(&meeting_id).map_err(|e| e.to_string())?;
@@ -1909,7 +1909,7 @@ pub async fn compute_meeting_sentiment(
             .await
             .map_err(|e| e.to_string())?;
 
-    db.save_sentiment_segments(&segments)
+    db.save_sentiment_segments(&meeting_id, &segments)
         .map_err(|e| e.to_string())?;
 
     Ok(())
