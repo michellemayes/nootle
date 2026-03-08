@@ -42,6 +42,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Add compact note mode for narrow window use (#82) ([09b279a](https://github.com/michellemayes/nootle/commit/09b279ad330bc3cc26e1f6d2d5a1585252641bad))
 - Update landing page AppMockup to match actual app styling (#78) ([a719034](https://github.com/michellemayes/nootle/commit/a7190340504d5335bb9016613a580d95e28dcfbc))
 - Make Ask Nootle chat sidebar resizable (#74) ([82d2918](https://github.com/michellemayes/nootle/commit/82d2918cb473e965d26d82395cd3fd4caae7ab80))
 - Make macOS title bar transparent to match app background (#72) ([807856c](https://github.com/michellemayes/nootle/commit/807856cc53ff4300b610fb173907ca03d4bc1aae))
