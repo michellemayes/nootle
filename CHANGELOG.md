@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Improve chat page styling and add resizable conversation list (#90) ([575c499](https://github.com/michellemayes/nootle/commit/575c499befe121268e30073c35f14df66697fcee))
+- Center integration cards layout (#91) ([291f5da](https://github.com/michellemayes/nootle/commit/291f5dae789445b55a1b8392ab57dc4602d86c53))
 - Use data-tauri-drag-region for window dragging in Tauri v2 (#89) ([363ce9a](https://github.com/michellemayes/nootle/commit/363ce9ae7dddaf494af2fdd5ddb43a6d15b7af61))
 - Improve sidebar logo and recording button layout (#88) ([3ce3f84](https://github.com/michellemayes/nootle/commit/3ce3f84f68743c05db51b95db8f4db07078750e9))
 - Make generated summaries display immediately and surface errors (#86) ([0bc54a4](https://github.com/michellemayes/nootle/commit/0bc54a455ca0bd68f9b03b2bf2d8ffadf7f7b7e9))
