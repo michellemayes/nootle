@@ -42,6 +42,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Widen compact threshold and add sidebar collapse toggle (#83) ([96be546](https://github.com/michellemayes/nootle/commit/96be546283b2d2578f3a1556be18bd6043ba9204))
 - Add compact note mode for narrow window use (#82) ([09b279a](https://github.com/michellemayes/nootle/commit/09b279ad330bc3cc26e1f6d2d5a1585252641bad))
 - Update landing page AppMockup to match actual app styling (#78) ([a719034](https://github.com/michellemayes/nootle/commit/a7190340504d5335bb9016613a580d95e28dcfbc))
 - Make Ask Nootle chat sidebar resizable (#74) ([82d2918](https://github.com/michellemayes/nootle/commit/82d2918cb473e965d26d82395cd3fd4caae7ab80))
