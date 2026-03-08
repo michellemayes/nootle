@@ -52,13 +52,13 @@ export function Integrations() {
           Auto-detects meetings and pushes notes to the tools you already use.
         </motion.p>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        <div className="flex flex-wrap justify-center gap-4">
           {integrations.map((item, i) => {
             const Icon = item.icon;
             return (
               <motion.div
                 key={item.name}
-                className="group relative flex flex-col items-center justify-center gap-3 py-8 px-4 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] cursor-default overflow-hidden"
+                className="group relative flex flex-col items-center justify-center gap-3 py-8 px-4 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] cursor-default overflow-hidden w-[calc(50%-0.5rem)] sm:w-[calc(20%-0.8rem)]"
                 whileHover={{
                   boxShadow: `0 0 40px -8px ${item.color}33`,
                   borderColor: `${item.color}44`,
