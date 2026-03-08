@@ -60,7 +60,7 @@ export function Sidebar() {
 
   return (
     <motion.aside
-      className={cn("flex h-screen flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] shadow-[1px_0_0_0_var(--sidebar-border)] transition-all duration-200 ease-out", isCompact ? "w-12" : "w-60")}
+      className={cn("group/sidebar flex h-screen flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] shadow-[1px_0_0_0_var(--sidebar-border)] transition-all duration-200 ease-out", isCompact ? "w-12" : "w-60")}
       animate={
         wiggleSidebar
           ? {
@@ -78,7 +78,7 @@ export function Sidebar() {
           transition={{ duration: 0.4, ease: "easeInOut" }}
           onClick={handleLogoClick}
         >
-          <img src="/nootle-icon.png" alt="Nootle" className="h-8 w-8 rounded-lg" />
+          <img src="/nootle-icon.png" alt="Nootle" className="h-8 w-8 rounded-lg object-contain" />
         </motion.div>
         {!isCompact && <span className="text-lg font-semibold tracking-tight">Nootle</span>}
         {!isAutoCompact && (
@@ -86,7 +86,7 @@ export function Sidebar() {
             onClick={toggleCollapsed}
             className={cn(
               "[-webkit-app-region:no-drag] rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors",
-              isCompact ? "" : "ml-auto",
+              isCompact ? "opacity-0 group-hover/sidebar:opacity-100 transition-opacity" : "ml-auto",
             )}
             title={isCompact ? "Expand sidebar" : "Collapse sidebar"}
           >
