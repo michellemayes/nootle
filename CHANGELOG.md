@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Improve sidebar logo and recording button layout (#88) ([3ce3f84](https://github.com/michellemayes/nootle/commit/3ce3f84f68743c05db51b95db8f4db07078750e9))
 - Make generated summaries display immediately and surface errors (#86) ([0bc54a4](https://github.com/michellemayes/nootle/commit/0bc54a455ca0bd68f9b03b2bf2d8ffadf7f7b7e9))
 - Add draggable region to main content top bar (#85) ([0d13d96](https://github.com/michellemayes/nootle/commit/0d13d962144348bef182273c0b038347775c53ba))
 - Remove extra padding above help card content (#80) ([d43e234](https://github.com/michellemayes/nootle/commit/d43e23439a8f37056cad7ea44831630143884edc))
@@ -44,6 +45,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Add Obsidian to integrations on landing page (#87) ([08cd4b8](https://github.com/michellemayes/nootle/commit/08cd4b8dcaf3ea0b8f8178c22a9c85cfb42c7c8b))
 - Hide sidebar expand button until hover and preserve logo aspect ratio (#84) ([8fc3ec2](https://github.com/michellemayes/nootle/commit/8fc3ec20a55ca8498ae0017a054b5219717e21b0))
 - Widen compact threshold and add sidebar collapse toggle (#83) ([96be546](https://github.com/michellemayes/nootle/commit/96be546283b2d2578f3a1556be18bd6043ba9204))
 - Add compact note mode for narrow window use (#82) ([09b279a](https://github.com/michellemayes/nootle/commit/09b279ad330bc3cc26e1f6d2d5a1585252641bad))
