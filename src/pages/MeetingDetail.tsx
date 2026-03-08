@@ -962,9 +962,11 @@ export function MeetingDetail() {
                   </Button>
                 );
           })}
-          <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
-            <MessageSquare className="h-4 w-4" /> Ask Nootle
-          </Button>
+          {!chatOpen && (
+            <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
+              <MessageSquare className="h-4 w-4" /> Ask Nootle
+            </Button>
+          )}
         </div>
       </div>
 

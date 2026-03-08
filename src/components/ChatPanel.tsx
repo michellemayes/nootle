@@ -191,7 +191,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
   return (
         <div
           style={{ width }}
-          className="relative flex shrink-0 flex-col border-l bg-background"
+          className="relative flex shrink-0 flex-col border-l bg-background -mt-8"
         >
           {/* Resize handle */}
           <div
@@ -199,7 +199,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
             className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 z-10"
           />
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b">
+          <div className="flex items-center justify-between px-4 pt-10 pb-3 border-b">
             <h3 className="font-semibold">Ask Nootle</h3>
             <Button variant="ghost" size="icon-sm" onClick={onClose}>
               <X className="h-4 w-4" />
