@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeSet, HashMap};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorkflowContext {
@@ -34,6 +35,7 @@ pub async fn execute_workflow(
         "github" => execute_github(workflow, integration, context).await,
         "linear" => execute_linear(workflow, integration, context).await,
         "asana" => execute_asana(workflow, integration, context).await,
+        "obsidian" => execute_obsidian(workflow, integration, context).await,
         other => Err(format!("Unknown integration type: {other}")),
     }
 }
@@ -458,4 +460,316 @@ async fn execute_asana(
         message: format!("Created {} Asana task(s)", created.len()),
         output: Some(created.join("\n")),
     })
+}
+
+fn sanitize_filename(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => c,
+        })
+        .collect();
+    let sanitized = sanitized.trim();
+    match sanitized {
+        "" | "." | ".." => "untitled".to_string(),
+        s => s.to_string(),
+    }
+}
+
+async fn execute_obsidian(
+    workflow: &crate::db::Workflow,
+    integration: &crate::db::Integration,
+    context: &WorkflowContext,
+) -> std::result::Result<WorkflowResult, String> {
+    let (creds, config) = parse_creds_and_config(integration, workflow)?;
+
+    let vault_path = creds["vault_path"]
+        .as_str()
+        .ok_or("Missing vault_path in Obsidian credentials")?;
+
+    let speaker_map: HashMap<String, String> = match creds.get("speaker_map") {
+        Some(serde_json::Value::String(s)) => serde_json::from_str(s).unwrap_or_default(),
+        Some(v) => serde_json::from_value(v.clone()).unwrap_or_default(),
+        None => HashMap::new(),
+    };
+
+    let subfolder = config["subfolder"]
+        .as_str()
+        .ok_or("Missing subfolder in workflow config")?;
+
+    let has_traversal = subfolder.split(&['/', '\\']).any(|part| part == "..");
+    if has_traversal {
+        return Err(format!("Subfolder '{subfolder}' contains path traversal"));
+    }
+
+    let filename_template = config["filename_template"]
+        .as_str()
+        .unwrap_or("{{date}} - {{title}}");
+    let note_template = config["note_template"].as_str();
+
+    let date = context
+        .meeting_date
+        .split('T')
+        .next()
+        .unwrap_or(&context.meeting_date);
+
+    let raw_filename = filename_template
+        .replace("{{date}}", date)
+        .replace("{{title}}", &context.meeting_title);
+    let filename = sanitize_filename(&raw_filename);
+
+    let dir_path = if subfolder.is_empty() {
+        std::path::PathBuf::from(vault_path)
+    } else {
+        std::path::PathBuf::from(vault_path).join(subfolder)
+    };
+
+    let vault_canonical = tokio::fs::canonicalize(vault_path)
+        .await
+        .map_err(|e| format!("Invalid vault path {vault_path}: {e}"))?;
+    tokio::fs::create_dir_all(&dir_path)
+        .await
+        .map_err(|e| format!("Failed to create directory {}: {e}", dir_path.display()))?;
+    let dir_canonical = tokio::fs::canonicalize(&dir_path)
+        .await
+        .map_err(|e| format!("Failed to resolve directory {}: {e}", dir_path.display()))?;
+    if !dir_canonical.starts_with(&vault_canonical) {
+        return Err(format!(
+            "Subfolder '{subfolder}' escapes vault path '{vault_path}'"
+        ));
+    }
+
+    let mut file_path = dir_path.join(format!("{filename}.md"));
+    let mut counter = 2u32;
+    while tokio::fs::try_exists(&file_path).await.unwrap_or(false) {
+        file_path = dir_path.join(format!("{filename} ({counter}).md"));
+        counter += 1;
+    }
+
+    let replace_speakers = |text: &str| -> String {
+        let mut result = text.to_string();
+        for (raw_name, mapped_name) in &speaker_map {
+            result = result.replace(raw_name, &format!("[[{mapped_name}]]"));
+        }
+        result
+    };
+
+    let unique_speakers: BTreeSet<String> = context
+        .action_items
+        .iter()
+        .filter_map(|ai| ai.assignee.clone())
+        .collect();
+
+    let speakers_yaml: String = unique_speakers
+        .iter()
+        .map(|name| match speaker_map.get(name.as_str()) {
+            Some(mapped) => format!("  - \"[[{mapped}]]\""),
+            None => format!("  - \"{name}\""),
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let escaped_title = context.meeting_title.replace('"', "\\\"");
+    let mut frontmatter =
+        format!("---\ndate: {date}\ntitle: \"{escaped_title}\"\ntags:\n  - meeting\n  - nootle\n",);
+    if !unique_speakers.is_empty() {
+        frontmatter.push_str("speakers:\n");
+        frontmatter.push_str(&speakers_yaml);
+        frontmatter.push('\n');
+    }
+    frontmatter.push_str("---\n");
+
+    let body = if let Some(tmpl) = note_template {
+        render_template(tmpl, context)
+    } else {
+        let summary_text = context.summary.as_deref().unwrap_or("No summary available");
+        let summary_with_links = replace_speakers(summary_text);
+
+        let action_items_text = context
+            .action_items
+            .iter()
+            .map(|ai| {
+                let assignee_part = ai
+                    .assignee
+                    .as_deref()
+                    .map(|a| {
+                        let display = speaker_map
+                            .get(a)
+                            .map_or_else(|| a.to_string(), |m| format!("[[{m}]]"));
+                        format!(" ({display})")
+                    })
+                    .unwrap_or_default();
+
+                let due_part = ai
+                    .due_date
+                    .as_deref()
+                    .map(|d| format!(" [due: {d}]"))
+                    .unwrap_or_default();
+
+                format!("- [ ] {}{assignee_part}{due_part}", ai.content)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        format!(
+            "# {title}\n\n## Summary\n\n{summary}\n\n## Action Items\n\n{actions}\n",
+            title = context.meeting_title,
+            summary = summary_with_links,
+            actions = action_items_text,
+        )
+    };
+
+    let full_content = format!("{frontmatter}\n{body}");
+
+    tokio::fs::write(&file_path, full_content)
+        .await
+        .map_err(|e| format!("Failed to write Obsidian note: {e}"))?;
+
+    let path_str = file_path.to_string_lossy().to_string();
+
+    Ok(WorkflowResult {
+        message: format!("Note created: {}.md", filename),
+        output: Some(path_str),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_filename_basic() {
+        assert_eq!(sanitize_filename("My Meeting"), "My Meeting");
+    }
+
+    #[test]
+    fn test_sanitize_filename_strips_invalid_chars() {
+        assert_eq!(
+            sanitize_filename("Q1: Review / Planning"),
+            "Q1_ Review _ Planning"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_filename_all_special() {
+        assert_eq!(
+            sanitize_filename("a\\b:c*d?e\"f<g>h|i"),
+            "a_b_c_d_e_f_g_h_i"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_filename_empty() {
+        assert_eq!(sanitize_filename(""), "untitled");
+    }
+
+    #[test]
+    fn test_sanitize_filename_dots() {
+        assert_eq!(sanitize_filename("."), "untitled");
+        assert_eq!(sanitize_filename(".."), "untitled");
+    }
+
+    #[tokio::test]
+    async fn test_execute_obsidian_creates_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let vault_path = tmp.path().to_str().unwrap();
+
+        let integration = crate::db::Integration {
+            id: "int-1".to_string(),
+            integration_type: "obsidian".to_string(),
+            name: "Obsidian".to_string(),
+            credentials_json: serde_json::json!({
+                "vault_path": vault_path,
+                "speaker_map": { "Speaker 1": "Michelle Mayes" }
+            })
+            .to_string(),
+            created_at: "2026-03-07".to_string(),
+        };
+
+        let workflow = crate::db::Workflow {
+            id: "wf-1".to_string(),
+            name: "Export to Obsidian".to_string(),
+            description: None,
+            icon: None,
+            integration_id: "int-1".to_string(),
+            action_type: "create_note".to_string(),
+            config_json: serde_json::json!({
+                "subfolder": "Meetings"
+            })
+            .to_string(),
+            is_enabled: true,
+            created_at: "2026-03-07".to_string(),
+        };
+
+        let context = WorkflowContext {
+            meeting_title: "Weekly Standup".to_string(),
+            meeting_date: "2026-03-07T10:00:00".to_string(),
+            summary: Some("Discussed Q1 roadmap. Speaker 1 will lead the effort.".to_string()),
+            action_items: vec![ActionItemContext {
+                content: "Review PR #42".to_string(),
+                assignee: Some("Speaker 1".to_string()),
+                due_date: Some("2026-03-10".to_string()),
+            }],
+        };
+
+        let result = execute_obsidian(&workflow, &integration, &context)
+            .await
+            .unwrap();
+        assert!(result.message.contains("Note created"));
+
+        let file_path = tmp
+            .path()
+            .join("Meetings")
+            .join("2026-03-07 - Weekly Standup.md");
+        assert!(file_path.exists(), "File should exist at {:?}", file_path);
+
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        assert!(content.contains("date: 2026-03-07"));
+        assert!(content.contains("title: \"Weekly Standup\""));
+        assert!(content.contains("[[Michelle Mayes]]"));
+        assert!(content.contains("- [ ] Review PR #42"));
+        assert!(content.contains("[due: 2026-03-10]"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_obsidian_deduplicates_filename() {
+        let tmp = tempfile::tempdir().unwrap();
+        let vault_path = tmp.path().to_str().unwrap();
+        let meetings_dir = tmp.path().join("Meetings");
+        std::fs::create_dir_all(&meetings_dir).unwrap();
+        std::fs::write(meetings_dir.join("2026-03-07 - Standup.md"), "existing").unwrap();
+
+        let integration = crate::db::Integration {
+            id: "int-1".to_string(),
+            integration_type: "obsidian".to_string(),
+            name: "Obsidian".to_string(),
+            credentials_json: serde_json::json!({ "vault_path": vault_path }).to_string(),
+            created_at: "2026-03-07".to_string(),
+        };
+
+        let workflow = crate::db::Workflow {
+            id: "wf-1".to_string(),
+            name: "Export".to_string(),
+            description: None,
+            icon: None,
+            integration_id: "int-1".to_string(),
+            action_type: "create_note".to_string(),
+            config_json: serde_json::json!({ "subfolder": "Meetings" }).to_string(),
+            is_enabled: true,
+            created_at: "2026-03-07".to_string(),
+        };
+
+        let context = WorkflowContext {
+            meeting_title: "Standup".to_string(),
+            meeting_date: "2026-03-07".to_string(),
+            summary: Some("Summary".to_string()),
+            action_items: vec![],
+        };
+
+        let result = execute_obsidian(&workflow, &integration, &context)
+            .await
+            .unwrap();
+        assert!(result.output.unwrap().contains("(2)"));
+    }
 }
