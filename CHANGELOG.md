@@ -34,6 +34,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+- Add CLAUDE.md with pre-PR simplify reminder (#75) ([ca76a71](https://github.com/michellemayes/nootle/commit/ca76a71bb179f5bfb59225af9c38ea218877452b))
 - Clarify difference between prompts and templates (#13) ([4102fce](https://github.com/michellemayes/nootle/commit/4102fce45b76bceb2de2a690ffb434961d93a122))
 
 ### Features
