@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { MotionButton } from "@/components/MotionButton";
 import { SparkleEffect } from "@/components/SparkleEffect";
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChatPanel } from "@/components/ChatPanel";
+import { Collapsible } from "@/components/Collapsible";
 import { Markdown } from "@/components/Markdown";
 import { NotesEditor } from "@/components/NotesEditor";
 import { AnalyticsPanel } from "@/components/AnalyticsPanel";
@@ -65,12 +66,12 @@ function CopyButton({ text, className = "" }: { text: string; className?: string
 }
 
 const speakerColors = [
-  "text-blue-400",
-  "text-green-400",
-  "text-amber-400",
-  "text-purple-400",
-  "text-pink-400",
-  "text-cyan-400",
+  "text-chart-1",
+  "text-chart-2",
+  "text-chart-3",
+  "text-chart-4",
+  "text-chart-5",
+  "text-primary",
 ];
 
 function formatPlayerTime(seconds: number): string {
@@ -112,6 +113,9 @@ function ActionItemRow({
   return (
     <div className="flex items-start gap-2 rounded-md border p-3 group/action">
       <button
+        role="checkbox"
+        aria-checked={isDone}
+        aria-label={`Mark "${item.content.slice(0, 60)}" as ${isDone ? "open" : "done"}`}
         onClick={() => item.action_item_id && onToggle(item.action_item_id, item.status ?? "open")}
         className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
           isDone
@@ -208,21 +212,17 @@ function InsightSection({
           {open ? "Collapse" : "Expand"}
         </span>
       </button>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          className="space-y-2 overflow-hidden"
-        >
+      <Collapsible open={open}>
+        <div className="space-y-2">
           {items.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic pl-6">None found</p>
+            <p className="text-xs text-muted-foreground italic pl-6">Nothing here yet — try extracting insights above</p>
           ) : (
             items.map((item) => (
               <div key={item.id}>{renderItem(item)}</div>
             ))
           )}
-        </motion.div>
-      )}
+        </div>
+      </Collapsible>
     </div>
   );
 }
@@ -270,7 +270,7 @@ function InsightsPanel({
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center p-8">
-        <p className="text-sm text-muted-foreground">Loading insights...</p>
+        <p className="text-sm text-muted-foreground">Sifting through the good stuff...</p>
       </div>
     );
   }
@@ -306,7 +306,7 @@ function InsightsPanel({
           )}
         </Button>
         {(extractError || insightsError) && (
-          <span className="text-xs text-destructive">{extractError || insightsError}</span>
+          <span className="text-xs text-destructive">Failed to extract insights. Please try again.</span>
         )}
       </div>
 
@@ -316,7 +316,7 @@ function InsightsPanel({
             <Lightbulb className="h-8 w-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground text-center">
               {noProviders
-                ? "Add an LLM provider in Settings to extract insights."
+                ? "Add an AI provider in Settings to extract insights."
                 : "No insights yet. Select a provider and model above to extract them."}
             </p>
           </div>
@@ -985,68 +985,80 @@ export function MeetingDetail() {
 
       {/* Two-column layout */}
       <div ref={containerRef} className="flex flex-1 min-h-0 overflow-hidden">
-        {!transcriptCollapsed && (<>
-          <div className="flex flex-col overflow-hidden" style={{ width: `${transcriptWidth}%` }}>
-            <div className="flex items-center justify-between px-8 border-b h-12">
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                Transcript
-              </h2>
-              <div className="flex items-center gap-1">
-                <CopyButton
-                  text={segments.map((s) => `${s.speaker_label}: ${s.text}`).join("\n")}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setCompactTranscript((v) => !v)}
-                  title={compactTranscript ? "Spacious view" : "Compact view"}
-                >
-                  {compactTranscript ? <AlignJustify className="h-4 w-4" /> : <List className="h-4 w-4" />}
-                </Button>
-              </div>
-            </div>
-            <ScrollArea className="flex-1">
-              <div className={`px-8 py-4 ${compactTranscript ? "space-y-1" : "space-y-4"}`}>
-                {transcriptLoading ? (
-                  <p className="text-sm text-muted-foreground">
-                    Loading transcript...
-                  </p>
-                ) : segments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic">
-                    No transcript here — this one's a mystery
-                  </p>
-                ) : (
-                  segments.map((seg) => (
-                    <div key={seg.id} className={`group flex gap-3 ${compactTranscript ? "items-baseline" : ""}`}>
-                      <button
-                        onClick={() => seekToMs(seg.start_ms)}
-                        className="shrink-0 pt-0.5 text-xs text-muted-foreground font-mono tabular-nums w-12 text-left hover:text-primary transition-colors"
-                      >
-                        {formatMs(seg.start_ms)}
-                      </button>
-                      <p className="min-w-0 text-sm text-foreground leading-relaxed">
-                        <span
-                          className={`font-semibold ${speakerMap.get(seg.speaker_label) ?? "text-foreground"} mr-1.5`}
-                        >
-                          {seg.speaker_label}:
-                        </span>
-                        {seg.text}
+        <AnimatePresence>
+          {!transcriptCollapsed && (
+            <motion.div
+              key="transcript-panel"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex overflow-hidden"
+              style={{ width: `${transcriptWidth}%` }}
+            >
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <div className="flex items-center justify-between px-8 border-b h-12">
+                  <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                    Transcript
+                  </h2>
+                  <div className="flex items-center gap-1">
+                    <CopyButton
+                      text={segments.map((s) => `${s.speaker_label}: ${s.text}`).join("\n")}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setCompactTranscript((v) => !v)}
+                      title={compactTranscript ? "Spacious view" : "Compact view"}
+                    >
+                      {compactTranscript ? <AlignJustify className="h-4 w-4" /> : <List className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+                <ScrollArea className="flex-1">
+                  <div className={`px-8 py-4 ${compactTranscript ? "space-y-1" : "space-y-4"}`}>
+                    {transcriptLoading ? (
+                      <p className="text-sm text-muted-foreground">
+                        Unspooling the transcript...
                       </p>
-                    </div>
-                  ))
-                )}
+                    ) : segments.length === 0 ? (
+                      <p className="text-sm text-muted-foreground italic">
+                        No transcript here — this one's a mystery
+                      </p>
+                    ) : (
+                      segments.map((seg) => (
+                        <div key={seg.id} className={`group flex gap-3 ${compactTranscript ? "items-baseline" : ""}`}>
+                          <button
+                            onClick={() => seekToMs(seg.start_ms)}
+                            className="shrink-0 pt-0.5 text-xs text-muted-foreground font-mono tabular-nums w-12 text-left hover:text-primary transition-colors"
+                          >
+                            {formatMs(seg.start_ms)}
+                          </button>
+                          <p className="min-w-0 text-sm text-foreground leading-relaxed">
+                            <span
+                              className={`font-semibold ${speakerMap.get(seg.speaker_label) ?? "text-foreground"} mr-1.5`}
+                            >
+                              {seg.speaker_label}:
+                            </span>
+                            {seg.text}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
               </div>
-            </ScrollArea>
-          </div>
-          <div
-            className="w-1.5 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors border-r"
-            onMouseDown={() => {
-              resizingRef.current = true;
-              document.body.style.cursor = "col-resize";
-              document.body.style.userSelect = "none";
-            }}
-          />
-        </>)}
+              <div
+                className="w-1.5 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors border-r"
+                onMouseDown={() => {
+                  resizingRef.current = true;
+                  document.body.style.cursor = "col-resize";
+                  document.body.style.userSelect = "none";
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
           <Tabs defaultValue="notes" className="flex flex-1 flex-col overflow-hidden">
@@ -1159,7 +1171,7 @@ export function MeetingDetail() {
                   <div className="flex flex-col items-center justify-center p-8 gap-2">
                     <FileText className="h-8 w-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground text-center">
-                      No summaries yet. Select a prompt and generate one.
+                      No summaries yet. Pick a prompt above and let Nootle distill the conversation.
                     </p>
                   </div>
                 ) : (

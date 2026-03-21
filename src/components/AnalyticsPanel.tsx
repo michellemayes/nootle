@@ -69,7 +69,7 @@ export function AnalyticsPanel({
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center p-8">
-        <p className="text-sm text-muted-foreground">Loading analytics...</p>
+        <p className="text-sm text-muted-foreground">Tallying up the numbers...</p>
       </div>
     );
   }
@@ -79,14 +79,14 @@ export function AnalyticsPanel({
       <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
         <BarChart3 className="h-8 w-8 text-muted-foreground" />
         <p className="text-sm text-muted-foreground text-center">
-          No analytics yet. Compute talk-time, engagement, and more from the transcript.
+          No analytics yet. Let Nootle crunch the numbers — who talked the most, how engaged everyone was, and more.
         </p>
         <Button
           size="sm"
           onClick={handleCompute}
           disabled={computing}
         >
-          {computing ? "Computing..." : "Compute Analytics"}
+          {computing ? "Crunching..." : "Crunch the Numbers"}
         </Button>
         {(actionError || error) && (
           <p className="text-xs text-destructive text-center">{actionError || error}</p>

@@ -127,6 +127,9 @@
   .card {
     box-shadow: 0 0 0 1px oklch(0 0 0 / 4%), 0 1px 3px oklch(0 0 0 / 3%), 0 2px 8px oklch(0 0 0 / 2%);
   }
+  .dark .card {
+    box-shadow: 0 0 0 1px oklch(1 0 0 / 8%), 0 1px 3px oklch(0 0 0 / 20%), 0 2px 8px oklch(0 0 0 / 15%);
+  }
 }
 
 /* TipTap editor */
@@ -149,5 +152,14 @@
 @keyframes compact-wave {
   0% { height: 4px; }
   100% { height: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 

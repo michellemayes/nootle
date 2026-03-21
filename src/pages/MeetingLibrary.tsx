@@ -3,13 +3,16 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { formatDate, statusLabel } from "@/lib/utils";
+import { formatDate, statusLabel, labelTextColor } from "@/lib/utils";
+import { useCompactMode } from "@/contexts/CompactModeContext";
 
 const LOADING_MESSAGES = [
   "Warming up the noodles...",
   "Untangling the transcript...",
   "Slurping through the data...",
   "Almost there, just al dente...",
+  "Stirring the meeting pot...",
+  "Draining the audio linguine...",
 ];
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -72,8 +75,19 @@ function statusColor(
   }
 }
 
+const dropdownPrimitives = {
+  MenuItem: DropdownMenuItem,
+  MenuSeparator: DropdownMenuSeparator,
+};
+
+const contextPrimitives = {
+  MenuItem: ContextMenuItem,
+  MenuSeparator: ContextMenuSeparator,
+};
+
 export function MeetingLibrary() {
   const navigate = useNavigate();
+  const { isCompact } = useCompactMode();
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
     return (localStorage.getItem("meetingViewMode") as "grid" | "list") || "grid";
@@ -163,16 +177,6 @@ export function MeetingLibrary() {
     [handleArchive, handleUnarchive],
   );
 
-  const dropdownPrimitives = {
-    MenuItem: DropdownMenuItem,
-    MenuSeparator: DropdownMenuSeparator,
-  };
-
-  const contextPrimitives = {
-    MenuItem: ContextMenuItem,
-    MenuSeparator: ContextMenuSeparator,
-  };
-
   return (
     <div className="flex flex-1 flex-col gap-5 overflow-auto p-6">
       {/* Header */}
@@ -234,12 +238,16 @@ export function MeetingLibrary() {
                 onClick={() => toggleLabel(label.id)}
                 className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors border ${
                   isActive
-                    ? "text-white border-transparent"
+                    ? "border-transparent"
                     : "bg-transparent border-border text-foreground hover:bg-accent"
                 }`}
                 style={
                   isActive
-                    ? { backgroundColor: label.color, borderColor: label.color }
+                    ? {
+                        backgroundColor: label.color,
+                        borderColor: label.color,
+                        color: labelTextColor(label.color),
+                      }
                     : undefined
                 }
               >
@@ -290,15 +298,15 @@ export function MeetingLibrary() {
           )}
         </div>
       ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredMeetings.map((meeting) => (
+        <div className={`grid gap-4 ${isCompact ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"}`}>
+          {filteredMeetings.map((meeting, i) => (
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   whileHover={{ y: -2 }}
-                  transition={{ duration: 0.2 }}
+                  transition={{ duration: 0.2, delay: Math.min(i * 0.04, 0.4) }}
                 >
                   <Card
                     className="group cursor-pointer transition-colors hover:bg-accent/30 hover:shadow-md"
@@ -363,10 +371,13 @@ export function MeetingLibrary() {
         </div>
       ) : (
         <div className="flex flex-col divide-y rounded-md border">
-          {filteredMeetings.map((meeting) => (
+          {filteredMeetings.map((meeting, i) => (
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
-                <div
+                <motion.div
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}
                   className="group flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors hover:bg-accent/30"
                   onClick={() => navigate(`/meeting/${meeting.id}`)}
                 >
@@ -406,7 +417,7 @@ export function MeetingLibrary() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </div>
+                </motion.div>
               </ContextMenuTrigger>
               <ContextMenuContent>
                 {renderMenuItems(meeting, contextPrimitives)}

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Collapsible } from "@/components/Collapsible";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
 import { useModelDownload } from "@/hooks/useModelDownload";
@@ -190,16 +191,8 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
           </Button>
         )}
       </div>
-      <AnimatePresence>
-        {expanded && !isConnected && intType.fields.length > 0 && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="mt-3 ml-0 space-y-2 pl-0">
+      <Collapsible open={expanded && !isConnected && intType.fields.length > 0}>
+        <div className="mt-3 space-y-2">
               {intType.fields.map((field) => (
                 <div key={field.key} className="flex items-center gap-2">
                   <label className="text-xs text-muted-foreground w-24 shrink-0">{field.label}</label>
@@ -292,10 +285,8 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
                   {saving ? "Saving..." : "Save"}
                 </Button>
               </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </div>
+      </Collapsible>
     </div>
   );
 }
@@ -463,16 +454,8 @@ function WorkflowsManager() {
           <p className="text-sm text-muted-foreground">Loading...</p>
         ) : (
           <div className="space-y-3">
-            <AnimatePresence>
-              {editing !== null && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className="border rounded-lg p-4 space-y-3 mb-3">
+            <Collapsible open={editing !== null}>
+              <div className="border rounded-lg p-4 space-y-3 mb-3">
                     <h4 className="text-sm font-medium">{editing === "new" ? "New Workflow" : "Edit Workflow"}</h4>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
@@ -564,13 +547,11 @@ function WorkflowsManager() {
                       </Button>
                     </div>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            </Collapsible>
 
             {workflows.length === 0 && editing === null ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
-                No workflows yet. Create one to automate your post-meeting tasks.
+                No workflows yet. Set one up and Nootle will handle the busywork after every meeting.
               </p>
             ) : (
               <div className="divide-y">

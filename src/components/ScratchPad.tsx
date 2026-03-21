@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useScratchPad } from "@/hooks/useScratchPad";
+import { Collapsible } from "@/components/Collapsible";
 import { ChevronDown, ChevronRight, X, StickyNote } from "lucide-react";
 import { formatMs } from "@/lib/utils";
 
@@ -66,16 +67,9 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
           </span>
         )}
       </button>
-      <AnimatePresence>
+      <Collapsible open={isOpen}>
         {isOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="px-6 pb-3 space-y-2">
+          <div className="px-6 pb-3 space-y-2">
               <div className="flex items-center gap-2">
                 <Input
                   ref={inputRef}
@@ -123,10 +117,9 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
                   ))}
                 </div>
               )}
-            </div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
+      </Collapsible>
     </div>
   );
 }

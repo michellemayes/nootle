@@ -37,6 +37,23 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+/** Returns "black" or "white" for readable text on a given background color (oklch or hex). */
+export function labelTextColor(color: string): string {
+  const oklchMatch = color.match(/oklch\(\s*([\d.]+)/);
+  if (oklchMatch) {
+    return parseFloat(oklchMatch[1]) > 0.65 ? "black" : "white";
+  }
+  if (color.startsWith("#") && color.length >= 7) {
+    const r = parseInt(color.slice(1, 3), 16) / 255;
+    const g = parseInt(color.slice(3, 5), 16) / 255;
+    const b = parseInt(color.slice(5, 7), 16) / 255;
+    const toLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    const L = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+    return L > 0.4 ? "black" : "white";
+  }
+  return "white";
+}
+
 export function statusLabel(status: string): string {
   switch (status) {
     case "recording": return "Recording";

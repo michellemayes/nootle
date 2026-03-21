@@ -11,6 +11,7 @@ import type { TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ScratchPad } from "@/components/ScratchPad";
+import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { CompactRecordingIndicator } from "@/components/CompactRecordingIndicator";
 import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText } from "lucide-react";
@@ -287,16 +288,9 @@ export function RecordingView() {
             </span>
           )}
         </button>
-        <AnimatePresence>
+        <Collapsible open={transcriptOpen}>
           {transcriptOpen && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 200, opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              <ScrollArea className="h-[200px] border-t">
+            <ScrollArea className="h-[200px] border-t">
                 <div ref={scrollRef} className="px-6 py-3 space-y-1.5">
                   {segments.length === 0 && transcriptionStatus?.available === false && (
                     <div className="text-xs text-muted-foreground italic">
@@ -314,7 +308,7 @@ export function RecordingView() {
                   )}
                   {segments.length === 0 && transcriptionStatus?.available !== false && (
                     <p className="text-xs text-muted-foreground italic">
-                      Listening... words will appear here
+                      Ears perked — words will appear as people talk
                     </p>
                   )}
                   {segments.length > 0 &&
@@ -328,9 +322,8 @@ export function RecordingView() {
                     ))}
                 </div>
               </ScrollArea>
-            </motion.div>
           )}
-        </AnimatePresence>
+        </Collapsible>
       </div>
     </div>
   );
