@@ -29,6 +29,9 @@ dist-ssr
 # Plans/design docs
 docs/plans/
 
+# Superpowers brainstorm sessions
+.superpowers/
+
 # SQLite database files
 *.sqlite
 *.sqlite3
