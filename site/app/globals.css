@@ -12,6 +12,9 @@
   --color-accent-subtle: #8b5cf615;
   --color-sponsor: #f472b6;
   --color-sponsor-hover: #ec4899;
+  --color-cyan: #22d3ee;
+  --color-amber: #fbbf24;
+  --color-emerald: #34d399;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -34,4 +37,34 @@
 body {
   background: var(--color-bg);
   color: var(--color-text);
+}
+
+/* Subtle grain overlay */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+  50% { box-shadow: 0 0 20px 4px rgba(139, 92, 246, 0.15); }
+}
+
+@keyframes heart-beat {
+  0%, 100% { transform: scale(1); }
+  25% { transform: scale(1.2); }
+  50% { transform: scale(1); }
+  75% { transform: scale(1.1); }
 }

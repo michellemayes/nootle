@@ -8,24 +8,28 @@ const steps = [
     title: "Join your meeting",
     description:
       "Nootle detects active meetings automatically — Zoom, Teams, Google Meet, and more.",
+    color: "#22d3ee",
   },
   {
     number: "02",
     title: "Record & transcribe",
     description:
       "Real-time transcription with speaker diarization. Captures both your mic and system audio.",
+    color: "#8b5cf6",
   },
   {
     number: "03",
     title: "Review & chat",
     description:
       "Browse transcripts, get AI summaries, and ask follow-up questions about anything discussed.",
+    color: "#f472b6",
   },
   {
     number: "04",
     title: "Run workflows",
     description:
       "Automatically push notes to Slack, create Linear tickets, update Notion pages, or send email summaries.",
+    color: "#34d399",
   },
 ];
 
@@ -44,8 +48,11 @@ export function HowItWorks() {
         </motion.h2>
 
         <div className="space-y-12 relative">
-          {/* Connecting line */}
-          <div className="absolute left-6 top-6 bottom-6 w-px bg-[var(--color-border)]" />
+          {/* Gradient connecting line */}
+          <div
+            className="absolute left-6 top-6 bottom-6 w-px opacity-40"
+            style={{ background: "linear-gradient(to bottom, #22d3ee, #8b5cf6, #f472b6, #34d399)" }}
+          />
 
           {steps.map((step, i) => (
             <motion.div
@@ -54,10 +61,16 @@ export function HowItWorks() {
               initial={{ opacity: 0, x: -20 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.15 }}
+              transition={{ duration: 0.4, delay: i * 0.15, ease: [0.16, 1, 0.3, 1] }}
             >
               <div
-                className="font-[family-name:var(--font-outfit)] text-sm font-bold w-12 h-12 rounded-full flex items-center justify-center shrink-0 relative z-10 bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-accent)]"
+                className="font-[family-name:var(--font-outfit)] text-sm font-bold w-12 h-12 rounded-full flex items-center justify-center shrink-0 relative z-10"
+                style={{
+                  backgroundColor: `${step.color}15`,
+                  color: step.color,
+                  border: `1px solid ${step.color}30`,
+                  boxShadow: `0 0 20px -4px ${step.color}25`,
+                }}
               >
                 {step.number}
               </div>

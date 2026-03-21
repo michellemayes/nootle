@@ -917,7 +917,7 @@ export function AppMockup() {
           transition={{ duration: 0.6, delay: 0.2 }}
         >
           {/* Window chrome */}
-          <div aria-hidden="true" className="rounded-2xl overflow-hidden shadow-2xl border border-stone-200">
+          <div aria-hidden="true" className="rounded-2xl overflow-hidden border border-stone-200" style={{ boxShadow: "0 25px 50px -12px rgba(0,0,0,0.4), 0 12px 24px -8px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.05) inset" }}>
             {/* Title bar */}
             <div className="bg-stone-100 px-4 py-2.5 flex items-center gap-2 border-b border-stone-200">
               <div className="flex gap-1.5">
@@ -970,11 +970,11 @@ export function AppMockup() {
             </div>
           </div>
 
-          {/* Subtle glow behind the mockup */}
+          {/* Layered glow behind the mockup */}
           <div
             aria-hidden="true"
-            className="absolute -inset-4 -z-10 rounded-3xl opacity-15 blur-3xl"
-            style={{ background: "var(--color-accent)" }}
+            className="absolute -inset-8 -z-10 rounded-3xl opacity-20 blur-[60px]"
+            style={{ background: "linear-gradient(135deg, var(--color-accent), var(--color-cyan))" }}
           />
         </motion.div>
       </div>
