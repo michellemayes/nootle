@@ -22,10 +22,10 @@ const integrations: { name: string; color: string; icon: IconType }[] = [
 
 export function Integrations() {
   return (
-    <section className="py-20 px-6">
+    <section aria-label="Integrations" className="py-20 px-6">
       <div className="max-w-4xl mx-auto">
         <motion.p
-          className="font-[family-name:var(--font-syne)] text-sm font-semibold tracking-[0.2em] uppercase text-center mb-4 text-[var(--color-text-secondary)]"
+          className="font-[family-name:var(--font-outfit)] text-sm font-semibold tracking-[0.2em] uppercase text-center mb-4 text-[var(--color-text-secondary)]"
           initial={{ opacity: 0, y: 12 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -34,7 +34,7 @@ export function Integrations() {
           Integrations
         </motion.p>
         <motion.h2
-          className="font-[family-name:var(--font-syne)] text-3xl md:text-4xl font-bold text-center mb-4 text-[var(--color-text)]"
+          className="font-[family-name:var(--font-outfit)] text-3xl md:text-4xl font-bold text-center mb-4 text-[var(--color-text)]"
           initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -58,33 +58,14 @@ export function Integrations() {
             return (
               <motion.div
                 key={item.name}
-                className="group relative flex flex-col items-center justify-center gap-3 py-8 px-4 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] cursor-default overflow-hidden w-[calc(50%-0.5rem)] sm:w-[calc(20%-0.8rem)]"
-                whileHover={{
-                  boxShadow: `0 0 40px -8px ${item.color}33`,
-                  borderColor: `${item.color}44`,
-                  y: -4,
-                  transition: { duration: 0.15 },
-                }}
-                initial={{ opacity: 0, scale: 0.8, filter: "blur(8px)" }}
-                whileInView={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                className="flex flex-col items-center justify-center gap-3 py-8 px-4 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] hover:border-[var(--color-accent)]/30 transition-colors duration-200 w-[calc(50%-0.5rem)] sm:w-[calc(20%-0.8rem)]"
+                initial={{ opacity: 0, y: 12 }}
+                whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{
-                  duration: 0.4,
-                  delay: i * 0.05,
-                  type: "spring",
-                  stiffness: 200,
-                  damping: 20,
-                }}
+                transition={{ duration: 0.3, delay: i * 0.04 }}
               >
-                {/* Subtle glow behind icon on hover */}
                 <div
-                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
-                  style={{
-                    background: `radial-gradient(circle at 50% 40%, ${item.color}15 0%, transparent 70%)`,
-                  }}
-                />
-                <div
-                  className="relative flex items-center justify-center w-14 h-14 rounded-xl transition-transform duration-150 group-hover:scale-110"
+                  className="flex items-center justify-center w-14 h-14 rounded-xl"
                   style={{
                     backgroundColor: `color-mix(in srgb, ${item.color} 12%, var(--color-bg))`,
                     color: item.color,
@@ -92,7 +73,7 @@ export function Integrations() {
                 >
                   <Icon size={28} />
                 </div>
-                <span className="relative text-sm font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text)] transition-colors duration-150">
+                <span className="text-sm font-medium text-[var(--color-text-secondary)]">
                   {item.name}
                 </span>
               </motion.div>
