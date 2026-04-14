@@ -247,7 +247,7 @@ function Sidebar() {
     <div className="w-48 flex flex-col shadow-[1px_0_0_0_rgba(120,113,108,0.15)] bg-stone-100/80 backdrop-blur-xl shrink-0">
       {/* Logo */}
       <div className="flex items-center gap-2 px-3 pt-4 pb-3">
-        <img src="/nootle-icon.png" alt="Nootle" className="w-6 h-6 rounded-lg" />
+        <img src="/nootle-icon.svg" alt="Nootle" className="w-6 h-6" />
         <span className="text-sm font-semibold tracking-tight text-stone-900">Nootle</span>
       </div>
 
@@ -888,11 +888,10 @@ export function AppMockup() {
   }
 
   return (
-    <section ref={sectionRef} className="py-24 px-6">
+    <section ref={sectionRef} aria-label="App demo" className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
         <motion.h2
-          className="font-[family-name:var(--font-syne)] text-4xl md:text-5xl font-bold text-center mb-4"
-          style={{ color: "var(--color-text)" }}
+          className="font-[family-name:var(--font-outfit)] text-4xl md:text-5xl font-bold text-center mb-4 text-[var(--color-text)]"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -918,7 +917,7 @@ export function AppMockup() {
           transition={{ duration: 0.6, delay: 0.2 }}
         >
           {/* Window chrome */}
-          <div className="rounded-2xl overflow-hidden shadow-2xl border border-stone-200">
+          <div aria-hidden="true" className="rounded-2xl overflow-hidden border border-stone-200" style={{ boxShadow: "0 25px 50px -12px rgba(0,0,0,0.4), 0 12px 24px -8px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.05) inset" }}>
             {/* Title bar */}
             <div className="bg-stone-100 px-4 py-2.5 flex items-center gap-2 border-b border-stone-200">
               <div className="flex gap-1.5">
@@ -971,12 +970,11 @@ export function AppMockup() {
             </div>
           </div>
 
-          {/* Glow effect behind the mockup */}
+          {/* Layered glow behind the mockup */}
           <div
-            className="absolute -inset-4 -z-10 rounded-3xl opacity-30 blur-3xl"
-            style={{
-              background: "linear-gradient(135deg, #4EEABB, #C084FC, #E879A8)",
-            }}
+            aria-hidden="true"
+            className="absolute -inset-8 -z-10 rounded-3xl opacity-20 blur-[60px]"
+            style={{ background: "linear-gradient(135deg, var(--color-accent), var(--color-cyan))" }}
           />
         </motion.div>
       </div>
