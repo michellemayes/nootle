@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -7,11 +7,13 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from "@/components/Markdown";
 import { ThinkingDots } from "@/components/ThinkingDots";
+import { ResizeHandle } from "@/components/ResizeHandle";
 import { useChatConversations, useChatMessages } from "@/hooks/useChatHistory";
 import { useLabels } from "@/hooks/useLabels";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
+import { useCompactMode } from "@/contexts/CompactModeContext";
 import type { ChatSource, GlobalChatResponse } from "@/types";
-import { Plus, Trash2, MessageSquare, Send } from "lucide-react";
+import { Plus, Trash2, MessageSquare, Send, PanelLeftOpen, PanelLeftClose } from "lucide-react";
 import { SourceCitation } from "@/components/SourceCitation";
 
 export function ChatPage() {
@@ -22,6 +24,7 @@ export function ChatPage() {
   const { messages: dbMessages, refresh: refreshMessages } = useChatMessages(activeId);
   const { labels } = useLabels();
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
+  const { isCompact } = useCompactMode();
 
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
@@ -30,43 +33,13 @@ export function ChatPage() {
   const [selectedLabel, setSelectedLabel] = useState("");
   const [dateFromValue, setDateFromValue] = useState("");
   const [dateToValue, setDateToValue] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Resize state for conversation list
   const [sidebarWidth, setSidebarWidth] = useState(256);
-  const isResizing = useRef(false);
-  const startX = useRef(0);
-  const startWidth = useRef(0);
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizing.current = true;
-    startX.current = e.clientX;
-    startWidth.current = sidebarWidth;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  }, [sidebarWidth]);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing.current) return;
-      const delta = e.clientX - startX.current;
-      const newWidth = Math.min(Math.max(startWidth.current + delta, 180), 480);
-      setSidebarWidth(newWidth);
-    };
-    const handleMouseUp = () => {
-      if (!isResizing.current) return;
-      isResizing.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, []);
+  const showSidebar = !isCompact || sidebarOpen;
 
   useEffect(() => {
     if (conversations.length > 0 && !activeId) {
@@ -142,20 +115,28 @@ export function ChatPage() {
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* Left panel - conversation list */}
+      {showSidebar && (
       <div
-        style={{ width: sidebarWidth }}
+        style={{ width: isCompact ? "100%" : sidebarWidth }}
         className="relative flex shrink-0 flex-col border-r bg-background"
       >
         <div className="flex items-center justify-between px-4 h-12 border-b">
           <h2 className="text-sm font-semibold">Conversations</h2>
-          <Button variant="ghost" size="icon-sm" onClick={handleNewConversation}>
-            <Plus className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon-sm" onClick={handleNewConversation}>
+              <Plus className="h-4 w-4" />
+            </Button>
+            {isCompact && (
+              <Button variant="ghost" size="icon-sm" onClick={() => setSidebarOpen(false)} title="Hide conversations">
+                <PanelLeftClose className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
             {conversations.length === 0 && (
-              <p className="text-xs text-muted-foreground p-2">No conversations yet</p>
+              <p className="text-xs text-muted-foreground p-2">Start a conversation using the + button above</p>
             )}
             {conversations.map((conv) => (
               <div
@@ -165,7 +146,10 @@ export function ChatPage() {
                     ? "bg-accent text-accent-foreground"
                     : "text-muted-foreground hover:bg-accent/50"
                 }`}
-                onClick={() => setActiveId(conv.id)}
+                onClick={() => {
+                  setActiveId(conv.id);
+                  if (isCompact) setSidebarOpen(false);
+                }}
               >
                 <MessageSquare className="h-3.5 w-3.5 shrink-0" />
                 {editingTitleId === conv.id ? (
@@ -206,17 +190,29 @@ export function ChatPage() {
             ))}
           </div>
         </ScrollArea>
-        {/* Resize handle */}
-        <div
-          onMouseDown={handleResizeStart}
-          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 z-10"
-        />
+        {!isCompact && (
+          <ResizeHandle
+            width={sidebarWidth}
+            onWidthChange={setSidebarWidth}
+            min={180}
+            max={480}
+            side="right"
+            label="Resize conversation list"
+          />
+        )}
       </div>
+      )}
 
       {/* Right panel - chat */}
+      {(!isCompact || !sidebarOpen) && (
       <div className="flex flex-1 flex-col">
         {/* Filters bar */}
         <div className="flex items-center gap-3 px-4 h-12 border-b">
+          {isCompact && (
+            <Button variant="ghost" size="icon-sm" onClick={() => setSidebarOpen(true)} title="Show conversations">
+              <PanelLeftOpen className="h-4 w-4" />
+            </Button>
+          )}
           <select
             value={selectedLabel}
             onChange={(e) => setSelectedLabel(e.target.value)}
@@ -250,7 +246,7 @@ export function ChatPage() {
             <div className="text-center space-y-3">
               <MessageSquare className="h-10 w-10 text-muted-foreground mx-auto" />
               <p className="text-sm text-muted-foreground">
-                Create a conversation to start chatting with your meetings
+                Nootle remembers everything from your meetings — just ask
               </p>
               <Button size="sm" onClick={handleNewConversation}>
                 <Plus className="h-4 w-4 mr-1" /> New Conversation
@@ -263,7 +259,7 @@ export function ChatPage() {
               {dbMessages.length === 0 && !loading && (
                 <div className="flex items-center justify-center h-full">
                   <p className="text-sm text-muted-foreground">
-                    Ask a question about your meetings
+                    What happened in that meeting? Go ahead, ask anything
                   </p>
                 </div>
               )}
@@ -284,9 +280,7 @@ export function ChatPage() {
                       }`}
                     >
                       {msg.role === "assistant" ? (
-                        <div className="prose prose-sm dark:prose-invert max-w-none">
                           <Markdown content={msg.content} />
-                        </div>
                       ) : (
                         <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                       )}
@@ -318,7 +312,7 @@ export function ChatPage() {
             <div className="border-t p-4">
               {!selectedProvider || !selectedModel ? (
                 <p className="text-sm text-muted-foreground text-center py-2">
-                  Select a model in the sidebar, or add an API key in Settings to start chatting.
+                  Select a model in the sidebar to start chatting. You can add API keys in Settings.
                 </p>
               ) : (
                 <div className="flex gap-2">
@@ -347,6 +341,7 @@ export function ChatPage() {
           </>
         )}
       </div>
+      )}
     </div>
   );
 }

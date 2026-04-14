@@ -387,24 +387,25 @@ export function TemplatesPage() {
         <TabsContent value="templates" className="flex-1 mt-0 overflow-auto">
           <div className="flex flex-col gap-6 p-8">
             {loading ? (
-              <p className="text-sm text-muted-foreground">Loading templates...</p>
+              <p className="text-sm text-muted-foreground">Simmering your templates...</p>
             ) : templates.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 py-12">
                 <FileText className="h-10 w-10 text-muted-foreground" />
-                <h2 className="text-lg font-medium">No templates found</h2>
+                <h2 className="text-lg font-medium">No templates yet</h2>
                 <p className="text-sm text-muted-foreground">
-                  Create a template to configure how meetings are summarized
+                  Templates shape how Nootle summarizes your meetings — cook up your first one
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <AnimatePresence>
-                  {templates.map((template) => (
+                  {templates.map((template, i) => (
                     <motion.div
                       key={template.id}
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+                      transition={{ duration: 0.2, delay: Math.min(i * 0.05, 0.3) }}
                       layout
                     >
                       <Card className="h-full">
@@ -476,20 +477,20 @@ export function TemplatesPage() {
           <div className="flex flex-col gap-6 p-8">
             {recipesLoading ? (
               <p className="text-sm text-muted-foreground">
-                Loading recipes...
+                Gathering ingredients...
               </p>
             ) : recipes.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 py-12">
                 <ChefHat className="h-10 w-10 text-muted-foreground" />
                 <h2 className="text-lg font-medium">No recipes yet</h2>
                 <p className="text-sm text-muted-foreground">
-                  Create reusable AI workflows with slash commands
+                  Whip up reusable AI workflows you can trigger with slash commands
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <AnimatePresence>
-                  {recipes.map((recipe) => (
+                  {recipes.map((recipe, i) => (
                     <motion.div
                       key={recipe.id}
                       initial={{ opacity: 0, y: 4 }}
@@ -499,6 +500,7 @@ export function TemplatesPage() {
                         scale: 0.95,
                         transition: { duration: 0.2 },
                       }}
+                      transition={{ duration: 0.2, delay: Math.min(i * 0.05, 0.3) }}
                       layout
                     >
                       <Card className="h-full">

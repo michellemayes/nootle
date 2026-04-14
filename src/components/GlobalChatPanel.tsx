@@ -191,6 +191,7 @@ export function GlobalChatPanel() {
                 <select
                   value={selectedLabel}
                   onChange={(e) => handleLabelChange(e.target.value)}
+                  aria-label="Filter by label"
                   className="h-7 flex-1 rounded-md border bg-transparent px-2 text-xs"
                 >
                   <option value="">All Labels</option>
@@ -205,6 +206,7 @@ export function GlobalChatPanel() {
                   onChange={(e) =>
                     handleDatePresetChange(Number(e.target.value))
                   }
+                  aria-label="Filter by date range"
                   className="h-7 rounded-md border bg-transparent px-2 text-xs"
                 >
                   {DATE_PRESETS.map((preset, i) => (
@@ -244,7 +246,7 @@ export function GlobalChatPanel() {
                 {modelNotReady && (
                   <div className="rounded-lg bg-muted p-4 text-center text-sm text-muted-foreground">
                     <p className="mb-2">
-                      Download the embedding model in Settings to
+                      Download the search model in Settings to
                       search across meetings.
                     </p>
                   </div>
@@ -253,7 +255,7 @@ export function GlobalChatPanel() {
                 {messages.length === 0 &&
                   !modelNotReady && (
                     <p className="text-center text-sm text-muted-foreground py-8">
-                      Ask anything about your meetings
+                      Nootle has total recall — ask away
                     </p>
                   )}
 

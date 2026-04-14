@@ -90,9 +90,7 @@ export function HelpPage() {
               {"quickStart" in tab && tab.quickStart && <McpQuickStart />}
               <Card>
                 <CardContent>
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
                     <Markdown content={tab.content} />
-                  </div>
                 </CardContent>
               </Card>
             </div>

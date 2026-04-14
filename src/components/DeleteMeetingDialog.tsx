@@ -25,19 +25,19 @@ export function DeleteMeetingDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete meeting</DialogTitle>
+          <DialogTitle>Delete meeting?</DialogTitle>
           <DialogDescription>
-            Are you sure? This will permanently delete{" "}
+            This will permanently delete{" "}
             <span className="font-medium text-foreground">{meetingTitle}</span>{" "}
-            and all its transcripts, summaries, insights, and recording audio.
+            and all its transcripts, summaries, insights, and audio. No takebacks — this noodle can't be uncooked.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            Keep it
           </Button>
           <Button variant="destructive" onClick={onConfirm}>
-            Delete
+            Delete forever
           </Button>
         </DialogFooter>
       </DialogContent>

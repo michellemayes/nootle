@@ -100,7 +100,7 @@ export function Sidebar() {
         <MotionButton
           className={isCompact ? "w-full aspect-square justify-center" : "w-full justify-start gap-2"}
           onClick={() => navigate("/recording")}
-          title={isCompact ? "Record Something" : undefined}
+          title={isCompact ? "Start recording" : undefined}
         >
           <Circle className="h-4 w-4" />
           {!isCompact && "Record Something"}
@@ -159,6 +159,7 @@ export function Sidebar() {
                 <select
                   value={selectedProvider}
                   onChange={(e) => changeProvider(e.target.value)}
+                  aria-label="LLM provider"
                   className="h-7 w-full rounded-md border bg-transparent px-2 text-xs"
                 >
                   <option value="">Provider</option>
@@ -169,6 +170,7 @@ export function Sidebar() {
                 <select
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
+                  aria-label="LLM model"
                   className="h-7 w-full rounded-md border bg-transparent px-2 text-xs"
                 >
                   <option value="">Model</option>

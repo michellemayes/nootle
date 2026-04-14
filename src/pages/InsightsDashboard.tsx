@@ -434,7 +434,7 @@ export function InsightsDashboard() {
       {/* Content */}
       {loading ? (
         <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">Loading insights...</p>
+          <p className="text-sm text-muted-foreground">Fishing out the good bits...</p>
         </div>
       ) : (
         <ScrollArea className="flex-1">

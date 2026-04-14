@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { MotionButton } from "@/components/MotionButton";
@@ -6,6 +6,7 @@ import { ThinkingDots } from "@/components/ThinkingDots";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { ResizeHandle } from "@/components/ResizeHandle";
 import { useChat } from "@/hooks/useChat";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useRecipes } from "@/hooks/useRecipes";
@@ -34,39 +35,6 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
 
   // Resize state
   const [width, setWidth] = useState(320);
-  const isResizing = useRef(false);
-  const startX = useRef(0);
-  const startWidth = useRef(0);
-
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizing.current = true;
-    startX.current = e.clientX;
-    startWidth.current = width;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  }, [width]);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing.current) return;
-      const delta = startX.current - e.clientX;
-      const newWidth = Math.min(Math.max(startWidth.current + delta, 256), 640);
-      setWidth(newWidth);
-    };
-    const handleMouseUp = () => {
-      if (!isResizing.current) return;
-      isResizing.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -119,7 +87,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
     } catch (err) {
       setRecipeMessages((prev) => [
         ...prev,
-        { role: "assistant", content: `Error: ${String(err)}` },
+        { role: "assistant", content: "Something went wrong. Please try again." },
       ]);
     } finally {
       setRecipeLoading(false);
@@ -193,10 +161,13 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
           style={{ width }}
           className="relative flex shrink-0 flex-col border-l bg-background -mt-8"
         >
-          {/* Resize handle */}
-          <div
-            onMouseDown={handleResizeStart}
-            className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 z-10"
+          <ResizeHandle
+            width={width}
+            onWidthChange={setWidth}
+            min={256}
+            max={640}
+            side="left"
+            label="Resize chat panel"
           />
           {/* Header */}
           <div className="flex items-center justify-between px-4 pt-10 pb-3 border-b">

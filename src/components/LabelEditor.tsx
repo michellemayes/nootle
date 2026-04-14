@@ -2,17 +2,18 @@ import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, X } from "lucide-react";
+import { labelTextColor } from "@/lib/utils";
 import type { Label } from "@/types";
 
 const LABEL_COLORS = [
-  "#4EEABB",
-  "#C084FC",
-  "#E879A8",
-  "#3B82F6",
-  "#F97316",
-  "#EAB308",
-  "#22C55E",
-  "#94A3B8",
+  "oklch(0.75 0.17 168)",
+  "oklch(0.65 0.19 300)",
+  "oklch(0.70 0.17 350)",
+  "oklch(0.60 0.19 260)",
+  "oklch(0.70 0.19 55)",
+  "oklch(0.75 0.17 95)",
+  "oklch(0.65 0.19 155)",
+  "oklch(0.65 0.02 260)",
 ];
 
 export function LabelEditor({
@@ -61,8 +62,8 @@ export function LabelEditor({
       {meetingLabels.map((label) => (
         <span
           key={label.id}
-          className="inline-flex items-center gap-1 rounded-full pl-2 pr-1 py-0.5 text-[11px] font-medium text-white"
-          style={{ backgroundColor: label.color }}
+          className="inline-flex items-center gap-1 rounded-full pl-2 pr-1 py-0.5 text-[11px] font-medium"
+          style={{ backgroundColor: label.color, color: labelTextColor(label.color) }}
         >
           {label.name}
           <button
