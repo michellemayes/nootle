@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Normalize site design with purple palette and accessibility (#93) ([4224a07](https://github.com/michellemayes/nootle/commit/4224a07565c6efcc42a83dde5bbb6f27f22cdf7e))
 - Improve chat page styling and add resizable conversation list (#90) ([575c499](https://github.com/michellemayes/nootle/commit/575c499befe121268e30073c35f14df66697fcee))
 - Center integration cards layout (#91) ([291f5da](https://github.com/michellemayes/nootle/commit/291f5dae789445b55a1b8392ab57dc4602d86c53))
 - Use data-tauri-drag-region for window dragging in Tauri v2 (#89) ([363ce9a](https://github.com/michellemayes/nootle/commit/363ce9ae7dddaf494af2fdd5ddb43a6d15b7af61))
