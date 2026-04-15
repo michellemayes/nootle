@@ -5,7 +5,7 @@ import { useTheme } from "@/hooks/useTheme";
 const PRESETS = [
   { name: "Default", hue: 0, chroma: 0 },
   { name: "Blue", hue: 260, chroma: 0.18 },
-  { name: "Purple", hue: 300, chroma: 0.18 },
+  { name: "Purple", hue: 293, chroma: 0.24 },
   { name: "Green", hue: 155, chroma: 0.15 },
   { name: "Orange", hue: 55, chroma: 0.18 },
   { name: "Pink", hue: 350, chroma: 0.18 },

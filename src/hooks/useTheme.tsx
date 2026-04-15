@@ -15,16 +15,16 @@ const ThemeContext = createContext<ThemeContextType | null>(null);
 // CSS variables that get accent-tinted, with per-mode lightness values
 const ACCENT_VARS = {
   light: {
-    "--primary": 0.45,
-    "--ring": 0.6,
-    "--sidebar-primary": 0.45,
-    "--sidebar-ring": 0.6,
+    "--primary": 0.541,
+    "--ring": 0.541,
+    "--sidebar-primary": 0.541,
+    "--sidebar-ring": 0.541,
   },
   dark: {
-    "--primary": 0.75,
-    "--ring": 0.6,
-    "--sidebar-primary": 0.75,
-    "--sidebar-ring": 0.6,
+    "--primary": 0.627,
+    "--ring": 0.541,
+    "--sidebar-primary": 0.627,
+    "--sidebar-ring": 0.541,
   },
 } as const;
 
