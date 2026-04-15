@@ -49,6 +49,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Sync app logo and theme with website purple palette (#94) ([5715fe7](https://github.com/michellemayes/nootle/commit/5715fe7e36b3451c8759f60bf84791c312265a0e))
 - Improve UX copy, compact mode, animations, and accessibility (#92) ([cab7913](https://github.com/michellemayes/nootle/commit/cab791386b6568bbfde718ca1955599a59e21827))
 - Add Obsidian to integrations on landing page (#87) ([08cd4b8](https://github.com/michellemayes/nootle/commit/08cd4b8dcaf3ea0b8f8178c22a9c85cfb42c7c8b))
 - Hide sidebar expand button until hover and preserve logo aspect ratio (#84) ([8fc3ec2](https://github.com/michellemayes/nootle/commit/8fc3ec20a55ca8498ae0017a054b5219717e21b0))
