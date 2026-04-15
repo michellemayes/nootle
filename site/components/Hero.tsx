@@ -25,15 +25,15 @@ export function Hero() {
 
       <div className="max-w-5xl mx-auto text-center">
         <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
+          initial={{ scale: 0.8 }}
+          animate={{ scale: 1 }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           className="mb-8"
         >
           <div className="mx-auto w-[120px] h-[120px] flex items-center justify-center">
             <Image
               src="/nootle-icon.svg"
-              alt="Nootle"
+              alt="Nootle AI meeting recorder app icon"
               width={120}
               height={120}
               priority
@@ -47,13 +47,14 @@ export function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
         >
-          Meetings on{" "}
+          AI Meeting{" "}
           <span
             className="bg-gradient-to-r from-[var(--color-accent)] via-[var(--color-cyan)] to-[var(--color-accent)] bg-[length:200%_auto] bg-clip-text text-transparent"
             style={{ animation: "shimmer 3s ease-in-out infinite" }}
           >
-            autopilot
+            Recorder
           </span>
+          {" "}for Mac
         </motion.h1>
 
         <motion.p

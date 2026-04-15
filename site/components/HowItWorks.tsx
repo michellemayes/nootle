@@ -1,67 +1,57 @@
-"use client";
-
-import { motion } from "framer-motion";
+import { AnimateIn } from "@/components/AnimateIn";
 
 const steps = [
   {
     number: "01",
     title: "Join your meeting",
     description:
-      "Nootle detects active meetings automatically — Zoom, Teams, Google Meet, and more.",
+      "Nootle runs quietly in your menu bar and automatically detects when you join a call on Zoom, Microsoft Teams, Google Meet, or other conferencing apps. It prompts you to start recording — no manual setup or browser extensions needed.",
     color: "#22d3ee",
   },
   {
     number: "02",
     title: "Record & transcribe",
     description:
-      "Real-time transcription with speaker diarization. Captures both your mic and system audio.",
+      "Audio is captured from both your microphone and system output, then transcribed in real time using on-device machine learning. Speaker diarization labels each segment so you can see exactly who said what throughout the conversation.",
     color: "#8b5cf6",
   },
   {
     number: "03",
     title: "Review & chat",
     description:
-      "Browse transcripts, get AI summaries, and ask follow-up questions about anything discussed.",
+      "After the meeting, browse the full transcript with speaker labels and timestamps. Get an AI-generated summary of key points, decisions, and action items. Ask follow-up questions about anything discussed — Nootle's AI chat lets you query the transcript conversationally.",
     color: "#f472b6",
   },
   {
     number: "04",
     title: "Run workflows",
     description:
-      "Automatically push notes to Slack, create Linear tickets, update Notion pages, or send email summaries.",
+      "Automatically push meeting notes and action items to the tools your team uses. Send summaries to Slack channels, create Linear or Asana tickets, update Notion or Confluence pages, or email a recap to attendees — all with a single click or fully automated.",
     color: "#34d399",
   },
 ];
 
 export function HowItWorks() {
   return (
-    <section aria-label="How it works" className="py-24 px-6">
+    <section id="how-it-works" aria-label="How Nootle works" className="py-24 px-6">
       <div className="max-w-3xl mx-auto">
-        <motion.h2
-          className="font-[family-name:var(--font-outfit)] text-4xl md:text-5xl font-bold text-center mb-16 text-[var(--color-text)]"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-        >
-          How it works
-        </motion.h2>
+        <AnimateIn>
+          <h2 className="font-[family-name:var(--font-outfit)] text-4xl md:text-5xl font-bold text-center mb-16 text-[var(--color-text)]">
+            How Nootle works
+          </h2>
+        </AnimateIn>
 
         <div className="space-y-12 relative">
-          {/* Gradient connecting line */}
           <div
             className="absolute left-6 top-6 bottom-6 w-px opacity-40"
             style={{ background: "linear-gradient(to bottom, #22d3ee, #8b5cf6, #f472b6, #34d399)" }}
           />
 
           {steps.map((step, i) => (
-            <motion.div
+            <AnimateIn
               key={step.number}
               className="flex gap-8 items-start relative"
-              initial={{ opacity: 0, x: -20 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.15, ease: [0.16, 1, 0.3, 1] }}
+              delay={i * 0.15}
             >
               <div
                 className="font-[family-name:var(--font-outfit)] text-sm font-bold w-12 h-12 rounded-full flex items-center justify-center shrink-0 relative z-10"
@@ -82,7 +72,7 @@ export function HowItWorks() {
                   {step.description}
                 </p>
               </div>
-            </motion.div>
+            </AnimateIn>
           ))}
         </div>
       </div>
