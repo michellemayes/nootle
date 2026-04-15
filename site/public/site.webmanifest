@@ -1,0 +1,22 @@
+{
+  "name": "Nootle",
+  "short_name": "Nootle",
+  "description": "AI Meeting Recorder for Mac",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#13111c",
+  "theme_color": "#13111c",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "64x64",
+      "type": "image/png"
+    },
+    {
+      "src": "/nootle-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,7 +1,5 @@
-"use client";
-
 import { Lock, Mic, MessageSquare, Lightbulb, Search, Volume2, Zap, SquareKanban, Terminal, type LucideIcon } from "lucide-react";
-import { motion } from "framer-motion";
+import { AnimateIn } from "@/components/AnimateIn";
 
 const features: {
   icon: LucideIcon;
@@ -14,7 +12,7 @@ const features: {
     icon: Lock,
     title: "Local & Private",
     description:
-      "No cloud recording. Everything stays on your Mac — your meetings, your data.",
+      "All audio processing and transcription happens entirely on your Mac using on-device machine learning. No meeting audio is ever sent to external servers. Your conversations, transcripts, and notes stay on your hardware — giving you complete control over sensitive meeting data without relying on cloud services.",
     color: "#34d399",
     span: "md:col-span-2",
   },
@@ -22,7 +20,7 @@ const features: {
     icon: Mic,
     title: "Real-time Transcription",
     description:
-      "Live speech-to-text with automatic speaker identification. Know who said what.",
+      "Live speech-to-text powered by Parakeet via ONNX Runtime, running locally on your Mac. Automatic speaker diarization identifies who said what, so you can follow conversations clearly. Captures both your microphone and system audio simultaneously for complete meeting coverage.",
     color: "#22d3ee",
     span: "md:col-span-2",
   },
@@ -30,35 +28,35 @@ const features: {
     icon: MessageSquare,
     title: "AI Summaries & Chat",
     description:
-      "Get instant summaries and ask follow-up questions about your meetings.",
+      "Get instant AI-generated summaries after every meeting, highlighting key decisions and outcomes. Ask follow-up questions about anything discussed — Nootle lets you chat with your meeting transcript using your choice of AI provider, including OpenAI, Anthropic, Google, Groq, or local models via Ollama.",
     color: "#8b5cf6",
   },
   {
     icon: Lightbulb,
     title: "Smart Insights",
     description:
-      "Automatically extract decisions, action items, and key moments from every meeting.",
+      "Automatically extract decisions, action items, and key moments from every meeting. Nootle identifies what was agreed upon, what needs to happen next, and who is responsible — so nothing falls through the cracks after a busy day of calls.",
     color: "#fbbf24",
   },
   {
     icon: Search,
     title: "Search Across Meetings",
     description:
-      "Ask questions across your entire meeting history with AI-powered semantic search.",
+      "Use AI-powered semantic search to ask questions across your entire meeting history. Instead of scrubbing through hours of recordings, just type a question like \"What did we decide about the launch date?\" and get the answer instantly with the relevant transcript context.",
     color: "#f472b6",
   },
   {
     icon: Volume2,
     title: "Noise Cancellation",
     description:
-      "Built-in noise reduction for cleaner audio and more accurate transcriptions.",
+      "Built-in noise reduction filters out background sounds for cleaner audio capture and more accurate transcriptions. Whether you're in a coffee shop, open office, or noisy home environment, Nootle produces clear, readable transcripts.",
     color: "#22d3ee",
   },
   {
     icon: Zap,
     title: "Auto-Detection",
     description:
-      "Nootle detects when you join Zoom, Teams, or Meet and offers to start recording.",
+      "Nootle automatically detects when you join a meeting on Zoom, Microsoft Teams, or Google Meet and offers to start recording. No manual setup required — just join your call and Nootle handles the rest, so you never miss an important conversation.",
     color: "#fbbf24",
     span: "md:col-span-2",
   },
@@ -66,58 +64,40 @@ const features: {
     icon: SquareKanban,
     title: "Linear Integration",
     description:
-      "Turn action items into Linear tickets with one click.",
+      "Turn meeting action items into Linear tickets with one click. Nootle automatically suggests ticket titles and descriptions based on the discussion context, making it effortless to go from conversation to tracked work.",
     color: "#5E6AD2",
   },
   {
     icon: Terminal,
     title: "CLI & Developer Tools",
     description:
-      "Query your meetings from the terminal. MCP server for AI assistant integration.",
+      "Query your meetings from the terminal with Nootle's built-in CLI. An MCP server enables AI assistant integration, letting tools like Claude or GPT access your meeting data for deeper analysis and automated workflows.",
     color: "#34d399",
   },
 ];
 
 export function Features() {
   return (
-    <section aria-label="Features" className="py-24 px-6 bg-[var(--color-surface)]">
+    <section id="features" aria-label="Meeting recording features" className="py-24 px-6 bg-[var(--color-surface)]">
       <div className="max-w-6xl mx-auto">
-        <motion.h2
-          className="font-[family-name:var(--font-outfit)] text-4xl md:text-5xl font-bold text-center mb-4 text-[var(--color-text)]"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-        >
-          Built for focus
-        </motion.h2>
-        <motion.p
-          className="text-center text-[var(--color-text-secondary)] text-lg mb-16 max-w-lg mx-auto"
-          initial={{ opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.4, delay: 0.1 }}
-        >
-          Everything you need to capture, understand, and act on your meetings.
-        </motion.p>
+        <AnimateIn>
+          <h2 className="font-[family-name:var(--font-outfit)] text-4xl md:text-5xl font-bold text-center mb-4 text-[var(--color-text)]">
+            Meeting recording features
+          </h2>
+        </AnimateIn>
+        <AnimateIn delay={0.1}>
+          <p className="text-center text-[var(--color-text-secondary)] text-lg mb-16 max-w-lg mx-auto">
+            Everything you need to capture, understand, and act on your meetings.
+          </p>
+        </AnimateIn>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {features.map((feature, i) => (
-            <motion.div
+            <AnimateIn
               key={feature.title}
-              className={`group relative p-7 rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] overflow-hidden transition-all duration-300 hover:-translate-y-1 ${feature.span || ""}`}
-              style={{
-                boxShadow: "0 2px 8px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.03) inset",
-              }}
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.05, ease: [0.16, 1, 0.3, 1] }}
-              whileHover={{
-                boxShadow: `0 8px 30px -8px ${feature.color}30, 0 0 0 1px ${feature.color}20 inset`,
-              }}
+              className={`group relative p-7 rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_-8px_var(--hover-glow)] ${feature.span || ""}`}
+              delay={i * 0.05}
             >
-              {/* Top accent line */}
               <div
                 className="absolute top-0 left-0 right-0 h-px"
                 style={{ background: `linear-gradient(90deg, transparent, ${feature.color}40, transparent)` }}
@@ -137,7 +117,7 @@ export function Features() {
               <p className="text-[var(--color-text-secondary)] text-sm leading-relaxed">
                 {feature.description}
               </p>
-            </motion.div>
+            </AnimateIn>
           ))}
         </div>
       </div>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Outfit, DM_Sans } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { JsonLd } from "@/components/JsonLd";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -16,25 +17,41 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://nootle.ai"),
   title: "Nootle - AI Meeting Recorder for Mac",
   description:
-    "Capture meetings, transcribe in real-time, and chat with AI about what was discussed. Local and private.",
+    "Free, open-source AI meeting recorder for Mac. Real-time transcription, speaker identification, and AI chat — 100% local and private. Download free.",
+  alternates: {
+    canonical: "/",
+  },
   openGraph: {
     title: "Nootle - AI Meeting Recorder for Mac",
     description:
-      "Capture meetings, transcribe in real-time, and chat with AI about what was discussed. Local and private.",
+      "Free, open-source AI meeting recorder for Mac. Real-time transcription, speaker identification, and AI chat — 100% local and private.",
     type: "website",
-    images: ["/favicon.png"],
+    url: "https://nootle.ai",
+    siteName: "Nootle",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Nootle - AI Meeting Recorder for Mac",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Nootle - AI Meeting Recorder for Mac",
     description:
-      "Capture meetings, transcribe in real-time, and chat with AI about what was discussed. Local and private.",
+      "Free, open-source AI meeting recorder for Mac. Real-time transcription, speaker identification, and AI chat — 100% local and private.",
+    images: ["/og-image.png"],
   },
   icons: {
     icon: "/favicon.png",
+    apple: "/favicon.png",
   },
+  manifest: "/site.webmanifest",
   other: {
     "theme-color": "#13111c",
   },
@@ -54,6 +71,7 @@ export default function RootLayout({
         >
           Skip to content
         </a>
+        <JsonLd />
         {children}
         <Analytics />
       </body>
