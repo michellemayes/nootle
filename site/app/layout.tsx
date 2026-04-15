@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Outfit, DM_Sans } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import Script from "next/script";
 import { JsonLd } from "@/components/JsonLd";
 import "./globals.css";
 
@@ -64,6 +65,20 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-K64K8YZZ42"
+          strategy="afterInteractive"
+        />
+        <Script id="google-tag-manager" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-K64K8YZZ42');
+          `}
+        </Script>
+      </head>
       <body className={`${outfit.variable} ${dmSans.variable} font-[family-name:var(--font-dm-sans)]`}>
         <a
           href="#main-content"
