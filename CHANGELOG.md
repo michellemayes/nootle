@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.0 (2026-04-15)
+
+
+### Features
+
+* add ability to edit prompts and templates ([#22](https://github.com/michellemayes/nootle/issues/22)) ([6cfd3e7](https://github.com/michellemayes/nootle/commit/6cfd3e742a202bdd005901f228043c62f6061d83))
+* add CI/CD pipelines, auto-updater, and README ([#3](https://github.com/michellemayes/nootle/issues/3)) ([6f1d820](https://github.com/michellemayes/nootle/commit/6f1d820a07959fae0bcd60d01abf3ce138c1c8dd))
+* add compact note mode for narrow window use ([#82](https://github.com/michellemayes/nootle/issues/82)) ([09b279a](https://github.com/michellemayes/nootle/commit/09b279ad330bc3cc26e1f6d2d5a1585252641bad))
+* add customizable accent color picker to Settings ([#21](https://github.com/michellemayes/nootle/issues/21)) ([cc29072](https://github.com/michellemayes/nootle/commit/cc290729f2f682cadf9d3374fd6585dd7c008c71))
+* add git-cliff for continuous changelog generation ([3f63cf9](https://github.com/michellemayes/nootle/commit/3f63cf94e759944ca7c55ef59eb72a8dff17fccf))
+* add global chat with transcript search via RAG embeddings ([#28](https://github.com/michellemayes/nootle/issues/28)) ([fd1a831](https://github.com/michellemayes/nootle/commit/fd1a8311ca68db8510c106ee5764298b795dd989))
+* add Granola-parity features (templates, recipes, tags, scratch pad) ([#51](https://github.com/michellemayes/nootle/issues/51)) ([403bc27](https://github.com/michellemayes/nootle/commit/403bc273ad1a033a6fdf235c76747dfe9a798dab))
+* add in-app Help page with documentation ([#7](https://github.com/michellemayes/nootle/issues/7)) ([1d525fb](https://github.com/michellemayes/nootle/commit/1d525fbf2326dfa5355d9eabf278dc13e39a9f45))
+* add integrations, app demo auto-tour, and Ask Nootle panel ([#63](https://github.com/michellemayes/nootle/issues/63)) ([74dc460](https://github.com/michellemayes/nootle/commit/74dc460debbabb7575c3391a03bdf279a8b01d9d))
+* add Linear integration for ticket creation ([#8](https://github.com/michellemayes/nootle/issues/8)) ([5c48947](https://github.com/michellemayes/nootle/commit/5c48947e74e1fc06832409469467082b532f85d3))
+* add local model download system for Parakeet and diarization ([#6](https://github.com/michellemayes/nootle/issues/6)) ([e87a82d](https://github.com/michellemayes/nootle/commit/e87a82d91d4c3f1c124de96458614ebd67896dae))
+* add Nootle marketing landing page ([#20](https://github.com/michellemayes/nootle/issues/20)) ([321d1f1](https://github.com/michellemayes/nootle/commit/321d1f1b16306da91a74c158c9ca93b30d8d21ca))
+* add Obsidian to integrations on landing page ([#87](https://github.com/michellemayes/nootle/issues/87)) ([08cd4b8](https://github.com/michellemayes/nootle/commit/08cd4b8dcaf3ea0b8f8178c22a9c85cfb42c7c8b))
+* automate versioning with release-please, commitlint, and husky ([f4de3e0](https://github.com/michellemayes/nootle/commit/f4de3e03c96b889b603859982b4407dcee5434b1))
+* consolidate tags and categories into unified labels ([#65](https://github.com/michellemayes/nootle/issues/65)) ([8378982](https://github.com/michellemayes/nootle/commit/83789827c91e187d1c5197e992b2e0b7767d1a47))
+* hide sidebar expand button until hover and preserve logo aspect ratio ([#84](https://github.com/michellemayes/nootle/issues/84)) ([8fc3ec2](https://github.com/michellemayes/nootle/commit/8fc3ec20a55ca8498ae0017a054b5219717e21b0))
+* improve UX copy, compact mode, animations, and accessibility ([#92](https://github.com/michellemayes/nootle/issues/92)) ([cab7913](https://github.com/michellemayes/nootle/commit/cab791386b6568bbfde718ca1955599a59e21827))
+* make Ask Nootle chat sidebar resizable ([#74](https://github.com/michellemayes/nootle/issues/74)) ([82d2918](https://github.com/michellemayes/nootle/commit/82d2918cb473e965d26d82395cd3fd4caae7ab80))
+* make macOS title bar transparent to match app background ([#72](https://github.com/michellemayes/nootle/issues/72)) ([807856c](https://github.com/michellemayes/nootle/commit/807856cc53ff4300b610fb173907ca03d4bc1aae))
+* meeting intelligence — auto-extracted insights ([#24](https://github.com/michellemayes/nootle/issues/24)) ([e8d9f2b](https://github.com/michellemayes/nootle/commit/e8d9f2b0f962bfb88fa2e60d5252be5d187b9b12))
+* post-meeting workflows ([#56](https://github.com/michellemayes/nootle/issues/56)) ([e0d1b5c](https://github.com/michellemayes/nootle/commit/e0d1b5c5eee666cbe291d36e4f7e33337976013a))
+* redesign lander app preview with interactive views ([#46](https://github.com/michellemayes/nootle/issues/46)) ([f34baa9](https://github.com/michellemayes/nootle/commit/f34baa9ab828549332e172ba7111edd54715b1e1))
+* switch lander feature icons to lucide-react ([#48](https://github.com/michellemayes/nootle/issues/48)) ([765a8e9](https://github.com/michellemayes/nootle/commit/765a8e9f9dcbafa5487fae240d761f22ef3141da))
+* sync app logo and theme with website purple palette ([#94](https://github.com/michellemayes/nootle/issues/94)) ([5715fe7](https://github.com/michellemayes/nootle/commit/5715fe7e36b3451c8759f60bf84791c312265a0e))
+* update landing page AppMockup to match actual app styling ([#78](https://github.com/michellemayes/nootle/issues/78)) ([a719034](https://github.com/michellemayes/nootle/commit/a7190340504d5335bb9016613a580d95e28dcfbc))
+* upgrade speaker embedding to WeSpeaker-LM for better diarization accuracy ([#16](https://github.com/michellemayes/nootle/issues/16)) ([a1718f5](https://github.com/michellemayes/nootle/commit/a1718f516e77d2ed3ac3c9e6190afedb86760548))
+* upgrade transcription model from Parakeet TDT v2 to v3 ([#18](https://github.com/michellemayes/nootle/issues/18)) ([3624d9f](https://github.com/michellemayes/nootle/commit/3624d9fb22ac96770cc9a0af9ce42aca63189ee1))
+* widen compact threshold and add sidebar collapse toggle ([#83](https://github.com/michellemayes/nootle/issues/83)) ([96be546](https://github.com/michellemayes/nootle/commit/96be546283b2d2578f3a1556be18bd6043ba9204))
+
+
+### Bug Fixes
+
+* add draggable region to main content top bar ([#85](https://github.com/michellemayes/nootle/issues/85)) ([0d13d96](https://github.com/michellemayes/nootle/commit/0d13d962144348bef182273c0b038347775c53ba))
+* add table styling to markdown component ([#12](https://github.com/michellemayes/nootle/issues/12)) ([8ba0338](https://github.com/michellemayes/nootle/commit/8ba0338f45483fb7a01cb978baabbd2db4fa5e0c))
+* add vertical padding to tab bar containers ([#68](https://github.com/michellemayes/nootle/issues/68)) ([a2f302d](https://github.com/michellemayes/nootle/commit/a2f302dcd76372ac20aa1e041d402e8b3db83e9c))
+* align connecting line through circle centers in how-it-works section ([#47](https://github.com/michellemayes/nootle/issues/47)) ([4e110cf](https://github.com/michellemayes/nootle/commit/4e110cf02eff28a104f5dcffc375688c2f0a89c4))
+* center integration cards layout ([#91](https://github.com/michellemayes/nootle/issues/91)) ([291f5da](https://github.com/michellemayes/nootle/commit/291f5dae789445b55a1b8392ab57dc4602d86c53))
+* clear old analytics before reinserting to prevent duplicate speakers ([#77](https://github.com/michellemayes/nootle/issues/77)) ([1b84f4e](https://github.com/michellemayes/nootle/commit/1b84f4e8164946c2d26082f1088274a8241a191a))
+* comprehensive security hardening ([#49](https://github.com/michellemayes/nootle/issues/49)) ([336369a](https://github.com/michellemayes/nootle/commit/336369a23f844918bc83461a2b37060919be7df9))
+* correct layout spacing and scrolling in meeting detail and templates ([#70](https://github.com/michellemayes/nootle/issues/70)) ([afc0026](https://github.com/michellemayes/nootle/commit/afc00268e19cf0baff2055b1a6f24974aa337309))
+* enable scrolling and use grid layout on templates page ([#58](https://github.com/michellemayes/nootle/issues/58)) ([986b88f](https://github.com/michellemayes/nootle/commit/986b88f93904ffcb1c5738d35d3450e521a582c7))
+* enable scrolling in tabs and scroll areas with proper flex constraints ([#71](https://github.com/michellemayes/nootle/issues/71)) ([92fea32](https://github.com/michellemayes/nootle/commit/92fea3284a3bd73f2315e15bccafe9f0009ef174))
+* enable scrolling on Settings page by constraining flex item height ([#11](https://github.com/michellemayes/nootle/issues/11)) ([e30e1bb](https://github.com/michellemayes/nootle/commit/e30e1bb6d4927e5d936e18f2a785512ab2d48fef))
+* hide Ask Nootle button when chat panel is open and extend panel to top bar ([#79](https://github.com/michellemayes/nootle/issues/79)) ([e877f09](https://github.com/michellemayes/nootle/commit/e877f09553401e5c6df3c029306cfa9eef09d805))
+* improve chat page styling and add resizable conversation list ([#90](https://github.com/michellemayes/nootle/issues/90)) ([575c499](https://github.com/michellemayes/nootle/commit/575c499befe121268e30073c35f14df66697fcee))
+* improve sidebar logo and recording button layout ([#88](https://github.com/michellemayes/nootle/issues/88)) ([3ce3f84](https://github.com/michellemayes/nootle/commit/3ce3f84f68743c05db51b95db8f4db07078750e9))
+* make generated summaries display immediately and surface errors ([#86](https://github.com/michellemayes/nootle/issues/86)) ([0bc54a4](https://github.com/michellemayes/nootle/commit/0bc54a455ca0bd68f9b03b2bf2d8ffadf7f7b7e9))
+* make meeting detail content scrollable with sticky player ([#67](https://github.com/michellemayes/nootle/issues/67)) ([2520a21](https://github.com/michellemayes/nootle/commit/2520a21c52f65cec2fcdbe4e258db73523428d6d))
+* move Linear API key storage to database ([#14](https://github.com/michellemayes/nootle/issues/14)) ([c21cd9a](https://github.com/michellemayes/nootle/commit/c21cd9abc7df45eca5cccf165356234d670f7b95))
+* normalize site design with purple palette and accessibility ([#93](https://github.com/michellemayes/nootle/issues/93)) ([4224a07](https://github.com/michellemayes/nootle/commit/4224a07565c6efcc42a83dde5bbb6f27f22cdf7e))
+* polish UI for native macOS feel ([#62](https://github.com/michellemayes/nootle/issues/62)) ([25a8183](https://github.com/michellemayes/nootle/commit/25a818331cecdefece7329bfd5df9c0065f59ad9))
+* position color picker popover relative to its trigger button ([#59](https://github.com/michellemayes/nootle/issues/59)) ([1fed49e](https://github.com/michellemayes/nootle/commit/1fed49e97c57e0c7e316e0c8575de00957e743f6))
+* reduce excessive padding on help page cards ([#61](https://github.com/michellemayes/nootle/issues/61)) ([8c386cf](https://github.com/michellemayes/nootle/commit/8c386cf7c1f9489b7debabd33992ca841ec02e7b))
+* remove duplicate headings from help pages and fix Rust formatting ([#44](https://github.com/michellemayes/nootle/issues/44)) ([9884142](https://github.com/michellemayes/nootle/commit/9884142baff0fa59e26d30f27b992bbaad09ed89))
+* remove extra padding above help card content ([#80](https://github.com/michellemayes/nootle/issues/80)) ([d43e234](https://github.com/michellemayes/nootle/commit/d43e23439a8f37056cad7ea44831630143884edc))
+* remove keychain dependency, add inline tag editing, fix chat input ([#53](https://github.com/michellemayes/nootle/issues/53)) ([e2d6f3d](https://github.com/michellemayes/nootle/commit/e2d6f3d09518326a3013a3259dd6bfe00403e52f))
+* reset release-please manifest version to 0.0.0 ([#66](https://github.com/michellemayes/nootle/issues/66)) ([9aef94a](https://github.com/michellemayes/nootle/commit/9aef94a1f8f47513c516ecdbffcb0ce9ffa110d8))
+* resolve 31 bugs across frontend, backend, and marketing site ([#50](https://github.com/michellemayes/nootle/issues/50)) ([db129c5](https://github.com/michellemayes/nootle/commit/db129c5251dc17e34e17f6cef448b52242562a9b))
+* resolve cargo fmt and clippy warnings ([#57](https://github.com/michellemayes/nootle/issues/57)) ([c416ba5](https://github.com/michellemayes/nootle/commit/c416ba5926d9bfbfcf3f579a195e17cc5c70f652))
+* resolve CI workflow failures ([#43](https://github.com/michellemayes/nootle/issues/43)) ([bf29cd1](https://github.com/michellemayes/nootle/commit/bf29cd1574c66460f640415620fed6a5868a9b7b))
+* restore Ask Nootle as side drawer instead of inline panel ([#69](https://github.com/michellemayes/nootle/issues/69)) ([b924723](https://github.com/michellemayes/nootle/commit/b92472324307932971a315904d1311905eee0dd0))
+* set default-run to nootle-app for tauri dev ([e296cb3](https://github.com/michellemayes/nootle/commit/e296cb3cd101e1b2186467742655d1ff55a60132))
+* unify legacy PM settings into integrations tab ([#60](https://github.com/michellemayes/nootle/issues/60)) ([29e1055](https://github.com/michellemayes/nootle/commit/29e105509f6cb387bbfda79cfe8868915454e1b9))
+* use data-tauri-drag-region for window dragging in Tauri v2 ([#89](https://github.com/michellemayes/nootle/issues/89)) ([363ce9a](https://github.com/michellemayes/nootle/commit/363ce9ae7dddaf494af2fdd5ddb43a6d15b7af61))
+* use PascalCase for titleBarStyle in Tauri v2 config ([#73](https://github.com/michellemayes/nootle/issues/73)) ([61f0684](https://github.com/michellemayes/nootle/commit/61f0684c1a90e58980c32e3ae69cc7294bb41cfc))
+* use PNG logo instead of SVG in README ([#4](https://github.com/michellemayes/nootle/issues/4)) ([1624b12](https://github.com/michellemayes/nootle/commit/1624b12d08d22075d583a9199db5fb744dd1aa5a))
+* wire audio capture into recording session ([#19](https://github.com/michellemayes/nootle/issues/19)) ([4004932](https://github.com/michellemayes/nootle/commit/40049325a33ac246a5c97142860a73cf556b864b))
+
 ## [Unreleased]
 
 ### Bug Fixes
@@ -49,7 +122,6 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-- Sync app logo and theme with website purple palette (#94) ([5715fe7](https://github.com/michellemayes/nootle/commit/5715fe7e36b3451c8759f60bf84791c312265a0e))
 - Improve UX copy, compact mode, animations, and accessibility (#92) ([cab7913](https://github.com/michellemayes/nootle/commit/cab791386b6568bbfde718ca1955599a59e21827))
 - Add Obsidian to integrations on landing page (#87) ([08cd4b8](https://github.com/michellemayes/nootle/commit/08cd4b8dcaf3ea0b8f8178c22a9c85cfb42c7c8b))
 - Hide sidebar expand button until hover and preserve logo aspect ratio (#84) ([8fc3ec2](https://github.com/michellemayes/nootle/commit/8fc3ec20a55ca8498ae0017a054b5219717e21b0))
@@ -86,5 +158,3 @@ All notable changes to this project will be documented in this file.
 ### Testing
 
 - Add e2e user journey tests for all major product flows (#81) ([ff559c2](https://github.com/michellemayes/nootle/commit/ff559c210b77b7a97374c463a5840ef0492e2104))
-
-
