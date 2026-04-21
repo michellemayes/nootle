@@ -332,7 +332,7 @@ function LibraryView({ onSelectMeeting }: { onSelectMeeting: (id: string) => voi
           <button
             key={m.id}
             onClick={() => onSelectMeeting(m.id)}
-            className="text-left rounded-xl border border-stone-200 shadow-sm p-3 hover:bg-stone-100/40 hover:shadow-md transition-all cursor-pointer group"
+            className="text-left rounded-xl border border-stone-200 shadow-sm p-3 hover:bg-stone-100/40 hover:shadow-md transition-[background-color,box-shadow,border-color] duration-150 cursor-pointer group"
           >
             <div className="flex items-start justify-between gap-1 mb-1.5">
               <h3 className="text-[11px] font-medium text-stone-900 leading-snug line-clamp-2 group-hover:text-stone-700">

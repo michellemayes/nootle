@@ -21,7 +21,7 @@ export function SponsorCTA() {
             </p>
             <a
               href="https://github.com/sponsors/michellemayes"
-              className="inline-flex items-center justify-center px-8 py-3 text-base font-semibold text-white rounded-full bg-[var(--color-sponsor)] hover:bg-[var(--color-sponsor-hover)] transition-all duration-200 hover:shadow-[0_0_30px_-5px_var(--color-sponsor)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-sponsor)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
+              className="inline-flex items-center justify-center px-8 py-3 text-base font-semibold text-white rounded-full bg-[var(--color-sponsor)] hover:bg-[var(--color-sponsor-hover)] active:scale-[0.96] transition-[background-color,box-shadow,transform,scale] duration-200 hover:shadow-[0_0_30px_-5px_var(--color-sponsor)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-sponsor)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
             >
               <Heart
                 className="w-4 h-4 mr-2"

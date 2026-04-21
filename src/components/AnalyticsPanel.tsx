@@ -115,7 +115,7 @@ export function AnalyticsPanel({
                     </div>
                     <div className="h-3 w-full rounded-full bg-muted">
                       <div
-                        className={`h-3 rounded-full ${color} transition-all duration-300`}
+                        className={`h-3 rounded-full ${color} transition-[width] duration-300`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
