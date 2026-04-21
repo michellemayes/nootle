@@ -127,12 +127,6 @@
   h1, h2, h3, h4 {
     text-wrap: balance;
     }
-  img {
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
-    }
-  .dark img {
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
-    }
 }
 
 @layer components {
