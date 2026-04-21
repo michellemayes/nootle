@@ -44,7 +44,7 @@ export function Integrations() {
             return (
               <AnimateIn
                 key={item.name}
-                className="group flex flex-col items-center justify-center gap-3 py-8 px-4 rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] transition-all duration-200 w-[calc(50%-0.5rem)] sm:w-[calc(20%-0.8rem)] hover:-translate-y-1"
+                className="group flex flex-col items-center justify-center gap-3 py-8 px-4 rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] transition-[transform,translate,border-color] duration-200 w-[calc(50%-0.5rem)] sm:w-[calc(20%-0.8rem)] hover:-translate-y-1"
                 delay={i * 0.04}
               >
                 <div

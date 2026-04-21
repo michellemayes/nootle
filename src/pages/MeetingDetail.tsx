@@ -1285,7 +1285,7 @@ export function MeetingDetail() {
           >
             <div className="h-1.5 rounded-full bg-muted">
               <div
-                className="h-1.5 rounded-full bg-primary transition-all duration-150"
+                className="h-1.5 rounded-full bg-primary transition-[width] duration-150"
                 style={{
                   width: duration > 0 ? `${(currentTime / duration) * 100}%` : "0%",
                 }}

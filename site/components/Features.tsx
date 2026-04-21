@@ -95,7 +95,7 @@ export function Features() {
           {features.map((feature, i) => (
             <AnimateIn
               key={feature.title}
-              className={`group relative p-7 rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_-8px_var(--hover-glow)] ${feature.span || ""}`}
+              className={`group relative p-7 rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] overflow-hidden transition-[transform,translate,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_-8px_var(--hover-glow)] ${feature.span || ""}`}
               delay={i * 0.05}
             >
               <div

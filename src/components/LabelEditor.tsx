@@ -135,7 +135,7 @@ export function LabelEditor({
                   <button
                     key={color}
                     onClick={() => setNewLabelColor(color)}
-                    className={`h-5 w-5 rounded-full border-2 transition-all ${
+                    className={`h-5 w-5 rounded-full border-2 transition-[border-color,scale] duration-150 ${
                       newLabelColor === color
                         ? "border-foreground scale-110"
                         : "border-transparent hover:border-muted-foreground/40"

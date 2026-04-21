@@ -55,7 +55,7 @@ export function FAQ() {
                 />
               </button>
               <div
-                className={`overflow-hidden transition-all duration-200 ${
+                className={`overflow-hidden transition-[max-height,padding] duration-200 ${
                   openIndex === i ? "max-h-96 pb-6" : "max-h-0"
                 }`}
               >

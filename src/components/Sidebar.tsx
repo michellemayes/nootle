@@ -60,7 +60,7 @@ export function Sidebar() {
 
   return (
     <motion.aside
-      className={cn("group/sidebar flex h-screen flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] shadow-[1px_0_0_0_var(--sidebar-border)] transition-all duration-200 ease-out", isCompact ? "w-12" : "w-60")}
+      className={cn("group/sidebar flex h-screen flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] shadow-[1px_0_0_0_var(--sidebar-border)] transition-[width] duration-200 ease-out", isCompact ? "w-12" : "w-60")}
       animate={
         wiggleSidebar
           ? {

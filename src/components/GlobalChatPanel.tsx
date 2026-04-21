@@ -136,7 +136,7 @@ export function GlobalChatPanel() {
   return (
     <>
       {/* Floating Action Button */}
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {!open && (
           <motion.button
             initial={{ scale: 0 }}

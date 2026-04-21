@@ -13,8 +13,8 @@ export const MotionButton = React.forwardRef<
   return (
     <MotionButtonInner
       ref={ref}
-      whileTap={{ scale: 0.97 }}
-      transition={{ type: "spring", stiffness: 400, damping: 17 }}
+      whileTap={{ scale: 0.96 }}
+      transition={{ type: "spring", duration: 0.3, bounce: 0 }}
       {...props}
     />
   );
