@@ -943,10 +943,13 @@ impl Database {
             .map(|s| s.contains("REFERENCES prompts"))
             .unwrap_or(false)
         {
-            // Wrapped in BEGIN/COMMIT so a partial run can't leave summaries_new
-            // hanging around and block subsequent attempts. The leading DROP
-            // also recovers from any pre-existing partial state.
-            conn.execute_batch(
+            // Standard SQLite table rebuild: turn foreign_keys off, do the
+            // swap inside a transaction, turn foreign_keys back on. PRAGMA
+            // foreign_keys cannot run inside a transaction, so it stays
+            // outside the BEGIN/COMMIT. The leading DROP recovers from any
+            // pre-existing partial state from earlier failed attempts.
+            conn.execute_batch("PRAGMA foreign_keys=OFF;")?;
+            let rebuild_result = conn.execute_batch(
                 "
                 BEGIN;
                 DROP TABLE IF EXISTS summaries_new;
@@ -960,7 +963,9 @@ impl Database {
                     created_at TEXT NOT NULL DEFAULT (datetime('now'))
                 );
                 INSERT INTO summaries_new (id, meeting_id, prompt_id, provider, model, content, created_at)
-                    SELECT id, meeting_id, prompt_id, provider, model, content, created_at FROM summaries;
+                    SELECT id, meeting_id, prompt_id, provider, model, content, created_at
+                    FROM summaries
+                    WHERE meeting_id IN (SELECT id FROM meetings);
                 DROP TABLE summaries;
                 ALTER TABLE summaries_new RENAME TO summaries;
                 CREATE TRIGGER IF NOT EXISTS summaries_ai AFTER INSERT ON summaries BEGIN
@@ -971,7 +976,9 @@ impl Database {
                 END;
                 COMMIT;
                 ",
-            )?;
+            );
+            conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+            rebuild_result?;
         }
 
         Ok(())
