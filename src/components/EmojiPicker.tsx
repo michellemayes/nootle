@@ -69,7 +69,13 @@ export function EmojiPicker({ value, onChange, placeholder = "Pick an icon" }: E
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-3">
+      <PopoverContent
+        align="start"
+        side="bottom"
+        sideOffset={4}
+        collisionPadding={12}
+        className="w-72 p-3 max-h-[min(60vh,360px)] overflow-y-auto"
+      >
         <div className="space-y-3">
           {EMOJI_GROUPS.map((group) => (
             <div key={group.label}>
@@ -82,7 +88,7 @@ export function EmojiPicker({ value, onChange, placeholder = "Pick an icon" }: E
                     key={emoji}
                     type="button"
                     onClick={() => handlePick(emoji)}
-                    className={`h-8 w-8 rounded text-lg leading-none flex items-center justify-center hover:bg-muted transition-colors ${
+                    className={`h-7 w-7 rounded text-base leading-none flex items-center justify-center hover:bg-muted transition-colors ${
                       value === emoji ? "bg-muted" : ""
                     }`}
                     title={emoji}
