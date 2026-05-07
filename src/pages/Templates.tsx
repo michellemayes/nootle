@@ -160,7 +160,7 @@ export function TemplatesPage() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="border-b px-6 py-4">
-        <h1 className="text-2xl font-bold tracking-tight">Templates & Recipes</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Automations</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Configure how meetings are summarized and create slash-command shortcuts
         </p>
