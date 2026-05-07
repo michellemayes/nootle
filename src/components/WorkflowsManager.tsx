@@ -10,7 +10,7 @@ import { useIntegrations } from "@/hooks/useIntegrations";
 import { INTEGRATION_TYPES, ACTION_TYPES_BY_INTEGRATION } from "@/lib/integrations";
 import type { Workflow } from "@/types";
 
-export function TemplatesManager() {
+export function WorkflowsManager() {
   const { workflows, loading, createWorkflow, updateWorkflow, deleteWorkflow } = useWorkflows();
   const { integrations } = useIntegrations();
   const [editing, setEditing] = useState<string | null>(null);
@@ -115,7 +115,7 @@ export function TemplatesManager() {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Templates</CardTitle>
+            <CardTitle>Workflows</CardTitle>
             <CardDescription>
               Automate post-meeting actions like posting summaries, creating tickets, or drafting emails.
             </CardDescription>
@@ -123,7 +123,7 @@ export function TemplatesManager() {
           {editing === null && (
             <Button size="sm" onClick={startCreate}>
               <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Create Template
+              Create Workflow
             </Button>
           )}
         </div>
@@ -135,7 +135,7 @@ export function TemplatesManager() {
           <div className="space-y-3">
             <Collapsible open={editing !== null}>
               <div className="border rounded-lg p-4 space-y-3 mb-3">
-                <h4 className="text-sm font-medium">{editing === "new" ? "New Template" : "Edit Template"}</h4>
+                <h4 className="text-sm font-medium">{editing === "new" ? "New Workflow" : "Edit Workflow"}</h4>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-muted-foreground w-28 shrink-0">Name *</label>
@@ -230,7 +230,7 @@ export function TemplatesManager() {
 
             {workflows.length === 0 && editing === null ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
-                No templates yet. Set one up and Nootle will handle the busywork after every meeting.
+                No workflows yet. Set one up and Nootle will handle the busywork after every meeting.
               </p>
             ) : (
               <div className="divide-y">

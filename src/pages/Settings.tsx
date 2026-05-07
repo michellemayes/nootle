@@ -260,7 +260,7 @@ function IntegrationsManager() {
       <CardHeader>
         <CardTitle>Integrations</CardTitle>
         <CardDescription>
-          Connect services to use in post-meeting templates. These are separate from the API keys above, which are used for LLM providers.
+          Connect services to use in post-meeting workflows. These are separate from the API keys above, which are used for LLM providers.
         </CardDescription>
       </CardHeader>
       <CardContent>

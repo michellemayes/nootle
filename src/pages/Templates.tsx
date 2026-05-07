@@ -24,7 +24,7 @@ import { useTemplates } from "@/hooks/useTemplates";
 import { useRecipes } from "@/hooks/useRecipes";
 import { FileText, Pencil, Trash2, Sparkles, Star, ChefHat } from "lucide-react";
 import type { Template, Recipe } from "@/types";
-import { TemplatesManager } from "@/components/TemplatesManager";
+import { WorkflowsManager } from "@/components/WorkflowsManager";
 
 export function TemplatesPage() {
   const { templates, loading, createTemplate, updateTemplate, deleteTemplate } = useTemplates();
@@ -160,7 +160,7 @@ export function TemplatesPage() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="border-b px-6 py-4">
-        <h1 className="text-2xl font-bold tracking-tight">Automations & Recipes</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Templates & Recipes</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Configure how meetings are summarized and create slash-command shortcuts
         </p>
@@ -169,12 +169,12 @@ export function TemplatesPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b px-6 py-4 flex items-center justify-between">
           <TabsList className="h-10">
-            <TabsTrigger value="templates">Automations</TabsTrigger>
+            <TabsTrigger value="templates">Templates</TabsTrigger>
             <TabsTrigger value="recipes">Recipes</TabsTrigger>
-            <TabsTrigger value="post-meeting">Templates</TabsTrigger>
+            <TabsTrigger value="post-meeting">Workflows</TabsTrigger>
           </TabsList>
           {activeTab === "templates" && (
-            <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>+ Add Automation</Button>
+            <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>+ Add Template</Button>
           )}
           {activeTab === "recipes" && (
             <Button size="sm" variant="outline" onClick={() => setRecipeDialogOpen(true)}>+ Add Recipe</Button>
@@ -185,10 +185,10 @@ export function TemplatesPage() {
             }}>
                 <DialogContent className="max-w-lg">
                   <DialogHeader>
-                    <DialogTitle>{editingTemplate ? "Edit Automation" : "New Automation"}</DialogTitle>
+                    <DialogTitle>{editingTemplate ? "Edit Template" : "New Template"}</DialogTitle>
                     <DialogDescription>
                       {editingTemplate
-                        ? "Update this automation's details"
+                        ? "Update this template's details"
                         : "Define AI instructions for summarizing meetings"}
                     </DialogDescription>
                   </DialogHeader>
@@ -221,7 +221,7 @@ export function TemplatesPage() {
                         className="w-full rounded-md border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring"
                       />
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Instructions for the AI when summarizing meetings with this automation
+                        Instructions for the AI when summarizing meetings with this template
                       </p>
                     </div>
                     <div className="flex items-center gap-6">
@@ -390,13 +390,13 @@ export function TemplatesPage() {
         <TabsContent value="templates" className="flex-1 mt-0 overflow-auto">
           <div className="flex flex-col gap-6 p-8">
             {loading ? (
-              <p className="text-sm text-muted-foreground">Simmering your automations...</p>
+              <p className="text-sm text-muted-foreground">Simmering your templates...</p>
             ) : templates.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 py-12">
                 <FileText className="h-10 w-10 text-muted-foreground" />
-                <h2 className="text-lg font-medium">No automations yet</h2>
+                <h2 className="text-lg font-medium">No templates yet</h2>
                 <p className="text-sm text-muted-foreground">
-                  Automations shape how Nootle summarizes your meetings — cook up your first one
+                  Templates shape how Nootle summarizes your meetings — cook up your first one
                 </p>
               </div>
             ) : (
@@ -562,7 +562,7 @@ export function TemplatesPage() {
 
         <TabsContent value="post-meeting" className="flex-1 mt-0 overflow-auto">
           <div className="p-6 max-w-3xl mx-auto">
-            <TemplatesManager />
+            <WorkflowsManager />
           </div>
         </TabsContent>
       </Tabs>
