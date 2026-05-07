@@ -8,6 +8,7 @@ import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useWorkflows } from "@/hooks/useWorkflows";
 import { useIntegrations } from "@/hooks/useIntegrations";
 import { INTEGRATION_TYPES, ACTION_TYPES_BY_INTEGRATION } from "@/lib/integrations";
+import { EmojiPicker } from "@/components/EmojiPicker";
 import type { Workflow } from "@/types";
 
 export function WorkflowsManager() {
@@ -111,17 +112,17 @@ export function WorkflowsManager() {
   };
 
   return (
-    <Card>
+    <Card className="gap-3">
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <CardTitle>Workflows</CardTitle>
-            <CardDescription>
+            <CardDescription className="mt-1">
               Automate post-meeting actions like posting summaries, creating tickets, or drafting emails.
             </CardDescription>
           </div>
           {editing === null && (
-            <Button size="sm" onClick={startCreate}>
+            <Button size="sm" onClick={startCreate} className="shrink-0">
               <Plus className="h-3.5 w-3.5 mr-1.5" />
               Create Workflow
             </Button>
@@ -157,12 +158,7 @@ export function WorkflowsManager() {
                   </div>
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-muted-foreground w-28 shrink-0">Icon</label>
-                    <Input
-                      placeholder="Optional icon (emoji or text)"
-                      value={formIcon}
-                      onChange={(e) => setFormIcon(e.target.value)}
-                      className="flex-1"
-                    />
+                    <EmojiPicker value={formIcon} onChange={setFormIcon} placeholder="Pick an emoji" />
                   </div>
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-muted-foreground w-28 shrink-0">Integration *</label>
