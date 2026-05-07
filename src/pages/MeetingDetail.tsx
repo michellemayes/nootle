@@ -957,30 +957,35 @@ export function MeetingDetail() {
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
           <div>
-            {editingTitle ? (
-              <Input
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onBlur={handleTitleSave}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleTitleSave();
-                  if (e.key === "Escape") setEditingTitle(false);
-                }}
-                className="text-xl font-bold h-auto py-0 border-none bg-transparent"
-                autoFocus
-              />
-            ) : (
-              <h1
-                className="text-xl font-bold cursor-pointer group/title flex items-center gap-2 hover:text-muted-foreground transition-colors"
-                onClick={() => {
-                  setTitleDraft(meeting.title);
-                  setEditingTitle(true);
-                }}
-              >
-                {meeting.title}
-                <Pencil className="h-3.5 w-3.5 opacity-0 group-hover/title:opacity-50 transition-opacity" />
-              </h1>
-            )}
+            <div className="flex items-center gap-2">
+              {editingTitle ? (
+                <Input
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={handleTitleSave}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleTitleSave();
+                    if (e.key === "Escape") setEditingTitle(false);
+                  }}
+                  className="text-xl font-bold h-auto py-0 border-none bg-transparent"
+                  autoFocus
+                />
+              ) : (
+                <h1
+                  className="text-xl font-bold cursor-pointer group/title flex items-center gap-2 hover:text-muted-foreground transition-colors"
+                  onClick={() => {
+                    setTitleDraft(meeting.title);
+                    setEditingTitle(true);
+                  }}
+                >
+                  {meeting.title}
+                  <Pencil className="h-3.5 w-3.5 opacity-0 group-hover/title:opacity-50 transition-opacity" />
+                </h1>
+              )}
+              <Badge variant="outline" className="text-[10px]">
+                {statusLabel(meeting.status)}
+              </Badge>
+            </div>
             <p className="text-sm text-muted-foreground">
               {formatDate(meeting.start_time, "long")}
             </p>
@@ -997,7 +1002,6 @@ export function MeetingDetail() {
             </div>
             )}
           </div>
-          <Badge variant="outline">{statusLabel(meeting.status)}</Badge>
         </div>
         {!isCompact && (
         <div className="flex items-center gap-2">
