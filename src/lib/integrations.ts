@@ -26,13 +26,16 @@ export const ACTION_TYPES_BY_INTEGRATION: Record<string, { value: string; label:
   ] }],
   github: [{ value: "create_issues", label: "Create Issues", configFields: [
     { key: "repo", label: "Repository", placeholder: "owner/repo", required: true },
+    { key: "description_prompt", label: "Description prompt", placeholder: "Describe what info should be in each issue (e.g. 'Include the action item, why it matters, and any related decisions')", required: false },
   ] }],
   linear: [{ value: "create_issues", label: "Create Issues", configFields: [
     { key: "team_id", label: "Team ID", placeholder: "Enter Linear team ID", required: true },
     { key: "project_id", label: "Project ID", placeholder: "Optional project ID", required: false },
+    { key: "description_prompt", label: "Description prompt", placeholder: "Describe what info should be in each issue (e.g. 'Include the action item, why it matters, and any related decisions')", required: false },
   ] }],
   asana: [{ value: "create_tasks", label: "Create Tasks", configFields: [
     { key: "project_id", label: "Project ID", placeholder: "Enter Asana project ID", required: true },
+    { key: "description_prompt", label: "Description prompt", placeholder: "Describe what info should be in each task (e.g. 'Include the action item, why it matters, and any related decisions')", required: false },
   ] }],
   email: [{ value: "generate_draft", label: "Generate Draft", configFields: [
     { key: "subject", label: "Subject", placeholder: "Optional subject line", required: false },

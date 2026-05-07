@@ -81,10 +81,16 @@ export function useWorkflows() {
   );
 
   const runWorkflow = useCallback(
-    async (meetingId: string, workflowId: string) => {
+    async (
+      meetingId: string,
+      workflowId: string,
+      llm?: { provider?: string; model?: string },
+    ) => {
       return invoke<WorkflowRun>("run_workflow", {
         meetingId,
         workflowId,
+        llmProvider: llm?.provider,
+        llmModel: llm?.model,
       });
     },
     [],

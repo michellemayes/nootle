@@ -2034,8 +2034,11 @@ pub fn list_workflow_runs(
 #[tauri::command]
 pub async fn run_workflow(
     db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
     meeting_id: String,
     workflow_id: String,
+    llm_provider: Option<String>,
+    llm_model: Option<String>,
 ) -> Result<crate::db::WorkflowRun, String> {
     let workflow = db.get_workflow(&workflow_id).map_err(|e| e.to_string())?;
     let integration = db
@@ -2058,6 +2061,7 @@ pub async fn run_workflow(
             content: i.content.clone(),
             assignee: i.assignee.clone(),
             due_date: i.due_date.clone(),
+            context: i.context.clone(),
         })
         .collect();
 
@@ -2075,7 +2079,17 @@ pub async fn run_workflow(
     db.update_workflow_run_status(&run.id, "running", None, None)
         .map_err(|e| e.to_string())?;
 
-    match crate::workflows::execute_workflow(&workflow, &integration, &context).await {
+    let llm_registry = llm.read().await;
+    match crate::workflows::execute_workflow(
+        &workflow,
+        &integration,
+        &context,
+        Some(&llm_registry),
+        llm_provider.as_deref(),
+        llm_model.as_deref(),
+    )
+    .await
+    {
         Ok(result) => {
             let result_json = serde_json::to_string(&result).unwrap_or_default();
             db.update_workflow_run_status(&run.id, "completed", Some(&result_json), None)
