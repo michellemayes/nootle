@@ -43,6 +43,9 @@ export function GlobalChatPanel() {
   const navigate = useNavigate();
   const location = useLocation();
   const onChatPage = location.pathname === "/chat";
+  // Meeting detail page has an audio player pinned to the bottom; lift the
+  // chat bubble so it doesn't sit on top of the timestamp readout.
+  const onMeetingPage = location.pathname.startsWith("/meeting/");
 
   const [input, setInput] = useState("");
   const [selectedLabel, setSelectedLabel] = useState(""); // "" = all
@@ -143,7 +146,7 @@ export function GlobalChatPanel() {
             animate={{ scale: 1 }}
             exit={{ scale: 0 }}
             onClick={() => setOpen(true)}
-            className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-shadow"
+            className={`fixed right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-shadow ${onMeetingPage ? "bottom-24" : "bottom-6"}`}
             title="Ask across meetings"
           >
             <MessageSquare className="h-5 w-5" />
