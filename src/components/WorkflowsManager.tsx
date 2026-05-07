@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Collapsible } from "@/components/Collapsible";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -131,117 +138,120 @@ export function WorkflowsManager() {
           )}
         </div>
       </CardHeader>
+      <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) resetForm(); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editing === "new" ? "New Workflow" : "Edit Workflow"}</DialogTitle>
+            <DialogDescription>
+              {editing === "new"
+                ? "Automate a post-meeting action like posting a summary, creating a ticket, or drafting an email."
+                : "Update this workflow's details"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Name *</label>
+              <Input
+                placeholder="e.g. Post summary to Slack"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Description</label>
+              <Input
+                placeholder="Optional description"
+                value={formDescription}
+                onChange={(e) => setFormDescription(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Icon</label>
+              <EmojiPicker value={formIcon} onChange={setFormIcon} placeholder="Pick an emoji" />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Integration *</label>
+              <select
+                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                value={formIntegrationId}
+                onChange={(e) => {
+                  setFormIntegrationId(e.target.value);
+                  setFormActionType("");
+                  setFormConfig({});
+                }}
+              >
+                <option value="">Select integration...</option>
+                {connectedIntegrations.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {INTEGRATION_TYPES.find((t) => t.type === i.integration_type)?.name ?? i.integration_type}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selectedIntegrationType && (
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Action *</label>
+                <select
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={formActionType}
+                  onChange={(e) => {
+                    setFormActionType(e.target.value);
+                    setFormConfig({});
+                  }}
+                >
+                  <option value="">Select action...</option>
+                  {availableActions.map((a) => (
+                    <option key={a.value} value={a.value}>{a.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {selectedAction && selectedAction.configFields.map((field) => (
+              <div key={field.key}>
+                <label className="text-sm font-medium mb-1.5 block">
+                  {field.label}{field.required ? " *" : ""}
+                </label>
+                {field.key === "template_id" ? (
+                  <select
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    value={formConfig[field.key] ?? ""}
+                    onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                    title={field.placeholder}
+                  >
+                    <option value="">No source template</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    placeholder={field.placeholder}
+                    value={formConfig[field.key] ?? ""}
+                    onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={resetForm}>Cancel</Button>
+            <Button
+              onClick={handleSave}
+              disabled={saving || !formName.trim() || !formIntegrationId || !formActionType}
+            >
+              {saving ? "Saving..." : editing === "new" ? "Create" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <CardContent>
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading...</p>
         ) : (
           <div className="space-y-3">
-            <Collapsible open={editing !== null}>
-              <div className="border rounded-lg p-4 space-y-3 mb-3">
-                <h4 className="text-sm font-medium">{editing === "new" ? "New Workflow" : "Edit Workflow"}</h4>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-muted-foreground w-28 shrink-0">Name *</label>
-                    <Input
-                      placeholder="e.g. Post summary to Slack"
-                      value={formName}
-                      onChange={(e) => setFormName(e.target.value)}
-                      className="flex-1"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-muted-foreground w-28 shrink-0">Description</label>
-                    <Input
-                      placeholder="Optional description"
-                      value={formDescription}
-                      onChange={(e) => setFormDescription(e.target.value)}
-                      className="flex-1"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-muted-foreground w-28 shrink-0">Icon</label>
-                    <EmojiPicker value={formIcon} onChange={setFormIcon} placeholder="Pick an emoji" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-muted-foreground w-28 shrink-0">Integration *</label>
-                    <select
-                      className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
-                      value={formIntegrationId}
-                      onChange={(e) => {
-                        setFormIntegrationId(e.target.value);
-                        setFormActionType("");
-                        setFormConfig({});
-                      }}
-                    >
-                      <option value="">Select integration...</option>
-                      {connectedIntegrations.map((i) => (
-                        <option key={i.id} value={i.id}>
-                          {INTEGRATION_TYPES.find((t) => t.type === i.integration_type)?.name ?? i.integration_type}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {selectedIntegrationType && (
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-muted-foreground w-28 shrink-0">Action *</label>
-                      <select
-                        className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
-                        value={formActionType}
-                        onChange={(e) => {
-                          setFormActionType(e.target.value);
-                          setFormConfig({});
-                        }}
-                      >
-                        <option value="">Select action...</option>
-                        {availableActions.map((a) => (
-                          <option key={a.value} value={a.value}>{a.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  {selectedAction && selectedAction.configFields.map((field) => (
-                    <div key={field.key} className="flex items-center gap-2">
-                      <label className="text-xs text-muted-foreground w-28 shrink-0">
-                        {field.label}{field.required ? " *" : ""}
-                      </label>
-                      {field.key === "template_id" ? (
-                        <select
-                          className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
-                          value={formConfig[field.key] ?? ""}
-                          onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                          title={field.placeholder}
-                        >
-                          <option value="">No source template</option>
-                          {templates.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <Input
-                          placeholder={field.placeholder}
-                          value={formConfig[field.key] ?? ""}
-                          onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                          className="flex-1"
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className="flex gap-2 justify-end pt-1">
-                  <Button variant="ghost" size="sm" onClick={resetForm}>Cancel</Button>
-                  <Button
-                    size="sm"
-                    onClick={handleSave}
-                    disabled={saving || !formName.trim() || !formIntegrationId || !formActionType}
-                  >
-                    {saving ? "Saving..." : editing === "new" ? "Create" : "Save"}
-                  </Button>
-                </div>
-              </div>
-            </Collapsible>
-
             {workflows.length === 0 && editing === null ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
                 No workflows yet. Set one up and Nootle will handle the busywork after every meeting.
