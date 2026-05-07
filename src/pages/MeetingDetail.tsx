@@ -28,7 +28,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
 import { LabelEditor } from "@/components/LabelEditor";
-import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List, StickyNote, Sparkles, PanelLeftClose, PanelLeftOpen, Copy, CheckCheck, Zap, AlertTriangle, BarChart3 } from "lucide-react";
+import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List, StickyNote, Sparkles, PanelLeftClose, PanelLeftOpen, Copy, CheckCheck, Zap, AlertTriangle, BarChart3, ChevronDown } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { useWorkflows, useWorkflowRuns } from "@/hooks/useWorkflows";
 
@@ -958,42 +959,79 @@ export function MeetingDetail() {
         </div>
         {!isCompact && (
         <div className="flex items-center gap-2">
-          {workflows.filter(w => w.is_enabled).map((w) => {
-                const recentRun = runs.find(r => r.workflow_id === w.id);
-                const isRunning = recentRun?.status === "running" || recentRun?.status === "pending";
-                const succeeded = recentRun?.status === "completed";
-                const failed = recentRun?.status === "failed";
-
-                return (
-                  <Button
-                    key={w.id}
-                    variant="outline"
-                    size="sm"
-                    disabled={isRunning}
-                    onClick={async () => {
-                      try {
-                        await runWorkflow(id!, w.id);
-                      } catch (err) {
-                        console.error("Workflow failed:", err);
-                      }
-                      await refreshRuns();
-                    }}
-                    className="text-xs gap-1.5"
-                    title={w.description || w.name}
-                  >
-                    {isRunning ? (
+          {(() => {
+            const enabledWorkflows = workflows.filter((w) => w.is_enabled);
+            if (enabledWorkflows.length === 0) return null;
+            const anyRunning = enabledWorkflows.some((w) => {
+              const recentRun = runs.find((r) => r.workflow_id === w.id);
+              return recentRun?.status === "running" || recentRun?.status === "pending";
+            });
+            return (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="text-xs gap-1.5">
+                    {anyRunning ? (
                       <RotateCw className="h-3 w-3 animate-spin" />
-                    ) : succeeded ? (
-                      <Check className="h-3 w-3 text-green-500" />
-                    ) : failed ? (
-                      <AlertTriangle className="h-3 w-3 text-red-500" />
                     ) : (
                       <Zap className="h-3 w-3" />
                     )}
-                    {w.name}
+                    Run
+                    <ChevronDown className="h-3 w-3 opacity-60" />
                   </Button>
-                );
-          })}
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 p-1.5">
+                  <div className="space-y-0.5">
+                    {enabledWorkflows.map((w) => {
+                      const recentRun = runs.find((r) => r.workflow_id === w.id);
+                      const isRunning =
+                        recentRun?.status === "running" || recentRun?.status === "pending";
+                      const succeeded = recentRun?.status === "completed";
+                      const failed = recentRun?.status === "failed";
+                      return (
+                        <button
+                          key={w.id}
+                          type="button"
+                          disabled={isRunning}
+                          onClick={async () => {
+                            try {
+                              await runWorkflow(id!, w.id);
+                            } catch (err) {
+                              console.error("Workflow failed:", err);
+                            }
+                            await refreshRuns();
+                          }}
+                          className="w-full text-left rounded-md px-2.5 py-2 text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-start gap-2"
+                          title={w.description || w.name}
+                        >
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">
+                            {isRunning ? (
+                              <RotateCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                            ) : succeeded ? (
+                              <Check className="h-3.5 w-3.5 text-green-500" />
+                            ) : failed ? (
+                              <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                            ) : w.icon ? (
+                              <span>{w.icon}</span>
+                            ) : (
+                              <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+                            )}
+                          </span>
+                          <span className="flex-1 min-w-0">
+                            <span className="block font-medium leading-tight">{w.name}</span>
+                            {w.description && (
+                              <span className="block text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                                {w.description}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            );
+          })()}
           {!chatOpen && (
             <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
               <MessageSquare className="h-4 w-4" /> Ask Nootle
