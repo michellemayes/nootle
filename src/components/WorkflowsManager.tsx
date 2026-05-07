@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useWorkflows } from "@/hooks/useWorkflows";
 import { useIntegrations } from "@/hooks/useIntegrations";
+import { useTemplates } from "@/hooks/useTemplates";
 import { INTEGRATION_TYPES, ACTION_TYPES_BY_INTEGRATION } from "@/lib/integrations";
 import { EmojiPicker } from "@/components/EmojiPicker";
 import type { Workflow } from "@/types";
@@ -14,6 +15,7 @@ import type { Workflow } from "@/types";
 export function WorkflowsManager() {
   const { workflows, loading, createWorkflow, updateWorkflow, deleteWorkflow } = useWorkflows();
   const { integrations } = useIntegrations();
+  const { templates } = useTemplates();
   const [editing, setEditing] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -202,12 +204,28 @@ export function WorkflowsManager() {
                       <label className="text-xs text-muted-foreground w-28 shrink-0">
                         {field.label}{field.required ? " *" : ""}
                       </label>
-                      <Input
-                        placeholder={field.placeholder}
-                        value={formConfig[field.key] ?? ""}
-                        onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                        className="flex-1"
-                      />
+                      {field.key === "template_id" ? (
+                        <select
+                          className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+                          value={formConfig[field.key] ?? ""}
+                          onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                          title={field.placeholder}
+                        >
+                          <option value="">No source template</option>
+                          {templates.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Input
+                          placeholder={field.placeholder}
+                          value={formConfig[field.key] ?? ""}
+                          onChange={(e) => setFormConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                          className="flex-1"
+                        />
+                      )}
                     </div>
                   ))}
                 </div>

@@ -6,6 +6,10 @@ pub struct WorkflowContext {
     pub meeting_title: String,
     pub meeting_date: String,
     pub summary: Option<String>,
+    /// Summary from the workflow's configured `template_id`, generated on the
+    /// fly if it didn't exist yet. None when the workflow has no source
+    /// template configured. Exposed to templates as `{{template_summary}}`.
+    pub template_summary: Option<String>,
     pub action_items: Vec<ActionItemContext>,
 }
 
@@ -167,6 +171,14 @@ fn render_template(template: &str, context: &WorkflowContext) -> String {
             "{{summary}}",
             context.summary.as_deref().unwrap_or("No summary available"),
         )
+        .replace(
+            "{{template_summary}}",
+            context
+                .template_summary
+                .as_deref()
+                .or(context.summary.as_deref())
+                .unwrap_or("No summary available"),
+        )
         .replace("{{action_items}}", &action_items_text)
 }
 
@@ -180,9 +192,11 @@ fn execute_email(
     let subject_template = config["subject"]
         .as_str()
         .unwrap_or("Meeting Notes: {{title}}");
+    // {{template_summary}} resolves to the configured source template's
+    // summary if one is set on the workflow, otherwise falls back to {{summary}}.
     let body_template = config["body"]
         .as_str()
-        .unwrap_or("{{summary}}\n\n## Action Items\n{{action_items}}");
+        .unwrap_or("{{template_summary}}\n\n## Action Items\n{{action_items}}");
 
     let subject = render_template(subject_template, context);
     let body = render_template(body_template, context);
@@ -825,6 +839,7 @@ mod tests {
             meeting_title: "Weekly Standup".to_string(),
             meeting_date: "2026-03-07T10:00:00".to_string(),
             summary: Some("Discussed Q1 roadmap. Speaker 1 will lead the effort.".to_string()),
+            template_summary: None,
             action_items: vec![ActionItemContext {
                 content: "Review PR #42".to_string(),
                 assignee: Some("Speaker 1".to_string()),
@@ -884,6 +899,7 @@ mod tests {
             meeting_title: "Standup".to_string(),
             meeting_date: "2026-03-07".to_string(),
             summary: Some("Summary".to_string()),
+            template_summary: None,
             action_items: vec![],
         };
 

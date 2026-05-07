@@ -2051,6 +2051,40 @@ pub async fn run_workflow(
         .map_err(|e| e.to_string())?;
     let summary_text = summaries.first().map(|s| s.content.clone());
 
+    // If the workflow has a source template configured, use that template's
+    // summary. Auto-generate one if it doesn't exist yet (requires LLM).
+    let workflow_config: serde_json::Value =
+        serde_json::from_str(&workflow.config_json).unwrap_or_else(|_| serde_json::json!({}));
+    let configured_template_id = workflow_config
+        .get("template_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+
+    let template_summary = if let Some(template_id) = configured_template_id {
+        match summaries.iter().find(|s| s.template_id.as_deref() == Some(template_id)) {
+            Some(existing) => Some(existing.content.clone()),
+            None => match (llm_provider.as_deref(), llm_model.as_deref()) {
+                (Some(provider), Some(model)) => {
+                    let llm_registry = llm.read().await;
+                    crate::summarization::summarize_meeting(
+                        &db,
+                        &llm_registry,
+                        &meeting_id,
+                        template_id,
+                        provider,
+                        model,
+                    )
+                    .await
+                    .ok()
+                    .map(|s| s.content)
+                }
+                _ => None,
+            },
+        }
+    } else {
+        None
+    };
+
     let insights = db
         .get_insights_for_meeting(&meeting_id)
         .map_err(|e| e.to_string())?;
@@ -2069,6 +2103,7 @@ pub async fn run_workflow(
         meeting_title: meeting.title.clone(),
         meeting_date: meeting.start_time.clone(),
         summary: summary_text,
+        template_summary,
         action_items,
     };
 
