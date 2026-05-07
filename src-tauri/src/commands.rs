@@ -2061,7 +2061,10 @@ pub async fn run_workflow(
         .filter(|s| !s.is_empty());
 
     let template_summary = if let Some(template_id) = configured_template_id {
-        match summaries.iter().find(|s| s.template_id.as_deref() == Some(template_id)) {
+        match summaries
+            .iter()
+            .find(|s| s.template_id.as_deref() == Some(template_id))
+        {
             Some(existing) => Some(existing.content.clone()),
             None => match (llm_provider.as_deref(), llm_model.as_deref()) {
                 (Some(provider), Some(model)) => {

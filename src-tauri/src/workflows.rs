@@ -42,9 +42,15 @@ pub async fn execute_workflow(
         "slack" => execute_slack(workflow, integration, context).await,
         "notion" => execute_notion(workflow, integration, context).await,
         "confluence" => execute_confluence(workflow, integration, context).await,
-        "github" => execute_github(workflow, integration, context, llm, llm_provider, llm_model).await,
-        "linear" => execute_linear(workflow, integration, context, llm, llm_provider, llm_model).await,
-        "asana" => execute_asana(workflow, integration, context, llm, llm_provider, llm_model).await,
+        "github" => {
+            execute_github(workflow, integration, context, llm, llm_provider, llm_model).await
+        }
+        "linear" => {
+            execute_linear(workflow, integration, context, llm, llm_provider, llm_model).await
+        }
+        "asana" => {
+            execute_asana(workflow, integration, context, llm, llm_provider, llm_model).await
+        }
         "obsidian" => execute_obsidian(workflow, integration, context).await,
         other => Err(format!("Unknown integration type: {other}")),
     }
@@ -73,7 +79,10 @@ async fn render_issue_description(
         (user_prompt, llm, llm_provider, llm_model)
     {
         if let Some(provider_impl) = llm.get_provider(provider) {
-            let summary = context.summary.as_deref().unwrap_or("(no summary available)");
+            let summary = context
+                .summary
+                .as_deref()
+                .unwrap_or("(no summary available)");
             let item_context = item.context.as_deref().unwrap_or("");
             let assignee = item.assignee.as_deref().unwrap_or("(unassigned)");
             let due = item.due_date.as_deref().unwrap_or("(no due date)");
