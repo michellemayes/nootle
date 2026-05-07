@@ -397,9 +397,14 @@ export function InsightsDashboard() {
       className="flex flex-1 flex-col"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-6 py-4">
-        <h1 className="text-xl font-bold">Insights</h1>
-        <div className="flex items-center gap-3">
+      <div className="flex items-start justify-between gap-4 border-b px-6 py-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Insights</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Action items, decisions, and key moments extracted from your meetings
+          </p>
+        </div>
+        <div className="flex items-center gap-3 shrink-0 pt-1">
           <select
             value={typeFilter ?? ""}
             onChange={(e) => setTypeFilter(e.target.value || undefined)}
