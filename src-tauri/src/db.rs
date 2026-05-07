@@ -943,8 +943,13 @@ impl Database {
             .map(|s| s.contains("REFERENCES prompts"))
             .unwrap_or(false)
         {
+            // Wrapped in BEGIN/COMMIT so a partial run can't leave summaries_new
+            // hanging around and block subsequent attempts. The leading DROP
+            // also recovers from any pre-existing partial state.
             conn.execute_batch(
                 "
+                BEGIN;
+                DROP TABLE IF EXISTS summaries_new;
                 CREATE TABLE summaries_new (
                     id TEXT PRIMARY KEY,
                     meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
@@ -964,6 +969,7 @@ impl Database {
                 CREATE TRIGGER IF NOT EXISTS summaries_ad AFTER DELETE ON summaries BEGIN
                     INSERT INTO summaries_fts(summaries_fts, rowid, content) VALUES('delete', old.rowid, old.content);
                 END;
+                COMMIT;
                 ",
             )?;
         }
