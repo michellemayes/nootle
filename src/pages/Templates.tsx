@@ -24,6 +24,7 @@ import { useTemplates } from "@/hooks/useTemplates";
 import { useRecipes } from "@/hooks/useRecipes";
 import { FileText, Pencil, Trash2, Sparkles, Star, ChefHat } from "lucide-react";
 import type { Template, Recipe } from "@/types";
+import { TemplatesManager } from "@/components/TemplatesManager";
 
 export function TemplatesPage() {
   const { templates, loading, createTemplate, updateTemplate, deleteTemplate } = useTemplates();
@@ -170,10 +171,12 @@ export function TemplatesPage() {
           <TabsList className="h-10">
             <TabsTrigger value="templates">Automations</TabsTrigger>
             <TabsTrigger value="recipes">Recipes</TabsTrigger>
+            <TabsTrigger value="post-meeting">Templates</TabsTrigger>
           </TabsList>
-          {activeTab === "templates" ? (
+          {activeTab === "templates" && (
             <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>+ Add Automation</Button>
-          ) : (
+          )}
+          {activeTab === "recipes" && (
             <Button size="sm" variant="outline" onClick={() => setRecipeDialogOpen(true)}>+ Add Recipe</Button>
           )}
             <Dialog open={dialogOpen} onOpenChange={(open) => {
@@ -554,6 +557,12 @@ export function TemplatesPage() {
                 </AnimatePresence>
               </div>
             )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="post-meeting" className="flex-1 mt-0 overflow-auto">
+          <div className="p-6 max-w-3xl mx-auto">
+            <TemplatesManager />
           </div>
         </TabsContent>
       </Tabs>
