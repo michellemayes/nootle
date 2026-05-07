@@ -1231,9 +1231,18 @@ export function MeetingDetail() {
                     Workflow Runs
                   </h3>
                   {runs.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No workflow runs yet. Configure workflows under Templates &rarr; Workflows and run them from the header buttons.
-                    </p>
+                    <div className="space-y-2 text-sm text-muted-foreground">
+                      <p>No workflow runs yet.</p>
+                      <p>
+                        Configure workflows under{" "}
+                        <a href="/templates" className="text-primary underline-offset-2 hover:underline">
+                          Templates &rarr; Workflows
+                        </a>
+                        , then toggle them on. Each enabled workflow shows as a
+                        button next to <span className="font-medium">Ask Nootle</span> at
+                        the top of this page — click it to run the workflow on this meeting.
+                      </p>
+                    </div>
                   ) : (
                     runs.map((run) => (
                       <div key={run.id} className="rounded-lg border px-4 py-3 space-y-1">
