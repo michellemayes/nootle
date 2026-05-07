@@ -47,6 +47,26 @@ function parseResultMessage(json: string | null): string | null {
   }
 }
 
+function parseResultOutput(json: string | null): string | null {
+  if (!json) return null;
+  try {
+    return (JSON.parse(json) as { output?: string }).output ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Email drafts are formatted as `Subject: <line>\n\n<body>` by execute_email
+ * in workflows.rs. Returns null if the output isn't an email draft.
+ */
+function parseEmailDraft(output: string | null): { subject: string; body: string } | null {
+  if (!output) return null;
+  const match = output.match(/^Subject: (.*?)\n\n([\s\S]*)$/);
+  if (!match) return null;
+  return { subject: match[1], body: match[2] };
+}
+
 function CopyButton({ text, className = "" }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
@@ -1244,25 +1264,56 @@ export function MeetingDetail() {
                       </p>
                     </div>
                   ) : (
-                    runs.map((run) => (
-                      <div key={run.id} className="rounded-lg border px-4 py-3 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">{run.workflow_name ?? "Workflow"}</span>
-                          <Badge variant={runStatusVariant(run.status)}>
-                            {run.status}
-                          </Badge>
+                    runs.map((run) => {
+                      const output = parseResultOutput(run.result_json);
+                      const emailDraft = parseEmailDraft(output);
+                      const message = parseResultMessage(run.result_json);
+                      return (
+                        <div key={run.id} className="rounded-lg border px-4 py-3 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">{run.workflow_name ?? "Workflow"}</span>
+                            <Badge variant={runStatusVariant(run.status)}>
+                              {run.status}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(run.started_at).toLocaleString()}
+                          </p>
+                          {run.error && (
+                            <p className="text-xs text-destructive">{run.error}</p>
+                          )}
+                          {run.status === "completed" && message && (
+                            <p className="text-xs text-muted-foreground">{message}</p>
+                          )}
+                          {run.status === "completed" && output && (
+                            <div className="mt-2 space-y-2">
+                              {emailDraft && (
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    onClick={() => {
+                                      const url = `mailto:?subject=${encodeURIComponent(emailDraft.subject)}&body=${encodeURIComponent(emailDraft.body)}`;
+                                      window.location.href = url;
+                                    }}
+                                  >
+                                    Open in Mail
+                                  </Button>
+                                  <CopyButton text={output} className="h-7 text-xs px-2" />
+                                </div>
+                              )}
+                              {!emailDraft && (
+                                <CopyButton text={output} className="h-7 text-xs px-2" />
+                              )}
+                              <pre className="rounded-md border bg-muted/40 p-3 text-xs whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+                                {output}
+                              </pre>
+                            </div>
+                          )}
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(run.started_at).toLocaleString()}
-                        </p>
-                        {run.error && (
-                          <p className="text-xs text-destructive">{run.error}</p>
-                        )}
-                        {run.status === "completed" && parseResultMessage(run.result_json) && (
-                          <p className="text-xs text-muted-foreground">{parseResultMessage(run.result_json)}</p>
-                        )}
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </ScrollArea>
