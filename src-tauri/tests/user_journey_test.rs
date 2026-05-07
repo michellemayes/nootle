@@ -840,7 +840,7 @@ fn journey_custom_template_lifecycle() {
 
     // Built-in templates exist
     let builtins = db.list_templates().unwrap();
-    assert!(builtins.len() > 0);
+    assert!(!builtins.is_empty());
     assert!(builtins.iter().all(|t| t.is_builtin));
 
     // User creates a custom template
@@ -901,7 +901,7 @@ fn journey_recipe_slash_command_flow() {
 
     // Built-in recipes exist
     let builtins = db.list_recipes().unwrap();
-    assert!(builtins.len() > 0);
+    assert!(!builtins.is_empty());
 
     // User creates a custom recipe
     let recipe = db
@@ -927,8 +927,7 @@ fn journey_recipe_slash_command_flow() {
             "Notable Quotes",
             "Pull important quotes",
             "quotes",
-            "Extract and attribute notable quotes from:\n\n{{transcript}}\n\nMeeting: {{title}}"
-                .into(),
+            "Extract and attribute notable quotes from:\n\n{{transcript}}\n\nMeeting: {{title}}",
             "markdown",
         )
         .unwrap();
@@ -1165,9 +1164,9 @@ fn journey_empty_states() {
     assert_eq!(db.get_all_insights(None, None, None).unwrap().len(), 0);
 
     // Templates and recipes have built-in seeds
-    assert!(db.list_templates().unwrap().len() > 0);
-    assert!(db.list_recipes().unwrap().len() > 0);
-    assert!(db.list_insight_types().unwrap().len() > 0);
+    assert!(!db.list_templates().unwrap().is_empty());
+    assert!(!db.list_recipes().unwrap().is_empty());
+    assert!(!db.list_insight_types().unwrap().is_empty());
 
     // Search on empty data returns empty
     assert_eq!(db.search_transcripts("anything").unwrap().len(), 0);
@@ -1209,7 +1208,7 @@ fn journey_custom_insight_type_creation() {
 
     // Built-in insight types exist
     let builtins = db.list_insight_types().unwrap();
-    assert!(builtins.len() > 0);
+    assert!(!builtins.is_empty());
 
     // User creates a custom insight type
     let custom = db
@@ -1481,6 +1480,6 @@ fn journey_complete_user_session() {
 
     // ---- User searches across meetings later ----
     let search = db.search_transcripts("Redis").unwrap();
-    assert!(search.len() > 0);
+    assert!(!search.is_empty());
     assert!(search.iter().any(|r| r.meeting_title == "Weekly Sync"));
 }

@@ -79,6 +79,6 @@ mod tests {
         let system = vec![0.9; 100];
         let mic = vec![0.9; 100];
         let mixed = mixer.mix(&system, &mic);
-        assert!(mixed.iter().all(|&s| s <= 1.0 && s >= -1.0));
+        assert!(mixed.iter().all(|&s| (-1.0..=1.0).contains(&s)));
     }
 }
