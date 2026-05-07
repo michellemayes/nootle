@@ -927,6 +927,47 @@ impl Database {
             conn.execute("DROP TABLE IF EXISTS prompts", [])?;
         }
 
+        // Rebuild summaries if its stored schema still has the dangling FK
+        // `prompt_id TEXT REFERENCES prompts(id)` — the prompts table was
+        // dropped above but SQLite preserves the original CREATE TABLE
+        // statement, so any insert hits "no such table: main.prompts".
+        let summaries_sql: Option<String> = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='summaries'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        if summaries_sql
+            .as_deref()
+            .map(|s| s.contains("REFERENCES prompts"))
+            .unwrap_or(false)
+        {
+            conn.execute_batch(
+                "
+                CREATE TABLE summaries_new (
+                    id TEXT PRIMARY KEY,
+                    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                    prompt_id TEXT,
+                    provider TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                INSERT INTO summaries_new (id, meeting_id, prompt_id, provider, model, content, created_at)
+                    SELECT id, meeting_id, prompt_id, provider, model, content, created_at FROM summaries;
+                DROP TABLE summaries;
+                ALTER TABLE summaries_new RENAME TO summaries;
+                CREATE TRIGGER IF NOT EXISTS summaries_ai AFTER INSERT ON summaries BEGIN
+                    INSERT INTO summaries_fts(rowid, content) VALUES (new.rowid, new.content);
+                END;
+                CREATE TRIGGER IF NOT EXISTS summaries_ad AFTER DELETE ON summaries BEGIN
+                    INSERT INTO summaries_fts(summaries_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+                END;
+                ",
+            )?;
+        }
+
         Ok(())
     }
 
