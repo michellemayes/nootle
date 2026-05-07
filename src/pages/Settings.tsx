@@ -307,7 +307,7 @@ function IntegrationsManager() {
       <CardHeader>
         <CardTitle>Integrations</CardTitle>
         <CardDescription>
-          Connect services to use in post-meeting workflows. These are separate from the API keys above, which are used for LLM providers.
+          Connect services to use in post-meeting templates. These are separate from the API keys above, which are used for LLM providers.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -436,7 +436,7 @@ function WorkflowsManager() {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Workflows</CardTitle>
+            <CardTitle>Templates</CardTitle>
             <CardDescription>
               Automate post-meeting actions like posting summaries, creating tickets, or drafting emails.
             </CardDescription>
@@ -444,7 +444,7 @@ function WorkflowsManager() {
           {editing === null && (
             <Button size="sm" onClick={startCreate}>
               <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Create Workflow
+              Create Template
             </Button>
           )}
         </div>
@@ -456,7 +456,7 @@ function WorkflowsManager() {
           <div className="space-y-3">
             <Collapsible open={editing !== null}>
               <div className="border rounded-lg p-4 space-y-3 mb-3">
-                    <h4 className="text-sm font-medium">{editing === "new" ? "New Workflow" : "Edit Workflow"}</h4>
+                    <h4 className="text-sm font-medium">{editing === "new" ? "New Template" : "Edit Template"}</h4>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <label className="text-xs text-muted-foreground w-28 shrink-0">Name *</label>
@@ -551,7 +551,7 @@ function WorkflowsManager() {
 
             {workflows.length === 0 && editing === null ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
-                No workflows yet. Set one up and Nootle will handle the busywork after every meeting.
+                No templates yet. Set one up and Nootle will handle the busywork after every meeting.
               </p>
             ) : (
               <div className="divide-y">
@@ -991,7 +991,7 @@ export function SettingsPage() {
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="api-keys">API Keys</TabsTrigger>
             <TabsTrigger value="integrations">Integrations</TabsTrigger>
-            <TabsTrigger value="workflows">Workflows</TabsTrigger>
+            <TabsTrigger value="workflows">Templates</TabsTrigger>
             <TabsTrigger value="models">Models</TabsTrigger>
 
             <TabsTrigger value="insight-types">Insight Types</TabsTrigger>
@@ -1300,6 +1300,11 @@ function PermissionsCard() {
   );
 }
 
+// Models whose source URLs are gated HuggingFace repos that return 401 without
+// auth. Hidden from the Models tab until we ship HF token support or migrate
+// to non-gated alternatives.
+const MODELS_REQUIRING_AUTH = new Set(["deepfilternet3", "vad-marblenet"]);
+
 function ModelManagementCard() {
   const {
     registry,
@@ -1348,10 +1353,18 @@ function ModelManagementCard() {
       </CardHeader>
       <CardContent>
         <div className="divide-y">
-          {diskStatus.map((model) => {
+          {diskStatus
+            .filter((model) => !MODELS_REQUIRING_AUTH.has(model.model_id))
+            .map((model) => {
             const regModel = registry.find((r) => r.id === model.model_id);
             const isThisModelDownloading =
               isDownloading && progress?.model_id === model.model_id;
+            const errorMessage =
+              progress?.model_id === model.model_id &&
+              typeof progress.state !== "string" &&
+              "error" in progress.state
+                ? progress.state.error.message
+                : null;
 
             return (
               <div key={model.model_id} className="py-4 first:pt-0 last:pb-0">
@@ -1441,6 +1454,12 @@ function ModelManagementCard() {
                           />
                         </div>
                       </div>
+                    )}
+
+                    {errorMessage && (
+                      <p className="mt-2 text-xs text-destructive">
+                        Download failed: {errorMessage}
+                      </p>
                     )}
                   </div>
 

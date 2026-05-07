@@ -1089,8 +1089,8 @@ export function MeetingDetail() {
                 <TabsTrigger value="analytics" title="Analytics">
                   {isCompact ? <BarChart3 className="h-4 w-4" /> : "Analytics"}
                 </TabsTrigger>
-                <TabsTrigger value="workflows" title="Workflows">
-                  {isCompact ? <Zap className="h-4 w-4" /> : "Workflows"}
+                <TabsTrigger value="workflows" title="Templates">
+                  {isCompact ? <Zap className="h-4 w-4" /> : "Templates"}
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -1137,7 +1137,7 @@ export function MeetingDetail() {
                   onChange={(e) => setSelectedTemplate(e.target.value)}
                   className="h-7 rounded-md border bg-transparent px-2 text-xs"
                 >
-                  <option value="">Template</option>
+                  <option value="">Automation</option>
                   {templates.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
@@ -1228,17 +1228,17 @@ export function MeetingDetail() {
                 <div className="p-5 space-y-3">
                   <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
                     <Zap className="h-4 w-4" />
-                    Workflow Runs
+                    Template Runs
                   </h3>
                   {runs.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      No workflow runs yet. Configure workflows in Settings and run them from the header buttons.
+                      No template runs yet. Configure templates in Settings and run them from the header buttons.
                     </p>
                   ) : (
                     runs.map((run) => (
                       <div key={run.id} className="rounded-lg border px-4 py-3 space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">{run.workflow_name ?? "Workflow"}</span>
+                          <span className="text-sm font-medium">{run.workflow_name ?? "Template"}</span>
                           <Badge variant={runStatusVariant(run.status)}>
                             {run.status}
                           </Badge>

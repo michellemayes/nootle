@@ -10,6 +10,7 @@ import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { MotionButton } from "@/components/MotionButton";
+import { NootleLogo } from "@/components/NootleLogo";
 import { Mic, Settings, HelpCircle, Circle, Moon, Sun, Lightbulb, MessageSquare, FileText, Bot, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -17,7 +18,7 @@ const navItems: { to: string; label: string; icon: LucideIcon }[] = [
   { to: "/", label: "Meetings", icon: Mic },
   { to: "/insights", label: "Insights", icon: Lightbulb },
   { to: "/chat", label: "Chat", icon: MessageSquare },
-  { to: "/templates", label: "Templates", icon: FileText },
+  { to: "/templates", label: "Automations", icon: FileText },
   { to: "/settings", label: "Settings", icon: Settings },
   { to: "/help", label: "Help", icon: HelpCircle },
 ];
@@ -78,7 +79,7 @@ export function Sidebar() {
           transition={{ duration: 0.4, ease: "easeInOut" }}
           onClick={handleLogoClick}
         >
-          <img src="/nootle-icon.png" alt="Nootle" className="h-8 w-8 rounded-lg object-contain" />
+          <NootleLogo className="h-8 w-8 text-primary" aria-label="Nootle" />
         </motion.div>
         {!isCompact && <span className="text-lg font-semibold tracking-tight">Nootle</span>}
         {!isAutoCompact && (
