@@ -51,6 +51,10 @@ fn parse_creds_and_config(
     Ok((creds, config))
 }
 
+fn no_action_items_error() -> String {
+    "No action items found for this meeting. Generate a summary on the Summaries tab and run insight extraction first — the workflow needs action items to push.".to_string()
+}
+
 fn render_template(template: &str, context: &WorkflowContext) -> String {
     let action_items_text = context
         .action_items
@@ -280,6 +284,10 @@ async fn execute_github(
         .as_str()
         .ok_or("Missing repo in workflow config (format: owner/repo)")?;
 
+    if context.action_items.is_empty() {
+        return Err(no_action_items_error());
+    }
+
     let client = reqwest::Client::new();
     let mut created = Vec::new();
 
@@ -342,6 +350,10 @@ async fn execute_linear(
         .as_str()
         .ok_or("Missing team_id in workflow config")?;
     let project_id = config["project_id"].as_str();
+
+    if context.action_items.is_empty() {
+        return Err(no_action_items_error());
+    }
 
     let client = reqwest::Client::new();
     let mut created = Vec::new();
@@ -410,6 +422,10 @@ async fn execute_asana(
     let project_id = config["project_id"]
         .as_str()
         .ok_or("Missing project_id in workflow config")?;
+
+    if context.action_items.is_empty() {
+        return Err(no_action_items_error());
+    }
 
     let client = reqwest::Client::new();
     let mut created = Vec::new();
