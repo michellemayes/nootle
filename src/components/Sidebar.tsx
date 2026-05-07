@@ -18,7 +18,7 @@ const navItems: { to: string; label: string; icon: LucideIcon }[] = [
   { to: "/", label: "Meetings", icon: Mic },
   { to: "/insights", label: "Insights", icon: Lightbulb },
   { to: "/chat", label: "Chat", icon: MessageSquare },
-  { to: "/templates", label: "Templates", icon: FileText },
+  { to: "/templates", label: "Automations", icon: FileText },
   { to: "/settings", label: "Settings", icon: Settings },
   { to: "/help", label: "Help", icon: HelpCircle },
 ];
