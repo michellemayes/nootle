@@ -1293,9 +1293,10 @@ export function MeetingDetail() {
                                     size="sm"
                                     variant="outline"
                                     className="h-7 text-xs"
-                                    onClick={() => {
+                                    onClick={async () => {
                                       const url = `mailto:?subject=${encodeURIComponent(emailDraft.subject)}&body=${encodeURIComponent(emailDraft.body)}`;
-                                      window.location.href = url;
+                                      const { openUrl } = await import("@tauri-apps/plugin-opener");
+                                      await openUrl(url);
                                     }}
                                   >
                                     Open in Mail
