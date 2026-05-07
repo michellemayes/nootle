@@ -8,5 +8,7 @@
     <string>Nootle needs screen recording permission to capture system audio from meeting apps via Core Audio Process Tap.</string>
     <key>NSCalendarsUsageDescription</key>
     <string>Nootle uses your calendar to auto-detect upcoming meetings and pre-fill meeting titles.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Nootle uses your calendar to auto-detect upcoming meetings and pre-fill meeting titles.</string>
 </dict>
 </plist>
