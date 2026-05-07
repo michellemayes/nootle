@@ -178,15 +178,16 @@ export function MeetingLibrary() {
   );
 
   return (
-    <div className="flex flex-1 flex-col gap-5 overflow-auto p-6">
+    <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div>
+      <div className="border-b px-6 py-4">
         <h1 className="text-2xl font-bold tracking-tight">Meetings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Your recorded meetings and transcriptions
         </p>
       </div>
 
+      <div className="flex flex-1 flex-col gap-5 overflow-auto p-6">
       {/* Search and filters */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
@@ -426,6 +427,8 @@ export function MeetingLibrary() {
           ))}
         </div>
       )}
+
+      </div>
 
       {/* Dialogs */}
       <DeleteMeetingDialog
