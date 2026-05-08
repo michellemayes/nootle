@@ -193,7 +193,10 @@ fn render_template(template: &str, context: &WorkflowContext) -> String {
 }
 
 fn render_default_summary_body(context: &WorkflowContext) -> String {
-    render_template("{{template_summary}}\n\n## Action Items\n{{action_items}}", context)
+    render_template(
+        "{{template_summary}}\n\n## Action Items\n{{action_items}}",
+        context,
+    )
 }
 
 fn execute_email(
@@ -803,15 +806,9 @@ mod tests {
             context: Some("This blocks the launch review.".to_string()),
         };
 
-        let rendered = render_issue_description(
-            &serde_json::json!({}),
-            &context,
-            &item,
-            None,
-            None,
-            None,
-        )
-        .await;
+        let rendered =
+            render_issue_description(&serde_json::json!({}), &context, &item, None, None, None)
+                .await;
 
         assert!(rendered.contains("Ship the release checklist"));
         assert!(rendered.contains("This blocks the launch review."));
