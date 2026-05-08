@@ -225,6 +225,45 @@ fn test_create_and_list_linear_tickets() {
 }
 
 #[test]
+fn test_update_workflow_can_change_integration_id() {
+    let db = Database::new_in_memory().unwrap();
+    let slack = db
+        .create_integration("slack", "Slack", r#"{"bot_token":"xoxb-test"}"#)
+        .unwrap();
+    let github = db
+        .create_integration("github", "GitHub", r#"{"token":"ghp_test"}"#)
+        .unwrap();
+
+    let workflow = db
+        .create_workflow(
+            "Post summary",
+            Some("Send summary to Slack"),
+            Some("💬"),
+            &slack.id,
+            "post_summary",
+            "{\"channel\":\"#general\"}",
+        )
+        .unwrap();
+
+    let updated = db
+        .update_workflow(
+            &workflow.id,
+            "Create issues",
+            Some("Turn action items into GitHub issues"),
+            Some("🐙"),
+            &github.id,
+            "create_issues",
+            r#"{"repo":"owner/repo"}"#,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(updated.integration_id, github.id);
+    assert_eq!(updated.action_type, "create_issues");
+    assert_eq!(updated.config_json, r#"{"repo":"owner/repo"}"#);
+}
+
+#[test]
 fn test_search_transcripts() {
     let db = Database::new_in_memory().unwrap();
     let m1 = db

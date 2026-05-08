@@ -3234,14 +3234,24 @@ impl Database {
         name: &str,
         description: Option<&str>,
         icon: Option<&str>,
+        integration_id: &str,
         action_type: &str,
         config_json: &str,
         is_enabled: bool,
     ) -> Result<Workflow> {
         let conn = self.lock_conn()?;
         conn.execute(
-            "UPDATE workflows SET name = ?1, description = ?2, icon = ?3, action_type = ?4, config_json = ?5, is_enabled = ?6 WHERE id = ?7",
-            params![name, description, icon, action_type, config_json, is_enabled as i32, id],
+            "UPDATE workflows SET name = ?1, description = ?2, icon = ?3, integration_id = ?4, action_type = ?5, config_json = ?6, is_enabled = ?7 WHERE id = ?8",
+            params![
+                name,
+                description,
+                icon,
+                integration_id,
+                action_type,
+                config_json,
+                is_enabled as i32,
+                id
+            ],
         )?;
 
         let mut stmt = conn.prepare(

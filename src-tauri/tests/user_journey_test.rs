@@ -729,6 +729,7 @@ fn journey_workflow_crud_and_toggle() {
             "Export Notes",
             Some("Export to Notion"),
             Some("notion"),
+            &integration.id,
             "create_page",
             r#"{"database_id":"abc123"}"#,
             false,

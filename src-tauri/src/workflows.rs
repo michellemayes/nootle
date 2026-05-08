@@ -118,6 +118,7 @@ async fn render_issue_description(
         "From meeting: **{}** ({})",
         context.meeting_title, context.meeting_date,
     )];
+    parts.push(format!("Action item: {}", item.content));
     if let Some(ctx) = item.context.as_deref().filter(|s| !s.is_empty()) {
         parts.push(format!("Context: {ctx}"));
     }
@@ -191,6 +192,10 @@ fn render_template(template: &str, context: &WorkflowContext) -> String {
         .replace("{{action_items}}", &action_items_text)
 }
 
+fn render_default_summary_body(context: &WorkflowContext) -> String {
+    render_template("{{template_summary}}\n\n## Action Items\n{{action_items}}", context)
+}
+
 fn execute_email(
     workflow: &crate::db::Workflow,
     context: &WorkflowContext,
@@ -201,14 +206,12 @@ fn execute_email(
     let subject_template = config["subject"]
         .as_str()
         .unwrap_or("Meeting Notes: {{title}}");
-    // {{template_summary}} resolves to the configured source template's
-    // summary if one is set on the workflow, otherwise falls back to {{summary}}.
-    let body_template = config["body"]
-        .as_str()
-        .unwrap_or("{{template_summary}}\n\n## Action Items\n{{action_items}}");
-
     let subject = render_template(subject_template, context);
-    let body = render_template(body_template, context);
+    let body = if let Some(body_template) = config["body"].as_str() {
+        render_template(body_template, context)
+    } else {
+        render_default_summary_body(context)
+    };
 
     Ok(WorkflowResult {
         message: "Email draft generated".to_string(),
@@ -232,7 +235,7 @@ async fn execute_slack(
 
     let message_template = config["message_template"]
         .as_str()
-        .unwrap_or("*{{title}}* — {{date}}\n\n{{summary}}");
+        .unwrap_or("*{{title}}* — {{date}}\n\n{{template_summary}}");
     let text = render_template(message_template, context);
 
     let client = reqwest::Client::new();
@@ -279,7 +282,7 @@ async fn execute_notion(
         .as_str()
         .ok_or("Missing database_id in workflow config")?;
 
-    let content = render_template("{{summary}}\n\n## Action Items\n{{action_items}}", context);
+    let content = render_default_summary_body(context);
 
     let client = reqwest::Client::new();
     let resp = client
@@ -343,7 +346,7 @@ async fn execute_confluence(
         .ok_or("Missing space_key in workflow config")?;
 
     let content = render_template(
-        "<h2>Summary</h2><p>{{summary}}</p><h2>Action Items</h2><p>{{action_items}}</p>",
+        "<h2>Summary</h2><p>{{template_summary}}</p><h2>Action Items</h2><p>{{action_items}}</p>",
         context,
     );
 
@@ -725,7 +728,11 @@ async fn execute_obsidian(
     let body = if let Some(tmpl) = note_template {
         render_template(tmpl, context)
     } else {
-        let summary_text = context.summary.as_deref().unwrap_or("No summary available");
+        let summary_text = context
+            .template_summary
+            .as_deref()
+            .or(context.summary.as_deref())
+            .unwrap_or("No summary available");
         let summary_with_links = replace_speakers(summary_text);
 
         let action_items_text = context
@@ -779,6 +786,58 @@ async fn execute_obsidian(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_render_issue_description_fallback_includes_action_item_content() {
+        let context = WorkflowContext {
+            meeting_title: "Weekly Standup".to_string(),
+            meeting_date: "2026-03-07".to_string(),
+            summary: Some("Discussed the release plan.".to_string()),
+            template_summary: Some("Template-specific release summary.".to_string()),
+            action_items: vec![],
+        };
+        let item = ActionItemContext {
+            content: "Ship the release checklist".to_string(),
+            assignee: Some("Speaker 1".to_string()),
+            due_date: Some("2026-03-10".to_string()),
+            context: Some("This blocks the launch review.".to_string()),
+        };
+
+        let rendered = render_issue_description(
+            &serde_json::json!({}),
+            &context,
+            &item,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(rendered.contains("Ship the release checklist"));
+        assert!(rendered.contains("This blocks the launch review."));
+    }
+
+    #[test]
+    fn test_render_default_summary_body_prefers_template_summary() {
+        let context = WorkflowContext {
+            meeting_title: "Weekly Standup".to_string(),
+            meeting_date: "2026-03-07".to_string(),
+            summary: Some("Generic meeting summary.".to_string()),
+            template_summary: Some("Template-specific meeting summary.".to_string()),
+            action_items: vec![ActionItemContext {
+                content: "Review PR #42".to_string(),
+                assignee: Some("Speaker 1".to_string()),
+                due_date: Some("2026-03-10".to_string()),
+                context: None,
+            }],
+        };
+
+        let rendered = render_default_summary_body(&context);
+
+        assert!(rendered.contains("Template-specific meeting summary."));
+        assert!(!rendered.contains("Generic meeting summary."));
+        assert!(rendered.contains("Review PR #42"));
+    }
 
     #[test]
     fn test_sanitize_filename_basic() {
