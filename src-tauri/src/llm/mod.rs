@@ -1,4 +1,5 @@
 pub mod anthropic;
+pub mod bedrock;
 pub mod google;
 pub mod groq;
 pub mod ollama;
@@ -7,6 +8,7 @@ pub mod openrouter;
 pub mod types;
 
 pub use anthropic::AnthropicProvider;
+pub use bedrock::BedrockProvider;
 pub use google::GoogleProvider;
 pub use groq::GroqProvider;
 pub use ollama::OllamaProvider;

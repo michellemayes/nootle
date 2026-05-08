@@ -79,6 +79,9 @@ pub fn run() {
     if let Ok(Some(key)) = db.get_api_key("openrouter") {
         llm_registry.register(Box::new(llm::OpenRouterProvider::new(key)));
     }
+    if let Ok(Some(key)) = db.get_api_key("bedrock") {
+        llm_registry.register(Box::new(llm::BedrockProvider::new(key)));
+    }
 
     let llm_state: LlmState = Arc::new(tokio::sync::RwLock::new(llm_registry));
 
