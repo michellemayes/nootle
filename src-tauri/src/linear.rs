@@ -109,7 +109,7 @@ pub async fn list_teams(api_key: &str) -> anyhow::Result<Vec<LinearTeam>> {
 
     let resp = client
         .post(LINEAR_API_URL)
-        .bearer_auth(api_key)
+        .header("Authorization", api_key)
         .json(&body)
         .send()
         .await?
@@ -145,7 +145,7 @@ pub async fn list_projects(api_key: &str, team_id: &str) -> anyhow::Result<Vec<L
 
     let resp = client
         .post(LINEAR_API_URL)
-        .bearer_auth(api_key)
+        .header("Authorization", api_key)
         .json(&body)
         .send()
         .await?
@@ -199,7 +199,7 @@ pub async fn create_issue(
 
     let resp = client
         .post(LINEAR_API_URL)
-        .bearer_auth(api_key)
+        .header("Authorization", api_key)
         .json(&body)
         .send()
         .await?

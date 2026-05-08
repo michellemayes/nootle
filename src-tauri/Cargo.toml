@@ -52,7 +52,7 @@ rustfft = "6"
 block2 = "0.6"
 objc2 = "0.6"
 sysinfo = "0.32"
-rmcp = { version = "0.16", features = ["server", "transport-io"] }
+rmcp = { version = "1.4", features = ["server", "transport-io"] }
 schemars = "1.0"
 tauri-plugin-updater = "2"
 tauri-plugin-dialog = "2"

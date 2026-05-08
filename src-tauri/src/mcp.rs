@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use rmcp::{
-    handler::server::router::tool::ToolRouter, handler::server::wrapper::Parameters, model::*,
-    schemars, tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler,
+    handler::server::wrapper::Parameters, model::*, schemars, tool, tool_handler, tool_router,
+    ErrorData as McpError, RoleServer, ServerHandler,
 };
 use serde_json::json;
 
@@ -30,16 +30,12 @@ pub struct SearchTranscriptsParams {
 #[derive(Clone)]
 pub struct NootleMcpServer {
     db: Arc<Database>,
-    tool_router: ToolRouter<NootleMcpServer>,
 }
 
 #[tool_router]
 impl NootleMcpServer {
     pub fn new(db: Arc<Database>) -> Self {
-        Self {
-            db,
-            tool_router: Self::tool_router(),
-        }
+        Self { db }
     }
 
     /// List meetings with optional search filter
@@ -118,26 +114,20 @@ impl NootleMcpServer {
 #[tool_handler]
 impl ServerHandler for NootleMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::V_2024_11_05,
-            capabilities: ServerCapabilities::builder()
-                .enable_tools()
-                .enable_resources()
-                .build(),
-            server_info: Implementation {
-                name: "nootle-mcp".into(),
-                version: env!("CARGO_PKG_VERSION").into(),
-                title: Some("Nootle MCP Server".into()),
-                description: Some("MCP server for accessing Nootle meeting data".into()),
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some(
+        let capabilities = ServerCapabilities::builder()
+            .enable_tools()
+            .enable_resources()
+            .build();
+        let server_info = Implementation::new("nootle-mcp", env!("CARGO_PKG_VERSION"))
+            .with_title("Nootle MCP Server")
+            .with_description("MCP server for accessing Nootle meeting data");
+        ServerInfo::new(capabilities)
+            .with_protocol_version(ProtocolVersion::V_2024_11_05)
+            .with_server_info(server_info)
+            .with_instructions(
                 "Nootle MCP server. Provides tools to list/get meetings, search transcripts, \
-                 and resources for accessing meeting transcripts."
-                    .into(),
-            ),
-        }
+                 and resources for accessing meeting transcripts.",
+            )
     }
 
     async fn list_resources(
@@ -206,9 +196,10 @@ impl ServerHandler for NootleMcpServer {
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            Ok(ReadResourceResult {
-                contents: vec![ResourceContents::text(transcript_text, uri.clone())],
-            })
+            Ok(ReadResourceResult::new(vec![ResourceContents::text(
+                transcript_text,
+                uri.clone(),
+            )]))
         } else {
             Err(McpError::resource_not_found(
                 "resource_not_found",

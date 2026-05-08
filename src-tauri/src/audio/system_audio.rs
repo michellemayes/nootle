@@ -5,59 +5,51 @@
 
 #[cfg(feature = "system-audio")]
 mod core_audio_impl {
-    use anyhow::anyhow;
+    use anyhow::Context;
     use ringbuf::traits::{Consumer, Producer, Split};
     use ringbuf::HeapRb;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
 
-    use cidre::at::audio;
+    use cidre::core_audio::aggregate_device_keys as agg_keys;
+    use cidre::core_audio::hardware::StartedDevice;
+    use cidre::core_audio::sub_device_keys as sub_keys;
+    use cidre::{cat, cf, core_audio as ca, ns, os};
 
     struct AudioContext {
         producer: ringbuf::HeapProd<f32>,
         is_recording: Arc<AtomicBool>,
     }
 
-    unsafe impl Send for AudioContext {}
-    unsafe impl Sync for AudioContext {}
-
     extern "C" fn audio_io_proc(
-        _device: audio::DeviceId,
-        _now: &audio::TimeStamp,
-        input_data: &audio::BufList,
-        _input_time: &audio::TimeStamp,
-        _output_data: &mut audio::BufList,
-        _output_time: &audio::TimeStamp,
-        ctx: *mut std::ffi::c_void,
-    ) -> i32 {
-        if ctx.is_null() {
-            return 0;
-        }
-
-        let ctx = unsafe { &mut *(ctx as *mut AudioContext) };
+        _device: ca::Device,
+        _now: &cat::AudioTimeStamp,
+        input_data: &cat::AudioBufList<1>,
+        _input_time: &cat::AudioTimeStamp,
+        _output_data: &mut cat::AudioBufList<1>,
+        _output_time: &cat::AudioTimeStamp,
+        ctx: Option<&mut AudioContext>,
+    ) -> os::Status {
+        let Some(ctx) = ctx else {
+            return os::Status::default();
+        };
 
         if !ctx.is_recording.load(Ordering::Relaxed) {
-            return 0;
+            return os::Status::default();
         }
 
-        let bufs = unsafe { input_data.buffers() };
-        if bufs.is_empty() {
-            return 0;
-        }
-
-        let buf = &bufs[0];
+        let buf = &input_data.buffers[0];
         let byte_count = buf.data_bytes_size as usize;
         let sample_count = byte_count / std::mem::size_of::<f32>();
 
         if sample_count == 0 || buf.data.is_null() {
-            return 0;
+            return os::Status::default();
         }
 
         let samples = unsafe { std::slice::from_raw_parts(buf.data as *const f32, sample_count) };
-
         ctx.producer.push_slice(samples);
 
-        0 // noErr
+        os::Status::default()
     }
 
     /// Captures system audio output via Core Audio Process Tap.
@@ -66,88 +58,107 @@ mod core_audio_impl {
         consumer: ringbuf::HeapCons<f32>,
         is_recording: Arc<AtomicBool>,
         pub sample_rate: u32,
+        // Field order is the teardown contract: dropping `_started_device`
+        // stops the IOProc, which holds a raw pointer into `_ctx`. Reordering
+        // would let the audio thread fire after the producer is freed.
+        _started_device: StartedDevice<ca::AggregateDevice>,
+        _tap_guard: ca::TapGuard,
         _ctx: Box<AudioContext>,
-        _tap_guard: audio::TapGuard,
-        aggregate_device_id: audio::DeviceId,
-        io_proc_id: audio::DeviceIoProcId,
     }
 
     impl SystemAudioCapture {
         pub fn new() -> anyhow::Result<Self> {
-            let tap_desc = audio::TapDesc::mono_global_tap_excluding_processes(&[]);
+            let tap_desc = ca::TapDesc::with_mono_global_tap_excluding_processes(&ns::Array::new());
 
-            let tap_guard = tap_desc.tap().map_err(|e| {
-                anyhow!(
-                    "Failed to create process tap (check Screen Recording permission): {:?}",
-                    e
-                )
-            })?;
+            let tap_guard = tap_desc
+                .create_process_tap()
+                .with_context(|| "create process tap (check Screen Recording permission)")?;
 
-            let sample_rate = tap_guard.stream_basic_desc().sample_rate as u32;
+            let asbd = tap_guard.asbd().context("read tap stream format")?;
+            let sample_rate = asbd.sample_rate as u32;
             tracing::info!(sample_rate, "Core Audio Process Tap created");
 
-            let uid = format!("nootle-system-tap-{}", uuid::Uuid::new_v4());
-            let aggregate_device_id =
-                audio::AggregateDevice::create(&uid, "Nootle System Audio", &tap_guard)
-                    .map_err(|e| anyhow!("Failed to create aggregate device: {:?}", e))?;
+            let output_device =
+                ca::System::default_output_device().context("get default output device")?;
+            let output_uid = output_device.uid().context("read output device UID")?;
+            let tap_uid = tap_guard.uid().context("read tap UID")?;
+
+            let sub_device =
+                cf::DictionaryOf::with_keys_values(&[sub_keys::uid()], &[output_uid.as_type_ref()]);
+            let sub_tap =
+                cf::DictionaryOf::with_keys_values(&[sub_keys::uid()], &[tap_uid.as_type_ref()]);
+
+            let agg_uid = cf::Uuid::new().to_cf_string();
+            let agg_name = cf::str!(c"Nootle System Audio");
+
+            let dict = cf::DictionaryOf::with_keys_values(
+                &[
+                    agg_keys::is_private(),
+                    agg_keys::is_stacked(),
+                    agg_keys::tap_auto_start(),
+                    agg_keys::name(),
+                    agg_keys::main_sub_device(),
+                    agg_keys::uid(),
+                    agg_keys::sub_device_list(),
+                    agg_keys::tap_list(),
+                ],
+                &[
+                    cf::Boolean::value_true().as_type_ref(),
+                    cf::Boolean::value_false(),
+                    cf::Boolean::value_true(),
+                    agg_name,
+                    &output_uid,
+                    &agg_uid,
+                    &cf::ArrayOf::from_slice(&[sub_device.as_ref()]),
+                    &cf::ArrayOf::from_slice(&[sub_tap.as_ref()]),
+                ],
+            );
+
+            let agg_device =
+                ca::AggregateDevice::with_desc(&dict).context("create aggregate device")?;
 
             let rb = HeapRb::<f32>::new(sample_rate as usize * 5);
             let (producer, consumer) = rb.split();
             let is_recording = Arc::new(AtomicBool::new(false));
 
-            let ctx = Box::new(AudioContext {
+            let mut ctx = Box::new(AudioContext {
                 producer,
                 is_recording: Arc::clone(&is_recording),
             });
 
-            let ctx_ptr = &*ctx as *const AudioContext as *mut std::ffi::c_void;
-            let io_proc_id = unsafe {
-                audio::Device::create_io_proc_id(aggregate_device_id, audio_io_proc, ctx_ptr)
-                    .map_err(|e| anyhow!("Failed to create IO proc: {:?}", e))?
-            };
+            let proc_id = agg_device
+                .create_io_proc_id(audio_io_proc, Some(ctx.as_mut()))
+                .context("create IO proc")?;
 
-            tracing::info!("Core Audio aggregate device and IO proc ready");
+            let started_device =
+                ca::device_start(agg_device, Some(proc_id)).context("start audio device")?;
+
+            tracing::info!("Core Audio aggregate device and IO proc running");
 
             Ok(Self {
                 consumer,
                 is_recording,
                 sample_rate,
-                _ctx: ctx,
+                _started_device: started_device,
                 _tap_guard: tap_guard,
-                aggregate_device_id,
-                io_proc_id,
+                _ctx: ctx,
             })
         }
 
         pub fn start(&self) -> anyhow::Result<()> {
             self.is_recording.store(true, Ordering::Relaxed);
-            unsafe {
-                audio::Device::start(self.aggregate_device_id, self.io_proc_id)
-                    .map_err(|e| anyhow!("Failed to start audio device: {:?}", e))?;
-            }
             tracing::debug!("System audio capture started");
             Ok(())
         }
 
         pub fn stop(&self) -> anyhow::Result<()> {
             self.is_recording.store(false, Ordering::Relaxed);
-            unsafe {
-                audio::Device::stop(self.aggregate_device_id, self.io_proc_id)
-                    .map_err(|e| anyhow!("Failed to stop audio device: {:?}", e))?;
-            }
             tracing::debug!("System audio capture stopped");
             Ok(())
         }
 
         pub fn read_samples(&mut self, buf: &mut [f32]) -> usize {
             self.consumer.pop_slice(buf)
-        }
-    }
-
-    impl Drop for SystemAudioCapture {
-        fn drop(&mut self) {
-            let _ = self.stop();
-            tracing::debug!("System audio capture resources released");
         }
     }
 }
@@ -210,7 +221,7 @@ pub use core_audio_impl::SystemAudioCapture;
 #[cfg(not(feature = "system-audio"))]
 pub use fallback_impl::SystemAudioCapture;
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "system-audio")))]
 mod tests {
     use super::*;
 

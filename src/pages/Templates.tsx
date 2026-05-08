@@ -24,6 +24,7 @@ import { useTemplates } from "@/hooks/useTemplates";
 import { useRecipes } from "@/hooks/useRecipes";
 import { FileText, Pencil, Trash2, Sparkles, Star, ChefHat } from "lucide-react";
 import type { Template, Recipe } from "@/types";
+import { WorkflowsManager } from "@/components/WorkflowsManager";
 
 export function TemplatesPage() {
   const { templates, loading, createTemplate, updateTemplate, deleteTemplate } = useTemplates();
@@ -159,9 +160,9 @@ export function TemplatesPage() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="border-b px-6 py-4">
-        <h1 className="text-2xl font-bold tracking-tight">Templates & Recipes</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Automations</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Configure how meetings are summarized and create slash-command workflows
+          Configure how meetings are summarized and create slash-command shortcuts
         </p>
       </div>
 
@@ -169,12 +170,14 @@ export function TemplatesPage() {
         <div className="border-b px-6 py-4 flex items-center justify-between">
           <TabsList className="h-10">
             <TabsTrigger value="templates">Templates</TabsTrigger>
-            <TabsTrigger value="recipes">Recipes</TabsTrigger>
+            <TabsTrigger value="recipes">Slash Commands</TabsTrigger>
+            <TabsTrigger value="post-meeting">Workflows</TabsTrigger>
           </TabsList>
-          {activeTab === "templates" ? (
+          {activeTab === "templates" && (
             <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>+ Add Template</Button>
-          ) : (
-            <Button size="sm" variant="outline" onClick={() => setRecipeDialogOpen(true)}>+ Add Recipe</Button>
+          )}
+          {activeTab === "recipes" && (
+            <Button size="sm" variant="outline" onClick={() => setRecipeDialogOpen(true)}>+ Add Slash Command</Button>
           )}
             <Dialog open={dialogOpen} onOpenChange={(open) => {
               if (!open) resetForm();
@@ -297,12 +300,12 @@ export function TemplatesPage() {
               <DialogContent className="max-w-lg">
                 <DialogHeader>
                   <DialogTitle>
-                    {editingRecipe ? "Edit Recipe" : "New Recipe"}
+                    {editingRecipe ? "Edit Slash Command" : "New Slash Command"}
                   </DialogTitle>
                   <DialogDescription>
                     {editingRecipe
-                      ? "Update this recipe's details"
-                      : "Create a reusable AI workflow triggered with a slash command"}
+                      ? "Update this slash command's details"
+                      : "Create a reusable AI prompt triggered with a slash command"}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
@@ -477,14 +480,14 @@ export function TemplatesPage() {
           <div className="flex flex-col gap-6 p-8">
             {recipesLoading ? (
               <p className="text-sm text-muted-foreground">
-                Gathering ingredients...
+                Loading slash commands...
               </p>
             ) : recipes.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 py-12">
                 <ChefHat className="h-10 w-10 text-muted-foreground" />
-                <h2 className="text-lg font-medium">No recipes yet</h2>
+                <h2 className="text-lg font-medium">No slash commands yet</h2>
                 <p className="text-sm text-muted-foreground">
-                  Whip up reusable AI workflows you can trigger with slash commands
+                  Whip up reusable AI prompts you can trigger with slash commands
                 </p>
               </div>
             ) : (
@@ -554,6 +557,12 @@ export function TemplatesPage() {
                 </AnimatePresence>
               </div>
             )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="post-meeting" className="flex-1 mt-0 overflow-auto">
+          <div className="p-6 max-w-3xl mx-auto">
+            <WorkflowsManager />
           </div>
         </TabsContent>
       </Tabs>

@@ -39,12 +39,12 @@ Types to extract:
 {instructions}
 
 Rules:
+- Be generous in what you extract. Capture commitments and follow-ups even if phrased casually ("I'll send that over", "let's circle back on this", "we should reach out to legal", "TODO: clean up the script"). If someone clearly intends to do something, count it as an action item.
 - timestamp_ms should match the approximate start time from the transcript timestamps
-- assignee should be a person's name if mentioned, otherwise null
+- assignee should be a person's name if mentioned, otherwise null. Use "I"/"me" speakers' names when known; otherwise null is fine — don't drop the item just because nobody is named.
 - due_date should be ISO format (YYYY-MM-DD) if a date is mentioned, otherwise null
-- Return empty arrays if no items of that type are found
-- Be concise: each content field should be 1-2 sentences max
-- Only extract items that are clearly stated, not implied"#,
+- Return empty arrays only if you genuinely find nothing of that type
+- Each content field should be 1-2 sentences max"#,
         schema = schema_parts.join(",\n"),
         instructions = type_instructions.join("\n"),
     )

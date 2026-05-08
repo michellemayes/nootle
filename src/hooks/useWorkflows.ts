@@ -53,6 +53,7 @@ export function useWorkflows() {
       name: string,
       description: string | null,
       icon: string | null,
+      integrationId: string,
       actionType: string,
       configJson: string,
       isEnabled: boolean,
@@ -62,6 +63,7 @@ export function useWorkflows() {
         name,
         description,
         icon,
+        integrationId,
         actionType,
         configJson,
         isEnabled,
@@ -81,10 +83,16 @@ export function useWorkflows() {
   );
 
   const runWorkflow = useCallback(
-    async (meetingId: string, workflowId: string) => {
+    async (
+      meetingId: string,
+      workflowId: string,
+      llm?: { provider?: string; model?: string },
+    ) => {
       return invoke<WorkflowRun>("run_workflow", {
         meetingId,
         workflowId,
+        llmProvider: llm?.provider,
+        llmModel: llm?.model,
       });
     },
     [],

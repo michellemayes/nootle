@@ -6,6 +6,10 @@ pub struct WorkflowContext {
     pub meeting_title: String,
     pub meeting_date: String,
     pub summary: Option<String>,
+    /// Summary from the workflow's configured `template_id`, generated on the
+    /// fly if it didn't exist yet. None when the workflow has no source
+    /// template configured. Exposed to templates as `{{template_summary}}`.
+    pub template_summary: Option<String>,
     pub action_items: Vec<ActionItemContext>,
 }
 
@@ -14,6 +18,9 @@ pub struct ActionItemContext {
     pub content: String,
     pub assignee: Option<String>,
     pub due_date: Option<String>,
+    /// AI-extracted surrounding context from the transcript. Used to enrich
+    /// issue descriptions when pushing to Linear/GitHub/Asana.
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,18 +33,102 @@ pub async fn execute_workflow(
     workflow: &crate::db::Workflow,
     integration: &crate::db::Integration,
     context: &WorkflowContext,
+    llm: Option<&crate::llm::LlmRegistry>,
+    llm_provider: Option<&str>,
+    llm_model: Option<&str>,
 ) -> std::result::Result<WorkflowResult, String> {
     match integration.integration_type.as_str() {
         "email" => execute_email(workflow, context),
         "slack" => execute_slack(workflow, integration, context).await,
         "notion" => execute_notion(workflow, integration, context).await,
         "confluence" => execute_confluence(workflow, integration, context).await,
-        "github" => execute_github(workflow, integration, context).await,
-        "linear" => execute_linear(workflow, integration, context).await,
-        "asana" => execute_asana(workflow, integration, context).await,
+        "github" => {
+            execute_github(workflow, integration, context, llm, llm_provider, llm_model).await
+        }
+        "linear" => {
+            execute_linear(workflow, integration, context, llm, llm_provider, llm_model).await
+        }
+        "asana" => {
+            execute_asana(workflow, integration, context, llm, llm_provider, llm_model).await
+        }
         "obsidian" => execute_obsidian(workflow, integration, context).await,
         other => Err(format!("Unknown integration type: {other}")),
     }
+}
+
+/// Render an issue description for a single action item. If the workflow's
+/// config has a `description_prompt` and an LLM is available, ask the LLM to
+/// compose the description from the user's instructions plus all available
+/// context. Otherwise fall back to a plain template that already includes the
+/// AI-extracted insight context if present.
+async fn render_issue_description(
+    config: &serde_json::Value,
+    context: &WorkflowContext,
+    item: &ActionItemContext,
+    llm: Option<&crate::llm::LlmRegistry>,
+    llm_provider: Option<&str>,
+    llm_model: Option<&str>,
+) -> String {
+    let user_prompt = config
+        .get("description_prompt")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    if let (Some(user_prompt), Some(llm), Some(provider), Some(model)) =
+        (user_prompt, llm, llm_provider, llm_model)
+    {
+        if let Some(provider_impl) = llm.get_provider(provider) {
+            let summary = context
+                .summary
+                .as_deref()
+                .unwrap_or("(no summary available)");
+            let item_context = item.context.as_deref().unwrap_or("");
+            let assignee = item.assignee.as_deref().unwrap_or("(unassigned)");
+            let due = item.due_date.as_deref().unwrap_or("(no due date)");
+            let user_message = format!(
+                "Meeting: {title} ({date})\n\nMeeting summary:\n{summary}\n\nAction item: {content}\nAssignee: {assignee}\nDue: {due}\nContext from transcript: {item_context}",
+                title = context.meeting_title,
+                date = context.meeting_date,
+                summary = summary,
+                content = item.content,
+            );
+            let messages = vec![
+                crate::llm::ChatMessage {
+                    role: "system".into(),
+                    content: format!(
+                        "You compose issue descriptions for tickets created from meeting action items. Follow the user's instructions and stay grounded in the supplied context — do not invent facts. Output the description as Markdown, no preamble.\n\nUser instructions:\n{user_prompt}"
+                    ),
+                },
+                crate::llm::ChatMessage {
+                    role: "user".into(),
+                    content: user_message,
+                },
+            ];
+            if let Ok(response) = provider_impl.chat(messages, model).await {
+                let trimmed = response.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
+
+    let mut parts = vec![format!(
+        "From meeting: **{}** ({})",
+        context.meeting_title, context.meeting_date,
+    )];
+    parts.push(format!("Action item: {}", item.content));
+    if let Some(ctx) = item.context.as_deref().filter(|s| !s.is_empty()) {
+        parts.push(format!("Context: {ctx}"));
+    }
+    if let Some(assignee) = item.assignee.as_deref() {
+        parts.push(format!("Assignee: {assignee}"));
+    }
+    if let Some(due) = item.due_date.as_deref() {
+        parts.push(format!("Due: {due}"));
+    }
+    parts.join("\n\n")
 }
 
 fn parse_creds_and_config(
@@ -49,6 +140,21 @@ fn parse_creds_and_config(
     let config =
         serde_json::from_str(&workflow.config_json).map_err(|e| format!("Invalid config: {e}"))?;
     Ok((creds, config))
+}
+
+fn no_action_items_error() -> String {
+    "No action items found for this meeting. Generate a summary on the Summaries tab and run insight extraction first — the workflow needs action items to push.".to_string()
+}
+
+fn looks_like_uuid(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.len() != 36 {
+        return false;
+    }
+    bytes.iter().enumerate().all(|(i, &b)| match i {
+        8 | 13 | 18 | 23 => b == b'-',
+        _ => b.is_ascii_hexdigit(),
+    })
 }
 
 fn render_template(template: &str, context: &WorkflowContext) -> String {
@@ -75,7 +181,22 @@ fn render_template(template: &str, context: &WorkflowContext) -> String {
             "{{summary}}",
             context.summary.as_deref().unwrap_or("No summary available"),
         )
+        .replace(
+            "{{template_summary}}",
+            context
+                .template_summary
+                .as_deref()
+                .or(context.summary.as_deref())
+                .unwrap_or("No summary available"),
+        )
         .replace("{{action_items}}", &action_items_text)
+}
+
+fn render_default_summary_body(context: &WorkflowContext) -> String {
+    render_template(
+        "{{template_summary}}\n\n## Action Items\n{{action_items}}",
+        context,
+    )
 }
 
 fn execute_email(
@@ -88,12 +209,12 @@ fn execute_email(
     let subject_template = config["subject"]
         .as_str()
         .unwrap_or("Meeting Notes: {{title}}");
-    let body_template = config["body"]
-        .as_str()
-        .unwrap_or("{{summary}}\n\n## Action Items\n{{action_items}}");
-
     let subject = render_template(subject_template, context);
-    let body = render_template(body_template, context);
+    let body = if let Some(body_template) = config["body"].as_str() {
+        render_template(body_template, context)
+    } else {
+        render_default_summary_body(context)
+    };
 
     Ok(WorkflowResult {
         message: "Email draft generated".to_string(),
@@ -117,7 +238,7 @@ async fn execute_slack(
 
     let message_template = config["message_template"]
         .as_str()
-        .unwrap_or("*{{title}}* — {{date}}\n\n{{summary}}");
+        .unwrap_or("*{{title}}* — {{date}}\n\n{{template_summary}}");
     let text = render_template(message_template, context);
 
     let client = reqwest::Client::new();
@@ -164,7 +285,7 @@ async fn execute_notion(
         .as_str()
         .ok_or("Missing database_id in workflow config")?;
 
-    let content = render_template("{{summary}}\n\n## Action Items\n{{action_items}}", context);
+    let content = render_default_summary_body(context);
 
     let client = reqwest::Client::new();
     let resp = client
@@ -228,7 +349,7 @@ async fn execute_confluence(
         .ok_or("Missing space_key in workflow config")?;
 
     let content = render_template(
-        "<h2>Summary</h2><p>{{summary}}</p><h2>Action Items</h2><p>{{action_items}}</p>",
+        "<h2>Summary</h2><p>{{template_summary}}</p><h2>Action Items</h2><p>{{action_items}}</p>",
         context,
     );
 
@@ -270,6 +391,9 @@ async fn execute_github(
     workflow: &crate::db::Workflow,
     integration: &crate::db::Integration,
     context: &WorkflowContext,
+    llm: Option<&crate::llm::LlmRegistry>,
+    llm_provider: Option<&str>,
+    llm_model: Option<&str>,
 ) -> std::result::Result<WorkflowResult, String> {
     let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
@@ -280,20 +404,16 @@ async fn execute_github(
         .as_str()
         .ok_or("Missing repo in workflow config (format: owner/repo)")?;
 
+    if context.action_items.is_empty() {
+        return Err(no_action_items_error());
+    }
+
     let client = reqwest::Client::new();
     let mut created = Vec::new();
 
     for item in &context.action_items {
-        let body = format!(
-            "From meeting: **{}** ({})\n\n{}{}",
-            context.meeting_title,
-            context.meeting_date,
-            item.content,
-            item.assignee
-                .as_deref()
-                .map(|a| format!("\n\nAssignee: {a}"))
-                .unwrap_or_default(),
-        );
+        let body =
+            render_issue_description(&config, context, item, llm, llm_provider, llm_model).await;
 
         let resp = client
             .post(format!("https://api.github.com/repos/{repo}/issues"))
@@ -332,30 +452,56 @@ async fn execute_linear(
     workflow: &crate::db::Workflow,
     integration: &crate::db::Integration,
     context: &WorkflowContext,
+    llm: Option<&crate::llm::LlmRegistry>,
+    llm_provider: Option<&str>,
+    llm_model: Option<&str>,
 ) -> std::result::Result<WorkflowResult, String> {
     let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
     let api_key = creds["api_key"]
         .as_str()
         .ok_or("Missing api_key in Linear credentials")?;
-    let team_id = config["team_id"]
+    let team_input = config["team_id"]
         .as_str()
         .ok_or("Missing team_id in workflow config")?;
     let project_id = config["project_id"].as_str();
+
+    if context.action_items.is_empty() {
+        return Err(no_action_items_error());
+    }
+
+    // Linear's issueCreate requires a team UUID. Users often enter the team
+    // key (e.g. "MIC") instead, so look the team up if the input doesn't
+    // already look like a UUID.
+    let team_id_owned = if looks_like_uuid(team_input) {
+        team_input.to_string()
+    } else {
+        let teams = crate::linear::list_teams(api_key)
+            .await
+            .map_err(|e| format!("Failed to look up Linear team: {e}"))?;
+        let needle = team_input.to_ascii_lowercase();
+        let team = teams
+            .iter()
+            .find(|t| {
+                t.id == team_input
+                    || t.key.to_ascii_lowercase() == needle
+                    || t.name.to_ascii_lowercase() == needle
+            })
+            .ok_or_else(|| {
+                format!(
+                    "No Linear team matched '{team_input}'. Use the team key (e.g. MIC), name, or UUID."
+                )
+            })?;
+        team.id.clone()
+    };
+    let team_id = team_id_owned.as_str();
 
     let client = reqwest::Client::new();
     let mut created = Vec::new();
 
     for item in &context.action_items {
-        let description = format!(
-            "From meeting: **{}** ({})\n\n{}",
-            context.meeting_title,
-            context.meeting_date,
-            item.assignee
-                .as_deref()
-                .map(|a| format!("Assignee: {a}"))
-                .unwrap_or_default(),
-        );
+        let description =
+            render_issue_description(&config, context, item, llm, llm_provider, llm_model).await;
 
         let mut input = serde_json::json!({
             "teamId": team_id,
@@ -366,9 +512,11 @@ async fn execute_linear(
             input["projectId"] = serde_json::json!(pid);
         }
 
+        // Linear's API rejects 'Authorization: Bearer <key>'. The key goes in
+        // the header verbatim with no scheme prefix.
         let resp = client
             .post("https://api.linear.app/graphql")
-            .bearer_auth(api_key)
+            .header("Authorization", api_key)
             .json(&serde_json::json!({
                 "query": "mutation CreateIssue($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url title } } }",
                 "variables": { "input": input }
@@ -401,6 +549,9 @@ async fn execute_asana(
     workflow: &crate::db::Workflow,
     integration: &crate::db::Integration,
     context: &WorkflowContext,
+    llm: Option<&crate::llm::LlmRegistry>,
+    llm_provider: Option<&str>,
+    llm_model: Option<&str>,
 ) -> std::result::Result<WorkflowResult, String> {
     let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
@@ -411,19 +562,16 @@ async fn execute_asana(
         .as_str()
         .ok_or("Missing project_id in workflow config")?;
 
+    if context.action_items.is_empty() {
+        return Err(no_action_items_error());
+    }
+
     let client = reqwest::Client::new();
     let mut created = Vec::new();
 
     for item in &context.action_items {
-        let notes = format!(
-            "From meeting: {} ({})\n\n{}",
-            context.meeting_title,
-            context.meeting_date,
-            item.assignee
-                .as_deref()
-                .map(|a| format!("Assignee: {a}"))
-                .unwrap_or_default(),
-        );
+        let notes =
+            render_issue_description(&config, context, item, llm, llm_provider, llm_model).await;
 
         let mut task_data = serde_json::json!({
             "name": item.content,
@@ -583,7 +731,11 @@ async fn execute_obsidian(
     let body = if let Some(tmpl) = note_template {
         render_template(tmpl, context)
     } else {
-        let summary_text = context.summary.as_deref().unwrap_or("No summary available");
+        let summary_text = context
+            .template_summary
+            .as_deref()
+            .or(context.summary.as_deref())
+            .unwrap_or("No summary available");
         let summary_with_links = replace_speakers(summary_text);
 
         let action_items_text = context
@@ -637,6 +789,52 @@ async fn execute_obsidian(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_render_issue_description_fallback_includes_action_item_content() {
+        let context = WorkflowContext {
+            meeting_title: "Weekly Standup".to_string(),
+            meeting_date: "2026-03-07".to_string(),
+            summary: Some("Discussed the release plan.".to_string()),
+            template_summary: Some("Template-specific release summary.".to_string()),
+            action_items: vec![],
+        };
+        let item = ActionItemContext {
+            content: "Ship the release checklist".to_string(),
+            assignee: Some("Speaker 1".to_string()),
+            due_date: Some("2026-03-10".to_string()),
+            context: Some("This blocks the launch review.".to_string()),
+        };
+
+        let rendered =
+            render_issue_description(&serde_json::json!({}), &context, &item, None, None, None)
+                .await;
+
+        assert!(rendered.contains("Ship the release checklist"));
+        assert!(rendered.contains("This blocks the launch review."));
+    }
+
+    #[test]
+    fn test_render_default_summary_body_prefers_template_summary() {
+        let context = WorkflowContext {
+            meeting_title: "Weekly Standup".to_string(),
+            meeting_date: "2026-03-07".to_string(),
+            summary: Some("Generic meeting summary.".to_string()),
+            template_summary: Some("Template-specific meeting summary.".to_string()),
+            action_items: vec![ActionItemContext {
+                content: "Review PR #42".to_string(),
+                assignee: Some("Speaker 1".to_string()),
+                due_date: Some("2026-03-10".to_string()),
+                context: None,
+            }],
+        };
+
+        let rendered = render_default_summary_body(&context);
+
+        assert!(rendered.contains("Template-specific meeting summary."));
+        assert!(!rendered.contains("Generic meeting summary."));
+        assert!(rendered.contains("Review PR #42"));
+    }
 
     #[test]
     fn test_sanitize_filename_basic() {
@@ -706,10 +904,12 @@ mod tests {
             meeting_title: "Weekly Standup".to_string(),
             meeting_date: "2026-03-07T10:00:00".to_string(),
             summary: Some("Discussed Q1 roadmap. Speaker 1 will lead the effort.".to_string()),
+            template_summary: None,
             action_items: vec![ActionItemContext {
                 content: "Review PR #42".to_string(),
                 assignee: Some("Speaker 1".to_string()),
                 due_date: Some("2026-03-10".to_string()),
+                context: None,
             }],
         };
 
@@ -764,6 +964,7 @@ mod tests {
             meeting_title: "Standup".to_string(),
             meeting_date: "2026-03-07".to_string(),
             summary: Some("Summary".to_string()),
+            template_summary: None,
             action_items: vec![],
         };
 

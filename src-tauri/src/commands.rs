@@ -35,6 +35,7 @@ const ALLOWED_PROVIDERS: &[&str] = &[
     "google",
     "groq",
     "openrouter",
+    "bedrock",
     "linear",
     "asana",
 ];
@@ -917,6 +918,7 @@ pub async fn store_api_key(
         "google" => Box::new(crate::llm::GoogleProvider::new(key)),
         "groq" => Box::new(crate::llm::GroqProvider::new(key)),
         "openrouter" => Box::new(crate::llm::OpenRouterProvider::new(key)),
+        "bedrock" => Box::new(crate::llm::BedrockProvider::new(key)),
         _ => return Ok(()),
     };
     registry.register(new_provider);
@@ -2001,6 +2003,7 @@ pub fn update_workflow(
     name: String,
     description: Option<String>,
     icon: Option<String>,
+    integration_id: String,
     action_type: String,
     config_json: String,
     is_enabled: bool,
@@ -2010,6 +2013,7 @@ pub fn update_workflow(
         &name,
         description.as_deref(),
         icon.as_deref(),
+        &integration_id,
         &action_type,
         &config_json,
         is_enabled,
@@ -2034,8 +2038,11 @@ pub fn list_workflow_runs(
 #[tauri::command]
 pub async fn run_workflow(
     db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
     meeting_id: String,
     workflow_id: String,
+    llm_provider: Option<String>,
+    llm_model: Option<String>,
 ) -> Result<crate::db::WorkflowRun, String> {
     let workflow = db.get_workflow(&workflow_id).map_err(|e| e.to_string())?;
     let integration = db
@@ -2048,6 +2055,43 @@ pub async fn run_workflow(
         .map_err(|e| e.to_string())?;
     let summary_text = summaries.first().map(|s| s.content.clone());
 
+    // If the workflow has a source template configured, use that template's
+    // summary. Auto-generate one if it doesn't exist yet (requires LLM).
+    let workflow_config: serde_json::Value =
+        serde_json::from_str(&workflow.config_json).unwrap_or_else(|_| serde_json::json!({}));
+    let configured_template_id = workflow_config
+        .get("template_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+
+    let template_summary = if let Some(template_id) = configured_template_id {
+        match summaries
+            .iter()
+            .find(|s| s.template_id.as_deref() == Some(template_id))
+        {
+            Some(existing) => Some(existing.content.clone()),
+            None => match (llm_provider.as_deref(), llm_model.as_deref()) {
+                (Some(provider), Some(model)) => {
+                    let llm_registry = llm.read().await;
+                    crate::summarization::summarize_meeting(
+                        &db,
+                        &llm_registry,
+                        &meeting_id,
+                        template_id,
+                        provider,
+                        model,
+                    )
+                    .await
+                    .ok()
+                    .map(|s| s.content)
+                }
+                _ => None,
+            },
+        }
+    } else {
+        None
+    };
+
     let insights = db
         .get_insights_for_meeting(&meeting_id)
         .map_err(|e| e.to_string())?;
@@ -2058,6 +2102,7 @@ pub async fn run_workflow(
             content: i.content.clone(),
             assignee: i.assignee.clone(),
             due_date: i.due_date.clone(),
+            context: i.context.clone(),
         })
         .collect();
 
@@ -2065,6 +2110,7 @@ pub async fn run_workflow(
         meeting_title: meeting.title.clone(),
         meeting_date: meeting.start_time.clone(),
         summary: summary_text,
+        template_summary,
         action_items,
     };
 
@@ -2075,7 +2121,17 @@ pub async fn run_workflow(
     db.update_workflow_run_status(&run.id, "running", None, None)
         .map_err(|e| e.to_string())?;
 
-    match crate::workflows::execute_workflow(&workflow, &integration, &context).await {
+    let llm_registry = llm.read().await;
+    match crate::workflows::execute_workflow(
+        &workflow,
+        &integration,
+        &context,
+        Some(&llm_registry),
+        llm_provider.as_deref(),
+        llm_model.as_deref(),
+    )
+    .await
+    {
         Ok(result) => {
             let result_json = serde_json::to_string(&result).unwrap_or_default();
             db.update_workflow_run_status(&run.id, "completed", Some(&result_json), None)

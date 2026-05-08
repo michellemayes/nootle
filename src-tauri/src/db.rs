@@ -712,6 +712,7 @@ impl Database {
             ",
         )?;
         Self::seed_default_insight_types(&conn)?;
+        Self::refresh_builtin_insight_prompts(&conn)?;
 
         // Migrations: add notes columns to meetings
         let _ = conn.execute("ALTER TABLE meetings ADD COLUMN raw_notes TEXT", []);
@@ -815,6 +816,37 @@ impl Database {
         Ok(())
     }
 
+    /// Replace extraction_prompt on built-in insight types if it still matches
+    /// an older default. Custom user-edited prompts are left alone.
+    fn refresh_builtin_insight_prompts(conn: &rusqlite::Connection) -> Result<()> {
+        let updates: &[(&str, &str, &[&str])] = &[
+            (
+                "action_item",
+                "Extract action items — anything someone said they'd do, follow up on, look into, or send. Phrasing is often casual ('I'll handle that', 'let's circle back', 'TODO: ...'). Capture the task even if no assignee or deadline is named. Include who's responsible (assignee) only if explicitly mentioned.",
+                &["Extract action items — tasks that someone needs to do. Include who is responsible (assignee) and any deadline mentioned."],
+            ),
+            (
+                "decision",
+                "Extract decisions that were agreed upon during the meeting. Include both formal decisions ('we decided X') and de facto choices implied by what people committed to. Each decision should be a clear statement of what was settled.",
+                &["Extract clear decisions that were agreed upon. Each decision should be a definitive statement of what was decided."],
+            ),
+            (
+                "key_moment",
+                "Extract key moments — important statements, revelations, surprises, disagreements, or turning points in the discussion that are worth remembering.",
+                &["Extract key moments — important statements, revelations, or turning points in the discussion that are worth remembering."],
+            ),
+        ];
+        for (slug, new_prompt, old_prompts) in updates {
+            for old in *old_prompts {
+                conn.execute(
+                    "UPDATE insight_types SET extraction_prompt = ?1 WHERE slug = ?2 AND is_builtin = 1 AND extraction_prompt = ?3",
+                    params![new_prompt, slug, old],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     fn seed_default_insight_types(conn: &rusqlite::Connection) -> Result<()> {
         let count: i64 =
             conn.query_row("SELECT COUNT(*) FROM insight_types", [], |row| row.get(0))?;
@@ -823,9 +855,9 @@ impl Database {
         }
         let now = chrono::Utc::now().to_rfc3339();
         let defaults = [
-            ("decision", "Decision", "Decisions made during the meeting", "Extract clear decisions that were agreed upon. Each decision should be a definitive statement of what was decided.", "lightbulb", false, true, 0),
-            ("action_item", "Action Item", "Tasks assigned to team members", "Extract action items — tasks that someone needs to do. Include who is responsible (assignee) and any deadline mentioned.", "list-checks", true, true, 1),
-            ("key_moment", "Key Moment", "Important moments worth remembering", "Extract key moments — important statements, revelations, or turning points in the discussion that are worth remembering.", "star", false, true, 2),
+            ("decision", "Decision", "Decisions made during the meeting", "Extract decisions that were agreed upon during the meeting. Include both formal decisions ('we decided X') and de facto choices implied by what people committed to. Each decision should be a clear statement of what was settled.", "lightbulb", false, true, 0),
+            ("action_item", "Action Item", "Tasks assigned to team members", "Extract action items — anything someone said they'd do, follow up on, look into, or send. Phrasing is often casual ('I'll handle that', 'let's circle back', 'TODO: ...'). Capture the task even if no assignee or deadline is named. Include who's responsible (assignee) only if explicitly mentioned.", "list-checks", true, true, 1),
+            ("key_moment", "Key Moment", "Important moments worth remembering", "Extract key moments — important statements, revelations, surprises, disagreements, or turning points in the discussion that are worth remembering.", "star", false, true, 2),
         ];
         for (slug, name, desc, prompt, icon, has_action, is_builtin, sort) in defaults {
             let id = uuid::Uuid::new_v4().to_string();
@@ -925,6 +957,60 @@ impl Database {
                 }
             }
             conn.execute("DROP TABLE IF EXISTS prompts", [])?;
+        }
+
+        // Rebuild summaries if its stored schema still has the dangling FK
+        // `prompt_id TEXT REFERENCES prompts(id)` — the prompts table was
+        // dropped above but SQLite preserves the original CREATE TABLE
+        // statement, so any insert hits "no such table: main.prompts".
+        let summaries_sql: Option<String> = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='summaries'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        if summaries_sql
+            .as_deref()
+            .map(|s| s.contains("REFERENCES prompts"))
+            .unwrap_or(false)
+        {
+            // Standard SQLite table rebuild: turn foreign_keys off, do the
+            // swap inside a transaction, turn foreign_keys back on. PRAGMA
+            // foreign_keys cannot run inside a transaction, so it stays
+            // outside the BEGIN/COMMIT. The leading DROP recovers from any
+            // pre-existing partial state from earlier failed attempts.
+            conn.execute_batch("PRAGMA foreign_keys=OFF;")?;
+            let rebuild_result = conn.execute_batch(
+                "
+                BEGIN;
+                DROP TABLE IF EXISTS summaries_new;
+                CREATE TABLE summaries_new (
+                    id TEXT PRIMARY KEY,
+                    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                    prompt_id TEXT,
+                    provider TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                INSERT INTO summaries_new (id, meeting_id, prompt_id, provider, model, content, created_at)
+                    SELECT id, meeting_id, prompt_id, provider, model, content, created_at
+                    FROM summaries
+                    WHERE meeting_id IN (SELECT id FROM meetings);
+                DROP TABLE summaries;
+                ALTER TABLE summaries_new RENAME TO summaries;
+                CREATE TRIGGER IF NOT EXISTS summaries_ai AFTER INSERT ON summaries BEGIN
+                    INSERT INTO summaries_fts(rowid, content) VALUES (new.rowid, new.content);
+                END;
+                CREATE TRIGGER IF NOT EXISTS summaries_ad AFTER DELETE ON summaries BEGIN
+                    INSERT INTO summaries_fts(summaries_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+                END;
+                COMMIT;
+                ",
+            );
+            conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+            rebuild_result?;
         }
 
         Ok(())
@@ -3148,14 +3234,24 @@ impl Database {
         name: &str,
         description: Option<&str>,
         icon: Option<&str>,
+        integration_id: &str,
         action_type: &str,
         config_json: &str,
         is_enabled: bool,
     ) -> Result<Workflow> {
         let conn = self.lock_conn()?;
         conn.execute(
-            "UPDATE workflows SET name = ?1, description = ?2, icon = ?3, action_type = ?4, config_json = ?5, is_enabled = ?6 WHERE id = ?7",
-            params![name, description, icon, action_type, config_json, is_enabled as i32, id],
+            "UPDATE workflows SET name = ?1, description = ?2, icon = ?3, integration_id = ?4, action_type = ?5, config_json = ?6, is_enabled = ?7 WHERE id = ?8",
+            params![
+                name,
+                description,
+                icon,
+                integration_id,
+                action_type,
+                config_json,
+                is_enabled as i32,
+                id
+            ],
         )?;
 
         let mut stmt = conn.prepare(

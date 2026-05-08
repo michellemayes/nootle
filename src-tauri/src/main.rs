@@ -1,6 +1,18 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// Embed Info.plist into the Mach-O __TEXT,__info_plist section so macOS TCC
+// can read usage strings (NSMicrophoneUsageDescription, etc.) when running
+// the unbundled binary in `pnpm tauri dev`. The .app bundle gets a separate
+// merged Info.plist via Tauri's bundler.
+#[cfg(target_os = "macos")]
+const INFO_PLIST_BYTES: &[u8] = include_bytes!("../Info.plist");
+
+#[cfg(target_os = "macos")]
+#[used]
+#[link_section = "__TEXT,__info_plist"]
+static EMBEDDED_INFO_PLIST: [u8; INFO_PLIST_BYTES.len()] = *include_bytes!("../Info.plist");
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 

@@ -63,6 +63,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
+    // Apply the .dark class to <html> so it's on the same element as the inline
+    // accent styles. If we put .dark on a descendant div instead, its rule
+    // redefines --primary inside the subtree and overrides the user's accent.
+    document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("theme", theme);
   }, [theme]);
 
@@ -81,9 +85,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme, accentHue, accentChroma, setAccentColor }}>
-      <div className={theme === "dark" ? "dark" : ""}>
-        {children}
-      </div>
+      {children}
     </ThemeContext.Provider>
   );
 }

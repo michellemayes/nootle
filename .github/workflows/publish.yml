@@ -16,9 +16,9 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            args: "--target aarch64-apple-darwin"
+            args: "--target aarch64-apple-darwin --features system-audio"
           - platform: macos-latest
-            args: "--target x86_64-apple-darwin"
+            args: "--target x86_64-apple-darwin --features system-audio"
     runs-on: ${{ matrix.platform }}
     env:
       RELEASE_TAG: ${{ github.ref_name }}
@@ -47,7 +47,7 @@ jobs:
         run: pnpm install
 
       - name: Run tests before publish
-        run: cd src-tauri && cargo test
+        run: cd src-tauri && cargo test --features system-audio
 
       - name: Validate release tag
         run: |

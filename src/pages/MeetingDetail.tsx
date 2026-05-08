@@ -28,7 +28,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
 import { LabelEditor } from "@/components/LabelEditor";
-import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List, StickyNote, Sparkles, PanelLeftClose, PanelLeftOpen, Copy, CheckCheck, Zap, AlertTriangle, BarChart3 } from "lucide-react";
+import { ArrowLeft, MessageSquare, FileText, Play, Pause, Check, RotateCw, Lightbulb, ListChecks, Star, Pencil, AlignJustify, List, StickyNote, Sparkles, PanelLeftClose, PanelLeftOpen, Copy, CheckCheck, Zap, AlertTriangle, BarChart3, ChevronDown } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { useWorkflows, useWorkflowRuns } from "@/hooks/useWorkflows";
 
@@ -45,6 +46,26 @@ function parseResultMessage(json: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+function parseResultOutput(json: string | null): string | null {
+  if (!json) return null;
+  try {
+    return (JSON.parse(json) as { output?: string }).output ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Email drafts are formatted as `Subject: <line>\n\n<body>` by execute_email
+ * in workflows.rs. Returns null if the output isn't an email draft.
+ */
+function parseEmailDraft(output: string | null): { subject: string; body: string } | null {
+  if (!output) return null;
+  const match = output.match(/^Subject: (.*?)\n\n([\s\S]*)$/);
+  if (!match) return null;
+  return { subject: match[1], body: match[2] };
 }
 
 function CopyButton({ text, className = "" }: { text: string; className?: string }) {
@@ -517,11 +538,13 @@ function NotesPanel({
   meetingId,
   rawNotes,
   enrichedNotes,
+  scratchNotes,
   onRefresh,
 }: {
   meetingId: string;
   rawNotes: string | null;
   enrichedNotes: string | null;
+  scratchNotes: { id: string; content: string; timestamp_ms: number }[];
   onRefresh: () => void;
 }) {
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
@@ -559,7 +582,46 @@ function NotesPanel({
     }, 600);
   }, [meetingId]);
 
+  const renderQuickNotes = () => {
+    if (scratchNotes.length === 0) return null;
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <StickyNote className="h-3.5 w-3.5 text-amber-500" />
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Quick notes captured during recording
+          </h3>
+        </div>
+        <div className="space-y-1.5">
+          {scratchNotes.map((note) => {
+            const totalSec = Math.floor(note.timestamp_ms / 1000);
+            const minutes = String(Math.floor(totalSec / 60)).padStart(2, "0");
+            const seconds = String(totalSec % 60).padStart(2, "0");
+            return (
+              <div
+                key={note.id}
+                className="rounded-lg bg-amber-500/5 border border-amber-500/10 px-3 py-2 flex items-start gap-3"
+              >
+                <span className="font-mono text-xs text-amber-600 dark:text-amber-400 mt-0.5 shrink-0">
+                  {minutes}:{seconds}
+                </span>
+                <span className="text-sm text-foreground leading-relaxed">{note.content}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   if (!rawNotes) {
+    if (scratchNotes.length > 0) {
+      return (
+        <ScrollArea className="flex-1">
+          <div className="p-5">{renderQuickNotes()}</div>
+        </ScrollArea>
+      );
+    }
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8">
         <StickyNote className="h-8 w-8 text-muted-foreground" />
@@ -614,7 +676,8 @@ function NotesPanel({
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-5">
+        <div className="p-5 space-y-4">
+          {renderQuickNotes()}
           <div className="relative">
             {/* Enriched — always mounted so TipTap doesn't reinitialize */}
             <motion.div
@@ -894,30 +957,35 @@ export function MeetingDetail() {
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
           <div>
-            {editingTitle ? (
-              <Input
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onBlur={handleTitleSave}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleTitleSave();
-                  if (e.key === "Escape") setEditingTitle(false);
-                }}
-                className="text-xl font-bold h-auto py-0 border-none bg-transparent"
-                autoFocus
-              />
-            ) : (
-              <h1
-                className="text-xl font-bold cursor-pointer group/title flex items-center gap-2 hover:text-muted-foreground transition-colors"
-                onClick={() => {
-                  setTitleDraft(meeting.title);
-                  setEditingTitle(true);
-                }}
-              >
-                {meeting.title}
-                <Pencil className="h-3.5 w-3.5 opacity-0 group-hover/title:opacity-50 transition-opacity" />
-              </h1>
-            )}
+            <div className="flex items-center gap-2">
+              {editingTitle ? (
+                <Input
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={handleTitleSave}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleTitleSave();
+                    if (e.key === "Escape") setEditingTitle(false);
+                  }}
+                  className="text-xl font-bold h-auto py-0 border-none bg-transparent"
+                  autoFocus
+                />
+              ) : (
+                <h1
+                  className="text-xl font-bold cursor-pointer group/title flex items-center gap-2 hover:text-muted-foreground transition-colors"
+                  onClick={() => {
+                    setTitleDraft(meeting.title);
+                    setEditingTitle(true);
+                  }}
+                >
+                  {meeting.title}
+                  <Pencil className="h-3.5 w-3.5 opacity-0 group-hover/title:opacity-50 transition-opacity" />
+                </h1>
+              )}
+              <Badge variant="outline" className="text-[10px]">
+                {statusLabel(meeting.status)}
+              </Badge>
+            </div>
             <p className="text-sm text-muted-foreground">
               {formatDate(meeting.start_time, "long")}
             </p>
@@ -934,46 +1002,85 @@ export function MeetingDetail() {
             </div>
             )}
           </div>
-          <Badge variant="outline">{statusLabel(meeting.status)}</Badge>
         </div>
         {!isCompact && (
         <div className="flex items-center gap-2">
-          {workflows.filter(w => w.is_enabled).map((w) => {
-                const recentRun = runs.find(r => r.workflow_id === w.id);
-                const isRunning = recentRun?.status === "running" || recentRun?.status === "pending";
-                const succeeded = recentRun?.status === "completed";
-                const failed = recentRun?.status === "failed";
-
-                return (
-                  <Button
-                    key={w.id}
-                    variant="outline"
-                    size="sm"
-                    disabled={isRunning}
-                    onClick={async () => {
-                      try {
-                        await runWorkflow(id!, w.id);
-                      } catch (err) {
-                        console.error("Workflow failed:", err);
-                      }
-                      await refreshRuns();
-                    }}
-                    className="text-xs gap-1.5"
-                    title={w.description || w.name}
-                  >
-                    {isRunning ? (
+          {(() => {
+            const enabledWorkflows = workflows.filter((w) => w.is_enabled);
+            if (enabledWorkflows.length === 0) return null;
+            const anyRunning = enabledWorkflows.some((w) => {
+              const recentRun = runs.find((r) => r.workflow_id === w.id);
+              return recentRun?.status === "running" || recentRun?.status === "pending";
+            });
+            return (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="text-xs gap-1.5">
+                    {anyRunning ? (
                       <RotateCw className="h-3 w-3 animate-spin" />
-                    ) : succeeded ? (
-                      <Check className="h-3 w-3 text-green-500" />
-                    ) : failed ? (
-                      <AlertTriangle className="h-3 w-3 text-red-500" />
                     ) : (
                       <Zap className="h-3 w-3" />
                     )}
-                    {w.name}
+                    Run
+                    <ChevronDown className="h-3 w-3 opacity-60" />
                   </Button>
-                );
-          })}
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 p-1.5">
+                  <div className="space-y-0.5">
+                    {enabledWorkflows.map((w) => {
+                      const recentRun = runs.find((r) => r.workflow_id === w.id);
+                      const isRunning =
+                        recentRun?.status === "running" || recentRun?.status === "pending";
+                      const succeeded = recentRun?.status === "completed";
+                      const failed = recentRun?.status === "failed";
+                      return (
+                        <button
+                          key={w.id}
+                          type="button"
+                          disabled={isRunning}
+                          onClick={async () => {
+                            try {
+                              await runWorkflow(id!, w.id, {
+                                provider: selectedProvider ?? undefined,
+                                model: selectedModel ?? undefined,
+                              });
+                            } catch (err) {
+                              console.error("Workflow failed:", err);
+                            }
+                            await refreshRuns();
+                          }}
+                          className="w-full text-left rounded-md px-2.5 py-2 text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-start gap-2"
+                          title={w.description || w.name}
+                        >
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">
+                            {isRunning ? (
+                              <RotateCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                            ) : succeeded ? (
+                              <Check className="h-3.5 w-3.5 text-green-500" />
+                            ) : failed ? (
+                              <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                            ) : w.icon ? (
+                              <span>{w.icon}</span>
+                            ) : (
+                              <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+                            )}
+                          </span>
+                          <span className="flex-1 min-w-0">
+                            <span className="block font-medium leading-tight">{w.name}</span>
+                            {w.description && (
+                              <span className="block text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                                {w.description}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            );
+          })()}
           {!chatOpen && (
             <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
               <MessageSquare className="h-4 w-4" /> Ask Nootle
@@ -1081,11 +1188,6 @@ export function MeetingDetail() {
                 <TabsTrigger value="insights" title="Insights">
                   {isCompact ? <Lightbulb className="h-4 w-4" /> : "Insights"}
                 </TabsTrigger>
-                {scratchNotes.length > 0 && (
-                  <TabsTrigger value="highlights" title="Highlights">
-                    {isCompact ? <StickyNote className="h-4 w-4" /> : "Highlights"}
-                  </TabsTrigger>
-                )}
                 <TabsTrigger value="analytics" title="Analytics">
                   {isCompact ? <BarChart3 className="h-4 w-4" /> : "Analytics"}
                 </TabsTrigger>
@@ -1099,37 +1201,10 @@ export function MeetingDetail() {
                 meetingId={id!}
                 rawNotes={meeting.raw_notes}
                 enrichedNotes={meeting.enriched_notes}
+                scratchNotes={scratchNotes}
                 onRefresh={refreshMeeting}
               />
             </TabsContent>
-            {scratchNotes.length > 0 && (
-              <TabsContent value="highlights" className="flex flex-1 flex-col mt-0">
-                <ScrollArea className="flex-1">
-                  <div className="p-5 space-y-2">
-                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
-                      <StickyNote className="h-4 w-4 text-amber-500" />
-                      Your Highlights
-                    </h3>
-                    {scratchNotes.map((note) => {
-                      const totalSec = Math.floor(note.timestamp_ms / 1000);
-                      const minutes = String(Math.floor(totalSec / 60)).padStart(2, "0");
-                      const seconds = String(totalSec % 60).padStart(2, "0");
-                      return (
-                        <div
-                          key={note.id}
-                          className="rounded-lg bg-amber-500/5 border border-amber-500/10 px-4 py-3 flex items-start gap-3"
-                        >
-                          <span className="font-mono text-xs text-amber-600 dark:text-amber-400 mt-0.5 shrink-0">
-                            {minutes}:{seconds}
-                          </span>
-                          <span className="text-sm text-foreground leading-relaxed">{note.content}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </ScrollArea>
-              </TabsContent>
-            )}
             <TabsContent value="summaries" className="flex flex-1 flex-col mt-0">
               <div className="flex items-center gap-2 border-b px-5 py-2 flex-wrap">
                 <select
@@ -1231,29 +1306,70 @@ export function MeetingDetail() {
                     Workflow Runs
                   </h3>
                   {runs.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No workflow runs yet. Configure workflows in Settings and run them from the header buttons.
-                    </p>
+                    <div className="space-y-2 text-sm text-muted-foreground">
+                      <p>No workflow runs yet.</p>
+                      <p>
+                        Configure workflows under{" "}
+                        <a href="/templates" className="text-primary underline-offset-2 hover:underline">
+                          Templates &rarr; Workflows
+                        </a>
+                        , then toggle them on. Each enabled workflow shows as a
+                        button next to <span className="font-medium">Ask Nootle</span> at
+                        the top of this page — click it to run the workflow on this meeting.
+                      </p>
+                    </div>
                   ) : (
-                    runs.map((run) => (
-                      <div key={run.id} className="rounded-lg border px-4 py-3 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">{run.workflow_name ?? "Workflow"}</span>
-                          <Badge variant={runStatusVariant(run.status)}>
-                            {run.status}
-                          </Badge>
+                    runs.map((run) => {
+                      const output = parseResultOutput(run.result_json);
+                      const emailDraft = parseEmailDraft(output);
+                      const message = parseResultMessage(run.result_json);
+                      return (
+                        <div key={run.id} className="rounded-lg border px-4 py-3 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">{run.workflow_name ?? "Workflow"}</span>
+                            <Badge variant={runStatusVariant(run.status)}>
+                              {run.status}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(run.started_at).toLocaleString()}
+                          </p>
+                          {run.error && (
+                            <p className="text-xs text-destructive">{run.error}</p>
+                          )}
+                          {run.status === "completed" && message && (
+                            <p className="text-xs text-muted-foreground">{message}</p>
+                          )}
+                          {run.status === "completed" && output && (
+                            <div className="mt-2 space-y-2">
+                              {emailDraft && (
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    onClick={async () => {
+                                      const url = `mailto:?subject=${encodeURIComponent(emailDraft.subject)}&body=${encodeURIComponent(emailDraft.body)}`;
+                                      const { openUrl } = await import("@tauri-apps/plugin-opener");
+                                      await openUrl(url);
+                                    }}
+                                  >
+                                    Open in Mail
+                                  </Button>
+                                  <CopyButton text={output} className="h-7 text-xs px-2" />
+                                </div>
+                              )}
+                              {!emailDraft && (
+                                <CopyButton text={output} className="h-7 text-xs px-2" />
+                              )}
+                              <pre className="rounded-md border bg-muted/40 p-3 text-xs whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+                                {output}
+                              </pre>
+                            </div>
+                          )}
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(run.started_at).toLocaleString()}
-                        </p>
-                        {run.error && (
-                          <p className="text-xs text-destructive">{run.error}</p>
-                        )}
-                        {run.status === "completed" && parseResultMessage(run.result_json) && (
-                          <p className="text-xs text-muted-foreground">{parseResultMessage(run.result_json)}</p>
-                        )}
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </ScrollArea>
