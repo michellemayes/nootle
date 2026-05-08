@@ -150,6 +150,11 @@ pub fn check_calendar() -> String {
 ///
 /// 1. `[[EKEventStore alloc] init]` to get an instance.
 /// 2. Call `requestFullAccessToEventsWithCompletion:` with a block.
+///
+/// On macOS 14+ this requires `NSCalendarsFullAccessUsageDescription` in the
+/// app's Info.plist, otherwise TCC silently denies. If a previous request was
+/// denied the system will not re-prompt — the user has to reset TCC via
+/// `tccutil reset Calendar com.nootle.desktop` or grant from System Settings.
 pub async fn request_calendar() -> bool {
     let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
 
@@ -158,8 +163,22 @@ pub async fn request_calendar() -> bool {
     {
         let tx = std::sync::Mutex::new(Some(tx));
 
-        // The completion handler signature is: void (^)(BOOL granted, NSError *error)
-        let block = block2::RcBlock::new(move |granted: ObjcBool, _error: *mut AnyObject| {
+        // The completion handler signature is: void (^)(BOOL granted, NSError *error).
+        // We surface the error to the log so silent failures (most often a
+        // missing Info.plist usage description on the running binary) leave a
+        // breadcrumb in the dev console.
+        let block = block2::RcBlock::new(move |granted: ObjcBool, error: *mut AnyObject| {
+            if !error.is_null() {
+                let description = unsafe { ns_string_description(error) };
+                tracing::error!(?description, "Calendar permission request returned error");
+            } else if !granted.as_bool() {
+                tracing::warn!(
+                    "Calendar permission request returned granted=false with no error. \
+                     macOS likely cached a previous denial. Run \
+                     `tccutil reset Calendar com.nootle.desktop` and try again, or \
+                     grant access from System Settings → Privacy & Security → Calendars."
+                );
+            }
             if let Ok(mut guard) = tx.lock() {
                 if let Some(sender) = guard.take() {
                     let _ = sender.send(granted.as_bool());
@@ -170,6 +189,7 @@ pub async fn request_calendar() -> bool {
         unsafe {
             let cls = objc_getClass(c"EKEventStore".as_ptr());
             if cls.is_null() {
+                tracing::error!("EKEventStore class not found — EventKit not linked");
                 return false;
             }
 
@@ -203,6 +223,28 @@ pub async fn request_calendar() -> bool {
     }
 
     rx.await.unwrap_or(false)
+}
+
+/// Read NSError.localizedDescription as a Rust String for logging.
+unsafe fn ns_string_description(ns_error: *mut AnyObject) -> String {
+    let desc_sel = sel_registerName(c"localizedDescription".as_ptr());
+    let utf8_sel = sel_registerName(c"UTF8String".as_ptr());
+    let msg_send_obj: unsafe extern "C" fn(*mut AnyObject, Sel) -> *mut AnyObject =
+        std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+    let msg_send_cstr: unsafe extern "C" fn(*mut AnyObject, Sel) -> *const std::ffi::c_char =
+        std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+
+    let ns_str = msg_send_obj(ns_error, desc_sel);
+    if ns_str.is_null() {
+        return "(no description)".to_string();
+    }
+    let cstr = msg_send_cstr(ns_str, utf8_sel);
+    if cstr.is_null() {
+        return "(empty description)".to_string();
+    }
+    std::ffi::CStr::from_ptr(cstr)
+        .to_string_lossy()
+        .into_owned()
 }
 
 // ── Aggregated check ──────────────────────────────────────────────────────────
