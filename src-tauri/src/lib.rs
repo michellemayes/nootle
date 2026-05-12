@@ -68,6 +68,12 @@ pub fn run() {
         llm_registry.register(Box::new(CodexCliProvider::new()));
     }
 
+    // Auth is delegated to the user's existing Claude subscription, so no API key.
+    if let Some(provider) = llm::ClaudeAgentProvider::detect() {
+        tracing::info!("Claude Agent SDK detected at {}", provider.binary_path());
+        llm_registry.register(Box::new(provider));
+    }
+
     // Register providers with stored API keys.
     if let Ok(Some(key)) = db.get_api_key("openai") {
         llm_registry.register(Box::new(llm::OpenAiProvider::new(key)));

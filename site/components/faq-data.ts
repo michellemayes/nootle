@@ -7,7 +7,7 @@ export const faqs = [
   {
     question: "Does Nootle send my meetings to the cloud?",
     answer:
-      "No. All audio recording and transcription happens locally on your Mac using on-device machine learning powered by ONNX Runtime. No meeting audio or transcripts are ever uploaded to external servers. Your conversations remain entirely on your hardware.",
+      "Recording and transcription are always local — meeting audio is never uploaded, and transcripts are stored only on your Mac. AI summaries and chat use whichever provider you choose: pick Ollama to keep everything on-device, or OpenAI, Anthropic, Google, Groq, OpenRouter, or AWS Bedrock to send transcript context to that provider with your own API key. Nootle is fully local end-to-end only when you use a local AI model.",
   },
   {
     question: "What meeting apps does Nootle support?",
@@ -22,7 +22,7 @@ export const faqs = [
   {
     question: "How does the AI chat feature work?",
     answer:
-      "After a meeting is transcribed, you can ask questions about the conversation in natural language. Nootle sends the transcript context to your chosen AI provider — OpenAI, Anthropic, Google, Groq, or a local model via Ollama — using your own API key. The transcript itself stays on your Mac; only the relevant context is sent when you ask a question.",
+      "After a meeting is transcribed, you can ask questions about the conversation in natural language. Nootle sends the transcript context to your chosen AI provider — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, or a local model via Ollama — using your own API key. The transcript itself stays on your Mac; only the relevant context is sent when you ask a question.",
   },
   {
     question: "What integrations does Nootle support?",

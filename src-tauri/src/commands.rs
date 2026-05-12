@@ -37,6 +37,7 @@ const ALLOWED_PROVIDERS: &[&str] = &[
     "openrouter",
     "bedrock",
     "codex",
+    "claude-agent",
     "linear",
     "asana",
 ];

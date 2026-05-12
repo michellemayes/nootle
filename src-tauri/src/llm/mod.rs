@@ -1,5 +1,6 @@
 pub mod anthropic;
 pub mod bedrock;
+pub mod claude_agent;
 pub mod codex;
 pub mod codex_cli;
 pub mod google;
@@ -11,6 +12,7 @@ pub mod types;
 
 pub use anthropic::AnthropicProvider;
 pub use bedrock::BedrockProvider;
+pub use claude_agent::ClaudeAgentProvider;
 pub use codex::CodexProvider;
 pub use codex_cli::CodexCliProvider;
 pub use google::GoogleProvider;

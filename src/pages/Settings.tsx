@@ -33,6 +33,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   ollama: "Ollama",
   codex: "Codex (API key)",
   "codex-cli": "Codex CLI (subscription)",
+  "claude-agent": "Claude (subscription)",
   linear: "Linear",
   asana: "Asana",
   obsidian: "Obsidian",

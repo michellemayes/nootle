@@ -1,6 +1,6 @@
 # Nootle
 
-> AI-powered meeting recorder for Mac. Records, transcribes in real time with speaker identification, and enables AI chat about meetings. Fully local and private — no cloud recording required.
+> AI-powered meeting recorder for Mac. Records, transcribes in real time with speaker identification, and enables AI chat about meetings. Recording and transcription are always local — AI summaries and chat are only fully local when paired with a local model via Ollama.
 
 ## Product
 
@@ -13,14 +13,16 @@
 ## Features
 
 - Real-time transcription with speaker diarization using Parakeet via ONNX Runtime
-- Local AI summaries and chat (supports OpenAI, Anthropic, Google, Groq, Ollama)
+- Local AI summaries and chat (supports OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, and local Ollama)
 - Auto-detection of Zoom, Teams, Google Meet
 - Noise cancellation for cleaner audio
 - Semantic search across all meeting history
-- Integrations: Slack, Notion, Linear, GitHub, Confluence, Asana, Obsidian, Email
+- Customizable summary templates with auto-apply rules
+- Workflows that push summaries and action items to: Slack, Notion, Linear, GitHub, Confluence, Asana, Obsidian, Email
 - CLI tool for querying meeting data from the terminal
 - MCP server for AI assistant integration
 - Automatic action item extraction
+- Auto-titling of meetings from transcript content
 
 ## How It Works
 
@@ -31,7 +33,7 @@
 
 ## Privacy
 
-All audio processing and transcription happens locally on your Mac using ONNX Runtime. No meeting audio or transcripts are sent to external servers. AI features (summaries, chat) use your own API keys with the provider of your choice.
+Audio recording and transcription always happen locally on your Mac using ONNX Runtime. No meeting audio is ever uploaded, and transcripts are stored only on the local device. AI summaries and chat use whichever provider the user picks: Ollama keeps everything on-device, while OpenAI, Anthropic, Google, Groq, OpenRouter, or AWS Bedrock send transcript context to that provider using the user's own API key. Nootle is fully local end-to-end only when paired with a local AI model.
 
 ## Author
 
