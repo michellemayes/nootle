@@ -1,5 +1,6 @@
 pub mod anthropic;
 pub mod bedrock;
+pub mod claude_agent;
 pub mod google;
 pub mod groq;
 pub mod ollama;
@@ -9,6 +10,7 @@ pub mod types;
 
 pub use anthropic::AnthropicProvider;
 pub use bedrock::BedrockProvider;
+pub use claude_agent::ClaudeAgentProvider;
 pub use google::GoogleProvider;
 pub use groq::GroqProvider;
 pub use ollama::OllamaProvider;
