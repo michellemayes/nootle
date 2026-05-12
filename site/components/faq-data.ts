@@ -17,7 +17,7 @@ export const faqs = [
   {
     question: "What macOS version does Nootle require?",
     answer:
-      "Nootle requires macOS 14 (Sonoma) or later. It runs natively on both Apple Silicon (M1, M2, M3, M4) and Intel Macs. The app requires Microphone and Screen Recording permissions to capture meeting audio.",
+      "Nootle requires macOS 14 (Sonoma) or later on Apple Silicon (M1, M2, M3, M4). Intel Macs are not supported. The app requires Microphone and Screen Recording permissions to capture meeting audio.",
   },
   {
     question: "How does the AI chat feature work?",

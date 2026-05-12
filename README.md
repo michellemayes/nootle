@@ -14,7 +14,7 @@
   <a href="https://github.com/michellemayes/nootle/releases"><img src="https://img.shields.io/github/v/release/michellemayes/nootle?style=flat-square&color=72937A" alt="Release" /></a>
   <a href="https://github.com/michellemayes/nootle/actions"><img src="https://img.shields.io/github/actions/workflow/status/michellemayes/nootle/ci.yml?style=flat-square&label=CI" alt="CI" /></a>
   <a href="https://github.com/michellemayes/nootle/blob/main/LICENSE"><img src="https://img.shields.io/github/license/michellemayes/nootle?style=flat-square&color=D9B78B" alt="License" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS%2014%2B-CC765B?style=flat-square" alt="macOS 14+" />
+  <img src="https://img.shields.io/badge/platform-macOS%2014%2B%20(Apple%20Silicon)-CC765B?style=flat-square" alt="macOS 14+ (Apple Silicon)" />
 </p>
 
 ---
@@ -44,10 +44,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 
 Download the latest `.dmg` from [**Releases**](https://github.com/michellemayes/nootle/releases), open it, and drag Nootle to Applications.
 
-| Chip | Download |
-|------|----------|
-| Apple Silicon (M1+) | `Nootle_x.y.z_aarch64.dmg` |
-| Intel | `Nootle_x.y.z_x64.dmg` |
+Nootle ships for Apple Silicon (M1 or later) only — download `Nootle_x.y.z_aarch64.dmg`.
 
 ### Permissions
 
