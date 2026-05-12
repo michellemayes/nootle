@@ -28,11 +28,14 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Speaker identification** — know who said what with automatic diarization
 - **AI summaries and chat** — ask questions about your meetings using your preferred LLM
 - **Insight extraction** — automatically extract decisions, action items, and key moments
-- **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, or local Ollama
+- **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, or local Ollama
 - **Meeting detection** — auto-detects active meeting apps and calendar events
+- **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email
+- **Templates** — customizable summary templates with auto-apply rules (e.g. run a specific template for 1:1s, standups, or interviews)
+- **Semantic search** — ask questions across your entire meeting history
+- **Noise cancellation** — built-in denoising for cleaner audio and transcripts
 - **MCP server** — integrate with Claude Code and other MCP-compatible tools
 - **CLI tool** — query meetings, transcripts, insights, and more from the terminal
-- **Customizable** — editable prompts for summaries
 - **Auto-titling** — meetings are automatically titled from transcript content
 
 ## Install

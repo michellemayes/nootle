@@ -22,7 +22,7 @@ export const faqs = [
   {
     question: "How does the AI chat feature work?",
     answer:
-      "After a meeting is transcribed, you can ask questions about the conversation in natural language. Nootle sends the transcript context to your chosen AI provider — OpenAI, Anthropic, Google, Groq, or a local model via Ollama — using your own API key. The transcript itself stays on your Mac; only the relevant context is sent when you ask a question.",
+      "After a meeting is transcribed, you can ask questions about the conversation in natural language. Nootle sends the transcript context to your chosen AI provider — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, or a local model via Ollama — using your own API key. The transcript itself stays on your Mac; only the relevant context is sent when you ask a question.",
   },
   {
     question: "What integrations does Nootle support?",

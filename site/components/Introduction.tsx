@@ -29,9 +29,11 @@ export function Introduction() {
             <p>
               After each meeting, Nootle generates AI-powered summaries, extracts action items,
               and lets you ask follow-up questions about anything discussed. You choose your
-              AI provider — OpenAI, Anthropic, Google, Groq, or a fully local model via
-              Ollama. Meeting insights can be automatically pushed to Slack, Notion, Linear,
-              Confluence, and other tools your team already uses.
+              AI provider — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, or a
+              fully local model via Ollama. Meeting insights can be automatically pushed to
+              Slack, Notion, Linear, Confluence, GitHub, Asana, Obsidian, or email — and you
+              can build custom templates and workflows so the right summary and the right
+              follow-up actions run automatically for every meeting type.
             </p>
             <p>
               Nootle is built for developers, product managers, and anyone who spends their

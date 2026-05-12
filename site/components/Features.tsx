@@ -1,4 +1,4 @@
-import { Lock, Mic, MessageSquare, Lightbulb, Search, Volume2, Zap, SquareKanban, Terminal, type LucideIcon } from "lucide-react";
+import { Lock, Mic, MessageSquare, Lightbulb, Search, Volume2, Zap, SquareKanban, Terminal, LayoutTemplate, type LucideIcon } from "lucide-react";
 import { AnimateIn } from "@/components/AnimateIn";
 
 const features: {
@@ -28,7 +28,7 @@ const features: {
     icon: MessageSquare,
     title: "AI Summaries & Chat",
     description:
-      "Get instant AI-generated summaries after every meeting, highlighting key decisions and outcomes. Ask follow-up questions about anything discussed — Nootle lets you chat with your meeting transcript using your choice of AI provider, including OpenAI, Anthropic, Google, Groq, or local models via Ollama.",
+      "Get instant AI-generated summaries after every meeting, highlighting key decisions and outcomes. Ask follow-up questions about anything discussed — Nootle lets you chat with your meeting transcript using your choice of AI provider: OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, or local models via Ollama.",
     color: "#8b5cf6",
   },
   {
@@ -62,10 +62,17 @@ const features: {
   },
   {
     icon: SquareKanban,
-    title: "Linear Integration",
+    title: "Workflows & Integrations",
     description:
-      "Turn meeting action items into Linear tickets with one click. Nootle automatically suggests ticket titles and descriptions based on the discussion context, making it effortless to go from conversation to tracked work.",
+      "Push meeting notes and action items to the tools you already use. Build workflows that send summaries to Slack, create Linear, GitHub, or Asana tickets, update Notion or Confluence pages, save Markdown to Obsidian, or email a recap — with one click or fully automated per template.",
     color: "#5E6AD2",
+  },
+  {
+    icon: LayoutTemplate,
+    title: "Customizable Templates",
+    description:
+      "Tailor summaries to how you actually work. Create templates with custom sections and prompts for standups, 1:1s, interviews, or sales calls, and use auto-apply rules so the right template runs automatically based on meeting context.",
+    color: "#fbbf24",
   },
   {
     icon: Terminal,

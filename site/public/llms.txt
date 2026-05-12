@@ -13,14 +13,16 @@
 ## Features
 
 - Real-time transcription with speaker diarization using Parakeet via ONNX Runtime
-- Local AI summaries and chat (supports OpenAI, Anthropic, Google, Groq, Ollama)
+- Local AI summaries and chat (supports OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, and local Ollama)
 - Auto-detection of Zoom, Teams, Google Meet
 - Noise cancellation for cleaner audio
 - Semantic search across all meeting history
-- Integrations: Slack, Notion, Linear, GitHub, Confluence, Asana, Obsidian, Email
+- Customizable summary templates with auto-apply rules
+- Workflows that push summaries and action items to: Slack, Notion, Linear, GitHub, Confluence, Asana, Obsidian, Email
 - CLI tool for querying meeting data from the terminal
 - MCP server for AI assistant integration
 - Automatic action item extraction
+- Auto-titling of meetings from transcript content
 
 ## How It Works
 
