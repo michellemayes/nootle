@@ -93,7 +93,7 @@ impl LlmProvider for ClaudeAgentProvider {
             .arg(DISALLOWED_TOOLS);
 
         if let Some(sys) = system {
-            cmd.arg("--append-system-prompt").arg(sys);
+            cmd.arg("--system-prompt").arg(sys);
         }
 
         cmd.kill_on_drop(true)
