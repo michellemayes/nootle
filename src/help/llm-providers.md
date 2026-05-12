@@ -12,6 +12,7 @@ Nootle uses large language models to generate meeting summaries and power the ch
 | **Groq** | Yes | Fast inference with Llama and Qwen models. Get a key at [console.groq.com](https://console.groq.com) |
 | **OpenRouter** | Yes | Access 400+ models through one API. Get a key at [openrouter.ai](https://openrouter.ai) |
 | **Ollama** | No | Run models locally. Install from [ollama.com](https://ollama.com) |
+| **Claude (subscription)** | No | Uses your existing Claude subscription via the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview). Requires the `claude` CLI to be installed and logged in. |
 
 ## Setting Up a Provider
 
@@ -30,6 +31,16 @@ Ollama lets you run LLMs entirely on your Mac with no API key and no data leavin
 2. Pull a model: `ollama pull llama3.2`
 3. Make sure Ollama is running (it starts a local server on port 11434).
 4. Nootle auto-detects Ollama — no API key needed.
+
+## Using Claude via Your Subscription (No API Key)
+
+If you already have a Claude subscription (Pro, Max, or Team), you can route Nootle's AI features through it using the Claude Agent SDK — no Anthropic API key required.
+
+1. Install the Claude CLI: see [Claude Code setup](https://docs.claude.com/en/docs/claude-code/setup).
+2. Log in with `claude login` (or run `claude` once and complete the browser flow).
+3. Restart Nootle. The **Claude (subscription)** provider appears automatically when the `claude` binary is on your `PATH`.
+
+Usage is metered against your Claude subscription, not an API key.
 
 ## Switching Providers
 

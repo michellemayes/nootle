@@ -31,6 +31,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   openrouter: "OpenRouter",
   bedrock: "AWS Bedrock",
   ollama: "Ollama",
+  "claude-agent": "Claude (subscription)",
   linear: "Linear",
   asana: "Asana",
   obsidian: "Obsidian",

@@ -36,6 +36,7 @@ const ALLOWED_PROVIDERS: &[&str] = &[
     "groq",
     "openrouter",
     "bedrock",
+    "claude-agent",
     "linear",
     "asana",
 ];
