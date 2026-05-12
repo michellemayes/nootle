@@ -58,7 +58,6 @@ const features: {
     description:
       "Nootle automatically detects when you join a meeting on Zoom, Microsoft Teams, or Google Meet and offers to start recording. No manual setup required — just join your call and Nootle handles the rest, so you never miss an important conversation.",
     color: "#fbbf24",
-    span: "md:col-span-2",
   },
   {
     icon: SquareKanban,
