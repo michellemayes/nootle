@@ -22,7 +22,7 @@ pub mod workflows;
 
 use commands::{DetectorState, DownloadManagerState, EmbeddingState, LlmState, RecordingState};
 use detection::MeetingDetector;
-use llm::{LlmRegistry, OllamaProvider};
+use llm::{CodexCliProvider, LlmRegistry, OllamaProvider};
 use model_download::DownloadManager;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
@@ -63,6 +63,11 @@ pub fn run() {
         llm_registry.register(Box::new(OllamaProvider::new()));
     }
 
+    // Register Codex CLI (ChatGPT subscription) only if the `codex` binary is installed
+    if CodexCliProvider::is_available() {
+        llm_registry.register(Box::new(CodexCliProvider::new()));
+    }
+
     // Register providers with stored API keys.
     if let Ok(Some(key)) = db.get_api_key("openai") {
         llm_registry.register(Box::new(llm::OpenAiProvider::new(key)));
@@ -81,6 +86,9 @@ pub fn run() {
     }
     if let Ok(Some(key)) = db.get_api_key("bedrock") {
         llm_registry.register(Box::new(llm::BedrockProvider::new(key)));
+    }
+    if let Ok(Some(key)) = db.get_api_key("codex") {
+        llm_registry.register(Box::new(llm::CodexProvider::new(key)));
     }
 
     let llm_state: LlmState = Arc::new(tokio::sync::RwLock::new(llm_registry));

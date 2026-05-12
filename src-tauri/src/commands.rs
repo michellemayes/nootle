@@ -36,6 +36,7 @@ const ALLOWED_PROVIDERS: &[&str] = &[
     "groq",
     "openrouter",
     "bedrock",
+    "codex",
     "linear",
     "asana",
 ];
@@ -919,6 +920,7 @@ pub async fn store_api_key(
         "groq" => Box::new(crate::llm::GroqProvider::new(key)),
         "openrouter" => Box::new(crate::llm::OpenRouterProvider::new(key)),
         "bedrock" => Box::new(crate::llm::BedrockProvider::new(key)),
+        "codex" => Box::new(crate::llm::CodexProvider::new(key)),
         _ => return Ok(()),
     };
     registry.register(new_provider);

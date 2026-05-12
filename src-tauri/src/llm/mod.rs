@@ -1,5 +1,7 @@
 pub mod anthropic;
 pub mod bedrock;
+pub mod codex;
+pub mod codex_cli;
 pub mod google;
 pub mod groq;
 pub mod ollama;
@@ -9,6 +11,8 @@ pub mod types;
 
 pub use anthropic::AnthropicProvider;
 pub use bedrock::BedrockProvider;
+pub use codex::CodexProvider;
+pub use codex_cli::CodexCliProvider;
 pub use google::GoogleProvider;
 pub use groq::GroqProvider;
 pub use ollama::OllamaProvider;
