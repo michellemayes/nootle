@@ -42,12 +42,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 
 ## Install
 
-Download the latest `.dmg` from [**Releases**](https://github.com/michellemayes/nootle/releases), open it, and drag Nootle to Applications.
-
-| Chip | Download |
-|------|----------|
-| Apple Silicon (M1+) | `Nootle_x.y.z_aarch64.dmg` |
-| Intel | `Nootle_x.y.z_x64.dmg` |
+Download the latest `Nootle_x.y.z_aarch64.dmg` from [**Releases**](https://github.com/michellemayes/nootle/releases), open it, and drag Nootle to Applications. Apple Silicon (M1+) on macOS 14+ only.
 
 ### Permissions
 

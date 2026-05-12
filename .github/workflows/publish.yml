@@ -17,8 +17,6 @@ jobs:
         include:
           - platform: macos-latest
             args: "--target aarch64-apple-darwin --features system-audio"
-          - platform: macos-latest
-            args: "--target x86_64-apple-darwin --features system-audio"
     runs-on: ${{ matrix.platform }}
     env:
       RELEASE_TAG: ${{ github.ref_name }}
@@ -29,7 +27,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
 
       - uses: swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
         with:
