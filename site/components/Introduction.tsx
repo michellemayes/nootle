@@ -19,12 +19,15 @@ export function Introduction() {
               — so you always know who said what.
             </p>
             <p>
-              What sets Nootle apart from cloud-based alternatives is that all audio processing
-              happens locally on your Mac. Your meeting recordings, transcripts, and notes
-              never leave your computer. Transcription is powered by Parakeet, a
-              state-of-the-art speech recognition model running via ONNX Runtime, delivering
-              accurate results without requiring an internet connection for the core
-              recording and transcription features.
+              What sets Nootle apart from cloud-based alternatives is that all audio
+              recording and transcription happens locally on your Mac. Your meeting
+              recordings, transcripts, and notes never leave your computer. Transcription
+              is powered by Parakeet, a state-of-the-art speech recognition model running
+              via ONNX Runtime, delivering accurate results without requiring an internet
+              connection for the core recording and transcription features. AI summaries
+              and chat are only fully local if you point Nootle at Ollama — when you pick a
+              cloud provider, transcript context is sent to that provider with your own API
+              key.
             </p>
             <p>
               After each meeting, Nootle generates AI-powered summaries, extracts action items,

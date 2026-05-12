@@ -6,7 +6,7 @@ const differences = [
     icon: Shield,
     title: "Privacy by design",
     description:
-      "Cloud recorders like Otter.ai and Fireflies.ai upload your meeting audio to their servers for processing. Nootle processes everything on your Mac — your conversations never leave your hardware. No cloud accounts, no data sharing agreements, no third-party access to your meeting content.",
+      "Cloud recorders like Otter.ai and Fireflies.ai upload your meeting audio to their servers for processing. Nootle records and transcribes entirely on your Mac — meeting audio never leaves your hardware. AI summaries and chat use the provider you choose; pick Ollama with a local model to keep transcript context on-device too, or use OpenAI / Anthropic / Google / Groq / OpenRouter / AWS Bedrock with your own API key.",
     color: "#34d399",
   },
   {

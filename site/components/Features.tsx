@@ -12,7 +12,7 @@ const features: {
     icon: Lock,
     title: "Local & Private",
     description:
-      "All audio processing and transcription happens entirely on your Mac using on-device machine learning. No meeting audio is ever sent to external servers. Your conversations, transcripts, and notes stay on your hardware — giving you complete control over sensitive meeting data without relying on cloud services.",
+      "All audio recording and transcription happens entirely on your Mac using on-device machine learning. No meeting audio is ever sent to external servers, and transcripts and notes stay on your hardware. AI summaries and chat are only fully local if you choose Ollama as your provider — cloud providers (OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock) receive transcript context when you invoke them.",
     color: "#34d399",
     span: "md:col-span-2",
   },
