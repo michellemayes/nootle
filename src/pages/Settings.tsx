@@ -21,7 +21,7 @@ import { formatBytes } from "@/lib/utils";
 import { useIntegrations } from "@/hooks/useIntegrations";
 import { INTEGRATION_TYPES } from "@/lib/integrations";
 
-const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter", "bedrock"];
+const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter", "bedrock", "codex"];
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   openai: "OpenAI",
@@ -31,6 +31,8 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   openrouter: "OpenRouter",
   bedrock: "AWS Bedrock",
   ollama: "Ollama",
+  codex: "Codex (API key)",
+  "codex-cli": "Codex CLI (subscription)",
   "claude-agent": "Claude (subscription)",
   linear: "Linear",
   asana: "Asana",
@@ -39,6 +41,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 
 const PROVIDER_KEY_PLACEHOLDERS: Record<string, string> = {
   bedrock: "us-east-1:ABSK_yourkey…  (region:key)",
+  codex: "sk-… (OpenAI API key with Codex access)",
 };
 
 function getMcpConfig(exePath: string) {

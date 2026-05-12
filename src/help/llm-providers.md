@@ -13,6 +13,8 @@ Nootle uses large language models to generate meeting summaries and power the ch
 | **OpenRouter** | Yes | Access 400+ models through one API. Get a key at [openrouter.ai](https://openrouter.ai) |
 | **Ollama** | No | Run models locally. Install from [ollama.com](https://ollama.com) |
 | **Claude (subscription)** | No | Uses your existing Claude subscription via the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview). Requires the `claude` CLI to be installed and logged in. |
+| **Codex (API key)** | Yes | GPT-5 Codex via the OpenAI Responses API. Uses an OpenAI key with Codex access. |
+| **Codex CLI (subscription)** | No | Uses your existing ChatGPT Plus/Pro subscription via the [Codex CLI](https://github.com/openai/codex). Requires the `codex` CLI to be installed and logged in. |
 
 ## Setting Up a Provider
 
