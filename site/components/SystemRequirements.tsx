@@ -10,7 +10,7 @@ const requirements = [
   {
     icon: Cpu,
     label: "Processor",
-    value: "Apple Silicon (M1, M2, M3, M4) or Intel",
+    value: "Apple Silicon (M1, M2, M3, M4)",
   },
   {
     icon: HardDrive,
