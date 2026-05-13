@@ -14,6 +14,8 @@ Outputs:
   - public/nootle-icon.svg  (synced to source)
   - site/public/nootle-icon.png  (1024×1024 marketing)
   - site/public/nootle-icon.svg  (synced to source)
+  - src-tauri/dmg/background.png  (660×400 macOS installer background)
+  - src-tauri/dmg/background@2x.png  (1320×800 retina installer background)
 
 Requires: cairosvg, Pillow, iconutil (macOS).
 """
@@ -25,17 +27,64 @@ import tempfile
 from pathlib import Path
 
 import cairosvg
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 REPO = Path(__file__).resolve().parent.parent
 SRC_SVG = REPO / "src-tauri/icons/icon.svg"
 ICON_DIR = REPO / "src-tauri/icons"
 PUBLIC_DIR = REPO / "public"
 SITE_PUBLIC_DIR = REPO / "site/public"
+DMG_DIR = REPO / "src-tauri/dmg"
+DMG_BG_SVG = DMG_DIR / "background.svg"
+DMG_FONT_OUTFIT = DMG_DIR / "fonts/Outfit-Variable.ttf"
+DMG_FONT_DM_SANS = DMG_DIR / "fonts/DMSans-Variable.ttf"
+DMG_BG_WIDTH = 660
+DMG_BG_HEIGHT = 400
 
 
 def render(svg_path: Path, out_path: Path, size: int) -> None:
     cairosvg.svg2png(url=str(svg_path), write_to=str(out_path), output_width=size, output_height=size)
+
+
+def render_dmg_background(out_path: Path, scale: int) -> None:
+    """Render the DMG background with text drawn via Pillow so the
+    Outfit/DM Sans typefaces match the rest of the Nootle brand
+    regardless of the host system's installed fonts."""
+    width = DMG_BG_WIDTH * scale
+    height = DMG_BG_HEIGHT * scale
+    cairosvg.svg2png(
+        url=str(DMG_BG_SVG),
+        write_to=str(out_path),
+        output_width=width,
+        output_height=height,
+    )
+    image = Image.open(out_path).convert("RGBA")
+    draw = ImageDraw.Draw(image)
+
+    title = ImageFont.truetype(str(DMG_FONT_OUTFIT), 34 * scale)
+    try:
+        title.set_variation_by_axes([700])
+    except (AttributeError, OSError):
+        pass
+    subtitle = ImageFont.truetype(str(DMG_FONT_DM_SANS), 14 * scale)
+    instruction = ImageFont.truetype(str(DMG_FONT_DM_SANS), 14 * scale)
+    badge = ImageFont.truetype(str(DMG_FONT_DM_SANS), 11 * scale)
+    try:
+        badge.set_variation_by_axes([500])
+    except (AttributeError, OSError):
+        pass
+
+    def centered(text: str, font: ImageFont.FreeTypeFont, y: int, fill: tuple[int, int, int]) -> None:
+        left, top, right, bottom = font.getbbox(text)
+        text_width = right - left
+        draw.text(((width - text_width) // 2 - left, y * scale - top), text, font=font, fill=fill)
+
+    centered("Nootle", title, 30, (59, 7, 100))
+    centered("Your AI meeting recorder and assistant", subtitle, 75, (109, 40, 217))
+    centered("Drag Nootle to your Applications folder to install", instruction, 320, (91, 33, 182))
+    centered("LOCAL  ·  PRIVATE  ·  ON-DEVICE", badge, 360, (109, 40, 217))
+
+    image.save(out_path, format="PNG")
 
 
 def main() -> None:
@@ -100,6 +149,11 @@ def main() -> None:
     render(SRC_SVG, SITE_PUBLIC_DIR / "nootle-icon.png", 1024)
     shutil.copyfile(SRC_SVG, PUBLIC_DIR / "nootle-icon.svg")
     shutil.copyfile(SRC_SVG, SITE_PUBLIC_DIR / "nootle-icon.svg")
+
+    if DMG_BG_SVG.exists() and DMG_FONT_OUTFIT.exists() and DMG_FONT_DM_SANS.exists():
+        DMG_DIR.mkdir(parents=True, exist_ok=True)
+        render_dmg_background(DMG_DIR / "background.png", scale=1)
+        render_dmg_background(DMG_DIR / "background@2x.png", scale=2)
 
     print("done")
 
