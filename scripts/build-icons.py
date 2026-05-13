@@ -14,6 +14,8 @@ Outputs:
   - public/nootle-icon.svg  (synced to source)
   - site/public/nootle-icon.png  (1024×1024 marketing)
   - site/public/nootle-icon.svg  (synced to source)
+  - src-tauri/dmg/background.png  (660×400 macOS installer background)
+  - src-tauri/dmg/background@2x.png  (1320×800 retina installer background)
 
 Requires: cairosvg, Pillow, iconutil (macOS).
 """
@@ -32,6 +34,10 @@ SRC_SVG = REPO / "src-tauri/icons/icon.svg"
 ICON_DIR = REPO / "src-tauri/icons"
 PUBLIC_DIR = REPO / "public"
 SITE_PUBLIC_DIR = REPO / "site/public"
+DMG_DIR = REPO / "src-tauri/dmg"
+DMG_BG_SVG = DMG_DIR / "background.svg"
+DMG_BG_WIDTH = 660
+DMG_BG_HEIGHT = 400
 
 
 def render(svg_path: Path, out_path: Path, size: int) -> None:
@@ -100,6 +106,21 @@ def main() -> None:
     render(SRC_SVG, SITE_PUBLIC_DIR / "nootle-icon.png", 1024)
     shutil.copyfile(SRC_SVG, PUBLIC_DIR / "nootle-icon.svg")
     shutil.copyfile(SRC_SVG, SITE_PUBLIC_DIR / "nootle-icon.svg")
+
+    if DMG_BG_SVG.exists():
+        DMG_DIR.mkdir(parents=True, exist_ok=True)
+        cairosvg.svg2png(
+            url=str(DMG_BG_SVG),
+            write_to=str(DMG_DIR / "background.png"),
+            output_width=DMG_BG_WIDTH,
+            output_height=DMG_BG_HEIGHT,
+        )
+        cairosvg.svg2png(
+            url=str(DMG_BG_SVG),
+            write_to=str(DMG_DIR / "background@2x.png"),
+            output_width=DMG_BG_WIDTH * 2,
+            output_height=DMG_BG_HEIGHT * 2,
+        )
 
     print("done")
 
