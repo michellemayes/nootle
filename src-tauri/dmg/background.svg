@@ -20,23 +20,8 @@
   <circle cx="180" cy="180" r="220" fill="url(#glowLeft)" />
   <circle cx="480" cy="180" r="220" fill="url(#glowRight)" />
 
-  <text x="330" y="58" text-anchor="middle"
-        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-        font-size="34" font-weight="700" fill="#3b0764" letter-spacing="0.5">Nootle</text>
-  <text x="330" y="84" text-anchor="middle"
-        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-        font-size="14" font-weight="500" fill="#6d28d9" letter-spacing="0.3">Your AI meeting recorder and assistant</text>
-
   <g transform="translate(264 163)" opacity="0.9">
     <path d="M0 8 H100" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" fill="none" />
     <path d="M96 0 L116 8 L96 16 Z" fill="#7c3aed" />
   </g>
-
-  <text x="330" y="335" text-anchor="middle"
-        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-        font-size="14" font-weight="500" fill="#5b21b6">Drag Nootle to your Applications folder to install</text>
-
-  <text x="330" y="370" text-anchor="middle" opacity="0.75"
-        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-        font-size="11" font-weight="500" fill="#6d28d9" letter-spacing="2">LOCAL · PRIVATE · ON-DEVICE</text>
 </svg>
