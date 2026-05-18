@@ -25,6 +25,8 @@ const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter", "bedro
 
 const CLI_PROVIDERS = ["claude-agent", "codex-cli"] as const;
 
+const AUTO_DETECTED_PROVIDERS = ["ollama", ...CLI_PROVIDERS] as const;
+
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
@@ -32,7 +34,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   groq: "Groq",
   openrouter: "OpenRouter",
   bedrock: "AWS Bedrock",
-  ollama: "Ollama",
+  ollama: "Ollama (local)",
   codex: "Codex (API key)",
   "codex-cli": "Codex CLI (ChatGPT subscription)",
   "claude-agent": "Claude CLI (claude -p)",
@@ -46,14 +48,18 @@ const PROVIDER_KEY_PLACEHOLDERS: Record<string, string> = {
   codex: "sk-… (OpenAI API key with Codex access)",
 };
 
-const CLI_PROVIDER_HINTS: Record<string, { binary: string; install: string }> = {
+const AUTO_DETECTED_HINTS: Record<string, { detected: string; notDetected: string }> = {
+  ollama: {
+    detected: "Reachable at 127.0.0.1:11434 — no API key needed.",
+    notDetected: "Not detected. Start Ollama locally (e.g. `ollama serve`), then restart Nootle.",
+  },
   "claude-agent": {
-    binary: "claude",
-    install: "Install the Claude Code CLI and sign in with your Claude subscription, then restart Nootle.",
+    detected: "Using `claude` on your PATH — no API key needed.",
+    notDetected: "Not detected. Install the Claude Code CLI and sign in with your Claude subscription, then restart Nootle.",
   },
   "codex-cli": {
-    binary: "codex",
-    install: "Install the Codex CLI and sign in with your ChatGPT subscription, then restart Nootle.",
+    detected: "Using `codex` on your PATH — no API key needed.",
+    notDetected: "Not detected. Install the Codex CLI and sign in with your ChatGPT subscription, then restart Nootle.",
   },
 };
 
@@ -407,8 +413,8 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
   );
 }
 
-function CliProviderRow({ provider, detected }: { provider: string; detected: boolean }) {
-  const hint = CLI_PROVIDER_HINTS[provider];
+function AutoDetectedProviderRow({ provider, detected }: { provider: string; detected: boolean }) {
+  const hint = AUTO_DETECTED_HINTS[provider];
   return (
     <div className="flex items-center gap-3 py-3">
       <div className="flex items-center gap-2 w-48 shrink-0">
@@ -420,15 +426,7 @@ function CliProviderRow({ provider, detected }: { provider: string; detected: bo
         )}
       </div>
       <div className="flex-1 text-sm text-muted-foreground">
-        {detected ? (
-          <>
-            Using <code className="font-mono">{hint?.binary}</code> on your PATH — no API key needed.
-          </>
-        ) : (
-          <>
-            Not detected. {hint?.install}
-          </>
-        )}
+        {detected ? hint?.detected : hint?.notDetected}
       </div>
     </div>
   );
@@ -690,13 +688,12 @@ export function SettingsPage() {
     setTimeout(() => setCopied(false), 2000);
   }, [exePath]);
 
-  // Merge known providers with any discovered from LLM, excluding Ollama
-  // (Ollama is auto-detected and doesn't need an API key) and CLI providers
-  // (rendered separately since they don't take keys).
-  const cliProviderSet = new Set<string>(CLI_PROVIDERS);
+  // Exclude auto-detected providers — they're rendered in their own card below
+  // since they don't take API keys.
+  const autoDetectedSet = new Set<string>(AUTO_DETECTED_PROVIDERS);
   const allProviders = Array.from(
     new Set([...PROVIDERS, ...llmProviders]),
-  ).filter((p) => p !== "ollama" && !cliProviderSet.has(p));
+  ).filter((p) => !autoDetectedSet.has(p));
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -804,8 +801,8 @@ export function SettingsPage() {
               <CardHeader>
                 <CardTitle>API Keys</CardTitle>
                 <CardDescription>
-                  Configure API keys for LLM providers. Using Ollama? No key needed
-                  — Nootle auto-detects it when running.
+                  Configure API keys for LLM providers. Local Ollama and
+                  subscription CLIs are auto-detected — see the next section.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -824,17 +821,17 @@ export function SettingsPage() {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle>Subscription CLIs</CardTitle>
+                <CardTitle>Auto-detected providers</CardTitle>
                 <CardDescription>
-                  Use your existing Claude or ChatGPT subscription via the
-                  installed CLI — no API key required. Nootle auto-detects these
-                  on startup.
+                  Local Ollama and subscription CLIs don't need an API key —
+                  Nootle picks them up on startup. Each row shows whether it
+                  was detected.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="divide-y">
-                  {CLI_PROVIDERS.map((provider) => (
-                    <CliProviderRow
+                  {AUTO_DETECTED_PROVIDERS.map((provider) => (
+                    <AutoDetectedProviderRow
                       key={provider}
                       provider={provider}
                       detected={llmProviders.includes(provider)}
