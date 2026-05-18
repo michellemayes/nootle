@@ -23,6 +23,8 @@ import { INTEGRATION_TYPES } from "@/lib/integrations";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter", "bedrock", "codex"];
 
+const CLI_PROVIDERS = ["claude-agent", "codex-cli"] as const;
+
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
@@ -32,8 +34,8 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   bedrock: "AWS Bedrock",
   ollama: "Ollama",
   codex: "Codex (API key)",
-  "codex-cli": "Codex CLI (subscription)",
-  "claude-agent": "Claude (subscription)",
+  "codex-cli": "Codex CLI (ChatGPT subscription)",
+  "claude-agent": "Claude CLI (claude -p)",
   linear: "Linear",
   asana: "Asana",
   obsidian: "Obsidian",
@@ -42,6 +44,17 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 const PROVIDER_KEY_PLACEHOLDERS: Record<string, string> = {
   bedrock: "us-east-1:ABSK_yourkey…  (region:key)",
   codex: "sk-… (OpenAI API key with Codex access)",
+};
+
+const CLI_PROVIDER_HINTS: Record<string, { binary: string; install: string }> = {
+  "claude-agent": {
+    binary: "claude",
+    install: "Install the Claude Code CLI and sign in with your Claude subscription, then restart Nootle.",
+  },
+  "codex-cli": {
+    binary: "codex",
+    install: "Install the Codex CLI and sign in with your ChatGPT subscription, then restart Nootle.",
+  },
 };
 
 function getMcpConfig(exePath: string) {
@@ -394,6 +407,33 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
   );
 }
 
+function CliProviderRow({ provider, detected }: { provider: string; detected: boolean }) {
+  const hint = CLI_PROVIDER_HINTS[provider];
+  return (
+    <div className="flex items-center gap-3 py-3">
+      <div className="flex items-center gap-2 w-48 shrink-0">
+        <span className="text-sm font-medium">{PROVIDER_DISPLAY_NAMES[provider] ?? provider}</span>
+        {detected && (
+          <Badge variant="secondary" className="text-[10px]">
+            Detected
+          </Badge>
+        )}
+      </div>
+      <div className="flex-1 text-sm text-muted-foreground">
+        {detected ? (
+          <>
+            Using <code className="font-mono">{hint?.binary}</code> on your PATH — no API key needed.
+          </>
+        ) : (
+          <>
+            Not detected. {hint?.install}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function InsightTypesManager() {
   const { types, createInsightType, updateInsightType, deleteInsightType } = useInsightTypes();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -651,10 +691,12 @@ export function SettingsPage() {
   }, [exePath]);
 
   // Merge known providers with any discovered from LLM, excluding Ollama
-  // (Ollama is auto-detected and doesn't need an API key)
+  // (Ollama is auto-detected and doesn't need an API key) and CLI providers
+  // (rendered separately since they don't take keys).
+  const cliProviderSet = new Set<string>(CLI_PROVIDERS);
   const allProviders = Array.from(
     new Set([...PROVIDERS, ...llmProviders]),
-  ).filter((p) => p !== "ollama");
+  ).filter((p) => p !== "ollama" && !cliProviderSet.has(p));
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -775,6 +817,27 @@ export function SettingsPage() {
                       isStored={storedProviders.includes(provider)}
                       onSave={(key) => storeKey(provider, key)}
                       onDelete={() => deleteKey(provider)}
+                    />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Subscription CLIs</CardTitle>
+                <CardDescription>
+                  Use your existing Claude or ChatGPT subscription via the
+                  installed CLI — no API key required. Nootle auto-detects these
+                  on startup.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="divide-y">
+                  {CLI_PROVIDERS.map((provider) => (
+                    <CliProviderRow
+                      key={provider}
+                      provider={provider}
+                      detected={llmProviders.includes(provider)}
                     />
                   ))}
                 </div>
