@@ -306,6 +306,21 @@ function ModelsStep({ onNext }: { onNext: () => void }) {
     Record<string, string>
   >({});
   const [downloadingAll, setDownloadingAll] = useState(false);
+  const [modelErrors, setModelErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (
+      progress &&
+      typeof progress.state === "object" &&
+      "error" in progress.state
+    ) {
+      const message = progress.state.error.message;
+      const modelId = progress.model_id;
+      setModelErrors((prev) =>
+        prev[modelId] === message ? prev : { ...prev, [modelId]: message },
+      );
+    }
+  }, [progress]);
 
   const variantSelections = useMemo(() => {
     const selections: Record<string, string> = {};
@@ -332,17 +347,17 @@ function ModelsStep({ onNext }: { onNext: () => void }) {
 
   const handleDownloadAll = async () => {
     setDownloadingAll(true);
+    setModelErrors({});
     for (const model of registry) {
       const status = diskStatus.find((d) => d.model_id === model.id);
       if (status?.downloaded) continue;
       const variantId = variantSelections[model.id];
-      if (variantId) {
-        try {
-          await downloadModel(model.id, variantId);
-        } catch (e) {
-          console.error(`Failed to download ${model.id}:`, e);
-          break;
-        }
+      if (!variantId) continue;
+      try {
+        await downloadModel(model.id, variantId);
+      } catch (e) {
+        console.error(`Failed to download ${model.id}:`, e);
+        setModelErrors((prev) => ({ ...prev, [model.id]: String(e) }));
       }
     }
     setDownloadingAll(false);
@@ -431,6 +446,13 @@ function ModelsStep({ onNext }: { onNext: () => void }) {
               {!status?.downloaded && model.variants.length === 1 && (
                 <p className="text-xs text-muted-foreground mb-3">
                   Size: {formatBytes(model.variants[0].total_size_bytes)}
+                </p>
+              )}
+
+              {/* Per-model error from a previous Download All attempt */}
+              {!status?.downloaded && !isThisModelDownloading && modelErrors[model.id] && (
+                <p className="text-xs text-destructive mb-2">
+                  Failed: {modelErrors[model.id]}
                 </p>
               )}
 
