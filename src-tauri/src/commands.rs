@@ -884,6 +884,23 @@ pub async fn is_recording(recording: State<'_, RecordingState>) -> Result<bool, 
     Ok(session.is_some())
 }
 
+/// The meeting currently being recorded, if any. Lets the UI pick a live
+/// recording back up instead of trying to start a second one.
+#[tauri::command]
+pub async fn current_recording(
+    db: State<'_, DbState>,
+    recording: State<'_, RecordingState>,
+) -> Result<Option<Meeting>, String> {
+    let session = recording.lock().await;
+    match session.as_ref() {
+        Some(s) => db
+            .get_meeting(s.meeting_id())
+            .map(Some)
+            .map_err(|e| e.to_string()),
+        None => Ok(None),
+    }
+}
+
 /// Read an audio file and return it as base64-encoded WAV data.
 #[tauri::command]
 pub async fn get_audio_data(

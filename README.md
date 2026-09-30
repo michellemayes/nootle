@@ -98,6 +98,8 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **MCP server** — integrate with Claude Code and other MCP-compatible tools
 - **CLI tool** — query meetings, transcripts, insights, and more from the terminal
 - **Auto-titling** — meetings are automatically titled from transcript content
+- **Keyboard-first** — ⌘K command palette to jump to any meeting or ask a question, ⌘N to start recording from anywhere, ⌘↵ to stop
+- **Momentum at a glance** — workday recording streak, meetings this week, and open action items on the home screen, with a little celebration when you wrap a meeting
 
 ## Install
 
