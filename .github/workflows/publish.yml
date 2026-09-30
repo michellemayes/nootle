@@ -2,15 +2,23 @@ name: Publish
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "site/**"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+# Serialize publishes so two quick pushes can't claim the same version.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
 jobs:
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       fail-fast: false
       matrix:
@@ -18,12 +26,30 @@ jobs:
           - platform: macos-latest
             args: "--target aarch64-apple-darwin --features system-audio"
     runs-on: ${{ matrix.platform }}
-    env:
-      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      # Next version = latest v* tag with the patch bumped. Written into the
+      # manifests for this build only, so no version-bump commit is needed.
+      - name: Compute release version
+        run: |
+          LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+          VERSION="${MAJOR:-0}.${MINOR:-0}.$(( ${PATCH:-0} + 1 ))"
+          echo "Latest tag: ${LATEST:-none} -> releasing v$VERSION"
+          echo "RELEASE_TAG=v$VERSION" >> "$GITHUB_ENV"
+
+          node -e '
+            const fs = require("fs");
+            for (const f of ["package.json", "src-tauri/tauri.conf.json"]) {
+              const j = JSON.parse(fs.readFileSync(f, "utf8"));
+              j.version = process.argv[1];
+              fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
+            }
+          ' "$VERSION"
+          sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
@@ -46,29 +72,6 @@ jobs:
 
       - name: Run tests before publish
         run: cd src-tauri && cargo test --features system-audio
-
-      - name: Validate release tag
-        run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid RELEASE_TAG: $RELEASE_TAG"
-            exit 1
-          fi
-
-      - name: Validate version consistency
-        run: |
-          TAG_VERSION="${RELEASE_TAG#v}"
-          TAURI_VERSION=$(node -p 'require("./src-tauri/tauri.conf.json").version')
-          CARGO_VERSION=$(awk -F'"' '/^version =/ { print $2; exit }' ./src-tauri/Cargo.toml)
-          PKG_VERSION=$(node -p 'require("./package.json").version')
-
-          for name_ver in "tauri.conf.json:$TAURI_VERSION" "Cargo.toml:$CARGO_VERSION" "package.json:$PKG_VERSION"; do
-            name="${name_ver%%:*}"
-            ver="${name_ver##*:}"
-            if [[ "$ver" != "$TAG_VERSION" ]]; then
-              echo "$name version ($ver) != tag version ($TAG_VERSION)"
-              exit 1
-            fi
-          done
 
       - name: Import Apple Developer Certificate
         env:
