@@ -129,31 +129,22 @@ fn validate_hex_color(color: &str) -> Result<(), String> {
     }
 }
 
-/// The `Authorization` header value for Linear: a legacy API key, or the
-/// Linear integration's key or OAuth token (refreshed if it has expired).
-async fn linear_auth_header(db: &Database) -> Result<String, String> {
+/// Linear access from the legacy API key setting, or else the Linear
+/// integration (pasted key or MCP sign-in).
+async fn linear_client(db: &Database) -> Result<crate::linear::Linear, String> {
     // Check legacy linear_settings table first
     if let Some(key) = db
         .get_linear_setting("api_key")
         .map_err(|e| e.to_string())?
         .filter(|k| !k.is_empty())
     {
-        return Ok(key);
+        return Ok(crate::linear::Linear::Api(key));
     }
-    // Fall back to integrations table
-    if let Some(integration) = db
+    let integration = db
         .get_integration_by_type("linear")
         .map_err(|e| e.to_string())?
-    {
-        let integration = crate::oauth::refresh_if_needed(db, integration).await?;
-        if let Ok(creds) = serde_json::from_str::<serde_json::Value>(&integration.credentials_json)
-        {
-            if let Some(header) = crate::linear::authorization_header(&creds) {
-                return Ok(header);
-            }
-        }
-    }
-    Err("Linear API key not configured".to_string())
+        .ok_or("Linear isn't connected. Connect it in Settings > Integrations.")?;
+    crate::linear::Linear::for_integration(db, &integration).await
 }
 
 #[tauri::command]
@@ -1116,10 +1107,7 @@ pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
 pub async fn list_linear_teams(
     db: State<'_, DbState>,
 ) -> Result<Vec<crate::linear::LinearTeam>, String> {
-    let api_key = linear_auth_header(&db).await?;
-    crate::linear::list_teams(&api_key)
-        .await
-        .map_err(|e| e.to_string())
+    linear_client(&db).await?.list_teams().await
 }
 
 #[tauri::command]
@@ -1127,10 +1115,7 @@ pub async fn list_linear_projects(
     db: State<'_, DbState>,
     team_id: String,
 ) -> Result<Vec<crate::linear::LinearProject>, String> {
-    let api_key = linear_auth_header(&db).await?;
-    crate::linear::list_projects(&api_key, &team_id)
-        .await
-        .map_err(|e| e.to_string())
+    linear_client(&db).await?.list_projects(&team_id).await
 }
 
 #[tauri::command]
@@ -1189,17 +1174,10 @@ pub async fn create_linear_ticket(
         Err(_) => (meeting.title.clone(), summary.content.clone()),
     };
 
-    let api_key = linear_auth_header(&db).await?;
-
-    let issue = crate::linear::create_issue(
-        &api_key,
-        &team_id,
-        project_id.as_deref(),
-        &title,
-        &description,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let issue = linear_client(&db)
+        .await?
+        .create_issue(&team_id, project_id.as_deref(), &title, &description)
+        .await?;
 
     let ticket = db
         .create_linear_ticket(NewLinearTicket {
@@ -1284,17 +1262,10 @@ pub async fn create_ticket_from_action_item(
         Err(_) => (item.content.clone(), item.content.clone()),
     };
 
-    let api_key = linear_auth_header(&db).await?;
-
-    let issue = crate::linear::create_issue(
-        &api_key,
-        &team_id,
-        project_id.as_deref(),
-        &title,
-        &description,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let issue = linear_client(&db)
+        .await?
+        .create_issue(&team_id, project_id.as_deref(), &title, &description)
+        .await?;
 
     // Update the action item with the ticket ID
     db.set_action_item_linear_ticket(&action_item_id, &issue.identifier)
@@ -2008,22 +1979,22 @@ pub fn delete_integration(db: State<'_, DbState>, id: String) -> Result<(), Stri
     db.delete_integration(&id).map_err(|e| e.to_string())
 }
 
-/// Integration types that support one-click sign-in in this build.
+/// Signs in to `provider`'s MCP server in the browser and saves the
+/// integration. Resolves once the user finishes the sign-in, with `None` if
+/// they cancelled.
 #[tauri::command]
-pub fn list_oauth_providers() -> Vec<String> {
-    crate::oauth::configured_providers()
-}
-
-/// Signs in to `provider` in the browser and saves the integration. Resolves
-/// once the user finishes the sign-in, with `None` if they cancelled.
-#[tauri::command]
-pub async fn connect_oauth(
+pub async fn connect_integration_sign_in(
     app: tauri::AppHandle,
     db: State<'_, DbState>,
-    oauth: State<'_, crate::oauth::OAuthState>,
+    sign_in: State<'_, crate::connectors::SignInState>,
     provider: String,
 ) -> Result<Option<crate::db::Integration>, String> {
-    crate::oauth::connect(&app, &db, &oauth, &provider).await
+    crate::connectors::connect(&app, &db, &sign_in, &provider).await
+}
+
+#[tauri::command]
+pub fn cancel_integration_sign_in(sign_in: State<'_, crate::connectors::SignInState>) {
+    sign_in.cancel();
 }
 
 /// True when the GitHub CLI is installed and signed in, so GitHub can be
@@ -2044,11 +2015,6 @@ pub async fn connect_github_cli(db: State<'_, DbState>) -> Result<crate::db::Int
     db.upsert_integration_by_type("github", "GitHub (GitHub CLI)", &creds)
         .map(crate::db::Integration::redacted)
         .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn cancel_oauth(oauth: State<'_, crate::oauth::OAuthState>) {
-    oauth.cancel();
 }
 
 #[tauri::command]

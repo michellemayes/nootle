@@ -8,8 +8,9 @@ const SLACK_MANIFEST = {
 };
 
 /**
- * `tokenUrl` opens the page where the user creates the credential to paste;
- * `tokenHint` says what to do there.
+ * `signIn` marks services that connect in one click through their MCP
+ * server. `tokenUrl` opens the page where the user creates a credential to
+ * paste instead; `tokenHint` says what to do there.
  */
 export const INTEGRATION_TYPES = [
   {
@@ -19,13 +20,13 @@ export const INTEGRATION_TYPES = [
     tokenHint: "Pick your workspace and create the pre-filled app, click Install to Workspace, then copy the Bot User OAuth Token.",
   },
   {
-    type: "notion", name: "Notion",
+    type: "notion", name: "Notion", signIn: true,
     fields: [{ key: "api_key", label: "API key", placeholder: "secret_..." }],
     tokenUrl: "https://www.notion.so/profile/integrations",
     tokenHint: "Create an internal integration and copy its secret. Then open your database, choose ••• → Connections, and add the integration.",
   },
   {
-    type: "confluence", name: "Confluence",
+    type: "confluence", name: "Confluence", signIn: true,
     fields: [
       { key: "email", label: "Email", placeholder: "user@example.com" },
       { key: "api_token", label: "API token", placeholder: "Enter API token" },
@@ -41,7 +42,7 @@ export const INTEGRATION_TYPES = [
     tokenHint: "The repo scope is pre-selected. Pick an expiration, generate the token, and copy it.",
   },
   {
-    type: "linear", name: "Linear",
+    type: "linear", name: "Linear", signIn: true,
     fields: [{ key: "api_key", label: "API key", placeholder: "lin_api_..." }],
     tokenUrl: "https://linear.app/settings/account/security",
     tokenHint: "Under Personal API keys, create a new key and copy it.",

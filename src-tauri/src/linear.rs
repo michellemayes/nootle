@@ -83,17 +83,133 @@ struct IssueNode {
     title: String,
 }
 
-/// The `Authorization` header value for a Linear integration's credentials.
-/// OAuth tokens use the Bearer scheme; personal API keys must be sent bare,
-/// since Linear rejects `Bearer <api key>`.
-pub fn authorization_header(creds: &serde_json::Value) -> Option<String> {
-    if let Some(token) = creds["access_token"].as_str().filter(|t| !t.is_empty()) {
-        return Some(format!("Bearer {token}"));
+/// Linear over either connection: the GraphQL API with a pasted key, or
+/// Linear's MCP server after a one-click sign-in.
+pub enum Linear {
+    /// A personal API key. Linear wants it as the bare `Authorization`
+    /// header, without a `Bearer` prefix.
+    Api(String),
+    Mcp(crate::connectors::Session),
+}
+
+impl Linear {
+    pub async fn for_integration(
+        db: &crate::db::Database,
+        integration: &crate::db::Integration,
+    ) -> Result<Self, String> {
+        let creds: serde_json::Value = serde_json::from_str(&integration.credentials_json)
+            .map_err(|e| format!("Invalid credentials: {e}"))?;
+        if crate::connectors::is_mcp(&creds) {
+            return crate::connectors::Session::open(db, integration)
+                .await
+                .map(Self::Mcp);
+        }
+        creds["api_key"]
+            .as_str()
+            .filter(|k| !k.is_empty())
+            .map(|k| Self::Api(k.to_string()))
+            .ok_or_else(|| "Missing api_key in Linear credentials".to_string())
     }
-    creds["api_key"]
-        .as_str()
-        .filter(|k| !k.is_empty())
-        .map(String::from)
+
+    pub async fn list_teams(&self) -> Result<Vec<LinearTeam>, String> {
+        let session = match self {
+            Self::Api(key) => return list_teams(key).await.map_err(|e| e.to_string()),
+            Self::Mcp(session) => session,
+        };
+        let result = session
+            .call("list_teams", serde_json::json!({ "limit": 250 }))
+            .await?;
+        Ok(crate::connectors::find_records(&result, &["id", "name"])
+            .into_iter()
+            .map(|t| LinearTeam {
+                id: str_field(t, "id"),
+                name: str_field(t, "name"),
+                key: str_field(t, "key"),
+            })
+            .collect())
+    }
+
+    pub async fn list_projects(&self, team_id: &str) -> Result<Vec<LinearProject>, String> {
+        let session = match self {
+            Self::Api(key) => return list_projects(key, team_id).await.map_err(|e| e.to_string()),
+            Self::Mcp(session) => session,
+        };
+        let result = session
+            .call(
+                "list_projects",
+                serde_json::json!({ "team": team_id, "limit": 250 }),
+            )
+            .await?;
+        Ok(crate::connectors::find_records(&result, &["id", "name"])
+            .into_iter()
+            .map(|p| LinearProject {
+                id: str_field(p, "id"),
+                name: str_field(p, "name"),
+            })
+            .collect())
+    }
+
+    pub async fn create_issue(
+        &self,
+        team_id: &str,
+        project_id: Option<&str>,
+        title: &str,
+        description: &str,
+    ) -> Result<LinearIssueResult, String> {
+        let session = match self {
+            Self::Api(key) => {
+                return create_issue(key, team_id, project_id, title, description)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+            Self::Mcp(session) => session,
+        };
+        let mut args = serde_json::json!({
+            "title": title,
+            "team": team_id,
+            "description": description,
+        });
+        if let Some(pid) = project_id {
+            args["project"] = serde_json::json!(pid);
+        }
+        let result = session.call("save_issue", args).await?;
+        let field = |key| crate::connectors::find_str(&result, key).unwrap_or_default();
+        Ok(LinearIssueResult {
+            id: field("id"),
+            identifier: field("identifier"),
+            url: field("url"),
+            title: title.to_string(),
+        })
+    }
+
+    /// Resolves a team key (e.g. "MIC"), name, or ID to the team's ID.
+    pub async fn resolve_team_id(&self, input: &str) -> Result<String, String> {
+        let teams = self
+            .list_teams()
+            .await
+            .map_err(|e| format!("Failed to look up Linear team: {e}"))?;
+        let needle = input.to_ascii_lowercase();
+        teams
+            .into_iter()
+            .find(|t| {
+                t.id == input
+                    || t.key.to_ascii_lowercase() == needle
+                    || t.name.to_ascii_lowercase() == needle
+            })
+            .map(|t| t.id)
+            .ok_or_else(|| {
+                format!(
+                    "No Linear team matched '{input}'. Use the team key (e.g. MIC), name, or UUID."
+                )
+            })
+    }
+}
+
+fn str_field(map: &serde_json::Map<String, serde_json::Value>, key: &str) -> String {
+    map.get(key)
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn extract_errors<T>(response: &GqlResponse<T>) -> Option<String> {
@@ -105,7 +221,7 @@ fn extract_errors<T>(response: &GqlResponse<T>) -> Option<String> {
     })
 }
 
-pub async fn list_teams(api_key: &str) -> anyhow::Result<Vec<LinearTeam>> {
+async fn list_teams(api_key: &str) -> anyhow::Result<Vec<LinearTeam>> {
     let client = &*CLIENT;
     let body = serde_json::json!({
         "query": "{ teams { nodes { id name key } } }"
@@ -139,7 +255,7 @@ pub async fn list_teams(api_key: &str) -> anyhow::Result<Vec<LinearTeam>> {
         .collect())
 }
 
-pub async fn list_projects(api_key: &str, team_id: &str) -> anyhow::Result<Vec<LinearProject>> {
+async fn list_projects(api_key: &str, team_id: &str) -> anyhow::Result<Vec<LinearProject>> {
     let client = &*CLIENT;
     let query = r#"query ListProjects($teamId: String!) { projects(filter: { accessibleTeams: { id: { eq: $teamId } } }) { nodes { id name } } }"#;
     let body = serde_json::json!({
@@ -174,7 +290,7 @@ pub async fn list_projects(api_key: &str, team_id: &str) -> anyhow::Result<Vec<L
         .collect())
 }
 
-pub async fn create_issue(
+async fn create_issue(
     api_key: &str,
     team_id: &str,
     project_id: Option<&str>,

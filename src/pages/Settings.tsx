@@ -338,7 +338,7 @@ function IntegrationCard({ intType, connectedIntegration, canSignIn, quickConnec
 }
 
 function IntegrationsManager() {
-  const { integrations, loading, oauthProviders, connectOAuth, cancelOAuth, githubCliAvailable, connectGithubCli, createIntegration, deleteIntegration } = useIntegrations();
+  const { integrations, loading, signIn, cancelSignIn, githubCliAvailable, connectGithubCli, createIntegration, deleteIntegration } = useIntegrations();
 
   const handleConnect = async (type: string, name: string, creds: Record<string, string>) => {
     await createIntegration(type, name, JSON.stringify(creds));
@@ -366,13 +366,13 @@ function IntegrationsManager() {
                 key={intType.type}
                 intType={intType}
                 connectedIntegration={integrations.find((i) => i.integration_type === intType.type)}
-                canSignIn={oauthProviders.includes(intType.type)}
+                canSignIn={"signIn" in intType}
                 quickConnect={intType.type === "github" && githubCliAvailable
                   ? { label: "Use GitHub CLI sign-in", connect: connectGithubCli }
                   : undefined}
                 onConnect={handleConnect}
-                onSignIn={connectOAuth}
-                onCancelSignIn={cancelOAuth}
+                onSignIn={signIn}
+                onCancelSignIn={cancelSignIn}
                 onDisconnect={handleDisconnect}
               />
             ))}

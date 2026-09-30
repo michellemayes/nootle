@@ -3,6 +3,7 @@ pub mod audio;
 pub mod automation;
 pub mod chunking;
 pub mod commands;
+pub mod connectors;
 pub mod db;
 pub mod denoise;
 pub mod detection;
@@ -17,7 +18,6 @@ pub mod llm;
 pub mod mcp;
 pub mod model_download;
 pub mod model_registry;
-pub mod oauth;
 pub mod permissions;
 pub mod remote;
 pub mod summarization;
@@ -194,7 +194,7 @@ pub fn run() {
         .manage(detector_state)
         .manage(download_manager)
         .manage(embedding_state)
-        .manage(oauth::OAuthState::default())
+        .manage(connectors::SignInState::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             model_registry::migrate_legacy_files();
@@ -207,14 +207,7 @@ pub fn run() {
                     for url in event.urls() {
                         let handle = deep_link_handle.clone();
                         let raw = url.to_string();
-                        // Sign-in redirects aren't remote control, so they
-                        // skip its opt-in switch; oauth matches them against
-                        // a sign-in the user started.
-                        if url.host_str() == Some("oauth") {
-                            oauth::handle_callback(&handle, &raw);
-                        } else {
-                            tauri::async_runtime::spawn(remote::handle_url(handle, raw));
-                        }
+                        tauri::async_runtime::spawn(remote::handle_url(handle, raw));
                     }
                 });
             }
@@ -368,9 +361,8 @@ pub fn run() {
             commands::list_integrations,
             commands::update_integration,
             commands::delete_integration,
-            commands::list_oauth_providers,
-            commands::connect_oauth,
-            commands::cancel_oauth,
+            commands::connect_integration_sign_in,
+            commands::cancel_integration_sign_in,
             commands::github_cli_available,
             commands::connect_github_cli,
             commands::create_workflow,

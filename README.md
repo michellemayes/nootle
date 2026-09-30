@@ -91,7 +91,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, or your existing Claude / ChatGPT subscription via the Claude Code (`claude -p`) and Codex CLIs
 - **Meeting detection** — auto-detects active meeting apps and calendar events
 - **URL scheme** — start and stop recordings from other apps or scripts via `nootle://` links (opt-in)
-- **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email. Connect Slack, Notion, Confluence, Linear, GitHub, and Asana with one click by signing in, or paste a token — a **Get a token** button opens the right page for each service (with Slack's app and GitHub's scopes pre-filled). GitHub can also reuse your GitHub CLI (`gh`) sign-in
+- **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email. Notion, Linear, and Confluence connect in one click through their official MCP servers. GitHub can reuse your GitHub CLI (`gh`) sign-in. Anything else takes a pasted token, and a **Get a token** button opens the right page for each service, with Slack's app and GitHub's scopes pre-filled
 - **Templates** — customizable summary templates you can pick per recording, or mark auto-run so every meeting is summarized without asking (e.g. a standing template for 1:1s, standups, or interviews)
 - **Semantic search** — ask questions across your entire meeting history
 - **Noise cancellation** — built-in denoising for cleaner audio and transcripts
@@ -125,20 +125,11 @@ pnpm install
 pnpm tauri dev
 ```
 
-### Integration sign-in (OAuth)
+### Integration sign-in
 
-One-click sign-in for Slack, Notion, Confluence, GitHub, Linear, and Asana needs an OAuth app registered with each provider. Every provider uses the same redirect URI, `https://nootle.ai/oauth/callback`, a static page that hands the code back to the app through `nootle://oauth/callback`. The app checks the `state` it generated, uses PKCE where the provider supports it (GitHub, Linear, Asana), and refreshes expiring tokens automatically.
+Notion, Linear, and Confluence connect with one click through each vendor's official MCP server (`mcp.notion.com`, `mcp.linear.app`, `mcp.atlassian.com`). Those servers support OAuth dynamic client registration, so Nootle registers itself the first time you connect. There's no OAuth app to create and nothing to configure at build time. Sign-in opens the vendor's consent page and catches the redirect on a one-off `127.0.0.1` port. Workflows then call the server's MCP tools, and `rmcp` refreshes the token when it expires.
 
-| Provider | Scopes to enable |
-| --- | --- |
-| Slack | Bot scopes `chat:write`, `chat:write.public` |
-| Notion | Public integration with insert-content capability |
-| Confluence (Atlassian 3LO) | `write:page:confluence`, `read:space:confluence`, `offline_access` |
-| GitHub (OAuth app) | `repo` |
-| Linear | `read`, `write` |
-| Asana | Default |
-
-Client credentials are read from `NOOTLE_<PROVIDER>_CLIENT_ID` and `NOOTLE_<PROVIDER>_CLIENT_SECRET` (for example `NOOTLE_SLACK_CLIENT_ID`). They're compiled in when set at build time, and the same variables override them at runtime. The release workflow passes them from repository secrets. A provider without a client ID still works; Settings shows the **Get a token** flow instead of a sign-in button (and, for GitHub, a button to reuse a signed-in `gh` CLI).
+GitHub can reuse a signed-in GitHub CLI (`gh auth token`). Slack and Asana connect with a pasted token, because their MCP servers require a registered app. The **Get a token** button opens the right page for each, and Slack's app setup comes pre-filled. Every service still accepts a pasted token.
 
 ## CLI Tool
 

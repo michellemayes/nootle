@@ -30,6 +30,7 @@ pub struct WorkflowResult {
 }
 
 pub async fn execute_workflow(
+    db: &crate::db::Database,
     workflow: &crate::db::Workflow,
     integration: &crate::db::Integration,
     context: &WorkflowContext,
@@ -40,13 +41,22 @@ pub async fn execute_workflow(
     match integration.integration_type.as_str() {
         "email" => execute_email(workflow, context),
         "slack" => execute_slack(workflow, integration, context).await,
-        "notion" => execute_notion(workflow, integration, context).await,
-        "confluence" => execute_confluence(workflow, integration, context).await,
+        "notion" => execute_notion(db, workflow, integration, context).await,
+        "confluence" => execute_confluence(db, workflow, integration, context).await,
         "github" => {
             execute_github(workflow, integration, context, llm, llm_provider, llm_model).await
         }
         "linear" => {
-            execute_linear(workflow, integration, context, llm, llm_provider, llm_model).await
+            execute_linear(
+                db,
+                workflow,
+                integration,
+                context,
+                llm,
+                llm_provider,
+                llm_model,
+            )
+            .await
         }
         "asana" => {
             execute_asana(workflow, integration, context, llm, llm_provider, llm_model).await
@@ -132,20 +142,17 @@ pub async fn run_workflow_for_meeting(
 
     db.update_workflow_run_status(&run.id, "running", None, None)?;
 
-    let outcome = async {
-        let integration = crate::oauth::refresh_if_needed(db, integration).await?;
-        execute_workflow(
-            &workflow,
-            &integration,
-            &context,
-            Some(llm),
-            llm_provider,
-            llm_model,
-        )
-        .await
-    }
-    .await;
-    match outcome {
+    match execute_workflow(
+        db,
+        &workflow,
+        &integration,
+        &context,
+        Some(llm),
+        llm_provider,
+        llm_model,
+    )
+    .await
+    {
         Ok(result) => {
             let result_json = serde_json::to_string(&result).unwrap_or_default();
             db.update_workflow_run_status(&run.id, "completed", Some(&result_json), None)?;
@@ -383,20 +390,32 @@ async fn execute_slack(
 }
 
 async fn execute_notion(
+    db: &crate::db::Database,
     workflow: &crate::db::Workflow,
     integration: &crate::db::Integration,
     context: &WorkflowContext,
 ) -> std::result::Result<WorkflowResult, String> {
     let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
-    let token = creds["api_key"]
-        .as_str()
-        .ok_or("Missing api_key in Notion credentials")?;
     let database_id = config["database_id"]
         .as_str()
         .ok_or("Missing database_id in workflow config")?;
-
     let content = render_default_summary_body(context);
+
+    if crate::connectors::is_mcp(&creds) {
+        return notion_mcp_create_page(
+            db,
+            integration,
+            database_id,
+            &context.meeting_title,
+            &content,
+        )
+        .await;
+    }
+
+    let token = creds["api_key"]
+        .as_str()
+        .ok_or("Missing api_key in Notion credentials")?;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -439,17 +458,64 @@ async fn execute_notion(
     }
 }
 
-/// Confluence REST access for either auth mode: an OAuth sign-in goes through
-/// the api.atlassian.com gateway with a bearer token, while a pasted API
-/// token uses basic auth against the site itself.
-struct ConfluenceApi {
-    base: String,
-    auth: ConfluenceAuth,
+/// Creates the page through Notion's MCP server, which takes Markdown content
+/// and keys properties by name. The title property is usually "title"
+/// ("Name" in many databases), so on failure look its name up and retry.
+async fn notion_mcp_create_page(
+    db: &crate::db::Database,
+    integration: &crate::db::Integration,
+    database_id: &str,
+    title: &str,
+    content: &str,
+) -> std::result::Result<WorkflowResult, String> {
+    let session = crate::connectors::Session::open(db, integration).await?;
+    let create = |title_property: &str| {
+        session.call(
+            "notion-create-pages",
+            serde_json::json!({
+                "parent": { "database_id": database_id },
+                "pages": [{
+                    "properties": { title_property: title },
+                    "content": content,
+                }],
+            }),
+        )
+    };
+    let result = match create("title").await {
+        Ok(result) => result,
+        Err(first_error) => {
+            let schema = session
+                .call("notion-fetch", serde_json::json!({ "id": database_id }))
+                .await?;
+            let name = notion_title_property(&schema).ok_or(first_error)?;
+            create(&name).await?
+        }
+    };
+    Ok(WorkflowResult {
+        message: "Page created in Notion".to_string(),
+        output: crate::connectors::find_str(&result, "url"),
+    })
 }
 
-enum ConfluenceAuth {
-    Bearer(String),
-    Basic { email: String, api_token: String },
+/// The name of a database's title property, from `notion-fetch` output, which
+/// describes the schema as JSON like `"Name":{"type":"title",…}`.
+fn notion_title_property(schema: &serde_json::Value) -> Option<String> {
+    let text = match schema {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    let compact = text.replace("\": {", "\":{").replace("\": \"", "\":\"");
+    let at = compact.find("{\"type\":\"title\"")?;
+    let before = compact[..at].strip_suffix(':')?.strip_suffix('"')?;
+    let start = before.rfind('"')?;
+    Some(before[start + 1..].to_string())
+}
+
+/// Confluence REST access with a pasted API token (basic auth).
+struct ConfluenceApi {
+    base: String,
+    email: String,
+    api_token: String,
 }
 
 impl ConfluenceApi {
@@ -460,29 +526,17 @@ impl ConfluenceApi {
                 .map(String::from)
                 .ok_or_else(|| format!("Missing {key} in Confluence credentials"))
         };
-        let (base, auth) = if let Some(cloud_id) = creds["cloud_id"].as_str() {
-            (
-                format!("https://api.atlassian.com/ex/confluence/{cloud_id}"),
-                ConfluenceAuth::Bearer(field("access_token")?),
-            )
-        } else {
-            (
-                field("base_url")?.trim_end_matches('/').to_string(),
-                ConfluenceAuth::Basic {
-                    email: field("email")?,
-                    api_token: field("api_token")?,
-                },
-            )
-        };
-        Ok(Self { base, auth })
+        Ok(Self {
+            base: field("base_url")?.trim_end_matches('/').to_string(),
+            email: field("email")?,
+            api_token: field("api_token")?,
+        })
     }
 
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-        let req = crate::http::CLIENT.request(method, format!("{}{path}", self.base));
-        match &self.auth {
-            ConfluenceAuth::Bearer(token) => req.bearer_auth(token),
-            ConfluenceAuth::Basic { email, api_token } => req.basic_auth(email, Some(api_token)),
-        }
+        crate::http::CLIENT
+            .request(method, format!("{}{path}", self.base))
+            .basic_auth(&self.email, Some(&self.api_token))
     }
 
     /// The v2 pages API wants the numeric space ID, but users know spaces by
@@ -508,16 +562,47 @@ impl ConfluenceApi {
 }
 
 async fn execute_confluence(
+    db: &crate::db::Database,
     workflow: &crate::db::Workflow,
     integration: &crate::db::Integration,
     context: &WorkflowContext,
 ) -> std::result::Result<WorkflowResult, String> {
     let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
-    let api = ConfluenceApi::from_creds(&creds)?;
     let space_key = config["space_key"]
         .as_str()
         .ok_or("Missing space_key in workflow config")?;
+    let title = format!("Meeting Notes: {}", context.meeting_title);
+
+    if crate::connectors::is_mcp(&creds) {
+        // Atlassian's MCP tools take Markdown and accept a space key directly,
+        // but need the site's cloud ID.
+        let session = crate::connectors::Session::open(db, integration).await?;
+        let sites = session
+            .call("getAccessibleAtlassianResources", serde_json::json!({}))
+            .await?;
+        let cloud_id = crate::connectors::find_str(&sites, "id")
+            .ok_or("This Atlassian account has no Confluence site")?;
+        let result = session
+            .call(
+                "createConfluencePage",
+                serde_json::json!({
+                    "cloudId": cloud_id,
+                    "spaceId": space_key,
+                    "title": title,
+                    "body": render_default_summary_body(context),
+                    "contentFormat": "markdown",
+                }),
+            )
+            .await?;
+        return Ok(WorkflowResult {
+            message: "Page created in Confluence".to_string(),
+            output: crate::connectors::find_str(&result, "webui")
+                .or_else(|| crate::connectors::find_str(&result, "url")),
+        });
+    }
+
+    let api = ConfluenceApi::from_creds(&creds)?;
     let space_id = api.space_id(space_key).await?;
 
     let content = render_template(
@@ -530,7 +615,7 @@ async fn execute_confluence(
         .json(&serde_json::json!({
             "spaceId": space_id,
             "status": "current",
-            "title": format!("Meeting Notes: {}", context.meeting_title),
+            "title": title,
             "body": {
                 "representation": "storage",
                 "value": content
@@ -619,6 +704,7 @@ async fn execute_github(
 }
 
 async fn execute_linear(
+    db: &crate::db::Database,
     workflow: &crate::db::Workflow,
     integration: &crate::db::Integration,
     context: &WorkflowContext,
@@ -626,10 +712,8 @@ async fn execute_linear(
     llm_provider: Option<&str>,
     llm_model: Option<&str>,
 ) -> std::result::Result<WorkflowResult, String> {
-    let (creds, config) = parse_creds_and_config(integration, workflow)?;
+    let (_, config) = parse_creds_and_config(integration, workflow)?;
 
-    let auth_header = crate::linear::authorization_header(&creds)
-        .ok_or("Missing api_key in Linear credentials")?;
     let team_input = config["team_id"]
         .as_str()
         .ok_or("Missing team_id in workflow config")?;
@@ -639,71 +723,24 @@ async fn execute_linear(
         return Err(no_action_items_error());
     }
 
-    // Linear's issueCreate requires a team UUID. Users often enter the team
-    // key (e.g. "MIC") instead, so look the team up if the input doesn't
-    // already look like a UUID.
-    let team_id_owned = if looks_like_uuid(team_input) {
+    let linear = crate::linear::Linear::for_integration(db, integration).await?;
+    // Issues need a team ID. Users often enter the team key (e.g. "MIC")
+    // instead, so look the team up if the input doesn't already look like one.
+    let team_id = if looks_like_uuid(team_input) {
         team_input.to_string()
     } else {
-        let teams = crate::linear::list_teams(&auth_header)
-            .await
-            .map_err(|e| format!("Failed to look up Linear team: {e}"))?;
-        let needle = team_input.to_ascii_lowercase();
-        let team = teams
-            .iter()
-            .find(|t| {
-                t.id == team_input
-                    || t.key.to_ascii_lowercase() == needle
-                    || t.name.to_ascii_lowercase() == needle
-            })
-            .ok_or_else(|| {
-                format!(
-                    "No Linear team matched '{team_input}'. Use the team key (e.g. MIC), name, or UUID."
-                )
-            })?;
-        team.id.clone()
+        linear.resolve_team_id(team_input).await?
     };
-    let team_id = team_id_owned.as_str();
 
-    let client = reqwest::Client::new();
     let mut created = Vec::new();
-
     for item in &context.action_items {
         let description =
             render_issue_description(&config, context, item, llm, llm_provider, llm_model).await;
-
-        let mut input = serde_json::json!({
-            "teamId": team_id,
-            "title": item.content,
-            "description": description,
-        });
-        if let Some(pid) = project_id {
-            input["projectId"] = serde_json::json!(pid);
-        }
-
-        let resp = client
-            .post("https://api.linear.app/graphql")
-            .header("Authorization", &auth_header)
-            .json(&serde_json::json!({
-                "query": "mutation CreateIssue($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url title } } }",
-                "variables": { "input": input }
-            }))
-            .send()
+        let issue = linear
+            .create_issue(&team_id, project_id, &item.content, &description)
             .await
-            .map_err(|e| format!("Linear API error: {e}"))?;
-
-        let body: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse Linear response: {e}"))?;
-
-        if let Some(issue) = body["data"]["issueCreate"]["issue"].as_object() {
-            let identifier = issue["identifier"].as_str().unwrap_or("?");
-            let url = issue["url"].as_str().unwrap_or("");
-            created.push(format!("{identifier}: {url}"));
-        } else {
-            return Err(format!("Linear error: {}", body["errors"]));
-        }
+            .map_err(|e| format!("Linear error: {e}"))?;
+        created.push(format!("{}: {}", issue.identifier, issue.url));
     }
 
     Ok(WorkflowResult {
@@ -1001,6 +1038,15 @@ mod tests {
         assert!(rendered.contains("Template-specific meeting summary."));
         assert!(!rendered.contains("Generic meeting summary."));
         assert!(rendered.contains("Review PR #42"));
+    }
+
+    #[test]
+    fn notion_title_property_reads_fetch_schema() {
+        let schema = serde_json::json!(
+            "<data-source-state>{\"schema\": {\"Status\": {\"type\": \"status\"}, \"Meeting\": {\"type\": \"title\"}}}</data-source-state>"
+        );
+        assert_eq!(notion_title_property(&schema).as_deref(), Some("Meeting"));
+        assert_eq!(notion_title_property(&serde_json::json!("no schema")), None);
     }
 
     #[test]
