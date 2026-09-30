@@ -40,7 +40,7 @@ If you already have a Claude subscription (Pro, Max, or Team), you can route Noo
 
 1. Install the Claude CLI: see [Claude Code setup](https://docs.claude.com/en/docs/claude-code/setup).
 2. Log in with `claude login` (or run `claude` once and complete the browser flow).
-3. Restart Nootle. The **Claude (subscription)** provider appears automatically when the `claude` binary is on your `PATH`.
+3. Restart Nootle. The **Claude (subscription)** provider appears automatically when the `claude` binary is on your `PATH`. Nootle reads your login shell's `PATH` at startup (and checks common install locations such as Homebrew, `~/.local/bin`, and nvm), so a CLI that works in your terminal is found even when Nootle is opened from Finder or the Dock.
 
 Usage is metered against your Claude subscription, not an API key.
 
