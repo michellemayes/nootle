@@ -74,9 +74,12 @@ fn query_value(url: &Url, key: &str) -> Option<String> {
 /// The action part of the URL, tolerating both `nootle://record/start` (host
 /// "record", path "/start") and `nootle:///record/start` (empty host).
 fn action_of(url: &Url) -> String {
-    format!("{}/{}", url.host_str().unwrap_or(""), url.path())
-        .trim_matches('/')
-        .to_string()
+    let path = url.path().trim_matches('/');
+    match url.host_str().filter(|h| !h.is_empty()) {
+        Some(host) if !path.is_empty() => format!("{host}/{path}"),
+        Some(host) => host.to_string(),
+        None => path.to_string(),
+    }
 }
 
 async fn is_recording(app: &AppHandle) -> bool {
