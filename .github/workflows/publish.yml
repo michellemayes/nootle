@@ -79,6 +79,16 @@ jobs:
           ' "$VERSION"
           sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
+      # Release notes = conventional commits since the latest tag, grouped
+      # by cliff.toml. Used as the GitHub release body.
+      - name: Generate release notes
+        id: release-notes
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
+        with:
+          args: --unreleased --tag ${{ steps.version.outputs.tag }} --strip header
+        env:
+          OUTPUT: RELEASE_NOTES.md
+
       - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
         with:
           version: 9
@@ -122,6 +132,7 @@ jobs:
         with:
           tagName: ${{ steps.version.outputs.tag }}
           releaseName: ${{ steps.version.outputs.tag }}
+          releaseBody: ${{ steps.release-notes.outputs.content }}
           releaseCommitish: ${{ github.sha }}
           releaseDraft: true
           prerelease: false
@@ -148,6 +159,30 @@ jobs:
           echo "$ASSETS" | grep -q 'latest.json' || { echo "Missing latest.json"; exit 1; }
           echo "$ASSETS" | grep -qE '\.sig$' || { echo "Missing .sig files"; exit 1; }
           gh release edit "$TAG" --draft=false --latest
+
+      # Regenerate CHANGELOG.md on the latest main now that the new tag exists.
+      # The commit only touches a .md file, so it doesn't trigger another publish.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Regenerate CHANGELOG.md
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Commit CHANGELOG.md
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "CHANGELOG.md already up to date"
+          else
+            git commit -m "chore: update changelog for $TAG"
+            git push origin HEAD:main
+          fi
 
   # Drop the draft if tests or the build failed, so the next run's draft for
   # the same version starts clean.
