@@ -1,6 +1,4 @@
-import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
@@ -10,7 +8,6 @@ import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
-import { MotionButton } from "@/components/MotionButton";
 import { NootleLogo } from "@/components/NootleLogo";
 import { Mic, Settings, HelpCircle, Circle, Moon, Sun, Lightbulb, MessageSquare, FileText, Bot, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -30,62 +27,19 @@ export function Sidebar() {
   const version = useAppVersion();
   const { selectedProvider, selectedModel, providers, models, filteredModels, changeProvider, setSelectedModel } = useGlobalLLMSelection();
   const { isCompact, isAutoCompact, toggleCollapsed } = useCompactMode();
-  const [wiggleSidebar, setWiggleSidebar] = useState(false);
-  const clickCountRef = useRef(0);
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-
-  useEffect(() => {
-    return () => {
-      if (clickTimerRef.current) {
-        clearTimeout(clickTimerRef.current);
-      }
-    };
-  }, []);
-
-  const handleLogoClick = () => {
-    clickCountRef.current += 1;
-    if (clickTimerRef.current) {
-      clearTimeout(clickTimerRef.current);
-    }
-    clickTimerRef.current = setTimeout(() => {
-      clickCountRef.current = 0;
-    }, 1000);
-
-    if (clickCountRef.current >= 5) {
-      clickCountRef.current = 0;
-      setWiggleSidebar(true);
-      setTimeout(() => setWiggleSidebar(false), 500);
-    }
-  };
 
   return (
-    <motion.aside
+    <aside
       className={cn("group/sidebar flex h-screen flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] shadow-[1px_0_0_0_var(--sidebar-border)] transition-[width] duration-200 ease-out", isCompact ? "w-12" : "w-60")}
-      animate={
-        wiggleSidebar
-          ? {
-              x: [0, -2, 3, -3, 2, -1, 0],
-            }
-          : {}
-      }
-      transition={{ duration: 0.4, ease: "easeInOut" }}
     >
       {/* Logo */}
       <div data-tauri-drag-region className={cn("relative flex items-center px-5 pt-10 pb-4", isCompact ? "justify-center px-2" : "gap-2")}>
-        <motion.div
-          className="cursor-pointer"
-          whileHover={{ rotate: [0, -3, 3, 0] }}
-          transition={{ duration: 0.4, ease: "easeInOut" }}
-          onClick={handleLogoClick}
-        >
-          <NootleLogo className="h-8 w-8 text-primary" aria-label="Nootle" />
-        </motion.div>
+        <NootleLogo className="h-8 w-8 shrink-0 text-primary" aria-label="Nootle" />
         {!isCompact && <span className="text-lg font-semibold tracking-tight">Nootle</span>}
         {!isAutoCompact && (
           <button
             onClick={toggleCollapsed}
+            aria-label={isCompact ? "Expand sidebar" : "Collapse sidebar"}
             className={cn(
               "rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors",
               isCompact ? "absolute right-1 top-10 opacity-0 group-hover/sidebar:opacity-100 transition-opacity" : "ml-auto",
@@ -99,14 +53,14 @@ export function Sidebar() {
 
       {/* New Recording Button */}
       <div className="px-3 pb-2">
-        <MotionButton
+        <Button
           className={isCompact ? "w-full aspect-square justify-center" : "w-full justify-start gap-2"}
           onClick={() => navigate("/recording")}
-          title={isCompact ? "Start recording" : undefined}
+          title={isCompact ? "New recording" : undefined}
         >
           <Circle className="h-4 w-4" />
-          {!isCompact && "Record Something"}
-        </MotionButton>
+          {!isCompact && "New recording"}
+        </Button>
       </div>
 
       <Separator />
@@ -130,13 +84,7 @@ export function Sidebar() {
               )
             }
           >
-            <motion.span
-              className="inline-flex"
-              whileHover={{ y: -1 }}
-              transition={{ type: "spring", stiffness: 300, damping: 10 }}
-            >
-              <item.icon className="h-4 w-4" />
-            </motion.span>
+            <item.icon className="h-4 w-4 shrink-0" />
             {!isCompact && item.label}
           </NavLink>
         ))}
@@ -189,16 +137,15 @@ export function Sidebar() {
             <p className="text-xs text-muted-foreground">v{version}</p>
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               onClick={toggleTheme}
               title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-              className="h-8 w-8 p-0"
             >
               {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </Button>
           </div>
         </div>
       )}
-    </motion.aside>
+    </aside>
   );
 }

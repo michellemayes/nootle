@@ -1,21 +1,21 @@
 import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PageHeader } from "@/components/PageHeader";
+import { EmptyState } from "@/components/EmptyState";
 import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
 import { useAllInsights } from "@/hooks/useInsights";
 import { useApiKeys } from "@/hooks/useApiKeys";
-import { useLLM } from "@/hooks/useLLM";
+import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import type { InsightWithActionItem, InsightType, LinearTeam } from "@/types";
 import type { LucideIcon } from "lucide-react";
-import { Search, Ticket } from "lucide-react";
+import { Lightbulb, Search, Ticket } from "lucide-react";
 import { ActionItemCheckbox } from "@/components/ActionItemCheckbox";
 import { formatDate } from "@/lib/utils";
 import { insightIcon } from "@/lib/insightIcons";
@@ -30,14 +30,12 @@ function ActionItemTicketButton({
   onTicketCreated: () => void;
 }) {
   const { storedProviders } = useApiKeys();
-  const { models, providers } = useLLM();
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const { defaultTeamId, defaultProjectId } = useLinearSettings();
   const { projects } = useLinearProjects(defaultTeamId);
   const [open, setOpen] = useState(false);
   const [teamId, setTeamId] = useState(defaultTeamId ?? "");
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
-  const [provider, setProvider] = useState(providers[0] ?? "");
-  const [model, setModel] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,10 +50,8 @@ function ActionItemTicketButton({
     );
   }
 
-  const filteredModels = models.filter((m) => m.provider === provider);
-
   const handleCreate = async () => {
-    if (!item.action_item_id || !teamId || !provider || !model) return;
+    if (!item.action_item_id || !teamId || !selectedProvider || !selectedModel) return;
     setCreating(true);
     setError(null);
     try {
@@ -63,8 +59,8 @@ function ActionItemTicketButton({
         actionItemId: item.action_item_id,
         teamId,
         projectId: projectId || null,
-        provider,
-        model,
+        provider: selectedProvider,
+        model: selectedModel,
       });
       setOpen(false);
       onTicketCreated();
@@ -84,6 +80,7 @@ function ActionItemTicketButton({
         }}
         className="shrink-0 p-1 rounded text-muted-foreground hover:text-primary transition-colors"
         title="Create Linear ticket"
+        aria-label="Create Linear ticket"
       >
         <Ticket className="h-3.5 w-3.5" />
       </button>
@@ -122,42 +119,13 @@ function ActionItemTicketButton({
         </Select>
       </div>
       <div className="flex gap-1.5">
-        <Select
-          size="xs"
-          containerClassName="flex-1"
-          value={provider}
-          onChange={(e) => {
-            setProvider(e.target.value);
-            setModel("");
-          }}
-          aria-label="LLM provider"
-        >
-          <option value="">Provider</option>
-          {providers.map((p) => (
-            <option key={p} value={p}>{p}</option>
-          ))}
-        </Select>
-        <Select
-          size="xs"
-          containerClassName="flex-1"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          aria-label="LLM model"
-        >
-          <option value="">Model</option>
-          {filteredModels.map((m) => (
-            <option key={m.id} value={m.id}>{m.name}</option>
-          ))}
-        </Select>
-      </div>
-      <div className="flex gap-1.5">
         <Button
           size="xs"
           className="flex-1"
           onClick={handleCreate}
-          disabled={creating || !teamId || !provider || !model}
+          disabled={creating || !teamId || !selectedProvider || !selectedModel}
         >
-          {creating ? "Creating..." : "Create Ticket"}
+          {creating ? "Creating…" : "Create ticket"}
         </Button>
         <Button variant="ghost" size="xs" onClick={() => setOpen(false)}>
           Cancel
@@ -184,11 +152,7 @@ function DashboardActionItem({
   const isDone = item.status === "done";
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex items-start gap-3 rounded-md border p-3 transition-colors hover:bg-accent/30"
-    >
+    <div className="flex items-start gap-3 rounded-md border p-3 transition-colors hover:bg-accent/30">
       <ActionItemCheckbox
         done={isDone}
         label={item.content}
@@ -218,7 +182,7 @@ function DashboardActionItem({
         </div>
       </div>
       <ActionItemTicketButton item={item} teams={teams} onTicketCreated={onTicketCreated} />
-    </motion.div>
+    </div>
   );
 }
 
@@ -232,9 +196,7 @@ function InsightItem({
   onNavigate: (meetingId: string) => void;
 }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
+    <div
       className="flex items-start gap-3 rounded-md border p-3 cursor-pointer transition-colors hover:bg-accent/30"
       onClick={() => onNavigate(item.meeting_id)}
     >
@@ -250,7 +212,7 @@ function InsightItem({
           )}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -265,9 +227,9 @@ function SectionHeader({
 }) {
   return (
     <div className="flex items-center gap-2 pb-2">
-      <Icon className="h-5 w-5 text-muted-foreground" />
-      <h2 className="text-lg font-semibold">{title}</h2>
-      <Badge variant="secondary">{count}</Badge>
+      <Icon className="h-4 w-4 text-muted-foreground" />
+      <h2 className="text-base font-semibold">{title}</h2>
+      <Badge variant="secondary" size="sm">{count}</Badge>
     </div>
   );
 }
@@ -300,7 +262,7 @@ function TypeSection({
         <SectionHeader icon={Icon} title={insightType.name + "s"} count={items.length} />
         <div className="space-y-2">
           {ordered.length === 0 && (
-            <p className="text-sm text-muted-foreground italic">No {insightType.name.toLowerCase()}s found</p>
+            <p className="text-sm text-muted-foreground">No {insightType.name.toLowerCase()}s</p>
           )}
           {ordered.map((item) => (
             <DashboardActionItem
@@ -322,7 +284,7 @@ function TypeSection({
       <SectionHeader icon={Icon} title={insightType.name + "s"} count={items.length} />
       <div className="space-y-2">
         {items.length === 0 && (
-          <p className="text-sm text-muted-foreground italic">No {insightType.name.toLowerCase()}s found</p>
+          <p className="text-sm text-muted-foreground">No {insightType.name.toLowerCase()}s</p>
         )}
         {items.map((item) => (
           <InsightItem
@@ -372,73 +334,82 @@ export function InsightsDashboard() {
     navigate(`/meeting/${meetingId}`);
   };
 
+  const visibleTypes = insightTypes.filter(
+    (t) => typeFilter === undefined || typeFilter === t.slug,
+  );
+  const totalItems = visibleTypes.reduce(
+    (sum, t) => sum + (groupedByType[t.slug]?.length ?? 0),
+    0,
+  );
+  const hasFilters = !!typeFilter || !!statusFilter || !!searchDebounced;
+
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex flex-1 flex-col"
-    >
+    <div className="flex flex-1 flex-col overflow-hidden">
       <PageHeader
         title="Insights"
-        description="Action items, decisions, and key moments extracted from your meetings"
-        actions={
-          <>
-            <Select
-              size="sm"
-              value={typeFilter ?? ""}
-              onChange={(e) => setTypeFilter(e.target.value || undefined)}
-              aria-label="Filter by insight type"
-            >
-              <option value="">All types</option>
-              {insightTypes.map((t) => (
-                <option key={t.slug} value={t.slug}>{t.name}s</option>
-              ))}
-            </Select>
-            <Select
-              size="sm"
-              value={statusFilter ?? ""}
-              onChange={(e) => setStatusFilter(e.target.value || undefined)}
-              aria-label="Filter by status"
-            >
-              <option value="">All statuses</option>
-              <option value="open">Open</option>
-              <option value="done">Done</option>
-            </Select>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search insights..."
-                value={search}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                className="h-8 w-56 pl-8"
-              />
-            </div>
-          </>
-        }
+        description="Action items, decisions, and key moments from your meetings"
       />
 
-      {/* Content */}
+      <div className="flex shrink-0 items-center gap-3 px-6 pt-6">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search insights…"
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select
+          value={typeFilter ?? ""}
+          onChange={(e) => setTypeFilter(e.target.value || undefined)}
+          aria-label="Filter by insight type"
+        >
+          <option value="">All types</option>
+          {insightTypes.map((t) => (
+            <option key={t.slug} value={t.slug}>{t.name}s</option>
+          ))}
+        </Select>
+        <Select
+          value={statusFilter ?? ""}
+          onChange={(e) => setStatusFilter(e.target.value || undefined)}
+          aria-label="Filter by status"
+        >
+          <option value="">All statuses</option>
+          <option value="open">Open</option>
+          <option value="done">Done</option>
+        </Select>
+      </div>
+
       {loading ? (
         <LoadingState message={LOADING_COPY.insights} />
+      ) : totalItems === 0 ? (
+        <EmptyState
+          icon={Lightbulb}
+          title={hasFilters ? "No matching insights" : "No insights yet"}
+          description={
+            hasFilters
+              ? "Try a different search or clear your filters."
+              : "Open a meeting and extract insights from its Insights tab."
+          }
+        />
       ) : (
         <ScrollArea className="flex-1">
           <div className="space-y-8 p-6">
-            {insightTypes
-              .filter((t) => typeFilter === undefined || typeFilter === t.slug)
-              .map((t) => (
-                <TypeSection
-                  key={t.slug}
-                  insightType={t}
-                  items={groupedByType[t.slug] ?? []}
-                  teams={teams}
-                  toggleActionItem={toggleActionItem}
-                  onNavigate={handleNavigate}
-                  onTicketCreated={refresh}
-                />
-              ))}
+            {visibleTypes.map((t) => (
+              <TypeSection
+                key={t.slug}
+                insightType={t}
+                items={groupedByType[t.slug] ?? []}
+                teams={teams}
+                toggleActionItem={toggleActionItem}
+                onNavigate={handleNavigate}
+                onTicketCreated={refresh}
+              />
+            ))}
           </div>
         </ScrollArea>
       )}
-    </motion.div>
+    </div>
   );
 }

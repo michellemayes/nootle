@@ -12,7 +12,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible } from "@/components/Collapsible";
 import { PageHeader } from "@/components/PageHeader";
-import { CopyButton } from "@/components/CopyButton";
+import { McpSetup } from "@/components/McpSetup";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
 import { INSIGHT_ICONS } from "@/lib/insightIcons";
 import { useApiKeys } from "@/hooks/useApiKeys";
@@ -23,6 +24,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useInsightTypes } from "@/hooks/useInsightTypes";
 import { useAppVersion } from "@/hooks/useAppVersion";
 import { AccentColorPicker } from "@/components/AccentColorPicker";
+import { VariantPicker, DownloadProgressBar } from "@/components/ModelDownload";
 import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus, Link, Unlink } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 import { useIntegrations } from "@/hooks/useIntegrations";
@@ -69,22 +71,6 @@ const AUTO_DETECTED_HINTS: Record<string, { detected: string; notDetected: strin
     notDetected: "Not detected. Install the Codex CLI and sign in with your ChatGPT subscription, then restart Nootle.",
   },
 };
-
-function getMcpConfig(exePath: string) {
-  return `{
-  "mcpServers": {
-    "nootle": {
-      "command": "${exePath}",
-      "args": ["--mcp"]
-    }
-  }
-}`;
-}
-
-function getClaudeCommand(exePath: string) {
-  return `claude mcp add nootle -- ${exePath} --mcp`;
-}
-
 
 function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnect }: {
   intType: typeof INTEGRATION_TYPES[number];
@@ -167,12 +153,12 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
         </div>
         {isConnected ? (
           <Button variant="outline" size="sm" onClick={handleDisconnect} disabled={saving}>
-            <Unlink className="h-3.5 w-3.5 mr-1.5" />
+            <Unlink />
             Disconnect
           </Button>
         ) : (
           <Button variant="outline" size="sm" onClick={handleConnect} disabled={saving}>
-            <Link className="h-3.5 w-3.5 mr-1.5" />
+            <Link />
             {isEmail ? "Enable" : "Connect"}
           </Button>
         )}
@@ -194,7 +180,7 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
                         variant="outline"
                         size="sm"
                         onClick={async () => {
-                          const selected = await open({ directory: true, title: "Select Obsidian Vault" });
+                          const selected = await open({ directory: true, title: "Select Obsidian vault" });
                           if (selected) {
                             setFields((prev) => ({ ...prev, [field.key]: selected as string }));
                           }
@@ -216,7 +202,7 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
               ))}
               {isObsidian && (
                 <div className="space-y-2 pt-2">
-                  <label className="text-xs font-medium text-muted-foreground">Speaker Mapping</label>
+                  <label className="text-xs font-medium text-muted-foreground">Speaker mapping</label>
                   <p className="text-xs text-muted-foreground">Map transcript labels to names. Mapped names become [[wikilinks]] in Obsidian.</p>
                   {speakerKeys.map((key, i) => (
                     <div key={i} className="flex items-center gap-2">
@@ -232,12 +218,12 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
                       />
                       <span className="text-xs text-muted-foreground">→</span>
                       <Input
-                        placeholder="Person Name"
+                        placeholder="Person name"
                         value={fields[`_speakerVal_${i}`] ?? ""}
                         onChange={(e) => setFields((prev) => ({ ...prev, [`_speakerVal_${i}`]: e.target.value }))}
                         className="flex-1"
                       />
-                      <Button variant="ghost" size="sm" onClick={() => {
+                      <Button variant="ghost" size="icon-sm" aria-label="Remove speaker" onClick={() => {
                         const vals = speakerKeys.map((_, j) => fields[`_speakerVal_${j}`] ?? "");
                         const nextKeys = speakerKeys.filter((_, j) => j !== i);
                         const nextVals = vals.filter((_, j) => j !== i);
@@ -255,7 +241,7 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
                   <Button variant="outline" size="sm" onClick={() => {
                     setFields((prev) => ({ ...prev, _speakerKeys: [...speakerKeys, ""].join(",") }));
                   }}>
-                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Speaker
+                    <Plus /> Add speaker
                   </Button>
                 </div>
               )}
@@ -268,7 +254,7 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
                   onClick={handleConnect}
                   disabled={saving || !intType.fields.every((f) => fields[f.key]?.trim())}
                 >
-                  {saving ? "Saving..." : "Save"}
+                  {saving ? "Saving…" : "Save"}
                 </Button>
               </div>
         </div>
@@ -293,7 +279,7 @@ function IntegrationsManager() {
       <CardHeader>
         <CardTitle>Integrations</CardTitle>
         <CardDescription>
-          Connect services to use in post-meeting workflows. These are separate from the API keys above, which are used for LLM providers.
+          Connect services for post-meeting workflows. AI provider keys live under API keys.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -328,6 +314,8 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
   const [keyValue, setKeyValue] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const displayName = PROVIDER_DISPLAY_NAMES[provider] ?? provider;
 
   const handleSave = async () => {
     if (!keyValue.trim()) return;
@@ -344,7 +332,7 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
   return (
     <div className="flex items-center gap-3 py-3">
       <div className="flex items-center gap-2 w-32 shrink-0">
-        <span className="text-sm font-medium">{PROVIDER_DISPLAY_NAMES[provider] ?? provider}</span>
+        <span className="text-sm font-medium">{displayName}</span>
         {isStored && <Badge variant="success" size="sm">Saved</Badge>}
       </div>
 
@@ -352,7 +340,7 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
         <div className="flex flex-1 items-center gap-2">
           <Input
             type={showKey ? "text" : "password"}
-            placeholder={PROVIDER_KEY_PLACEHOLDERS[provider] ?? `Enter ${provider} API key`}
+            placeholder={PROVIDER_KEY_PLACEHOLDERS[provider] ?? `${displayName} API key`}
             value={keyValue}
             onChange={(e) => setKeyValue(e.target.value)}
             className="flex-1"
@@ -361,12 +349,13 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
             variant="ghost"
             size="icon-sm"
             onClick={() => setShowKey(!showKey)}
-            title={showKey ? "Hide" : "Show"}
+            title={showKey ? "Hide key" : "Show key"}
+            aria-label={showKey ? "Hide key" : "Show key"}
           >
             {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={saving || !keyValue.trim()}>
-            {saving ? "..." : "Save"}
+            {saving ? "Saving…" : "Save"}
           </Button>
           <Button
             variant="ghost"
@@ -393,7 +382,7 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
                 variant="ghost"
                 size="sm"
                 className="text-destructive hover:text-destructive"
-                onClick={onDelete}
+                onClick={() => setConfirmingDelete(true)}
               >
                 Delete
               </Button>
@@ -404,12 +393,22 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
                 Not configured
               </span>
               <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                Add Key
+                Add key
               </Button>
             </>
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title="Delete API key?"
+        description={`Nootle will stop using ${displayName} until you add a new key.`}
+        onConfirm={async () => {
+          await onDelete();
+          setConfirmingDelete(false);
+        }}
+      />
     </div>
   );
 }
@@ -444,6 +443,7 @@ function InsightTypesManager() {
   const [newPrompt, setNewPrompt] = useState("");
   const [newIcon, setNewIcon] = useState("lightbulb");
   const [newHasAction, setNewHasAction] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<typeof types[0] | null>(null);
 
   const startEditing = (t: typeof types[0]) => {
     setEditingId(t.id);
@@ -481,9 +481,9 @@ function InsightTypesManager() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Insight Types</CardTitle>
+        <CardTitle>Insight types</CardTitle>
         <CardDescription>
-          Configure what types of insights to extract from meetings and customize the extraction prompts
+          What Nootle extracts from meetings, and the prompt used for each.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -546,15 +546,24 @@ function InsightTypesManager() {
                     {t.has_action_fields && <Badge variant="outline" size="sm">Action fields</Badge>}
                   </div>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon-sm" onClick={() => startEditing(t)}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={() => startEditing(t)}
+                      title="Edit"
+                      aria-label="Edit"
+                    >
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
                     {!t.is_builtin && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => deleteInsightType(t.id)}
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => setDeleteTarget(t)}
+                        title="Delete"
+                        aria-label="Delete"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -634,10 +643,27 @@ function InsightTypesManager() {
           </div>
         ) : (
           <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Add Custom Type
+            <Plus /> New insight type
           </Button>
         )}
       </CardContent>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete insight type?"
+        description={
+          <>
+            <span className="font-medium text-foreground">{deleteTarget?.name}</span>{" "}
+            will be permanently deleted and no longer extracted from new meetings.
+          </>
+        }
+        onConfirm={async () => {
+          if (deleteTarget) {
+            await deleteInsightType(deleteTarget.id);
+            setDeleteTarget(null);
+          }
+        }}
+      />
     </Card>
   );
 }
@@ -648,12 +674,10 @@ export function SettingsPage() {
   const { providers: llmProviders } = useLLM();
   const { theme, toggleTheme } = useTheme();
   const version = useAppVersion();
-  const [exePath, setExePath] = useState("/path/to/nootle");
   const [denoiseEnabled, setDenoiseEnabled] = useState(true);
   const [detectionEnabled, setDetectionEnabled] = useState(true);
 
   useEffect(() => {
-    invoke<string>("get_exe_path").then(setExePath).catch(() => {});
     invoke<string | null>("get_app_setting", { key: "denoise_enabled" })
       .then((val) => setDenoiseEnabled(val !== "false"))
       .catch(() => {});
@@ -678,9 +702,6 @@ export function SettingsPage() {
     });
   };
 
-  const mcpConfig = getMcpConfig(exePath);
-  const claudeCommand = getClaudeCommand(exePath);
-
   // Exclude auto-detected providers — they're rendered in their own card below
   // since they don't take API keys.
   const autoDetectedSet = new Set<string>(AUTO_DETECTED_PROVIDERS);
@@ -692,18 +713,18 @@ export function SettingsPage() {
     <div className="flex flex-1 flex-col overflow-hidden">
       <PageHeader
         title="Settings"
-        description="Configure API keys and application settings"
+        description="Preferences, AI providers, integrations, and local models"
       />
 
       <Tabs defaultValue="general" className="flex flex-1 flex-col overflow-hidden">
         <div className="shrink-0 border-b px-6 py-4">
           <TabsList className="h-10">
             <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="api-keys">API Keys</TabsTrigger>
+            <TabsTrigger value="api-keys">API keys</TabsTrigger>
             <TabsTrigger value="integrations">Integrations</TabsTrigger>
             <TabsTrigger value="models">Models</TabsTrigger>
-            <TabsTrigger value="insight-types">Insight Types</TabsTrigger>
-            <TabsTrigger value="about">About / MCP</TabsTrigger>
+            <TabsTrigger value="insight-types">Insight types</TabsTrigger>
+            <TabsTrigger value="about">About</TabsTrigger>
           </TabsList>
         </div>
 
@@ -712,7 +733,7 @@ export function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Appearance</CardTitle>
-                <CardDescription>Choose your preferred color scheme</CardDescription>
+                <CardDescription>Theme and accent color</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -732,7 +753,7 @@ export function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Recording</CardTitle>
-                <CardDescription>Configure audio recording behavior</CardDescription>
+                <CardDescription>How audio is captured and cleaned up</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -771,10 +792,10 @@ export function SettingsPage() {
           <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <Card>
               <CardHeader>
-                <CardTitle>API Keys</CardTitle>
+                <CardTitle>API keys</CardTitle>
                 <CardDescription>
-                  Configure API keys for LLM providers. Local Ollama and
-                  subscription CLIs are auto-detected — see the next section.
+                  Keys for cloud AI providers. Ollama and the subscription CLIs
+                  don't need one; see below.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -795,9 +816,7 @@ export function SettingsPage() {
               <CardHeader>
                 <CardTitle>Auto-detected providers</CardTitle>
                 <CardDescription>
-                  Local Ollama and subscription CLIs don't need an API key —
-                  Nootle picks them up on startup. Each row shows whether it
-                  was detected.
+                  Detected when Nootle starts. No API key needed.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -840,41 +859,11 @@ export function SettingsPage() {
               <CardHeader>
                 <CardTitle>About</CardTitle>
                 <CardDescription>
-                  Nootle v{version} — Your meetings, transcribed and summarized with a twist
+                  Nootle v{version}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <h3 className="text-sm font-medium mb-2">MCP Server Configuration</h3>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Add this to your MCP client configuration to use Nootle as an MCP
-                    server:
-                  </p>
-                  <div className="relative">
-                    <pre className="overflow-x-auto rounded-lg bg-muted p-4 font-mono text-xs">
-                      {mcpConfig}
-                    </pre>
-                    <CopyButton
-                      variant="button"
-                      text={mcpConfig}
-                      className="absolute top-2 right-2"
-                    />
-                  </div>
-                  <h3 className="mt-4 mb-2 text-sm font-medium">Claude Code</h3>
-                  <p className="mb-3 text-xs text-muted-foreground">
-                    Or install directly with Claude Code:
-                  </p>
-                  <div className="relative">
-                    <pre className="overflow-x-auto rounded-lg bg-muted p-4 font-mono text-xs">
-                      {claudeCommand}
-                    </pre>
-                    <CopyButton
-                      variant="button"
-                      text={claudeCommand}
-                      className="absolute top-2 right-2"
-                    />
-                  </div>
-                </div>
+              <CardContent>
+                <McpSetup />
               </CardContent>
             </Card>
           </div>
@@ -931,8 +920,8 @@ function PermissionsCard() {
 
   const rows: { label: string; key: "microphone" | "screen_recording" | "calendar"; granted: boolean; description: string }[] = permissions ? [
     { label: "Microphone", key: "microphone", granted: permissions.microphone === "granted", description: "Required for recording audio" },
-    { label: "Screen Recording", key: "screen_recording", granted: permissions.screen_recording, description: "Required for system audio capture" },
-    { label: "Calendar", key: "calendar", granted: permissions.calendar === "granted", description: "Auto-detect meetings from your calendar" },
+    { label: "Screen recording", key: "screen_recording", granted: permissions.screen_recording, description: "Required for system audio capture" },
+    { label: "Calendar", key: "calendar", granted: permissions.calendar === "granted", description: "Optional. Detect meetings from your calendar" },
   ] : [];
 
   return (
@@ -940,7 +929,7 @@ function PermissionsCard() {
       <CardHeader>
         <CardTitle>Permissions</CardTitle>
         <CardDescription>
-          Manage macOS permissions for recording and calendar access
+          macOS access needed for recording and meeting detection
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -964,7 +953,7 @@ function PermissionsCard() {
                     onClick={() => handleRequest(row.key)}
                     disabled={requesting !== null}
                   >
-                    {requesting === row.key ? "..." : "Grant"}
+                    {requesting === row.key ? "Requesting…" : "Grant"}
                   </Button>
                 )}
               </div>
@@ -1017,9 +1006,9 @@ function ModelManagementCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>AI Models</CardTitle>
+        <CardTitle>Local models</CardTitle>
         <CardDescription>
-          Manage local AI models for transcription and speaker identification.
+          Models for transcription and speaker identification. They run entirely on your Mac.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -1062,64 +1051,27 @@ function ModelManagementCard() {
                       </p>
                     )}
 
-                    {/* Variant picker for not-downloaded models with multiple variants */}
                     {!model.downloaded &&
                       regModel &&
                       regModel.variants.length > 1 && (
-                        <div className="flex gap-3 mt-2">
-                          {regModel.variants.map((variant) => (
-                            <label
-                              key={variant.id}
-                              className="flex items-center gap-2 cursor-pointer"
-                            >
-                              <input
-                                type="radio"
-                                name={`settings-variant-${model.model_id}`}
-                                checked={
-                                  getSelectedVariant(model.model_id) ===
-                                  variant.id
-                                }
-                                onChange={() =>
-                                  setSelectedVariants((prev) => ({
-                                    ...prev,
-                                    [model.model_id]: variant.id,
-                                  }))
-                                }
-                                className="accent-primary"
-                              />
-                              <span className="text-xs text-foreground">
-                                {variant.label}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                ({formatBytes(variant.total_size_bytes)})
-                              </span>
-                            </label>
-                          ))}
+                        <div className="mt-2">
+                          <VariantPicker
+                            name={`settings-variant-${model.model_id}`}
+                            variants={regModel.variants}
+                            selected={getSelectedVariant(model.model_id)}
+                            onSelect={(variantId) =>
+                              setSelectedVariants((prev) => ({
+                                ...prev,
+                                [model.model_id]: variantId,
+                              }))
+                            }
+                          />
                         </div>
                       )}
 
-                    {/* Progress bar for this model */}
                     {isThisModelDownloading && progress && (
                       <div className="mt-2">
-                        <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                          <span>
-                            {typeof progress.state === "string" &&
-                            progress.state === "verifying"
-                              ? "Verifying..."
-                              : `Downloading ${progress.current_file}`}
-                          </span>
-                          <span>
-                            {Math.round(progress.overall_percent * 100)}%
-                          </span>
-                        </div>
-                        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-primary transition-[width] duration-300"
-                            style={{
-                              width: `${Math.round(progress.overall_percent * 100)}%`,
-                            }}
-                          />
-                        </div>
+                        <DownloadProgressBar progress={progress} />
                       </div>
                     )}
 
@@ -1148,7 +1100,7 @@ function ModelManagementCard() {
                         onClick={() => handleDelete(model.model_id)}
                         disabled={deleting === model.model_id}
                       >
-                        {deleting === model.model_id ? "Deleting..." : "Delete"}
+                        {deleting === model.model_id ? "Deleting…" : "Delete"}
                       </Button>
                     ) : (
                       <Button

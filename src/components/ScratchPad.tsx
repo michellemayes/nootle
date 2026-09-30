@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -61,7 +60,7 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
           <ChevronRight className="h-3.5 w-3.5" />
         )}
         <StickyNote className="h-3.5 w-3.5" />
-        Quick Notes
+        Quick notes
         {notes.length > 0 && (
           <Badge variant="warning" size="sm">
             {notes.length}
@@ -77,7 +76,7 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Add a highlight note..."
+                  placeholder="Add a timestamped note…"
                   className="h-8 text-xs"
                 />
                 <Button
@@ -85,7 +84,6 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
                   variant="secondary"
                   onClick={handleAdd}
                   disabled={!input.trim()}
-                  className="h-8 px-3 text-xs"
                 >
                   Add
                 </Button>
@@ -94,11 +92,8 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
               {notes.length > 0 && (
                 <div className="space-y-1 max-h-[160px] overflow-y-auto">
                   {notes.map((note) => (
-                    <motion.div
+                    <div
                       key={note.id}
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
                       className="group flex items-start gap-2 rounded-md border border-highlight/20 bg-highlight/5 px-2.5 py-1.5"
                     >
                       <span className="mt-0.5 shrink-0 font-mono text-xs text-highlight-foreground">
@@ -111,10 +106,11 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
                         onClick={() => deleteNote(note.id)}
                         className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 shrink-0"
                         title="Delete note"
+                        aria-label="Delete note"
                       >
                         <X className="h-3 w-3" />
                       </button>
-                    </motion.div>
+                    </div>
                   ))}
                 </div>
               )}

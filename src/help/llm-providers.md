@@ -19,8 +19,8 @@ Nootle uses large language models to generate meeting summaries and power the ch
 ## Setting Up a Provider
 
 1. Go to **Settings** in the sidebar.
-2. Find the provider you want under **API Keys**.
-3. Click **Add Key** and paste your API key.
+2. Open the **API keys** tab and find the provider you want.
+3. Click **Add key** and paste your API key.
 4. The key is stored securely and never leaves your machine.
 
 Once at least one provider is configured, Nootle will use it for summaries and chat.

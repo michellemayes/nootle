@@ -64,3 +64,15 @@ export function statusLabel(status: string): string {
     default: return status.charAt(0).toUpperCase() + status.slice(1);
   }
 }
+
+/** Badge variant for a meeting status, so the library and detail views agree. */
+export function statusVariant(
+  status: string,
+): "destructive" | "warning" | "secondary" | "outline" {
+  switch (status) {
+    case "recording": return "destructive";
+    case "transcribing": return "warning";
+    case "summarized": return "secondary";
+    default: return "outline";
+  }
+}

@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import {
   Dialog,
   DialogContent,
@@ -8,36 +10,37 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
-interface DeleteMeetingDialogProps {
+interface ConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  meetingTitle: string;
-  onConfirm: () => void;
+  title: string;
+  description: ReactNode;
+  confirmLabel?: string;
+  onConfirm: () => void | Promise<void>;
 }
 
-export function DeleteMeetingDialog({
+/** Destructive confirmation used for every delete in the app. */
+export function ConfirmDialog({
   open,
   onOpenChange,
-  meetingTitle,
+  title,
+  description,
+  confirmLabel = "Delete",
   onConfirm,
-}: DeleteMeetingDialogProps) {
+}: ConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete meeting?</DialogTitle>
-          <DialogDescription>
-            This will permanently delete{" "}
-            <span className="font-medium text-foreground">{meetingTitle}</span>{" "}
-            and all its transcripts, summaries, insights, and audio. No takebacks — this noodle can't be uncooked.
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Keep it
+            Cancel
           </Button>
           <Button variant="destructive" onClick={onConfirm}>
-            Delete forever
+            {confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

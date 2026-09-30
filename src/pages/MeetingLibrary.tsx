@@ -1,16 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { formatDate, statusLabel, labelTextColor } from "@/lib/utils";
+import { formatDate, statusLabel, statusVariant, labelTextColor } from "@/lib/utils";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
-import {
-  LoadingState,
-  randomMeetingsLoadingMessage,
-} from "@/components/LoadingState";
+import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -35,7 +31,7 @@ import {
 } from "@/hooks/useMeetings";
 import { useLabels } from "@/hooks/useLabels";
 import { MeetingActionMenuItems } from "@/components/MeetingActionMenuItems";
-import { DeleteMeetingDialog } from "@/components/DeleteMeetingDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { LabelEditor } from "@/components/LabelEditor";
 import type { Meeting } from "@/types";
 import {
@@ -45,6 +41,7 @@ import {
   LayoutGrid,
   List,
   Archive,
+  Circle,
 } from "lucide-react";
 
 function formatDuration(start: string, end: string | null): string {
@@ -55,21 +52,6 @@ function formatDuration(start: string, end: string | null): string {
   const hours = Math.floor(mins / 60);
   const remaining = mins % 60;
   return `${hours}h ${remaining}m`;
-}
-
-function statusColor(
-  status: string,
-): "default" | "secondary" | "outline" | "destructive" {
-  switch (status) {
-    case "recording":
-      return "destructive";
-    case "transcribing":
-      return "secondary";
-    case "summarized":
-      return "default";
-    default:
-      return "outline";
-  }
 }
 
 const dropdownPrimitives = {
@@ -92,7 +74,6 @@ export function MeetingLibrary() {
   });
   const [showArchived, setShowArchived] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Meeting | null>(null);
-  const [loadingMessage] = useState(randomMeetingsLoadingMessage);
   const [activeLabelIds, setActiveLabelIds] = useState<Set<string>>(new Set());
 
   // Debounce search input so we don't hit the backend on every keystroke.
@@ -188,7 +169,7 @@ export function MeetingLibrary() {
     <div className="flex flex-1 flex-col overflow-hidden">
       <PageHeader
         title="Meetings"
-        description="Your recorded meetings and transcriptions"
+        description="Recorded meetings, transcripts, and summaries"
       />
 
       <div className="flex flex-1 flex-col gap-5 overflow-auto p-6">
@@ -197,7 +178,7 @@ export function MeetingLibrary() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search meetings..."
+            placeholder="Search meetings…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -205,28 +186,31 @@ export function MeetingLibrary() {
         </div>
         <Button
           variant={showArchived ? "secondary" : "outline"}
-          size="sm"
+          size="icon"
           onClick={() => setShowArchived(!showArchived)}
           title={showArchived ? "Hide archived" : "Show archived"}
+          aria-pressed={showArchived}
         >
           <Archive className="h-4 w-4" />
         </Button>
         <div className="flex rounded-md border">
           <Button
             variant={viewMode === "grid" ? "secondary" : "ghost"}
-            size="sm"
+            size="icon"
             className="rounded-r-none border-0"
             onClick={() => handleViewModeChange("grid")}
             title="Grid view"
+            aria-pressed={viewMode === "grid"}
           >
             <LayoutGrid className="h-4 w-4" />
           </Button>
           <Button
             variant={viewMode === "list" ? "secondary" : "ghost"}
-            size="sm"
+            size="icon"
             className="rounded-l-none border-0"
             onClick={() => handleViewModeChange("list")}
             title="List view"
+            aria-pressed={viewMode === "list"}
           >
             <List className="h-4 w-4" />
           </Button>
@@ -277,40 +261,32 @@ export function MeetingLibrary() {
 
       {/* Meeting content */}
       {loading ? (
-        <LoadingState message={loadingMessage} />
+        <LoadingState message={LOADING_COPY.meetings} />
       ) : filteredMeetings.length === 0 ? (
-        search.toLowerCase() === "noodle" ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-12 text-center">
-            <span className="text-4xl">{"\uD83C\uDF5C"}</span>
-            <h2 className="text-lg font-medium">You found the secret noodle!</h2>
-            <p className="text-sm text-muted-foreground">
-              Unfortunately, it's not a meeting.
-            </p>
-          </div>
-        ) : (
-          <EmptyState
-            icon={Mic}
-            title={hasFilters ? "No matching meetings" : "No meetings yet"}
-            description={
-              hasFilters
-                ? "Try a different search or clear your filters."
-                : "Hit record and let Nootle do its thing"
-            }
-          />
-        )
+        <EmptyState
+          icon={Mic}
+          title={hasFilters ? "No matching meetings" : "No meetings yet"}
+          description={
+            hasFilters
+              ? "Try a different search or clear your filters."
+              : "Start a recording and it will show up here."
+          }
+          action={
+            !hasFilters && (
+              <Button size="sm" onClick={() => navigate("/recording")}>
+                <Circle /> New recording
+              </Button>
+            )
+          }
+        />
       ) : viewMode === "grid" ? (
         <div className={`grid gap-4 ${isCompact ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"}`}>
-          {filteredMeetings.map((meeting, i) => (
+          {filteredMeetings.map((meeting) => (
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  whileHover={{ y: -2 }}
-                  transition={{ duration: 0.2, delay: Math.min(i * 0.04, 0.4) }}
-                >
+                <div>
                   <Card
-                    className="group cursor-pointer transition-colors hover:bg-accent/30 hover:shadow-md"
+                    className="group h-full cursor-pointer transition-colors hover:bg-accent/30"
                     onClick={() => navigate(`/meeting/${meeting.id}`)}
                   >
                     <CardContent className="space-y-3">
@@ -320,7 +296,7 @@ export function MeetingLibrary() {
                         </h3>
                         <div className="flex items-center gap-1 shrink-0">
                           <Badge
-                            variant={statusColor(meeting.status)}
+                            variant={statusVariant(meeting.status)}
                           >
                             {statusLabel(meeting.status)}
                           </Badge>
@@ -328,7 +304,8 @@ export function MeetingLibrary() {
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <button
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-accent"
+                                  aria-label="Meeting actions"
+                                  className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity rounded p-1 hover:bg-accent"
                                 >
                                   <MoreVertical className="h-4 w-4 text-muted-foreground" />
                                 </button>
@@ -342,7 +319,7 @@ export function MeetingLibrary() {
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <span>{formatDate(meeting.start_time)}</span>
-                        <span>{"\u00B7"}</span>
+                        <span>·</span>
                         <span>
                           {formatDuration(
                             meeting.start_time,
@@ -362,7 +339,7 @@ export function MeetingLibrary() {
                       </div>
                     </CardContent>
                   </Card>
-                </motion.div>
+                </div>
               </ContextMenuTrigger>
               <ContextMenuContent>
                 {renderMenuItems(meeting, contextPrimitives)}
@@ -372,13 +349,10 @@ export function MeetingLibrary() {
         </div>
       ) : (
         <div className="flex flex-col divide-y rounded-md border">
-          {filteredMeetings.map((meeting, i) => (
+          {filteredMeetings.map((meeting) => (
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
-                <motion.div
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}
+                <div
                   className="group flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors hover:bg-accent/30"
                   onClick={() => navigate(`/meeting/${meeting.id}`)}
                 >
@@ -401,14 +375,15 @@ export function MeetingLibrary() {
                   <span className="text-xs text-muted-foreground whitespace-nowrap w-12 text-right">
                     {formatDuration(meeting.start_time, meeting.end_time)}
                   </span>
-                  <Badge variant={statusColor(meeting.status)} className="shrink-0">
+                  <Badge variant={statusVariant(meeting.status)} className="shrink-0">
                     {statusLabel(meeting.status)}
                   </Badge>
                   <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
-                          className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 hover:bg-accent"
+                          aria-label="Meeting actions"
+                          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity rounded p-1 hover:bg-accent"
                         >
                           <MoreVertical className="h-4 w-4 text-muted-foreground" />
                         </button>
@@ -418,7 +393,7 @@ export function MeetingLibrary() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </motion.div>
+                </div>
               </ContextMenuTrigger>
               <ContextMenuContent>
                 {renderMenuItems(meeting, contextPrimitives)}
@@ -430,11 +405,17 @@ export function MeetingLibrary() {
 
       </div>
 
-      {/* Dialogs */}
-      <DeleteMeetingDialog
+      <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-        meetingTitle={deleteTarget?.title ?? ""}
+        title="Delete meeting?"
+        description={
+          <>
+            <span className="font-medium text-foreground">{deleteTarget?.title}</span>{" "}
+            and its transcript, summaries, insights, and audio will be permanently
+            deleted. This can't be undone.
+          </>
+        }
         onConfirm={handleDelete}
       />
     </div>

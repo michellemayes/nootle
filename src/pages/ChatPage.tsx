@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { EmptyState } from "@/components/EmptyState";
-import { Markdown } from "@/components/Markdown";
-import { ThinkingDots } from "@/components/ThinkingDots";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ChatMessage, ChatThinking } from "@/components/ChatMessage";
 import { ResizeHandle } from "@/components/ResizeHandle";
 import { useChatConversations, useChatMessages } from "@/hooks/useChatHistory";
 import { useLabels } from "@/hooks/useLabels";
@@ -32,6 +31,8 @@ export function ChatPage() {
   const [titleDraft, setTitleDraft] = useState("");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [selectedLabel, setSelectedLabel] = useState("");
   const [dateFromValue, setDateFromValue] = useState("");
   const [dateToValue, setDateToValue] = useState("");
@@ -85,6 +86,7 @@ export function ChatPage() {
     const msg = input;
     setInput("");
     setLoading(true);
+    setSendError(null);
     try {
       await invoke<GlobalChatResponse>("send_chat_message", {
         conversationId: activeId,
@@ -98,7 +100,7 @@ export function ChatPage() {
       await refreshMessages();
       await refreshConvos();
     } catch (err) {
-      console.error("Chat error:", err);
+      setSendError(String(err));
     } finally {
       setLoading(false);
     }
@@ -125,11 +127,17 @@ export function ChatPage() {
         <div className="flex items-center justify-between px-4 h-12 border-b">
           <h2 className="text-sm font-semibold">Conversations</h2>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon-sm" onClick={handleNewConversation}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={handleNewConversation}
+              title="New conversation"
+              aria-label="New conversation"
+            >
               <Plus className="h-4 w-4" />
             </Button>
             {isCompact && (
-              <Button variant="ghost" size="icon-sm" onClick={() => setSidebarOpen(false)} title="Hide conversations">
+              <Button variant="ghost" size="icon-sm" onClick={() => setSidebarOpen(false)} title="Hide conversations" aria-label="Hide conversations">
                 <PanelLeftClose className="h-4 w-4" />
               </Button>
             )}
@@ -138,7 +146,7 @@ export function ChatPage() {
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
             {conversations.length === 0 && (
-              <p className="text-xs text-muted-foreground p-2">Start a conversation using the + button above</p>
+              <p className="text-xs text-muted-foreground p-2">No conversations yet.</p>
             )}
             {conversations.map((conv) => (
               <div
@@ -180,10 +188,12 @@ export function ChatPage() {
                   </span>
                 )}
                 <button
-                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shrink-0"
+                  title="Delete conversation"
+                  aria-label="Delete conversation"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleDelete(conv.id);
+                    setDeleteTarget({ id: conv.id, title: conv.title });
                   }}
                 >
                   <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
@@ -211,7 +221,7 @@ export function ChatPage() {
         {/* Filters bar */}
         <div className="flex items-center gap-3 px-4 h-12 border-b">
           {isCompact && (
-            <Button variant="ghost" size="icon-sm" onClick={() => setSidebarOpen(true)} title="Show conversations">
+            <Button variant="ghost" size="icon-sm" onClick={() => setSidebarOpen(true)} title="Show conversations" aria-label="Show conversations">
               <PanelLeftOpen className="h-4 w-4" />
             </Button>
           )}
@@ -247,45 +257,33 @@ export function ChatPage() {
         {!activeId ? (
           <EmptyState
             icon={MessageSquare}
-            description="Nootle remembers everything from your meetings — just ask"
+            title="No conversation selected"
+            description="Ask questions across all of your meetings. Answers cite the meetings they came from."
             action={
               <Button size="sm" onClick={handleNewConversation}>
-                <Plus /> New Conversation
+                <Plus /> New conversation
               </Button>
             }
           />
         ) : (
           <>
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
               {dbMessages.length === 0 && !loading && (
                 <div className="flex items-center justify-center h-full">
                   <p className="text-sm text-muted-foreground">
-                    What happened in that meeting? Go ahead, ask anything
+                    Ask a question across all of your meetings.
                   </p>
                 </div>
               )}
               {dbMessages.map((msg) => {
                 const sources = msg.role === "assistant" ? parseSources(msg.sources_json) : [];
                 return (
-                  <motion.div
+                  <ChatMessage
                     key={msg.id}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-lg px-4 py-2.5 ${
-                        msg.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted"
-                      }`}
-                    >
-                      {msg.role === "assistant" ? (
-                          <Markdown content={msg.content} />
-                      ) : (
-                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                      )}
-                      {sources.length > 0 && (
+                    role={msg.role}
+                    content={msg.content}
+                    footer={
+                      sources.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
                           {sources.map((s, i) => (
                             <SourceCitation
@@ -295,17 +293,14 @@ export function ChatPage() {
                             />
                           ))}
                         </div>
-                      )}
-                    </div>
-                  </motion.div>
+                      )
+                    }
+                  />
                 );
               })}
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="bg-muted rounded-lg px-4 py-2.5">
-                    <ThinkingDots />
-                  </div>
-                </div>
+              {loading && <ChatThinking />}
+              {sendError && (
+                <p className="text-xs text-destructive text-center">{sendError}</p>
               )}
             </div>
 
@@ -313,14 +308,14 @@ export function ChatPage() {
             <div className="border-t p-4">
               {!selectedProvider || !selectedModel ? (
                 <p className="text-sm text-muted-foreground text-center py-2">
-                  Select a model in the sidebar to start chatting. You can add API keys in Settings.
+                  Choose a model in the sidebar to start chatting. Add API keys in Settings.
                 </p>
               ) : (
                 <div className="flex gap-2">
                   <Input
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder="Ask about your meetings..."
+                    placeholder="Ask about your meetings…"
                     className="flex-1"
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
@@ -331,10 +326,12 @@ export function ChatPage() {
                     disabled={loading}
                   />
                   <Button
+                    size="icon"
                     onClick={handleSend}
                     disabled={loading || !input.trim()}
+                    aria-label="Send"
                   >
-                    <Send className="h-4 w-4" />
+                    <Send />
                   </Button>
                 </div>
               )}
@@ -343,6 +340,23 @@ export function ChatPage() {
         )}
       </div>
       )}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete conversation?"
+        description={
+          <>
+            <span className="font-medium text-foreground">{deleteTarget?.title}</span>{" "}
+            and all of its messages will be permanently deleted.
+          </>
+        }
+        onConfirm={async () => {
+          if (deleteTarget) {
+            await handleDelete(deleteTarget.id);
+            setDeleteTarget(null);
+          }
+        }}
+      />
     </div>
   );
 }
