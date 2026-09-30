@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { formatDate, statusLabel, labelTextColor } from "@/lib/utils";
+import { statusLabel, labelTextColor } from "@/lib/utils";
+import { groupByDay, relativeWhen } from "@/lib/momentum";
+import { MomentumStrip } from "@/components/MomentumStrip";
+import { Kbd } from "@/components/Kbd";
+import { isTypingTarget } from "@/lib/navigation";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
@@ -45,6 +49,7 @@ import {
   LayoutGrid,
   List,
   Archive,
+  Circle,
 } from "lucide-react";
 
 function formatDuration(start: string, end: string | null): string {
@@ -94,6 +99,19 @@ export function MeetingLibrary() {
   const [deleteTarget, setDeleteTarget] = useState<Meeting | null>(null);
   const [loadingMessage] = useState(randomMeetingsLoadingMessage);
   const [activeLabelIds, setActiveLabelIds] = useState<Set<string>>(new Set());
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // "/" jumps to search from anywhere on the page; Esc clears and leaves it.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "/" && !isTypingTarget(e.target) && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // Debounce search input so we don't hit the backend on every keystroke.
   useEffect(() => {
@@ -132,6 +150,8 @@ export function MeetingLibrary() {
   // "you haven't recorded anything yet".
   const hasFilters =
     debouncedSearch.trim().length > 0 || activeLabelIds.size > 0;
+
+  const groups = useMemo(() => groupByDay(filteredMeetings), [filteredMeetings]);
 
   const handleViewModeChange = useCallback((mode: "grid" | "list") => {
     setViewMode(mode);
@@ -192,16 +212,30 @@ export function MeetingLibrary() {
       />
 
       <div className="flex flex-1 flex-col gap-5 overflow-auto p-6">
+      {!loading && !hasFilters && !showArchived && (
+        <MomentumStrip meetings={meetings} />
+      )}
+
       {/* Search and filters */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
+            ref={searchRef}
             placeholder="Search meetings..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setSearch("");
+                e.currentTarget.blur();
+              }
+            }}
+            className="pl-9 pr-9"
           />
+          {!search && (
+            <Kbd className="absolute right-3 top-1/2 -translate-y-1/2">/</Kbd>
+          )}
         </div>
         <Button
           variant={showArchived ? "secondary" : "outline"}
@@ -296,18 +330,36 @@ export function MeetingLibrary() {
                 ? "Try a different search or clear your filters."
                 : "Hit record and let Nootle do its thing"
             }
+            action={
+              !hasFilters && (
+                <Button className="mt-2 gap-2" onClick={() => navigate("/recording")}>
+                  <Circle className="h-4 w-4" />
+                  Record your first meeting
+                  <Kbd className="ml-1 border-white/30 bg-white/15 text-primary-foreground">⌘N</Kbd>
+                </Button>
+              )
+            }
           />
         )
-      ) : viewMode === "grid" ? (
+      ) : (
+        groups.map((group, gi) => (
+        <section key={group.label} className="space-y-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {group.label}
+            <span className="ml-2 font-normal normal-case tracking-normal opacity-70">
+              {group.meetings.length}
+            </span>
+          </h2>
+      {viewMode === "grid" ? (
         <div className={`grid gap-4 ${isCompact ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"}`}>
-          {filteredMeetings.map((meeting, i) => (
+          {group.meetings.map((meeting, i) => (
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   whileHover={{ y: -2 }}
-                  transition={{ duration: 0.2, delay: Math.min(i * 0.04, 0.4) }}
+                  transition={{ duration: 0.2, delay: Math.min((gi * 3 + i) * 0.04, 0.4) }}
                 >
                   <Card
                     className="group cursor-pointer transition-colors hover:bg-accent/30 hover:shadow-md"
@@ -341,7 +393,7 @@ export function MeetingLibrary() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span>{formatDate(meeting.start_time)}</span>
+                        <span>{relativeWhen(meeting.start_time)}</span>
                         <span>{"\u00B7"}</span>
                         <span>
                           {formatDuration(
@@ -372,13 +424,13 @@ export function MeetingLibrary() {
         </div>
       ) : (
         <div className="flex flex-col divide-y rounded-md border">
-          {filteredMeetings.map((meeting, i) => (
+          {group.meetings.map((meeting, i) => (
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
                 <motion.div
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.15, delay: Math.min(i * 0.03, 0.3) }}
+                  transition={{ duration: 0.15, delay: Math.min((gi * 3 + i) * 0.03, 0.3) }}
                   className="group flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors hover:bg-accent/30"
                   onClick={() => navigate(`/meeting/${meeting.id}`)}
                 >
@@ -396,7 +448,7 @@ export function MeetingLibrary() {
                     />
                   </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {formatDate(meeting.start_time)}
+                    {relativeWhen(meeting.start_time)}
                   </span>
                   <span className="text-xs text-muted-foreground whitespace-nowrap w-12 text-right">
                     {formatDuration(meeting.start_time, meeting.end_time)}
@@ -426,6 +478,9 @@ export function MeetingLibrary() {
             </ContextMenu>
           ))}
         </div>
+      )}
+        </section>
+        ))
       )}
 
       </div>

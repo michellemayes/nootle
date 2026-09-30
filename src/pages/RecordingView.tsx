@@ -16,6 +16,7 @@ import { ScratchPad } from "@/components/ScratchPad";
 import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { CompactRecordingIndicator } from "@/components/CompactRecordingIndicator";
+import { Kbd } from "@/components/Kbd";
 import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText } from "lucide-react";
 
 function formatTime(seconds: number): string {
@@ -66,7 +67,7 @@ interface TranscriptionStatus {
 
 export function RecordingView() {
   const navigate = useNavigate();
-  const { isRecording, currentMeeting, elapsed, error, startRecording, stopRecording } =
+  const { isRecording, currentMeeting, elapsed, error, startRecording, resumeRecording, stopRecording } =
     useRecording();
   const { templates } = useTemplates();
   const { isCompact } = useCompactMode();
@@ -119,15 +120,23 @@ export function RecordingView() {
   useEffect(() => {
     if (!hasStarted) {
       setHasStarted(true);
-      startRecording(
-        latestTitleRef.current,
-        undefined,
-        latestTemplateRef.current || undefined,
-      ).catch(() => {
+      (async () => {
+        const live = await resumeRecording().catch(() => null);
+        if (live) {
+          setTitle(live.title);
+          setSelectedTemplateId(live.template_id ?? "");
+          return;
+        }
+        await startRecording(
+          latestTitleRef.current,
+          undefined,
+          latestTemplateRef.current || undefined,
+        );
+      })().catch(() => {
         // Error is captured in useRecording's error state
       });
     }
-  }, [hasStarted, startRecording]);
+  }, [hasStarted, startRecording, resumeRecording]);
 
   // Recording starts the moment this view mounts, so a template picked
   // afterwards has to be pushed to the meeting that's already in flight.
@@ -154,18 +163,34 @@ export function RecordingView() {
   }, [segments]);
 
   const handleStop = useCallback(async () => {
+    if (stopping) return;
     setStopping(true);
     await new Promise((r) => setTimeout(r, 400));
     try {
       const meeting = await stopRecording();
+      if (title.trim() && title !== meeting.title) {
+        await invoke("update_meeting_title", { id: meeting.id, title }).catch(() => {});
+      }
       if (notes.trim()) {
         await invoke("save_meeting_notes", { id: meeting.id, rawNotes: notes });
       }
-      navigate(`/meeting/${meeting.id}`);
+      navigate(`/meeting/${meeting.id}`, { state: { justRecorded: true } });
     } catch {
       navigate("/");
     }
-  }, [stopRecording, navigate, notes]);
+  }, [stopping, stopRecording, navigate, notes, title]);
+
+  // ⌘↵ wraps up the meeting from anywhere on the page, notes included.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key === "Enter" && isRecording) {
+        e.preventDefault();
+        handleStop();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleStop, isRecording]);
 
   // Show error state if recording failed to start
   if (error && !isRecording) {
@@ -262,8 +287,10 @@ export function RecordingView() {
             variant="destructive"
             onClick={handleStop}
             disabled={stopping}
+            title="Stop and save (⌘↵)"
           >
             <Square className="h-3.5 w-3.5" /> Stop
+            {!isCompact && <Kbd className="ml-1 border-white/30 bg-white/15 text-white">⌘↵</Kbd>}
           </MotionButton>
           <AnimatePresence>
             {stopping && (

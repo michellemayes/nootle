@@ -651,6 +651,9 @@ function silentWav() {
   return Buffer.concat([header, Buffer.alloc(samples, 128)]).toString("base64");
 }
 
+/** 12:30pm PDT on the day of the most recent demo meeting. */
+export const DEMO_NOW = new Date("2026-07-28T19:30:00Z");
+
 /** Length of the demo meeting, in seconds — see silentWav(). */
 export const AUDIO_DURATION_SECONDS =
   (new Date(MEETINGS[0].end_time) - new Date(MEETINGS[0].start_time)) / 1000;

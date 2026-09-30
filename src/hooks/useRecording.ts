@@ -22,10 +22,7 @@ export function useRecording() {
   }, [checkRecording]);
 
   useEffect(() => {
-    if (!isRecording) {
-      setElapsed(0);
-      return;
-    }
+    if (!isRecording) return;
     timerRef.current = setInterval(() => {
       setElapsed((prev) => prev + 1);
     }, 1000);
@@ -58,6 +55,26 @@ export function useRecording() {
     [],
   );
 
+  // Pick up a recording that is already running (started from a meeting
+  // notification, or the user navigated away and came back) instead of
+  // starting a second one, which the backend would reject.
+  const resumeRecording = useCallback(async () => {
+    if (!(await invoke<boolean>("is_recording"))) return null;
+    const meetings = await invoke<Meeting[]>("list_meetings", {
+      search: null,
+      includeArchived: false,
+    });
+    const live = meetings.find((m) => m.status === "recording") ?? null;
+    if (live) {
+      setCurrentMeeting(live);
+      setElapsed(
+        Math.max(0, Math.floor((Date.now() - new Date(live.start_time).getTime()) / 1000)),
+      );
+    }
+    setIsRecording(true);
+    return live;
+  }, []);
+
   const stopRecording = useCallback(async () => {
     try {
       const meeting = await invoke<Meeting>("stop_recording");
@@ -65,6 +82,7 @@ export function useRecording() {
       return meeting;
     } finally {
       setIsRecording(false);
+      setElapsed(0);
     }
   }, []);
 
@@ -74,6 +92,22 @@ export function useRecording() {
     elapsed,
     error,
     startRecording,
+    resumeRecording,
     stopRecording,
   };
+}
+
+/**
+ * Lightweight "is anything recording?" check for chrome outside the
+ * recording view. Re-checks on every navigation, since starting and stopping
+ * both route through /recording.
+ */
+export function useIsRecording(pathname: string) {
+  const [recording, setRecording] = useState(false);
+  useEffect(() => {
+    invoke<boolean>("is_recording")
+      .then(setRecording)
+      .catch(() => {});
+  }, [pathname]);
+  return recording;
 }
