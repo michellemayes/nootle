@@ -130,6 +130,11 @@ pub fn run() {
         .on_menu_event(|app, event| {
             // The frontend owns the updater UI, so it can download and install in place.
             if event.id().as_ref() == "check-for-updates" {
+                // The window may be hidden (closing only hides it); show it so the result is seen.
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
                 let _ = app.emit("menu-check-for-updates", ());
             }
         })

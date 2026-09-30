@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, CheckCircle2, Download, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { useIsRecording } from "@/hooks/useRecording";
 import { checkForUpdates, dismissUpdate, installUpdate, useUpdater, type UpdaterState } from "@/hooks/useUpdater";
 
@@ -15,7 +16,6 @@ function visible(s: UpdaterState): boolean {
 /** Bottom-right card offering a one-click install whenever a new version is out. */
 export function UpdateBanner() {
   const updater = useUpdater();
-  const isRecording = useIsRecording();
   const show = visible(updater);
 
   useEffect(() => {
@@ -38,7 +38,7 @@ export function UpdateBanner() {
             role="status"
             className="flex gap-3 rounded-xl border bg-popover px-4 py-3 text-popover-foreground shadow-xl"
           >
-            <BannerBody updater={updater} isRecording={isRecording} />
+            <BannerBody updater={updater} />
             {updater.status !== "downloading" && (
               <button
                 type="button"
@@ -56,7 +56,7 @@ export function UpdateBanner() {
   );
 }
 
-function BannerBody({ updater, isRecording }: { updater: UpdaterState; isRecording: boolean }) {
+function BannerBody({ updater }: { updater: UpdaterState }) {
   switch (updater.status) {
     case "checking":
       return <Row icon={<Loader2 className="h-4 w-4 animate-spin" />} title="Checking for updates…" />;
@@ -70,60 +70,71 @@ function BannerBody({ updater, isRecording }: { updater: UpdaterState; isRecordi
       );
     case "error":
       return (
-        <div className="min-w-0 flex-1 space-y-2">
-          <Row
-            icon={<AlertCircle className="h-4 w-4 text-destructive" />}
-            title="Couldn't update"
-            detail="Check your internet connection and try again."
-          />
+        <Row
+          icon={<AlertCircle className="h-4 w-4 text-destructive" />}
+          title="Couldn't update"
+          detail="Check your internet connection and try again."
+        >
           <Button size="sm" variant="outline" className="w-full" onClick={() => checkForUpdates(true)}>
             Try again
           </Button>
-        </div>
+        </Row>
       );
-    case "downloading": {
-      const pct = updater.progress === null ? null : Math.round(updater.progress * 100);
+    case "downloading":
       return (
-        <div className="min-w-0 flex-1 space-y-2">
-          <Row
-            icon={<Loader2 className="h-4 w-4 animate-spin" />}
-            title={`Installing Nootle ${updater.version}`}
-            detail={pct === null ? "Downloading…" : `Downloading… ${pct}%`}
-          />
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className={pct === null ? "h-full w-1/3 animate-pulse rounded-full bg-primary" : "h-full rounded-full bg-primary transition-[width]"}
-              style={pct === null ? undefined : { width: `${pct}%` }}
-            />
-          </div>
+        <Row
+          icon={<Loader2 className="h-4 w-4 animate-spin" />}
+          title={`Installing Nootle ${updater.version}`}
+          detail={updater.progress === null ? "Downloading…" : `Downloading… ${updater.progress}%`}
+        >
+          <Progress percent={updater.progress} className="h-1.5" />
           <p className="text-xs text-muted-foreground">Nootle will restart when it's done.</p>
-        </div>
+        </Row>
       );
-    }
+    case "available":
+      return <AvailableBody version={updater.version} />;
     default:
-      return (
-        <div className="min-w-0 flex-1 space-y-2">
-          <Row
-            icon={<Download className="h-4 w-4 text-primary" />}
-            title={`Nootle ${updater.version} is available`}
-            detail={isRecording ? "Finish your recording to install it." : "Install now — Nootle will restart."}
-          />
-          <Button size="sm" className="w-full" disabled={isRecording} onClick={installUpdate}>
-            Install &amp; Restart
-          </Button>
-        </div>
-      );
+      return null;
   }
 }
 
-function Row({ icon, title, detail }: { icon: React.ReactNode; title: string; detail?: string }) {
+/** Split out so the recording check only runs while an install is on offer. */
+function AvailableBody({ version }: { version: string | null }) {
+  const isRecording = useIsRecording();
   return (
-    <div className="flex min-w-0 flex-1 gap-2.5">
-      <span className="mt-0.5 shrink-0">{icon}</span>
-      <div className="min-w-0">
-        <p className="text-sm font-semibold">{title}</p>
-        {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+    <Row
+      icon={<Download className="h-4 w-4 text-primary" />}
+      title={`Nootle ${version} is available`}
+      detail={isRecording ? "Finish your recording to install it." : "Install now — Nootle will restart."}
+    >
+      <Button size="sm" className="w-full" disabled={isRecording} onClick={installUpdate}>
+        Install &amp; Restart
+      </Button>
+    </Row>
+  );
+}
+
+function Row({
+  icon,
+  title,
+  detail,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  detail?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0 flex-1 space-y-2">
+      <div className="flex gap-2.5">
+        <span className="mt-0.5 shrink-0">{icon}</span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">{title}</p>
+          {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+        </div>
       </div>
+      {children}
     </div>
   );
 }
