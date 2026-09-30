@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### CI
 
+- **publish:** Include changelog in automated releases ([18b7874](https://github.com/michellemayes/nootle/commit/18b7874b96dcdb463d82e9d03e16c28e3bccf4ad))
 - **publish:** Debounce bursts of merges into a single release (#129) ([6333652](https://github.com/michellemayes/nootle/commit/6333652d9fd84b870a9fd8e7291528e477c1e844))
 
 ## [0.1.4] - 2026-09-30
@@ -103,5 +104,4 @@ All notable changes to this project will be documented in this file.
 - Improve UX copy, compact mode, animations, and accessibility (#92) ([cab7913](https://github.com/michellemayes/nootle/commit/cab791386b6568bbfde718ca1955599a59e21827))
 - Add Obsidian to integrations on landing page (#87) ([08cd4b8](https://github.com/michellemayes/nootle/commit/08cd4b8dcaf3ea0b8f8178c22a9c85cfb42c7c8b))
 - Hide sidebar expand button until hover and preserve logo aspect ratio (#84) ([8fc3ec2](https://github.com/michellemayes/nootle/commit/8fc3ec20a55ca8498ae0017a054b5219717e21b0))
-
 

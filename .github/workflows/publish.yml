@@ -70,7 +70,6 @@ jobs:
         id: release-notes
         uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
         with:
-          config: cliff.toml
           args: --unreleased --tag ${{ env.RELEASE_TAG }} --strip header
         env:
           OUTPUT: RELEASE_NOTES.md
@@ -148,12 +147,18 @@ jobs:
 
       # Regenerate CHANGELOG.md on the latest main now that the new tag exists.
       # The commit only touches a .md file, so it doesn't trigger another publish.
-      # git-cliff-action above left its binary at ./bin/git-cliff.
-      - name: Update CHANGELOG.md
+      - name: Check out latest main
         run: |
           git fetch --tags origin main
           git checkout -f origin/main
-          ./bin/git-cliff --config cliff.toml --output CHANGELOG.md
+
+      - name: Regenerate CHANGELOG.md
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Commit CHANGELOG.md
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add CHANGELOG.md
