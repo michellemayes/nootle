@@ -132,6 +132,8 @@ pnpm install
 pnpm tauri dev
 ```
 
+`tauri build` refuses to run when an `@tauri-apps/*` npm package and its Rust crate are on different minor versions. The npm packages are pinned with `~` to the minors in `src-tauri/Cargo.lock`, so when you bump a Tauri crate, bump its npm package to the same minor.
+
 ### Integration sign-in
 
 Notion, Linear, and Confluence connect with one click through each vendor's official MCP server (`mcp.notion.com`, `mcp.linear.app`, `mcp.atlassian.com`). Those servers support OAuth dynamic client registration, so Nootle registers itself the first time you connect. There's no OAuth app to create and nothing to configure at build time. Sign-in opens the vendor's consent page and catches the redirect on a one-off `127.0.0.1` port. Workflows then call the server's MCP tools, and `rmcp` refreshes the token when it expires.
