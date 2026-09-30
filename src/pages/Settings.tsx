@@ -90,7 +90,17 @@ function IntegrationCard({ intType, connectedIntegration, canSignIn, quickConnec
   const [signingIn, setSigningIn] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [speakerRows, setSpeakerRows] = useState<{ label: string; name: string }[]>([]);
   const isConnected = !!connectedIntegration;
+
+  const updateSpeakerRow = (i: number, patch: Partial<{ label: string; name: string }>) =>
+    setSpeakerRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  const resetForm = () => {
+    setFields({});
+    setSpeakerRows([]);
+    setExpanded(false);
+  };
 
   const handleSignIn = async () => {
     setSignInError(null);
@@ -121,8 +131,6 @@ function IntegrationCard({ intType, connectedIntegration, canSignIn, quickConnec
   const isEmail = intType.type === "email";
   const isObsidian = intType.type === "obsidian";
 
-  const speakerKeys = isObsidian ? (fields._speakerKeys ?? "").split(",").filter(Boolean) : [];
-
   const handleConnect = async () => {
     if (isEmail) {
       setSaving(true);
@@ -144,10 +152,11 @@ function IntegrationCard({ intType, connectedIntegration, canSignIn, quickConnec
     let creds: Record<string, string> = fields;
     if (isObsidian) {
       const speakerMap: Record<string, string> = {};
-      speakerKeys.forEach((key, i) => {
-        const value = fields[`_speakerVal_${i}`]?.trim();
-        if (key.trim() && value) {
-          speakerMap[key.trim()] = value;
+      speakerRows.forEach((row) => {
+        const label = row.label.trim();
+        const name = row.name.trim();
+        if (label && name) {
+          speakerMap[label] = name;
         }
       });
       creds = {
@@ -159,8 +168,7 @@ function IntegrationCard({ intType, connectedIntegration, canSignIn, quickConnec
     setSaving(true);
     try {
       await onConnect(intType.type, intType.name, creds);
-      setFields({});
-      setExpanded(false);
+      resetForm();
     } finally {
       setSaving(false);
     }
@@ -277,51 +285,35 @@ function IntegrationCard({ intType, connectedIntegration, canSignIn, quickConnec
               ))}
               {isObsidian && (
                 <div className="space-y-2 pt-2">
-                  <label className="text-xs font-medium text-muted-foreground">Speaker mapping</label>
-                  <p className="text-xs text-muted-foreground">Map transcript labels to names. Mapped names become [[wikilinks]] in Obsidian.</p>
-                  {speakerKeys.map((key, i) => (
+                  <label className="text-xs font-medium text-muted-foreground">People links</label>
+                  <p className="text-xs text-muted-foreground">Turn names that appear in summaries and action items into [[wikilinks]] to your people notes. Transcript labels like "Speaker 1" are assigned per meeting, so they can't be mapped here.</p>
+                  {speakerRows.map((row, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <Input
-                        placeholder="Speaker 1"
-                        value={key}
-                        onChange={(e) => {
-                          const updated = [...speakerKeys];
-                          updated[i] = e.target.value;
-                          setFields((prev) => ({ ...prev, _speakerKeys: updated.join(",") }));
-                        }}
+                        placeholder="Mike"
+                        value={row.label}
+                        onChange={(e) => updateSpeakerRow(i, { label: e.target.value })}
                         className="flex-1"
                       />
                       <span className="text-xs text-muted-foreground">→</span>
                       <Input
-                        placeholder="Person name"
-                        value={fields[`_speakerVal_${i}`] ?? ""}
-                        onChange={(e) => setFields((prev) => ({ ...prev, [`_speakerVal_${i}`]: e.target.value }))}
+                        placeholder="Mike Ross"
+                        value={row.name}
+                        onChange={(e) => updateSpeakerRow(i, { name: e.target.value })}
                         className="flex-1"
                       />
-                      <Button variant="ghost" size="icon-sm" aria-label="Remove speaker" onClick={() => {
-                        const vals = speakerKeys.map((_, j) => fields[`_speakerVal_${j}`] ?? "");
-                        const nextKeys = speakerKeys.filter((_, j) => j !== i);
-                        const nextVals = vals.filter((_, j) => j !== i);
-                        const next: Record<string, string> = Object.fromEntries(
-                          Object.entries(fields).filter(([k]) => !k.startsWith("_speakerVal_") && k !== "_speakerKeys")
-                        );
-                        next._speakerKeys = nextKeys.join(",");
-                        nextVals.forEach((v, j) => { next[`_speakerVal_${j}`] = v; });
-                        setFields(next);
-                      }}>
+                      <Button variant="ghost" size="icon-sm" aria-label="Remove person" onClick={() => setSpeakerRows((prev) => prev.filter((_, j) => j !== i))}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   ))}
-                  <Button variant="outline" size="sm" onClick={() => {
-                    setFields((prev) => ({ ...prev, _speakerKeys: [...speakerKeys, ""].join(",") }));
-                  }}>
-                    <Plus /> Add speaker
+                  <Button variant="outline" size="sm" onClick={() => setSpeakerRows((prev) => [...prev, { label: "", name: "" }])}>
+                    <Plus /> Add person
                   </Button>
                 </div>
               )}
               <div className="flex gap-2 justify-end pt-1">
-                <Button variant="ghost" size="sm" onClick={() => { setExpanded(false); setFields({}); }}>
+                <Button variant="ghost" size="sm" onClick={resetForm}>
                   Cancel
                 </Button>
                 <Button
