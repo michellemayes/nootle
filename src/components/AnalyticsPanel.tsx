@@ -221,12 +221,10 @@ export function AnalyticsPanel({
           </div>
         )}
 
-        <div className="border-t pt-4 space-y-2">
-          <h3 className="text-sm font-semibold">Sentiment analysis</h3>
+        <div className="border-t pt-4 flex flex-wrap gap-2">
           <Button
             variant={hasSentiment ? "outline" : "default"}
             size="sm"
-            className="w-full"
             onClick={handleAnalyzeSentiment}
             disabled={analyzingSentiment || !selectedProvider || !selectedModel}
           >
@@ -237,22 +235,18 @@ export function AnalyticsPanel({
                 ? "Re-analyze sentiment"
                 : "Analyze sentiment"}
           </Button>
-        </div>
-
-        {hasSpeakers && (
-          <div className="border-t pt-4">
+          {hasSpeakers && (
             <Button
               variant="outline"
               size="sm"
-              className="w-full"
               onClick={handleCompute}
               disabled={computing}
             >
               <RotateCw className={`h-3 w-3 mr-1 ${computing ? "animate-spin" : ""}`} />
               {computing ? "Recomputing…" : "Recompute analytics"}
             </Button>
-          </div>
-        )}
+          )}
+        </div>
 
         {(actionError || error) && (
           <p className="text-xs text-destructive text-center">{actionError || error}</p>
