@@ -103,6 +103,13 @@ export default function PrivacyPage() {
                 or configure automatic workflows. Nootle does not send data to any
                 integration without your configuration.
               </p>
+              <p>
+                If you connect an integration by signing in, the service sends you back
+                through a page on nootle.ai that hands the one-time sign-in code straight
+                to the Nootle app in your browser. That page runs entirely in your
+                browser and doesn&apos;t store or send the code anywhere else. The
+                resulting access tokens are stored only on your Mac.
+              </p>
             </div>
 
             <div>

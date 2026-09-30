@@ -167,6 +167,13 @@ pub async fn handle_url(app: AppHandle, raw: String) {
     };
 
     let action = action_of(&url);
+    // Sign-in redirects bypass the remote-control switch: they only complete a
+    // sign-in the user started, matched by its unguessable `state`.
+    if action == "oauth/callback" {
+        crate::oauth::handle_callback(&app, &url);
+        return;
+    }
+
     let enabled = app
         .state::<DbState>()
         .get_setting(ENABLED_SETTING)

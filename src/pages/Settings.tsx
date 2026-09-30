@@ -25,7 +25,7 @@ import { useInsightTypes } from "@/hooks/useInsightTypes";
 import { useAppVersion } from "@/hooks/useAppVersion";
 import { AccentColorPicker } from "@/components/AccentColorPicker";
 import { VariantPicker, DownloadProgressBar } from "@/components/ModelDownload";
-import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus, Link, Unlink } from "lucide-react";
+import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus, Link, Unlink, LogIn } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 import { useIntegrations } from "@/hooks/useIntegrations";
 import { INTEGRATION_TYPES } from "@/lib/integrations";
@@ -72,16 +72,35 @@ const AUTO_DETECTED_HINTS: Record<string, { detected: string; notDetected: strin
   },
 };
 
-function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnect }: {
+function IntegrationCard({ intType, connectedIntegration, canSignIn, onConnect, onSignIn, onCancelSignIn, onDisconnect }: {
   intType: typeof INTEGRATION_TYPES[number];
-  connectedIntegration: { id: string; credentials_json: string } | undefined;
+  connectedIntegration: { id: string; name: string } | undefined;
+  canSignIn: boolean;
   onConnect: (type: string, name: string, creds: Record<string, string>) => Promise<void>;
+  onSignIn: (type: string) => Promise<unknown>;
+  onCancelSignIn: () => Promise<unknown>;
   onDisconnect: (id: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
   const isConnected = !!connectedIntegration;
+
+  const handleSignIn = async () => {
+    setSignInError(null);
+    setSigningIn(true);
+    try {
+      await onSignIn(intType.type);
+      setExpanded(false);
+    } catch (err) {
+      const message = String(err);
+      if (!message.includes("cancelled")) setSignInError(message);
+    } finally {
+      setSigningIn(false);
+    }
+  };
   const isEmail = intType.type === "email";
   const isObsidian = intType.type === "obsidian";
 
@@ -144,7 +163,7 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
     <div className="py-3">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-sm font-medium">{intType.name}</span>
+          <span className="text-sm font-medium truncate">{connectedIntegration?.name ?? intType.name}</span>
           {isConnected ? (
             <Badge variant="success" size="sm">Connected</Badge>
           ) : (
@@ -156,6 +175,18 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
             <Unlink />
             Disconnect
           </Button>
+        ) : signingIn ? (
+          <>
+            <span className="text-xs text-muted-foreground">Finish signing in in your browser…</span>
+            <Button variant="ghost" size="sm" onClick={() => onCancelSignIn()}>
+              Cancel
+            </Button>
+          </>
+        ) : canSignIn ? (
+          <Button variant="outline" size="sm" onClick={handleSignIn}>
+            <LogIn />
+            Sign in with {intType.name}
+          </Button>
         ) : (
           <Button variant="outline" size="sm" onClick={handleConnect} disabled={saving}>
             <Link />
@@ -163,6 +194,18 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
           </Button>
         )}
       </div>
+      {!isConnected && signInError && (
+        <p className="mt-2 text-xs text-destructive">{signInError}</p>
+      )}
+      {!isConnected && canSignIn && !signingIn && !expanded && (
+        <button
+          type="button"
+          className="mt-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+          onClick={() => setExpanded(true)}
+        >
+          Use a token instead
+        </button>
+      )}
       <Collapsible open={expanded && !isConnected && intType.fields.length > 0}>
         <div className="mt-3 space-y-2">
               {intType.fields.map((field) => (
@@ -264,7 +307,7 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
 }
 
 function IntegrationsManager() {
-  const { integrations, loading, createIntegration, deleteIntegration } = useIntegrations();
+  const { integrations, loading, oauthProviders, connectOAuth, cancelOAuth, createIntegration, deleteIntegration } = useIntegrations();
 
   const handleConnect = async (type: string, name: string, creds: Record<string, string>) => {
     await createIntegration(type, name, JSON.stringify(creds));
@@ -292,7 +335,10 @@ function IntegrationsManager() {
                 key={intType.type}
                 intType={intType}
                 connectedIntegration={integrations.find((i) => i.integration_type === intType.type)}
+                canSignIn={oauthProviders.includes(intType.type)}
                 onConnect={handleConnect}
+                onSignIn={connectOAuth}
+                onCancelSignIn={cancelOAuth}
                 onDisconnect={handleDisconnect}
               />
             ))}

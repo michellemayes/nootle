@@ -129,6 +129,20 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # OAuth apps for one-click integration sign-in, baked into the
+          # binary. A provider left unset falls back to pasting a token.
+          NOOTLE_SLACK_CLIENT_ID: ${{ secrets.NOOTLE_SLACK_CLIENT_ID }}
+          NOOTLE_SLACK_CLIENT_SECRET: ${{ secrets.NOOTLE_SLACK_CLIENT_SECRET }}
+          NOOTLE_NOTION_CLIENT_ID: ${{ secrets.NOOTLE_NOTION_CLIENT_ID }}
+          NOOTLE_NOTION_CLIENT_SECRET: ${{ secrets.NOOTLE_NOTION_CLIENT_SECRET }}
+          NOOTLE_CONFLUENCE_CLIENT_ID: ${{ secrets.NOOTLE_CONFLUENCE_CLIENT_ID }}
+          NOOTLE_CONFLUENCE_CLIENT_SECRET: ${{ secrets.NOOTLE_CONFLUENCE_CLIENT_SECRET }}
+          NOOTLE_GITHUB_CLIENT_ID: ${{ secrets.NOOTLE_GITHUB_CLIENT_ID }}
+          NOOTLE_GITHUB_CLIENT_SECRET: ${{ secrets.NOOTLE_GITHUB_CLIENT_SECRET }}
+          NOOTLE_LINEAR_CLIENT_ID: ${{ secrets.NOOTLE_LINEAR_CLIENT_ID }}
+          NOOTLE_LINEAR_CLIENT_SECRET: ${{ secrets.NOOTLE_LINEAR_CLIENT_SECRET }}
+          NOOTLE_ASANA_CLIENT_ID: ${{ secrets.NOOTLE_ASANA_CLIENT_ID }}
+          NOOTLE_ASANA_CLIENT_SECRET: ${{ secrets.NOOTLE_ASANA_CLIENT_SECRET }}
         with:
           tagName: ${{ steps.version.outputs.tag }}
           releaseName: ${{ steps.version.outputs.tag }}

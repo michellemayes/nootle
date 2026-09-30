@@ -91,7 +91,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, or your existing Claude / ChatGPT subscription via the Claude Code (`claude -p`) and Codex CLIs
 - **Meeting detection** — auto-detects active meeting apps and calendar events
 - **URL scheme** — start and stop recordings from other apps or scripts via `nootle://` links (opt-in)
-- **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email
+- **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email. Connect Slack, Notion, Confluence, Linear, GitHub, and Asana with one click by signing in, or paste a token if you prefer
 - **Templates** — customizable summary templates you can pick per recording, or mark auto-run so every meeting is summarized without asking (e.g. a standing template for 1:1s, standups, or interviews)
 - **Semantic search** — ask questions across your entire meeting history
 - **Noise cancellation** — built-in denoising for cleaner audio and transcripts
@@ -124,6 +124,21 @@ pnpm install
 # Run in dev mode
 pnpm tauri dev
 ```
+
+### Integration sign-in (OAuth)
+
+One-click sign-in for Slack, Notion, Confluence, GitHub, Linear, and Asana needs an OAuth app registered with each provider. Every provider uses the same redirect URI, `https://nootle.ai/oauth/callback`, a static page that hands the code back to the app through `nootle://oauth/callback`. The app checks the `state` it generated, uses PKCE where the provider supports it (GitHub, Linear, Asana), and refreshes expiring tokens automatically.
+
+| Provider | Scopes to enable |
+| --- | --- |
+| Slack | Bot scopes `chat:write`, `chat:write.public` |
+| Notion | Public integration with insert-content capability |
+| Confluence (Atlassian 3LO) | `write:page:confluence`, `read:space:confluence`, `offline_access` |
+| GitHub (OAuth app) | `repo` |
+| Linear | `read`, `write` |
+| Asana | Default |
+
+Client credentials are read from `NOOTLE_<PROVIDER>_CLIENT_ID` and `NOOTLE_<PROVIDER>_CLIENT_SECRET` (for example `NOOTLE_SLACK_CLIENT_ID`). They're compiled in when set at build time, and the same variables override them at runtime. The release workflow passes them from repository secrets. A provider without a client ID still works; Settings just asks for a token instead of showing a sign-in button.
 
 ## CLI Tool
 

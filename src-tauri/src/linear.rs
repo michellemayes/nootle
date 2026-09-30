@@ -92,6 +92,19 @@ struct IssueNode {
     title: String,
 }
 
+/// The `Authorization` header value for a Linear integration's credentials.
+/// OAuth tokens use the Bearer scheme; personal API keys must be sent bare,
+/// since Linear rejects `Bearer <api key>`.
+pub fn authorization_header(creds: &serde_json::Value) -> Option<String> {
+    if let Some(token) = creds["access_token"].as_str().filter(|t| !t.is_empty()) {
+        return Some(format!("Bearer {token}"));
+    }
+    creds["api_key"]
+        .as_str()
+        .filter(|k| !k.is_empty())
+        .map(String::from)
+}
+
 fn extract_errors<T>(response: &GqlResponse<T>) -> Option<String> {
     response.errors.as_ref().map(|errs| {
         errs.iter()

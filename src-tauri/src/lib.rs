@@ -15,6 +15,7 @@ pub mod llm;
 pub mod mcp;
 pub mod model_download;
 pub mod model_registry;
+pub mod oauth;
 pub mod permissions;
 pub mod remote;
 pub mod summarization;
@@ -191,6 +192,7 @@ pub fn run() {
         .manage(detector_state)
         .manage(download_manager)
         .manage(embedding_state)
+        .manage(oauth::OAuthState::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             model_registry::migrate_legacy_files();
@@ -357,6 +359,9 @@ pub fn run() {
             commands::list_integrations,
             commands::update_integration,
             commands::delete_integration,
+            commands::list_oauth_providers,
+            commands::connect_oauth,
+            commands::cancel_oauth,
             commands::create_workflow,
             commands::list_workflows,
             commands::update_workflow,

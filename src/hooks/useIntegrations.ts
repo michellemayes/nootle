@@ -6,6 +6,7 @@ export function useIntegrations() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [oauthProviders, setOauthProviders] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -22,7 +23,22 @@ export function useIntegrations() {
 
   useEffect(() => {
     refresh();
+    invoke<string[] | null>("list_oauth_providers")
+      .then((providers) => setOauthProviders(providers ?? []))
+      .catch(() => setOauthProviders([]));
   }, [refresh]);
+
+  /** Opens the provider's sign-in page and resolves once the user finishes. */
+  const connectOAuth = useCallback(
+    async (provider: string) => {
+      const result = await invoke<Integration>("connect_oauth", { provider });
+      await refresh();
+      return result;
+    },
+    [refresh],
+  );
+
+  const cancelOAuth = useCallback(() => invoke("cancel_oauth"), []);
 
   const createIntegration = useCallback(
     async (
@@ -67,6 +83,9 @@ export function useIntegrations() {
     loading,
     error,
     refresh,
+    oauthProviders,
+    connectOAuth,
+    cancelOAuth,
     createIntegration,
     updateIntegration,
     deleteIntegration,
