@@ -131,7 +131,7 @@ fn validate_hex_color(color: &str) -> Result<(), String> {
 
 /// The `Authorization` header value for Linear: a legacy API key, or the
 /// Linear integration's key or OAuth token (refreshed if it has expired).
-async fn get_linear_api_key(db: &Database) -> Result<String, String> {
+async fn linear_auth_header(db: &Database) -> Result<String, String> {
     // Check legacy linear_settings table first
     if let Some(key) = db
         .get_linear_setting("api_key")
@@ -1116,7 +1116,7 @@ pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
 pub async fn list_linear_teams(
     db: State<'_, DbState>,
 ) -> Result<Vec<crate::linear::LinearTeam>, String> {
-    let api_key = get_linear_api_key(&db).await?;
+    let api_key = linear_auth_header(&db).await?;
     crate::linear::list_teams(&api_key)
         .await
         .map_err(|e| e.to_string())
@@ -1127,7 +1127,7 @@ pub async fn list_linear_projects(
     db: State<'_, DbState>,
     team_id: String,
 ) -> Result<Vec<crate::linear::LinearProject>, String> {
-    let api_key = get_linear_api_key(&db).await?;
+    let api_key = linear_auth_header(&db).await?;
     crate::linear::list_projects(&api_key, &team_id)
         .await
         .map_err(|e| e.to_string())
@@ -1189,7 +1189,7 @@ pub async fn create_linear_ticket(
         Err(_) => (meeting.title.clone(), summary.content.clone()),
     };
 
-    let api_key = get_linear_api_key(&db).await?;
+    let api_key = linear_auth_header(&db).await?;
 
     let issue = crate::linear::create_issue(
         &api_key,
@@ -1284,7 +1284,7 @@ pub async fn create_ticket_from_action_item(
         Err(_) => (item.content.clone(), item.content.clone()),
     };
 
-    let api_key = get_linear_api_key(&db).await?;
+    let api_key = linear_auth_header(&db).await?;
 
     let issue = crate::linear::create_issue(
         &api_key,
@@ -2015,14 +2015,14 @@ pub fn list_oauth_providers() -> Vec<String> {
 }
 
 /// Signs in to `provider` in the browser and saves the integration. Resolves
-/// once the user finishes (or abandons) the sign-in.
+/// once the user finishes the sign-in, with `None` if they cancelled.
 #[tauri::command]
 pub async fn connect_oauth(
     app: tauri::AppHandle,
     db: State<'_, DbState>,
     oauth: State<'_, crate::oauth::OAuthState>,
     provider: String,
-) -> Result<crate::db::Integration, String> {
+) -> Result<Option<crate::db::Integration>, String> {
     crate::oauth::connect(&app, &db, &oauth, &provider).await
 }
 

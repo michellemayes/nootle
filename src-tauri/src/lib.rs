@@ -10,6 +10,7 @@ pub mod diarization;
 pub mod embedding;
 pub mod error;
 pub mod extraction;
+pub mod http;
 pub mod linear;
 pub mod llm;
 pub mod mcp;
@@ -205,7 +206,14 @@ pub fn run() {
                     for url in event.urls() {
                         let handle = deep_link_handle.clone();
                         let raw = url.to_string();
-                        tauri::async_runtime::spawn(remote::handle_url(handle, raw));
+                        // Sign-in redirects aren't remote control, so they
+                        // skip its opt-in switch; oauth matches them against
+                        // a sign-in the user started.
+                        if url.host_str() == Some("oauth") {
+                            oauth::handle_callback(&handle, &raw);
+                        } else {
+                            tauri::async_runtime::spawn(remote::handle_url(handle, raw));
+                        }
                     }
                 });
             }

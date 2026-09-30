@@ -132,20 +132,19 @@ pub async fn run_workflow_for_meeting(
 
     db.update_workflow_run_status(&run.id, "running", None, None)?;
 
-    let outcome = match crate::oauth::refresh_if_needed(db, integration).await {
-        Ok(integration) => {
-            execute_workflow(
-                &workflow,
-                &integration,
-                &context,
-                Some(llm),
-                llm_provider,
-                llm_model,
-            )
-            .await
-        }
-        Err(e) => Err(e),
-    };
+    let outcome = async {
+        let integration = crate::oauth::refresh_if_needed(db, integration).await?;
+        execute_workflow(
+            &workflow,
+            &integration,
+            &context,
+            Some(llm),
+            llm_provider,
+            llm_model,
+        )
+        .await
+    }
+    .await;
     match outcome {
         Ok(result) => {
             let result_json = serde_json::to_string(&result).unwrap_or_default();
@@ -245,20 +244,6 @@ fn parse_creds_and_config(
     Ok((creds, config))
 }
 
-/// The token to call a service with: the OAuth access token when the
-/// integration was connected by signing in, otherwise the pasted token stored
-/// under `legacy_key`.
-fn access_token<'a>(
-    creds: &'a serde_json::Value,
-    legacy_key: &str,
-    service: &str,
-) -> std::result::Result<&'a str, String> {
-    creds["access_token"]
-        .as_str()
-        .or(creds[legacy_key].as_str())
-        .ok_or_else(|| format!("Missing {legacy_key} in {service} credentials"))
-}
-
 fn no_action_items_error() -> String {
     "No action items found for this meeting. Generate a summary on the Summaries tab and run insight extraction first — the workflow needs action items to push.".to_string()
 }
@@ -355,7 +340,9 @@ async fn execute_slack(
 ) -> std::result::Result<WorkflowResult, String> {
     let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
-    let token = access_token(&creds, "bot_token", "Slack")?;
+    let token = creds["bot_token"]
+        .as_str()
+        .ok_or("Missing bot_token in Slack credentials")?;
     let channel = config["channel"]
         .as_str()
         .ok_or("Missing channel in workflow config")?;
@@ -402,7 +389,9 @@ async fn execute_notion(
 ) -> std::result::Result<WorkflowResult, String> {
     let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
-    let token = access_token(&creds, "api_key", "Notion")?;
+    let token = creds["api_key"]
+        .as_str()
+        .ok_or("Missing api_key in Notion credentials")?;
     let database_id = config["database_id"]
         .as_str()
         .ok_or("Missing database_id in workflow config")?;
@@ -454,7 +443,6 @@ async fn execute_notion(
 /// the api.atlassian.com gateway with a bearer token, while a pasted API
 /// token uses basic auth against the site itself.
 struct ConfluenceApi {
-    client: reqwest::Client,
     base: String,
     auth: ConfluenceAuth,
 }
@@ -472,12 +460,9 @@ impl ConfluenceApi {
                 .map(String::from)
                 .ok_or_else(|| format!("Missing {key} in Confluence credentials"))
         };
-        let (base, auth) = if crate::oauth::is_oauth(creds) {
+        let (base, auth) = if let Some(cloud_id) = creds["cloud_id"].as_str() {
             (
-                format!(
-                    "https://api.atlassian.com/ex/confluence/{}",
-                    field("cloud_id")?
-                ),
+                format!("https://api.atlassian.com/ex/confluence/{cloud_id}"),
                 ConfluenceAuth::Bearer(field("access_token")?),
             )
         } else {
@@ -489,15 +474,11 @@ impl ConfluenceApi {
                 },
             )
         };
-        Ok(Self {
-            client: reqwest::Client::new(),
-            base,
-            auth,
-        })
+        Ok(Self { base, auth })
     }
 
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-        let req = self.client.request(method, format!("{}{path}", self.base));
+        let req = crate::http::CLIENT.request(method, format!("{}{path}", self.base));
         match &self.auth {
             ConfluenceAuth::Bearer(token) => req.bearer_auth(token),
             ConfluenceAuth::Basic { email, api_token } => req.basic_auth(email, Some(api_token)),
@@ -586,7 +567,9 @@ async fn execute_github(
 ) -> std::result::Result<WorkflowResult, String> {
     let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
-    let token = access_token(&creds, "token", "GitHub")?;
+    let token = creds["token"]
+        .as_str()
+        .ok_or("Missing token in GitHub credentials")?;
     let repo = config["repo"]
         .as_str()
         .ok_or("Missing repo in workflow config (format: owner/repo)")?;
@@ -647,7 +630,6 @@ async fn execute_linear(
 
     let auth_header = crate::linear::authorization_header(&creds)
         .ok_or("Missing api_key in Linear credentials")?;
-    let api_key = auth_header.as_str();
     let team_input = config["team_id"]
         .as_str()
         .ok_or("Missing team_id in workflow config")?;
@@ -663,7 +645,7 @@ async fn execute_linear(
     let team_id_owned = if looks_like_uuid(team_input) {
         team_input.to_string()
     } else {
-        let teams = crate::linear::list_teams(api_key)
+        let teams = crate::linear::list_teams(&auth_header)
             .await
             .map_err(|e| format!("Failed to look up Linear team: {e}"))?;
         let needle = team_input.to_ascii_lowercase();
@@ -701,7 +683,7 @@ async fn execute_linear(
 
         let resp = client
             .post("https://api.linear.app/graphql")
-            .header("Authorization", api_key)
+            .header("Authorization", &auth_header)
             .json(&serde_json::json!({
                 "query": "mutation CreateIssue($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url title } } }",
                 "variables": { "input": input }
@@ -740,7 +722,9 @@ async fn execute_asana(
 ) -> std::result::Result<WorkflowResult, String> {
     let (creds, config) = parse_creds_and_config(integration, workflow)?;
 
-    let token = access_token(&creds, "token", "Asana")?;
+    let token = creds["token"]
+        .as_str()
+        .ok_or("Missing token in Asana credentials")?;
     let project_id = config["project_id"]
         .as_str()
         .ok_or("Missing project_id in workflow config")?;

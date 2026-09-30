@@ -23,16 +23,17 @@ export function useIntegrations() {
 
   useEffect(() => {
     refresh();
-    invoke<string[] | null>("list_oauth_providers")
-      .then((providers) => setOauthProviders(providers ?? []))
-      .catch(() => setOauthProviders([]));
+    invoke<string[]>("list_oauth_providers").then(setOauthProviders).catch(() => {});
   }, [refresh]);
 
-  /** Opens the provider's sign-in page and resolves once the user finishes. */
+  /**
+   * Opens the provider's sign-in page and resolves once the user finishes,
+   * with null if they cancelled.
+   */
   const connectOAuth = useCallback(
     async (provider: string) => {
-      const result = await invoke<Integration>("connect_oauth", { provider });
-      await refresh();
+      const result = await invoke<Integration | null>("connect_oauth", { provider });
+      if (result) await refresh();
       return result;
     },
     [refresh],

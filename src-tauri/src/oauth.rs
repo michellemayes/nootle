@@ -14,9 +14,14 @@
 //! `NOOTLE_<PROVIDER>_CLIENT_ID` / `NOOTLE_<PROVIDER>_CLIENT_SECRET`, and the
 //! same variables at runtime override them for development. A provider with
 //! no client ID falls back to pasting a token by hand.
+//!
+//! The access token is stored under the same credential key a pasted token
+//! uses (`bot_token`, `api_key`, …), so workflows read either the same way.
+//! OAuth sign-ins additionally store `refresh_token` and `expires_at` when the
+//! provider issues them.
 
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use base64::Engine;
@@ -27,6 +32,7 @@ use tokio::sync::oneshot;
 use url::Url;
 
 use crate::db::{Database, Integration};
+use crate::http::CLIENT;
 
 pub const REDIRECT_URI: &str = "https://nootle.ai/oauth/callback";
 
@@ -36,14 +42,6 @@ const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 /// Refresh tokens this long before they expire so a request in flight
 /// doesn't race the expiry.
 const EXPIRY_SLACK_SECS: i64 = 60;
-
-static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(30))
-        .build()
-        .expect("Failed to build HTTP client")
-});
 
 /// Serializes refreshes: Atlassian rotates refresh tokens, so two workflows
 /// refreshing the same integration at once would invalidate each other.
@@ -62,18 +60,26 @@ enum TokenStyle {
 
 struct Provider {
     kind: &'static str,
-    name: &'static str,
     authorize_url: &'static str,
     token_url: &'static str,
     scope: Option<&'static str>,
     extra_params: &'static [(&'static str, &'static str)],
     token_style: TokenStyle,
     pkce: bool,
+    /// Credential key the access token is stored under.
+    token_field: &'static str,
     builtin_client_id: Option<&'static str>,
     builtin_client_secret: Option<&'static str>,
 }
 
 impl Provider {
+    fn name(&self) -> &'static str {
+        crate::automation::CATALOG
+            .iter()
+            .find(|s| s.integration_type == self.kind)
+            .map_or(self.kind, |s| s.name)
+    }
+
     fn env(&self, suffix: &str, builtin: Option<&'static str>) -> Option<String> {
         let var = format!("NOOTLE_{}_{suffix}", self.kind.to_ascii_uppercase());
         std::env::var(var)
@@ -91,79 +97,76 @@ impl Provider {
     }
 }
 
+/// Declares a provider whose build-time client credentials come from
+/// `NOOTLE_<ENV>_CLIENT_ID` / `NOOTLE_<ENV>_CLIENT_SECRET`.
+macro_rules! provider {
+    ($kind:literal, $env:literal, { $($field:ident: $value:expr),* $(,)? }) => {
+        Provider {
+            kind: $kind,
+            builtin_client_id: option_env!(concat!("NOOTLE_", $env, "_CLIENT_ID")),
+            builtin_client_secret: option_env!(concat!("NOOTLE_", $env, "_CLIENT_SECRET")),
+            $($field: $value),*
+        }
+    };
+}
+
 static PROVIDERS: &[Provider] = &[
-    Provider {
-        kind: "slack",
-        name: "Slack",
+    provider!("slack", "SLACK", {
         authorize_url: "https://slack.com/oauth/v2/authorize",
         token_url: "https://slack.com/api/oauth.v2.access",
         scope: Some("chat:write,chat:write.public"),
         extra_params: &[],
         token_style: TokenStyle::Form,
         pkce: false,
-        builtin_client_id: option_env!("NOOTLE_SLACK_CLIENT_ID"),
-        builtin_client_secret: option_env!("NOOTLE_SLACK_CLIENT_SECRET"),
-    },
-    Provider {
-        kind: "notion",
-        name: "Notion",
+        token_field: "bot_token",
+    }),
+    provider!("notion", "NOTION", {
         authorize_url: "https://api.notion.com/v1/oauth/authorize",
         token_url: "https://api.notion.com/v1/oauth/token",
         scope: None,
         extra_params: &[("owner", "user")],
         token_style: TokenStyle::BasicJson,
         pkce: false,
-        builtin_client_id: option_env!("NOOTLE_NOTION_CLIENT_ID"),
-        builtin_client_secret: option_env!("NOOTLE_NOTION_CLIENT_SECRET"),
-    },
-    Provider {
-        kind: "confluence",
-        name: "Confluence",
+        token_field: "api_key",
+    }),
+    provider!("confluence", "CONFLUENCE", {
         authorize_url: "https://auth.atlassian.com/authorize",
         token_url: "https://auth.atlassian.com/oauth/token",
         scope: Some("write:page:confluence read:space:confluence offline_access"),
         extra_params: &[("audience", "api.atlassian.com"), ("prompt", "consent")],
         token_style: TokenStyle::Json,
         pkce: false,
-        builtin_client_id: option_env!("NOOTLE_CONFLUENCE_CLIENT_ID"),
-        builtin_client_secret: option_env!("NOOTLE_CONFLUENCE_CLIENT_SECRET"),
-    },
-    Provider {
-        kind: "github",
-        name: "GitHub",
+        // Distinct from the pasted `api_token`, which uses basic auth.
+        token_field: "access_token",
+    }),
+    provider!("github", "GITHUB", {
         authorize_url: "https://github.com/login/oauth/authorize",
         token_url: "https://github.com/login/oauth/access_token",
         scope: Some("repo"),
         extra_params: &[],
         token_style: TokenStyle::Form,
         pkce: true,
-        builtin_client_id: option_env!("NOOTLE_GITHUB_CLIENT_ID"),
-        builtin_client_secret: option_env!("NOOTLE_GITHUB_CLIENT_SECRET"),
-    },
-    Provider {
-        kind: "linear",
-        name: "Linear",
+        token_field: "token",
+    }),
+    provider!("linear", "LINEAR", {
         authorize_url: "https://linear.app/oauth/authorize",
         token_url: "https://api.linear.app/oauth/token",
         scope: Some("read,write"),
         extra_params: &[],
         token_style: TokenStyle::Form,
         pkce: true,
-        builtin_client_id: option_env!("NOOTLE_LINEAR_CLIENT_ID"),
-        builtin_client_secret: option_env!("NOOTLE_LINEAR_CLIENT_SECRET"),
-    },
-    Provider {
-        kind: "asana",
-        name: "Asana",
+        // Distinct from the pasted `api_key`: OAuth tokens need "Bearer ".
+        token_field: "access_token",
+    }),
+    provider!("asana", "ASANA", {
         authorize_url: "https://app.asana.com/-/oauth_authorize",
         token_url: "https://app.asana.com/-/oauth_token",
         scope: Some("default"),
         extra_params: &[],
         token_style: TokenStyle::Form,
         pkce: true,
-        builtin_client_id: option_env!("NOOTLE_ASANA_CLIENT_ID"),
-        builtin_client_secret: option_env!("NOOTLE_ASANA_CLIENT_SECRET"),
-    },
+        token_field: "token",
+    }),
 ];
 
 fn provider(kind: &str) -> Option<&'static Provider> {
@@ -179,25 +182,24 @@ pub fn configured_providers() -> Vec<String> {
         .collect()
 }
 
-/// True when the credentials came from an OAuth sign-in rather than a pasted
-/// token.
-pub fn is_oauth(creds: &Value) -> bool {
-    creds["auth"].as_str() == Some("oauth")
-}
+/// What a sign-in's browser redirect delivered: `Ok(code)` or an error.
+/// Dropping the sender instead means the user cancelled.
+type CallbackSender = oneshot::Sender<Result<String, String>>;
 
 /// Sign-ins waiting for their browser redirect, keyed by `state`.
 #[derive(Default)]
 pub struct OAuthState {
-    pending: Mutex<HashMap<String, oneshot::Sender<Result<String, String>>>>,
+    pending: Mutex<HashMap<String, CallbackSender>>,
 }
 
 impl OAuthState {
-    /// Abandons any sign-in in progress; its `connect` call returns an error.
+    fn pending(&self) -> MutexGuard<'_, HashMap<String, CallbackSender>> {
+        self.pending.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Abandons any sign-in in progress; its `connect` call returns `None`.
     pub fn cancel(&self) {
-        self.pending
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clear();
+        self.pending().clear();
     }
 }
 
@@ -237,32 +239,30 @@ fn authorize_url(
 }
 
 /// POSTs a grant to the provider's token endpoint and returns the token JSON.
-async fn token_request(p: &Provider, grant: &[(&str, &str)]) -> Result<Value, String> {
-    let client_id = p
-        .client_id()
-        .ok_or_else(|| format!("{} sign-in isn't configured in this build", p.name))?;
+async fn token_request(
+    p: &Provider,
+    client_id: &str,
+    grant: &[(&str, &str)],
+) -> Result<Value, String> {
     let secret = p.client_secret();
-
     let mut params: Map<String, Value> = grant
         .iter()
         .map(|(k, v)| (k.to_string(), json!(v)))
         .collect();
+    if !matches!(p.token_style, TokenStyle::BasicJson) {
+        params.insert("client_id".into(), json!(client_id));
+        if let Some(secret) = &secret {
+            params.insert("client_secret".into(), json!(secret));
+        }
+    }
+
     let req = CLIENT
         .post(p.token_url)
         .header("Accept", "application/json");
     let req = match p.token_style {
-        TokenStyle::BasicJson => req.basic_auth(&client_id, secret).json(&params),
-        style => {
-            params.insert("client_id".into(), json!(client_id));
-            if let Some(secret) = secret {
-                params.insert("client_secret".into(), json!(secret));
-            }
-            if matches!(style, TokenStyle::Json) {
-                req.json(&params)
-            } else {
-                req.form(&params)
-            }
-        }
+        TokenStyle::Form => req.form(&params),
+        TokenStyle::Json => req.json(&params),
+        TokenStyle::BasicJson => req.basic_auth(client_id, secret).json(&params),
     };
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
@@ -285,9 +285,8 @@ async fn token_request(p: &Provider, grant: &[(&str, &str)]) -> Result<Value, St
 
 /// Copies the tokens from a token response into stored credentials. Keeps an
 /// existing refresh token when the provider doesn't rotate it.
-fn merge_tokens(creds: &mut Map<String, Value>, token: &Value) {
-    creds.insert("auth".into(), json!("oauth"));
-    creds.insert("access_token".into(), token["access_token"].clone());
+fn merge_tokens(p: &Provider, creds: &mut Map<String, Value>, token: &Value) {
+    creds.insert(p.token_field.into(), token["access_token"].clone());
     if let Some(refresh) = token["refresh_token"].as_str() {
         creds.insert("refresh_token".into(), json!(refresh));
     }
@@ -346,18 +345,18 @@ async fn account_details(
 
 /// Runs the whole sign-in: opens the browser, waits for the redirect, trades
 /// the code for tokens, and saves (or replaces) the integration. Returns the
-/// integration without its credentials.
+/// integration without its credentials, or `None` if the user cancelled.
 pub async fn connect(
     app: &AppHandle,
     db: &Database,
     state: &OAuthState,
     kind: &str,
-) -> Result<Integration, String> {
+) -> Result<Option<Integration>, String> {
     let p = provider(kind).ok_or_else(|| format!("{kind} doesn't support sign-in"))?;
     let client_id = p.client_id().ok_or_else(|| {
         format!(
             "{} sign-in isn't configured in this build; paste a token instead",
-            p.name
+            p.name()
         )
     })?;
 
@@ -368,7 +367,7 @@ pub async fn connect(
 
     let (tx, rx) = oneshot::channel();
     {
-        let mut pending = state.pending.lock().unwrap_or_else(|e| e.into_inner());
+        let mut pending = state.pending();
         // One sign-in at a time; starting another abandons the last.
         pending.clear();
         pending.insert(csrf.clone(), tx);
@@ -382,13 +381,9 @@ pub async fn connect(
 
     let code = match tokio::time::timeout(SIGN_IN_TIMEOUT, rx).await {
         Ok(Ok(result)) => result?,
-        Ok(Err(_)) => return Err("Sign-in was cancelled".into()),
+        Ok(Err(_)) => return Ok(None),
         Err(_) => {
-            state
-                .pending
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .remove(&csrf);
+            state.pending().remove(&csrf);
             return Err("Sign-in timed out; try again".into());
         }
     };
@@ -401,18 +396,17 @@ pub async fn connect(
     if p.pkce {
         grant.push(("code_verifier", verifier.as_str()));
     }
-    let token = token_request(p, &grant)
-        .await
-        .map_err(|e| format!("{} sign-in failed: {e}", p.name))?;
+    let failed = |e: String| format!("{} sign-in failed: {e}", p.name());
+    let token = token_request(p, &client_id, &grant).await.map_err(failed)?;
 
     let mut creds = Map::new();
-    merge_tokens(&mut creds, &token);
+    merge_tokens(p, &mut creds, &token);
     let account = account_details(p, &token, &mut creds)
         .await
-        .map_err(|e| format!("{} sign-in failed: {e}", p.name))?;
+        .map_err(failed)?;
     let name = match account {
-        Some(account) => format!("{} ({account})", p.name),
-        None => p.name.to_string(),
+        Some(account) => format!("{} ({account})", p.name()),
+        None => p.name().to_string(),
     };
     let creds_json = Value::Object(creds).to_string();
 
@@ -424,43 +418,40 @@ pub async fn connect(
         None => db.create_integration(kind, &name, &creds_json),
     }
     .map_err(|e| e.to_string())?;
-    Ok(saved.redacted())
+    Ok(Some(saved.redacted()))
 }
 
 /// Handles `nootle://oauth/callback?code=…&state=…` (or `?error=…`). Ignores
 /// callbacks whose `state` doesn't match a sign-in in progress, so a stray
 /// link can't inject a code.
-pub fn handle_callback(app: &AppHandle, url: &Url) {
-    let param = |key: &str| {
-        url.query_pairs()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.into_owned())
+pub fn handle_callback(app: &AppHandle, raw: &str) {
+    let Ok(url) = Url::parse(raw) else {
+        tracing::warn!("oauth: ignoring url {raw:?}");
+        return;
     };
+    let param = |key| crate::remote::query_value(&url, key);
     let Some(csrf) = param("state") else {
         tracing::warn!("oauth: callback without state");
         return;
     };
-    let Some(tx) = app
-        .state::<OAuthState>()
-        .pending
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&csrf)
-    else {
+    let Some(tx) = app.state::<OAuthState>().pending().remove(&csrf) else {
         tracing::warn!("oauth: callback for unknown or expired sign-in");
         return;
     };
 
-    let result = match (param("code"), param("error")) {
-        (Some(code), _) => Ok(code),
-        (None, Some(error)) => Err(match param("error_description") {
-            Some(desc) => format!("Sign-in failed: {desc}"),
-            None if error == "access_denied" => "Sign-in was cancelled".to_string(),
-            None => format!("Sign-in failed: {error}"),
-        }),
-        (None, None) => Err("Sign-in failed: no authorization code returned".to_string()),
-    };
-    let _ = tx.send(result);
+    let error = param("error");
+    // Declining consent is a cancel, not a failure: dropping `tx` says so.
+    if error.as_deref() != Some("access_denied") {
+        let result = match (param("code"), error) {
+            (Some(code), _) => Ok(code),
+            (None, Some(error)) => Err(format!(
+                "Sign-in failed: {}",
+                param("error_description").unwrap_or(error)
+            )),
+            (None, None) => Err("Sign-in failed: no authorization code returned".to_string()),
+        };
+        let _ = tx.send(result);
+    }
 
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_focus();
@@ -500,9 +491,13 @@ pub async fn refresh_if_needed(
         .ok_or_else(|| reconnect("no refresh token"))?
         .to_string();
     let p = provider(&integration.integration_type).ok_or_else(|| reconnect("unknown provider"))?;
+    let client_id = p
+        .client_id()
+        .ok_or_else(|| reconnect("sign-in isn't configured in this build"))?;
 
     let token = token_request(
         p,
+        &client_id,
         &[
             ("grant_type", "refresh_token"),
             ("refresh_token", refresh_token.as_str()),
@@ -510,7 +505,7 @@ pub async fn refresh_if_needed(
     )
     .await
     .map_err(|e| reconnect(&e))?;
-    merge_tokens(&mut creds, &token);
+    merge_tokens(p, &mut creds, &token);
 
     db.update_integration(
         &integration.id,
@@ -520,14 +515,12 @@ pub async fn refresh_if_needed(
     .map_err(|e| e.to_string())
 }
 
+/// Only OAuth sign-ins store `expires_at`; pasted tokens never refresh.
 fn needs_refresh(integration: &Integration) -> bool {
-    let Ok(creds) = serde_json::from_str::<Value>(&integration.credentials_json) else {
-        return false;
-    };
-    is_oauth(&creds)
-        && creds["expires_at"]
-            .as_i64()
-            .is_some_and(|at| at - EXPIRY_SLACK_SECS <= chrono::Utc::now().timestamp())
+    serde_json::from_str::<Value>(&integration.credentials_json)
+        .ok()
+        .and_then(|creds| creds["expires_at"].as_i64())
+        .is_some_and(|at| at - EXPIRY_SLACK_SECS <= chrono::Utc::now().timestamp())
 }
 
 #[cfg(test)]
@@ -577,38 +570,44 @@ mod tests {
     }
 
     #[test]
-    fn merge_tokens_keeps_refresh_token_when_not_rotated() {
+    fn merge_tokens_uses_provider_field_and_keeps_unrotated_refresh_token() {
+        let p = provider("slack").unwrap();
         let mut creds = Map::new();
         merge_tokens(
+            p,
             &mut creds,
             &json!({"access_token": "a1", "refresh_token": "r1", "expires_in": 3600}),
         );
-        merge_tokens(&mut creds, &json!({"access_token": "a2"}));
-        assert_eq!(creds["access_token"], "a2");
+        assert!(creds.contains_key("expires_at"));
+        merge_tokens(p, &mut creds, &json!({"access_token": "a2"}));
+        assert_eq!(creds["bot_token"], "a2");
         assert_eq!(creds["refresh_token"], "r1");
         assert!(!creds.contains_key("expires_at"));
-        assert!(is_oauth(&Value::Object(creds)));
     }
 
     #[test]
-    fn needs_refresh_only_for_expiring_oauth_tokens() {
+    fn needs_refresh_only_for_expiring_tokens() {
         let now = chrono::Utc::now().timestamp();
         assert!(needs_refresh(&integration(
-            json!({"auth": "oauth", "access_token": "a", "expires_at": now - 1})
+            json!({"token": "a", "expires_at": now - 1})
         )));
         assert!(!needs_refresh(&integration(
-            json!({"auth": "oauth", "access_token": "a", "expires_at": now + 3600})
-        )));
-        assert!(!needs_refresh(&integration(
-            json!({"auth": "oauth", "access_token": "a"})
+            json!({"token": "a", "expires_at": now + 3600})
         )));
         assert!(!needs_refresh(&integration(json!({"token": "pasted"}))));
     }
 
     #[test]
     fn every_remote_integration_has_a_provider() {
-        for kind in ["slack", "notion", "confluence", "github", "linear", "asana"] {
-            assert!(provider(kind).is_some(), "{kind}");
+        let local = ["email", "obsidian"];
+        for spec in crate::automation::CATALOG {
+            if !local.contains(&spec.integration_type) {
+                assert!(
+                    provider(spec.integration_type).is_some(),
+                    "{}",
+                    spec.integration_type
+                );
+            }
         }
     }
 }

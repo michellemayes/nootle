@@ -16,9 +16,8 @@ const subscribe = () => () => {};
 
 export default function OAuthCallbackPage() {
   const query = useSyncExternalStore(subscribe, () => initialQuery, () => "");
-  const params = new URLSearchParams(query);
-  const appUrl = query ? `${APP_CALLBACK}?${params.toString()}` : null;
-  const failed = params.has("error");
+  const appUrl = query ? `${APP_CALLBACK}${query}` : null;
+  const failed = new URLSearchParams(query).has("error");
 
   useEffect(() => {
     if (!appUrl) return;

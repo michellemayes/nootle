@@ -95,8 +95,7 @@ function IntegrationCard({ intType, connectedIntegration, canSignIn, onConnect, 
       await onSignIn(intType.type);
       setExpanded(false);
     } catch (err) {
-      const message = String(err);
-      if (!message.includes("cancelled")) setSignInError(message);
+      setSignInError(String(err));
     } finally {
       setSigningIn(false);
     }
@@ -198,13 +197,14 @@ function IntegrationCard({ intType, connectedIntegration, canSignIn, onConnect, 
         <p className="mt-2 text-xs text-destructive">{signInError}</p>
       )}
       {!isConnected && canSignIn && !signingIn && !expanded && (
-        <button
-          type="button"
-          className="mt-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+        <Button
+          variant="link"
+          size="xs"
+          className="mt-1 px-0 text-muted-foreground"
           onClick={() => setExpanded(true)}
         >
           Use a token instead
-        </button>
+        </Button>
       )}
       <Collapsible open={expanded && !isConnected && intType.fields.length > 0}>
         <div className="mt-3 space-y-2">

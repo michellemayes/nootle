@@ -64,7 +64,7 @@ fn fallback_title() -> String {
     format!("Meeting {}", chrono::Local::now().format("%Y-%m-%d %H:%M"))
 }
 
-fn query_value(url: &Url, key: &str) -> Option<String> {
+pub(crate) fn query_value(url: &Url, key: &str) -> Option<String> {
     url.query_pairs()
         .find(|(k, _)| k == key)
         .map(|(_, v)| v.into_owned())
@@ -167,13 +167,6 @@ pub async fn handle_url(app: AppHandle, raw: String) {
     };
 
     let action = action_of(&url);
-    // Sign-in redirects bypass the remote-control switch: they only complete a
-    // sign-in the user started, matched by its unguessable `state`.
-    if action == "oauth/callback" {
-        crate::oauth::handle_callback(&app, &url);
-        return;
-    }
-
     let enabled = app
         .state::<DbState>()
         .get_setting(ENABLED_SETTING)
