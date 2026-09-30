@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.16] - 2026-09-30
+
+### Bug Fixes
+
+- **macos:** Drop the App Sandbox so in-app updates can install (#145) ([3ca6fef](https://github.com/michellemayes/nootle/commit/3ca6fef5daaec5e2dfae874e3bad8b57e83d83f4))
+
 ## [0.1.15] - 2026-09-30
 
 ### Bug Fixes
