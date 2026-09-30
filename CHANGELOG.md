@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.12] - 2026-09-30
+
+### Bug Fixes
+
+- **build:** Pin @tauri-apps npm packages to their Rust crate minors (#140) ([5baaec8](https://github.com/michellemayes/nootle/commit/5baaec884713ba35789b8720305c81de90613bde))
+
+### CI
+
+- **publish:** Derive release version from conventional commits (#139) ([d57282a](https://github.com/michellemayes/nootle/commit/d57282a30e1551b9250d3df8b1aa7222358ee01b))
+
+### Features
+
+- **updater:** Check for updates in-app and install with one click (#138) ([9281b04](https://github.com/michellemayes/nootle/commit/9281b04b368eff23910ec0970ab13b1de2920903))
+
 ## [0.1.11] - 2026-09-30
 
 ### Features
