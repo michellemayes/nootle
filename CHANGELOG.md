@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- Keep app running when the window is closed (#135) ([f4d5d86](https://github.com/michellemayes/nootle/commit/f4d5d8686e0c814aaaa993bd5d347cf42e05ae25))
+
+## [0.1.8] - 2026-09-30
+
+### Bug Fixes
+
+- **llm:** Detect claude/codex CLIs when launched from Finder (#134) ([38451d6](https://github.com/michellemayes/nootle/commit/38451d6383300ba8319a94591fba2b0f742d4f1f))
+
 ## [0.1.7] - 2026-09-30
 
 ### CI
