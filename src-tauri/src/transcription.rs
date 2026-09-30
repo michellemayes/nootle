@@ -70,6 +70,27 @@ pub struct TranscriptionEngine {
     state2_dims: [usize; 3],
 }
 
+/// Build an ONNX session, preferring CoreML (when `try_coreml`) but falling
+/// back to CPU so a CoreML failure only costs acceleration, not transcription.
+fn build_session(path: &Path, label: &str, try_coreml: bool) -> anyhow::Result<Session> {
+    if try_coreml {
+        let coreml = Session::builder()
+            .and_then(|b| {
+                b.with_execution_providers([
+                    ort::execution_providers::CoreMLExecutionProvider::default().build(),
+                ])
+            })
+            .and_then(|b| b.commit_from_file(path));
+        match coreml {
+            Ok(session) => return Ok(session),
+            Err(e) => tracing::warn!("{label}: CoreML unavailable ({e}); using CPU"),
+        }
+    }
+    Session::builder()?
+        .commit_from_file(path)
+        .with_context(|| format!("Failed to load {label} model on CPU"))
+}
+
 impl TranscriptionEngine {
     /// Get the directory where models are stored.
     pub fn model_dir() -> PathBuf {
@@ -134,20 +155,11 @@ impl TranscriptionEngine {
             None
         };
 
-        // Load ONNX sessions with CoreML EP for Apple Silicon acceleration
-        let encoder = Session::builder()?
-            .with_execution_providers([
-                ort::execution_providers::CoreMLExecutionProvider::default().build(),
-            ])?
-            .commit_from_file(&encoder_path)
-            .context("Failed to load encoder model")?;
-
-        let decoder = Session::builder()?
-            .with_execution_providers([
-                ort::execution_providers::CoreMLExecutionProvider::default().build(),
-            ])?
-            .commit_from_file(&decoder_path)
-            .context("Failed to load decoder model")?;
+        // CoreML can't load models with external weights (the fp32 encoder), so
+        // don't pay for a failed attempt on every recording.
+        let encoder_external = model_dir.join("encoder-model.onnx.data").exists();
+        let encoder = build_session(&encoder_path, "encoder", !encoder_external)?;
+        let decoder = build_session(&decoder_path, "decoder", true)?;
 
         // Load vocabulary (format: "token id" per line — extract just the token)
         let vocab_text =

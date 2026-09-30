@@ -55,6 +55,11 @@
         "https://github.com/michellemayes/nootle/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIzQzc2OTVEM0RFQ0JGODgKUldTSXYrdzlYV25ISXlxaU80Z0NkTVdnL0ZFUWd0VEZaNXd6MVcyM3hDdlhXZVFNWWFUREJQRi8K"
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["nootle"]
+      }
     }
   }
 }

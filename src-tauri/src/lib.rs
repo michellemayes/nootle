@@ -15,6 +15,7 @@ pub mod mcp;
 pub mod model_download;
 pub mod model_registry;
 pub mod permissions;
+pub mod remote;
 pub mod summarization;
 pub mod transcription;
 pub mod vad;
@@ -121,6 +122,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_deep_link::init())
         .menu(|handle| {
             use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
             let app_menu = SubmenuBuilder::new(handle, "Nootle")
@@ -235,6 +237,20 @@ pub fn run() {
         .manage(embedding_state)
         .setup(move |app| {
             let app_handle = app.handle().clone();
+            model_registry::migrate_legacy_files();
+
+            // nootle:// URLs delivered while the app is already running.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let deep_link_handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        let handle = deep_link_handle.clone();
+                        let raw = url.to_string();
+                        tauri::async_runtime::spawn(remote::handle_url(handle, raw));
+                    }
+                });
+            }
             let update_handle = app_handle.clone();
             let detector = detector.clone();
             let db_for_detection = app.state::<Arc<db::Database>>().inner().clone();

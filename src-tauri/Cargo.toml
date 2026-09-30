@@ -57,6 +57,8 @@ schemars = "1.0"
 tauri-plugin-updater = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
+tauri-plugin-deep-link = "2"
+url = "2"
 log = "0.4"
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
@@ -65,5 +67,7 @@ clap = { version = "4", features = ["derive", "env"] }
 tempfile = "3"
 
 [features]
-default = []
+# Without system-audio, capture is a mic-only stub, so a meeting recorder
+# would miss everyone else in the meeting.
+default = ["system-audio"]
 system-audio = ["cidre"]

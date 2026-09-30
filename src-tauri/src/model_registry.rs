@@ -78,7 +78,9 @@ const PARAKEET_FULL_FILES: &[ModelFile] = &[
         sha256: "98a74b21b4cc0017c1e7030319a4a96f4a9506e50f0708f3a516d02a77c96bb1",
     },
     ModelFile {
-        local_name: "encoder.onnx.data",
+        // Must keep the upstream name: encoder.onnx references its external
+        // weights by this filename, and the encoder fails to load otherwise.
+        local_name: "encoder-model.onnx.data",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx.data",
         size_bytes: 2_440_000_000,
         sha256: "9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36",
@@ -286,6 +288,32 @@ fn is_variant_in_dir(dir: &std::path::Path, variant: &ModelVariant) -> bool {
         .all(|f| dir.join(f.local_name).exists())
 }
 
+/// Files earlier releases saved under a different name, as (old, new).
+const LEGACY_RENAMES: &[(&str, &str)] = &[("encoder.onnx.data", "encoder-model.onnx.data")];
+
+/// Rename files downloaded by earlier releases so existing installs keep
+/// working without re-downloading. Best-effort; run once at startup.
+pub fn migrate_legacy_files() {
+    for model in MODEL_REGISTRY {
+        migrate_legacy_files_in(&model_dir(model));
+    }
+}
+
+fn migrate_legacy_files_in(dir: &std::path::Path) {
+    for (old, new) in LEGACY_RENAMES {
+        let (old, new) = (dir.join(old), dir.join(new));
+        if old.exists() && !new.exists() {
+            if let Err(e) = std::fs::rename(&old, &new) {
+                tracing::warn!(
+                    "Failed to rename {} -> {}: {e}",
+                    old.display(),
+                    new.display()
+                );
+            }
+        }
+    }
+}
+
 /// Check if all files for a variant are present on disk.
 pub fn is_variant_downloaded(model: &ModelDefinition, variant: &ModelVariant) -> bool {
     is_variant_in_dir(&model_dir(model), variant)
@@ -298,6 +326,26 @@ mod tests {
     #[test]
     fn registry_has_five_models() {
         assert_eq!(MODEL_REGISTRY.len(), 5);
+    }
+
+    #[test]
+    fn external_data_keeps_the_name_the_graph_references() {
+        let (_, variant) = get_variant("parakeet-tdt-0.6b-v3", "full").unwrap();
+        let data = variant
+            .files
+            .iter()
+            .find(|f| f.url.ends_with(".onnx.data"))
+            .expect("fp32 variant must ship an external data file");
+        assert_eq!(data.local_name, "encoder-model.onnx.data");
+    }
+
+    #[test]
+    fn legacy_encoder_data_is_renamed() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("encoder.onnx.data"), b"weights").unwrap();
+        migrate_legacy_files_in(dir.path());
+        assert!(!dir.path().join("encoder.onnx.data").exists());
+        assert!(dir.path().join("encoder-model.onnx.data").exists());
     }
 
     #[test]
