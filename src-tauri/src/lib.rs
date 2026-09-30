@@ -106,6 +106,7 @@ pub fn run() {
                 .build()?;
             let window_menu = SubmenuBuilder::new(handle, "Window")
                 .minimize()
+                .close_window()
                 .build()?;
             let help_menu = SubmenuBuilder::new(handle, "Help")
                 .item(
@@ -367,6 +368,27 @@ pub fn run() {
             commands::list_workflow_runs,
             commands::run_workflow,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .on_window_event(|window, event| {
+            // Closing the window hides it instead of quitting, so recordings,
+            // meeting detection and URL control keep running in the background.
+            // Clicking the Dock icon brings it back; Cmd+Q still quits.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = event
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }
