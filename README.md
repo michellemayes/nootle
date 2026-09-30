@@ -92,7 +92,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Meeting detection** — auto-detects active meeting apps and calendar events
 - **Runs in the background** — closing the window (⌘W) keeps Nootle running, so recordings and meeting detection continue; click the Dock icon to bring it back, ⌘Q to quit
 - **URL scheme** — start and stop recordings from other apps or scripts via `nootle://` links (opt-in)
-- **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email
+- **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email. Notion, Linear, and Confluence connect in one click through their official MCP servers. GitHub can reuse your GitHub CLI (`gh`) sign-in. Anything else takes a pasted token, and a **Get a token** button opens the right page for each service, with Slack's app and GitHub's scopes pre-filled
 - **Templates** — customizable summary templates you can pick per recording, or mark auto-run so every meeting is summarized without asking (e.g. a standing template for 1:1s, standups, or interviews)
 - **Semantic search** — ask questions across your entire meeting history
 - **Noise cancellation** — built-in denoising for cleaner audio and transcripts
@@ -125,6 +125,12 @@ pnpm install
 # Run in dev mode
 pnpm tauri dev
 ```
+
+### Integration sign-in
+
+Notion, Linear, and Confluence connect with one click through each vendor's official MCP server (`mcp.notion.com`, `mcp.linear.app`, `mcp.atlassian.com`). Those servers support OAuth dynamic client registration, so Nootle registers itself the first time you connect. There's no OAuth app to create and nothing to configure at build time. Sign-in opens the vendor's consent page and catches the redirect on a one-off `127.0.0.1` port. Workflows then call the server's MCP tools, and `rmcp` refreshes the token when it expires.
+
+GitHub can reuse a signed-in GitHub CLI (`gh auth token`). Slack and Asana connect with a pasted token, because their MCP servers require a registered app. The **Get a token** button opens the right page for each, and Slack's app setup comes pre-filled. Every service still accepts a pasted token.
 
 ## CLI Tool
 

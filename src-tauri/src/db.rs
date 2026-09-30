@@ -3175,6 +3175,20 @@ impl Database {
         Ok(integration)
     }
 
+    /// Replaces the credentials of the integration of this type, or creates
+    /// one. Used by sign-in flows, which connect at most one per type.
+    pub fn upsert_integration_by_type(
+        &self,
+        integration_type: &str,
+        name: &str,
+        credentials_json: &str,
+    ) -> Result<Integration> {
+        match self.get_integration_by_type(integration_type)? {
+            Some(existing) => self.update_integration(&existing.id, name, credentials_json),
+            None => self.create_integration(integration_type, name, credentials_json),
+        }
+    }
+
     pub fn create_workflow(
         &self,
         name: &str,

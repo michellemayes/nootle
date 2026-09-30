@@ -64,7 +64,7 @@ fn fallback_title() -> String {
     format!("Meeting {}", chrono::Local::now().format("%Y-%m-%d %H:%M"))
 }
 
-fn query_value(url: &Url, key: &str) -> Option<String> {
+pub(crate) fn query_value(url: &Url, key: &str) -> Option<String> {
     url.query_pairs()
         .find(|(k, _)| k == key)
         .map(|(_, v)| v.into_owned())

@@ -6,6 +6,7 @@ export function useIntegrations() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [githubCliAvailable, setGithubCliAvailable] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -22,6 +23,29 @@ export function useIntegrations() {
 
   useEffect(() => {
     refresh();
+    invoke<boolean>("github_cli_available").then(setGithubCliAvailable).catch(() => {});
+  }, [refresh]);
+
+  /**
+   * Opens the provider's sign-in page and resolves once the user finishes,
+   * with null if they cancelled.
+   */
+  const signIn = useCallback(
+    async (provider: string) => {
+      const result = await invoke<Integration | null>("connect_integration_sign_in", { provider });
+      if (result) await refresh();
+      return result;
+    },
+    [refresh],
+  );
+
+  const cancelSignIn = useCallback(() => invoke("cancel_integration_sign_in"), []);
+
+  /** Connects GitHub with the GitHub CLI's existing sign-in. */
+  const connectGithubCli = useCallback(async () => {
+    const result = await invoke<Integration>("connect_github_cli");
+    await refresh();
+    return result;
   }, [refresh]);
 
   const createIntegration = useCallback(
@@ -67,6 +91,10 @@ export function useIntegrations() {
     loading,
     error,
     refresh,
+    signIn,
+    cancelSignIn,
+    githubCliAvailable,
+    connectGithubCli,
     createIntegration,
     updateIntegration,
     deleteIntegration,

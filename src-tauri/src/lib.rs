@@ -3,6 +3,7 @@ pub mod audio;
 pub mod automation;
 pub mod chunking;
 pub mod commands;
+pub mod connectors;
 pub mod db;
 pub mod denoise;
 pub mod detection;
@@ -10,6 +11,8 @@ pub mod diarization;
 pub mod embedding;
 pub mod error;
 pub mod extraction;
+pub mod github_cli;
+pub mod http;
 pub mod linear;
 pub mod llm;
 pub mod mcp;
@@ -195,6 +198,7 @@ pub fn run() {
         .manage(detector_state)
         .manage(download_manager)
         .manage(embedding_state)
+        .manage(connectors::SignInState::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             model_registry::migrate_legacy_files();
@@ -361,6 +365,10 @@ pub fn run() {
             commands::list_integrations,
             commands::update_integration,
             commands::delete_integration,
+            commands::connect_integration_sign_in,
+            commands::cancel_integration_sign_in,
+            commands::github_cli_available,
+            commands::connect_github_cli,
             commands::create_workflow,
             commands::list_workflows,
             commands::update_workflow,

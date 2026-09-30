@@ -25,7 +25,8 @@ import { useInsightTypes } from "@/hooks/useInsightTypes";
 import { useAppVersion } from "@/hooks/useAppVersion";
 import { AccentColorPicker } from "@/components/AccentColorPicker";
 import { VariantPicker, DownloadProgressBar } from "@/components/ModelDownload";
-import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus, Link, Unlink } from "lucide-react";
+import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus, Link, Unlink, LogIn, ExternalLink, Terminal } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { formatBytes } from "@/lib/utils";
 import { useIntegrations } from "@/hooks/useIntegrations";
 import { INTEGRATION_TYPES } from "@/lib/integrations";
@@ -72,16 +73,50 @@ const AUTO_DETECTED_HINTS: Record<string, { detected: string; notDetected: strin
   },
 };
 
-function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnect }: {
+function IntegrationCard({ intType, connectedIntegration, canSignIn, quickConnect, onConnect, onSignIn, onCancelSignIn, onDisconnect }: {
   intType: typeof INTEGRATION_TYPES[number];
-  connectedIntegration: { id: string; credentials_json: string } | undefined;
+  connectedIntegration: { id: string; name: string } | undefined;
+  canSignIn: boolean;
+  /** A no-token way to connect using a sign-in already on this Mac. */
+  quickConnect?: { label: string; connect: () => Promise<unknown> };
   onConnect: (type: string, name: string, creds: Record<string, string>) => Promise<void>;
+  onSignIn: (type: string) => Promise<unknown>;
+  onCancelSignIn: () => Promise<unknown>;
   onDisconnect: (id: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
   const isConnected = !!connectedIntegration;
+
+  const handleSignIn = async () => {
+    setSignInError(null);
+    setSigningIn(true);
+    try {
+      await onSignIn(intType.type);
+      setExpanded(false);
+    } catch (err) {
+      setSignInError(String(err));
+    } finally {
+      setSigningIn(false);
+    }
+  };
+
+  const handleQuickConnect = async () => {
+    if (!quickConnect) return;
+    setSignInError(null);
+    setSaving(true);
+    try {
+      await quickConnect.connect();
+      setExpanded(false);
+    } catch (err) {
+      setSignInError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
   const isEmail = intType.type === "email";
   const isObsidian = intType.type === "obsidian";
 
@@ -144,7 +179,7 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
     <div className="py-3">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-sm font-medium">{intType.name}</span>
+          <span className="text-sm font-medium truncate">{connectedIntegration?.name ?? intType.name}</span>
           {isConnected ? (
             <Badge variant="success" size="sm">Connected</Badge>
           ) : (
@@ -156,6 +191,23 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
             <Unlink />
             Disconnect
           </Button>
+        ) : signingIn ? (
+          <>
+            <span className="text-xs text-muted-foreground">Finish signing in in your browser…</span>
+            <Button variant="ghost" size="sm" onClick={() => onCancelSignIn()}>
+              Cancel
+            </Button>
+          </>
+        ) : canSignIn ? (
+          <Button variant="outline" size="sm" onClick={handleSignIn}>
+            <LogIn />
+            Sign in with {intType.name}
+          </Button>
+        ) : quickConnect ? (
+          <Button variant="outline" size="sm" onClick={handleQuickConnect} disabled={saving}>
+            <Terminal />
+            {quickConnect.label}
+          </Button>
         ) : (
           <Button variant="outline" size="sm" onClick={handleConnect} disabled={saving}>
             <Link />
@@ -163,8 +215,30 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
           </Button>
         )}
       </div>
+      {!isConnected && signInError && (
+        <p className="mt-2 text-xs text-destructive">{signInError}</p>
+      )}
+      {!isConnected && (canSignIn || quickConnect) && !signingIn && !expanded && (
+        <Button
+          variant="link"
+          size="xs"
+          className="mt-1 px-0 text-muted-foreground"
+          onClick={() => setExpanded(true)}
+        >
+          Use a token instead
+        </Button>
+      )}
       <Collapsible open={expanded && !isConnected && intType.fields.length > 0}>
         <div className="mt-3 space-y-2">
+              {"tokenUrl" in intType && (
+                <div className="flex items-start gap-2 rounded-md bg-muted/50 p-2">
+                  <p className="text-xs text-muted-foreground flex-1">{intType.tokenHint}</p>
+                  <Button variant="outline" size="xs" onClick={() => openUrl(intType.tokenUrl)}>
+                    <ExternalLink />
+                    Get a token
+                  </Button>
+                </div>
+              )}
               {intType.fields.map((field) => (
                 <div key={field.key} className="flex items-center gap-2">
                   <label className="text-xs text-muted-foreground w-24 shrink-0">{field.label}</label>
@@ -264,7 +338,7 @@ function IntegrationCard({ intType, connectedIntegration, onConnect, onDisconnec
 }
 
 function IntegrationsManager() {
-  const { integrations, loading, createIntegration, deleteIntegration } = useIntegrations();
+  const { integrations, loading, signIn, cancelSignIn, githubCliAvailable, connectGithubCli, createIntegration, deleteIntegration } = useIntegrations();
 
   const handleConnect = async (type: string, name: string, creds: Record<string, string>) => {
     await createIntegration(type, name, JSON.stringify(creds));
@@ -292,7 +366,13 @@ function IntegrationsManager() {
                 key={intType.type}
                 intType={intType}
                 connectedIntegration={integrations.find((i) => i.integration_type === intType.type)}
+                canSignIn={"signIn" in intType}
+                quickConnect={intType.type === "github" && githubCliAvailable
+                  ? { label: "Use GitHub CLI sign-in", connect: connectGithubCli }
+                  : undefined}
                 onConnect={handleConnect}
+                onSignIn={signIn}
+                onCancelSignIn={cancelSignIn}
                 onDisconnect={handleDisconnect}
               />
             ))}

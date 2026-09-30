@@ -1,14 +1,58 @@
+// Pre-fills a Slack app with the bot scopes Nootle needs, so creating one is
+// "Create → Install → copy the token".
+const SLACK_MANIFEST = {
+  display_information: { name: "Nootle" },
+  features: { bot_user: { display_name: "Nootle", always_online: false } },
+  oauth_config: { scopes: { bot: ["chat:write", "chat:write.public"] } },
+  settings: { org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false },
+};
+
+/**
+ * `signIn` marks services that connect in one click through their MCP
+ * server. `tokenUrl` opens the page where the user creates a credential to
+ * paste instead; `tokenHint` says what to do there.
+ */
 export const INTEGRATION_TYPES = [
-  { type: "slack", name: "Slack", fields: [{ key: "bot_token", label: "Bot token", placeholder: "xoxb-..." }] },
-  { type: "notion", name: "Notion", fields: [{ key: "api_key", label: "API key", placeholder: "secret_..." }] },
-  { type: "confluence", name: "Confluence", fields: [
-    { key: "email", label: "Email", placeholder: "user@example.com" },
-    { key: "api_token", label: "API token", placeholder: "Enter API token" },
-    { key: "base_url", label: "Base URL", placeholder: "https://your-domain.atlassian.net" },
-  ] },
-  { type: "github", name: "GitHub", fields: [{ key: "token", label: "Token", placeholder: "ghp_..." }] },
-  { type: "linear", name: "Linear", fields: [{ key: "api_key", label: "API key", placeholder: "lin_api_..." }] },
-  { type: "asana", name: "Asana", fields: [{ key: "token", label: "Token", placeholder: "Enter Asana token" }] },
+  {
+    type: "slack", name: "Slack",
+    fields: [{ key: "bot_token", label: "Bot token", placeholder: "xoxb-..." }],
+    tokenUrl: `https://api.slack.com/apps?new_app=1&manifest_json=${encodeURIComponent(JSON.stringify(SLACK_MANIFEST))}`,
+    tokenHint: "Pick your workspace and create the pre-filled app, click Install to Workspace, then copy the Bot User OAuth Token.",
+  },
+  {
+    type: "notion", name: "Notion", signIn: true,
+    fields: [{ key: "api_key", label: "API key", placeholder: "secret_..." }],
+    tokenUrl: "https://www.notion.so/profile/integrations",
+    tokenHint: "Create an internal integration and copy its secret. Then open your database, choose ••• → Connections, and add the integration.",
+  },
+  {
+    type: "confluence", name: "Confluence", signIn: true,
+    fields: [
+      { key: "email", label: "Email", placeholder: "user@example.com" },
+      { key: "api_token", label: "API token", placeholder: "Enter API token" },
+      { key: "base_url", label: "Base URL", placeholder: "https://your-domain.atlassian.net" },
+    ],
+    tokenUrl: "https://id.atlassian.com/manage-profile/security/api-tokens",
+    tokenHint: "Create an API token, then enter it with your Atlassian email and your site's URL.",
+  },
+  {
+    type: "github", name: "GitHub",
+    fields: [{ key: "token", label: "Token", placeholder: "ghp_..." }],
+    tokenUrl: "https://github.com/settings/tokens/new?scopes=repo&description=Nootle",
+    tokenHint: "The repo scope is pre-selected. Pick an expiration, generate the token, and copy it.",
+  },
+  {
+    type: "linear", name: "Linear", signIn: true,
+    fields: [{ key: "api_key", label: "API key", placeholder: "lin_api_..." }],
+    tokenUrl: "https://linear.app/settings/account/security",
+    tokenHint: "Under Personal API keys, create a new key and copy it.",
+  },
+  {
+    type: "asana", name: "Asana",
+    fields: [{ key: "token", label: "Token", placeholder: "Enter Asana token" }],
+    tokenUrl: "https://app.asana.com/0/my-apps",
+    tokenHint: "Create a personal access token and copy it.",
+  },
   { type: "email", name: "Email", fields: [] },
   { type: "obsidian", name: "Obsidian", fields: [{ key: "vault_path", label: "Vault path", placeholder: "/path/to/vault" }] },
 ] as const;
