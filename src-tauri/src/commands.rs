@@ -2026,6 +2026,26 @@ pub async fn connect_oauth(
     crate::oauth::connect(&app, &db, &oauth, &provider).await
 }
 
+/// True when the GitHub CLI is installed and signed in, so GitHub can be
+/// connected without a token.
+#[tauri::command]
+pub async fn github_cli_available() -> bool {
+    crate::github_cli::token().await.is_some()
+}
+
+/// Connects GitHub with the GitHub CLI's token. The token stays in the
+/// backend; only the redacted integration is returned.
+#[tauri::command]
+pub async fn connect_github_cli(db: State<'_, DbState>) -> Result<crate::db::Integration, String> {
+    let token = crate::github_cli::token()
+        .await
+        .ok_or("GitHub CLI isn't signed in. Run `gh auth login`, then try again.")?;
+    let creds = serde_json::json!({ "token": token }).to_string();
+    db.upsert_integration_by_type("github", "GitHub (GitHub CLI)", &creds)
+        .map(crate::db::Integration::redacted)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn cancel_oauth(oauth: State<'_, crate::oauth::OAuthState>) {
     oauth.cancel();

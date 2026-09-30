@@ -91,7 +91,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, or your existing Claude / ChatGPT subscription via the Claude Code (`claude -p`) and Codex CLIs
 - **Meeting detection** — auto-detects active meeting apps and calendar events
 - **URL scheme** — start and stop recordings from other apps or scripts via `nootle://` links (opt-in)
-- **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email. Connect Slack, Notion, Confluence, Linear, GitHub, and Asana with one click by signing in, or paste a token if you prefer
+- **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email. Connect Slack, Notion, Confluence, Linear, GitHub, and Asana with one click by signing in, or paste a token — a **Get a token** button opens the right page for each service (with Slack's app and GitHub's scopes pre-filled). GitHub can also reuse your GitHub CLI (`gh`) sign-in
 - **Templates** — customizable summary templates you can pick per recording, or mark auto-run so every meeting is summarized without asking (e.g. a standing template for 1:1s, standups, or interviews)
 - **Semantic search** — ask questions across your entire meeting history
 - **Noise cancellation** — built-in denoising for cleaner audio and transcripts
@@ -138,7 +138,7 @@ One-click sign-in for Slack, Notion, Confluence, GitHub, Linear, and Asana needs
 | Linear | `read`, `write` |
 | Asana | Default |
 
-Client credentials are read from `NOOTLE_<PROVIDER>_CLIENT_ID` and `NOOTLE_<PROVIDER>_CLIENT_SECRET` (for example `NOOTLE_SLACK_CLIENT_ID`). They're compiled in when set at build time, and the same variables override them at runtime. The release workflow passes them from repository secrets. A provider without a client ID still works; Settings just asks for a token instead of showing a sign-in button.
+Client credentials are read from `NOOTLE_<PROVIDER>_CLIENT_ID` and `NOOTLE_<PROVIDER>_CLIENT_SECRET` (for example `NOOTLE_SLACK_CLIENT_ID`). They're compiled in when set at build time, and the same variables override them at runtime. The release workflow passes them from repository secrets. A provider without a client ID still works; Settings shows the **Get a token** flow instead of a sign-in button (and, for GitHub, a button to reuse a signed-in `gh` CLI).
 
 ## CLI Tool
 

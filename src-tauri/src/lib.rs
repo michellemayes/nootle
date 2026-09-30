@@ -10,6 +10,7 @@ pub mod diarization;
 pub mod embedding;
 pub mod error;
 pub mod extraction;
+pub mod github_cli;
 pub mod http;
 pub mod linear;
 pub mod llm;
@@ -370,6 +371,8 @@ pub fn run() {
             commands::list_oauth_providers,
             commands::connect_oauth,
             commands::cancel_oauth,
+            commands::github_cli_available,
+            commands::connect_github_cli,
             commands::create_workflow,
             commands::list_workflows,
             commands::update_workflow,

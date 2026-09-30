@@ -410,14 +410,9 @@ pub async fn connect(
     };
     let creds_json = Value::Object(creds).to_string();
 
-    let existing = db
-        .get_integration_by_type(kind)
+    let saved = db
+        .upsert_integration_by_type(kind, &name, &creds_json)
         .map_err(|e| e.to_string())?;
-    let saved = match existing {
-        Some(existing) => db.update_integration(&existing.id, &name, &creds_json),
-        None => db.create_integration(kind, &name, &creds_json),
-    }
-    .map_err(|e| e.to_string())?;
     Ok(Some(saved.redacted()))
 }
 
