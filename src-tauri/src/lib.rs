@@ -128,68 +128,9 @@ pub fn run() {
                 .build()
         })
         .on_menu_event(|app, event| {
+            // The frontend owns the updater UI, so it can download and install in place.
             if event.id().as_ref() == "check-for-updates" {
-                let handle = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    use tauri_plugin_dialog::DialogExt;
-                    use tauri_plugin_updater::UpdaterExt;
-
-                    let updater = match handle.updater() {
-                        Ok(u) => u,
-                        Err(e) => {
-                            log::warn!("Failed to initialize updater: {e}");
-                            handle
-                                .dialog()
-                                .message("Could not check for updates.")
-                                .title("Update Error")
-                                .kind(tauri_plugin_dialog::MessageDialogKind::Error)
-                                .blocking_show();
-                            return;
-                        }
-                    };
-
-                    match updater.check().await {
-                        Ok(Some(update)) => {
-                            let msg = format!("Version {} is available.", update.version);
-                            let should_open = handle
-                                .dialog()
-                                .message(msg)
-                                .title("Update Available")
-                                .kind(tauri_plugin_dialog::MessageDialogKind::Info)
-                                .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
-                                    "Download".to_string(),
-                                    "Later".to_string(),
-                                ))
-                                .blocking_show();
-                            if should_open {
-                                use tauri_plugin_opener::OpenerExt;
-                                if let Err(e) = handle.opener().open_url(
-                                    "https://github.com/michellemayes/nootle/releases/latest",
-                                    None::<&str>,
-                                ) {
-                                    log::warn!("Failed to open releases URL: {e}");
-                                }
-                            }
-                        }
-                        Ok(None) => {
-                            handle
-                                .dialog()
-                                .message("You're running the latest version.")
-                                .title("No Updates Available")
-                                .kind(tauri_plugin_dialog::MessageDialogKind::Info)
-                                .blocking_show();
-                        }
-                        Err(e) => {
-                            log::warn!("Update check failed: {e}");
-                            handle
-                                .dialog()
-                                .message("Could not check for updates. Please check your internet connection.")
-                                .title("Update Error")
-                                .kind(tauri_plugin_dialog::MessageDialogKind::Error)
-                                .blocking_show();
-                        }
-                    }
-                });
+                let _ = app.emit("menu-check-for-updates", ());
             }
         })
         .manage(db)
@@ -215,7 +156,6 @@ pub fn run() {
                     }
                 });
             }
-            let update_handle = app_handle.clone();
             let detector = detector.clone();
             let db_for_detection = app.state::<Arc<db::Database>>().inner().clone();
 
@@ -257,16 +197,6 @@ pub fn run() {
 
                     for meeting in newly_detected {
                         let _ = app_handle.emit("meeting-detected", &meeting);
-                    }
-                }
-            });
-
-            // Background update check
-            tauri::async_runtime::spawn(async move {
-                use tauri_plugin_updater::UpdaterExt;
-                if let Ok(updater) = update_handle.updater() {
-                    if let Ok(Some(update)) = updater.check().await {
-                        let _ = update_handle.emit("update-available", &update.version);
                     }
                 }
             });

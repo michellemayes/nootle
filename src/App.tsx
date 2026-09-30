@@ -19,6 +19,7 @@ import { CompactModeProvider } from "@/contexts/CompactModeContext";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { CommandPalette } from "@/components/CommandPalette";
 import { RecordingCelebration } from "@/components/RecordingCelebration";
+import { UpdateBanner } from "@/components/UpdateBanner";
 
 function Layout({ children }: { children: React.ReactNode }) {
   useMeetingDetection();
@@ -34,6 +35,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       <GlobalChatPanel />
       <CommandPalette />
       <RecordingCelebration />
+      <UpdateBanner />
     </div>
   );
 }

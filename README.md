@@ -101,6 +101,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Auto-titling** — meetings are automatically titled from transcript content
 - **Keyboard-first** — ⌘K command palette to jump to any meeting or ask a question, ⌘N to start recording from anywhere, ⌘↵ to stop
 - **Momentum at a glance** — workday recording streak, meetings this week, and open action items on the home screen, with a little celebration when you wrap a meeting
+- **In-app updates** — new versions are detected automatically and installed with one click, no trip to GitHub
 - **Themes** — light or dark mode, a background theme (Lavender, White, Slate, Ocean, Sage, Sand, Mocha, Rose, or any custom color), and a separate accent color for buttons and highlights, all in Settings → General
 
 ## Install
@@ -108,6 +109,10 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 Download the latest `.dmg` from [**Releases**](https://github.com/michellemayes/nootle/releases), open it, and drag Nootle to Applications.
 
 Nootle supports Apple Silicon Macs only (M1, M2, M3, M4, and M5). Intel Macs are not supported. Download `Nootle_x.y.z_aarch64.dmg`.
+
+### Updates
+
+You only download from Releases once. Nootle checks for new versions on launch and every few hours. When one is out, a card appears in the corner of the app. Click **Install & Restart** and Nootle downloads the update, installs it, and relaunches itself. You can also check any time from **Help → Check for Updates…** or **Settings → About**. The install button stays disabled while you're recording, so an update never cuts off a meeting.
 
 ### Permissions
 

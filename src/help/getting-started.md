@@ -62,3 +62,7 @@ Select your LLM provider and model, then click **Extract Insights**.
 ## Auto-Titling
 
 After a recording ends, Nootle automatically generates a title from the transcript content. You can click the title on any meeting detail page to rename it.
+
+## Staying Up to Date
+
+Nootle checks for new versions on its own. When one is available, a card appears in the bottom-right corner. Click **Install & Restart** to download and install it; Nootle relaunches on the new version. To check yourself, use **Help → Check for Updates…** in the menu bar or the **Check for updates** button in **Settings → About**. Installing waits until you've finished any recording in progress.
