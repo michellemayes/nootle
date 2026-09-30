@@ -174,9 +174,26 @@ async function main() {
          localStorage.setItem("meetingViewMode", "grid");
          localStorage.setItem("nootle-sidebar-collapsed", "false");`,
       );
-      // Freeze "now" just after the demo library's latest meeting so relative
+      // Start "now" just after the demo library's latest meeting so relative
       // dates, the greeting, and the streak render the same on every run.
-      await context.clock.setFixedTime(DEMO_NOW);
+      // Only Date is shifted: any of Playwright's clock APIs also swap in fake
+      // timers and requestAnimationFrame, under which framer-motion entrance
+      // animations never finish and pages capture blank.
+      await context.addInitScript(
+        `(() => {
+           const RealDate = Date;
+           const offset = ${DEMO_NOW.getTime()} - RealDate.now();
+           class DemoDate extends RealDate {
+             constructor(...args) {
+               super(...(args.length ? args : [DemoDate.now()]));
+             }
+             static now() {
+               return RealDate.now() + offset;
+             }
+           }
+           globalThis.Date = DemoDate;
+         })();`,
+      );
       await context.addInitScript({ path: path.join(here, "mock-tauri.js") });
       // The demo audio is a one-second placeholder; report the meeting's real
       // length so the player reads like a finished recording.
