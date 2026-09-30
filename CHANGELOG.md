@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **llm:** Make login-shell PATH lookup robust so claude/codex CLIs are detected (#142) ([4a65729](https://github.com/michellemayes/nootle/commit/4a657295cc0ecd27cb5a75ee74ed8fa96b81cf91))
+
+## [0.1.13] - 2026-09-30
+
+### Bug Fixes
+
+- **sidebar:** Draw divider as a border so page panels can't cover it (#141) ([9bb4e6d](https://github.com/michellemayes/nootle/commit/9bb4e6d0b77b2a1920f3242fad84cf5f4f30307c))
+
 ## [0.1.12] - 2026-09-30
 
 ### Bug Fixes
