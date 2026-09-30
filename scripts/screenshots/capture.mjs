@@ -57,7 +57,7 @@ const SHOTS = [
   {
     name: "recording",
     route: "/recording",
-    ready: "text=Live Transcript",
+    ready: "text=Live transcript",
     async prepare(page) {
       await page.evaluate((segments) => {
         window.__NOOTLE_EMIT__("transcription-status", { available: true });
@@ -66,13 +66,13 @@ const SHOTS = [
       await page.getByRole("button", { name: "Untitled Recording" }).click();
       await page.locator("input:focus").fill("Design Review — Onboarding Flow");
       await page.getByLabel("Summary template").selectOption({ label: "Standard Summary" });
-      await page.getByPlaceholder("Take notes during the meeting...").fill(
+      await page.getByPlaceholder("Take notes during the meeting…").fill(
         "Permissions screen is the big leak — 31% drop\n" +
           "Try inline copy instead of the docs link, one sentence above the button\n" +
           "Two variants if traffic allows, behind the existing flag\n\n" +
           "Calendar permission: move it out of onboarding? Ask again on an empty library",
       );
-      await page.getByRole("button", { name: /Live Transcript/ }).click();
+      await page.getByRole("button", { name: /Live transcript/ }).click();
       // Let the timer run so the recording reads as in-progress.
       await page.waitForTimeout(8000);
     },

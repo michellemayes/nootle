@@ -1,7 +1,5 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import { MotionButton } from "@/components/MotionButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -15,7 +13,6 @@ import { listen } from "@tauri-apps/api/event";
 import { ScratchPad } from "@/components/ScratchPad";
 import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
-import { CompactRecordingIndicator } from "@/components/CompactRecordingIndicator";
 import { Kbd } from "@/components/Kbd";
 import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText } from "lucide-react";
 
@@ -27,37 +24,6 @@ function formatTime(seconds: number): string {
     return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function WaveformBar({ index }: { index: number }) {
-  const { maxHeight, animDuration } = useMemo(() => ({
-    maxHeight: 10 + Math.random() * 6,
-    animDuration: 0.6 + Math.random() * 0.4,
-  }), []);
-
-  return (
-    <motion.div
-      className="w-[2px] rounded-full bg-primary"
-      initial={{ height: 0, opacity: 0 }}
-      animate={{
-        height: [3, maxHeight, 3],
-        opacity: 1,
-      }}
-      transition={{
-        height: {
-          duration: animDuration,
-          repeat: Infinity,
-          repeatType: "reverse",
-          delay: 0.3 + index * 0.05,
-          ease: "easeInOut",
-        },
-        opacity: {
-          duration: 0.2,
-          delay: index * 0.03,
-        },
-      }}
-    />
-  );
 }
 
 interface TranscriptionStatus {
@@ -177,7 +143,6 @@ export function RecordingView() {
   const handleStop = useCallback(async () => {
     if (stopping) return;
     setStopping(true);
-    await new Promise((r) => setTimeout(r, 400));
     try {
       const meeting = await stopRecording();
       const notes = latestNotesRef.current;
@@ -208,12 +173,12 @@ export function RecordingView() {
       <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
         <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-6 text-center max-w-md">
           <h2 className="text-lg font-semibold text-foreground mb-2">
-            Recording Failed
+            Recording failed
           </h2>
           <p className="text-sm text-destructive mb-4">{error}</p>
           <Button variant="outline" onClick={() => navigate("/")}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Go Back
+            <ArrowLeft />
+            Back to meetings
           </Button>
         </div>
       </div>
@@ -225,11 +190,7 @@ export function RecordingView() {
       {/* Header bar: recording indicator, title, timer, waveform, stop */}
       <div className="flex items-center gap-4 border-b px-6 py-3">
         <div className="flex items-center gap-2">
-          <motion.div
-            className="h-2.5 w-2.5 rounded-full bg-destructive"
-            animate={{ opacity: [1, 0.3, 1] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-          />
+          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-destructive" />
           <span className="text-xs font-medium text-muted-foreground">REC</span>
         </div>
 
@@ -283,50 +244,26 @@ export function RecordingView() {
           {formatTime(elapsed)}
         </span>
 
-        {isRecording && !isCompact && (
-          <div className="flex items-center gap-[2px] h-4">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <WaveformBar key={i} index={i} />
-            ))}
-          </div>
-        )}
-
-        <div className="ml-auto relative inline-flex">
-          <MotionButton
-            size="sm"
-            variant="destructive"
-            onClick={handleStop}
-            disabled={stopping}
-            title="Stop and save (⌘↵)"
-          >
-            <Square className="h-3.5 w-3.5" /> Stop
-            {!isCompact && <Kbd onSolid className="ml-1">⌘↵</Kbd>}
-          </MotionButton>
-          <AnimatePresence>
-            {stopping && (
-              <motion.div
-                className="absolute inset-0 rounded-md border-2 border-destructive"
-                initial={{ scale: 1, opacity: 0.6 }}
-                animate={{ scale: 1.5, opacity: 0 }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
-              />
-            )}
-          </AnimatePresence>
-        </div>
+        <Button
+          size="sm"
+          variant="destructive"
+          className="ml-auto"
+          onClick={handleStop}
+          disabled={stopping}
+          title="Stop and save (⌘↵)"
+        >
+          <Square /> {stopping ? "Stopping…" : "Stop"}
+          {!isCompact && !stopping && <Kbd onSolid className="ml-1">⌘↵</Kbd>}
+        </Button>
       </div>
 
       {/* Notes — full width, takes remaining space */}
-      <div className="flex-1 flex flex-col min-h-0 relative">
-        {isCompact && isRecording && (
-          <div className="absolute top-3 right-3 z-10">
-            <CompactRecordingIndicator />
-          </div>
-        )}
+      <div className="flex-1 flex flex-col min-h-0">
         <textarea
           ref={notesRef}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Take notes during the meeting..."
+          placeholder="Take notes during the meeting…"
           className="flex-1 w-full bg-transparent p-6 text-sm leading-relaxed resize-none focus:outline-none placeholder:text-muted-foreground/40"
           autoFocus
         />
@@ -345,7 +282,7 @@ export function RecordingView() {
           ) : (
             <ChevronRight className="h-3.5 w-3.5" />
           )}
-          Live Transcript
+          Live transcript
           {segments.length > 0 && (
             <Badge variant="secondary" size="sm">
               {segments.length}
@@ -372,7 +309,7 @@ export function RecordingView() {
                   )}
                   {segments.length === 0 && transcriptionStatus?.available !== false && (
                     <p className="text-xs text-muted-foreground italic">
-                      Ears perked — words will appear as people talk
+                      Listening. The transcript appears here as people speak.
                     </p>
                   )}
                   {segments.length > 0 &&

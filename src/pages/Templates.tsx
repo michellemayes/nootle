@@ -1,7 +1,5 @@
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -11,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   Tabs,
   TabsList,
@@ -28,7 +27,7 @@ import {
 import { useTemplates } from "@/hooks/useTemplates";
 
 import { useRecipes } from "@/hooks/useRecipes";
-import { FileText, Pencil, Plus, Trash2, Sparkles, Star, ChefHat } from "lucide-react";
+import { FileText, Pencil, Plus, Trash2, Sparkles, Star, SquareSlash } from "lucide-react";
 import type { Template, Recipe } from "@/types";
 import { WorkflowsManager } from "@/components/WorkflowsManager";
 
@@ -65,6 +64,7 @@ export function TemplatesPage() {
   const [activeTab, setActiveTab] = useState("templates");
   const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<Template | null>(null);
   const [deleteRecipeTarget, setDeleteRecipeTarget] = useState<Recipe | null>(null);
+  const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
 
   const handleSubmit = async () => {
     if (!newName.trim()) return;
@@ -169,24 +169,29 @@ export function TemplatesPage() {
     <div className="flex flex-1 flex-col overflow-hidden">
       <PageHeader
         title="Automations"
-        description="Configure how meetings are summarized and create slash-command shortcuts"
+        description="Summary templates, slash commands, and post-meeting workflows"
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col overflow-hidden">
         <div className="flex shrink-0 items-center justify-between border-b px-6 py-4">
           <TabsList className="h-10">
             <TabsTrigger value="templates">Templates</TabsTrigger>
-            <TabsTrigger value="recipes">Slash Commands</TabsTrigger>
+            <TabsTrigger value="recipes">Slash commands</TabsTrigger>
             <TabsTrigger value="post-meeting">Workflows</TabsTrigger>
           </TabsList>
           {activeTab === "templates" && (
             <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>
-              <Plus /> Add Template
+              <Plus /> New template
             </Button>
           )}
           {activeTab === "recipes" && (
             <Button size="sm" variant="outline" onClick={() => setRecipeDialogOpen(true)}>
-              <Plus /> Add Slash Command
+              <Plus /> New slash command
+            </Button>
+          )}
+          {activeTab === "post-meeting" && (
+            <Button size="sm" variant="outline" onClick={() => setWorkflowDialogOpen(true)}>
+              <Plus /> New workflow
             </Button>
           )}
         </div>
@@ -197,11 +202,11 @@ export function TemplatesPage() {
         }}>
                 <DialogContent className="max-w-lg">
                   <DialogHeader>
-                    <DialogTitle>{editingTemplate ? "Edit Template" : "New Template"}</DialogTitle>
+                    <DialogTitle>{editingTemplate ? "Edit template" : "New template"}</DialogTitle>
                     <DialogDescription>
                       {editingTemplate
-                        ? "Update this template's details"
-                        : "Define AI instructions for summarizing meetings"}
+                        ? "Update how this template summarizes meetings."
+                        : "Define how the AI should summarize meetings."}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
@@ -223,7 +228,7 @@ export function TemplatesPage() {
                     </div>
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">
-                        AI Prompt
+                        AI prompt
                       </label>
                       <Textarea
                         placeholder="e.g., Summarize this meeting transcript. Include key discussion points, decisions made, and action items."
@@ -232,7 +237,7 @@ export function TemplatesPage() {
                         rows={3}
                       />
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Instructions for the AI when summarizing meetings with this template
+                        Instructions for the AI when summarizing meetings with this template.
                       </p>
                     </div>
                     <div className="flex items-center gap-6">
@@ -265,7 +270,7 @@ export function TemplatesPage() {
                     </div>
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">
-                        Auto-Apply Rules (JSON)
+                        Auto-apply rules (JSON)
                       </label>
                       <Textarea
                         placeholder='e.g., {"category": "engineering"}'
@@ -279,9 +284,9 @@ export function TemplatesPage() {
                     <Button variant="outline" onClick={resetForm}>
                       Cancel
                     </Button>
-                    <MotionButton onClick={handleSubmit} disabled={!newName.trim()}>
-                      {editingTemplate ? "Save Changes" : "Create"}
-                    </MotionButton>
+                    <Button onClick={handleSubmit} disabled={!newName.trim()}>
+                      {editingTemplate ? "Save" : "Create"}
+                    </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -295,25 +300,25 @@ export function TemplatesPage() {
               <DialogContent className="max-w-lg">
                 <DialogHeader>
                   <DialogTitle>
-                    {editingRecipe ? "Edit Slash Command" : "New Slash Command"}
+                    {editingRecipe ? "Edit slash command" : "New slash command"}
                   </DialogTitle>
                   <DialogDescription>
                     {editingRecipe
-                      ? "Update this slash command's details"
-                      : "Create a reusable AI prompt triggered with a slash command"}
+                      ? "Update this slash command's prompt and output."
+                      : "A reusable AI prompt you can run from meeting chat by typing /."}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Name</label>
                     <Input
-                      placeholder="e.g., Write Brief"
+                      placeholder="e.g., Write brief"
                       value={recipeName}
                       onChange={(e) => setRecipeName(e.target.value)}
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Slash Command</label>
+                    <label className="text-sm font-medium mb-1.5 block">Slash command</label>
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-muted-foreground">/</span>
                       <Input
@@ -338,7 +343,7 @@ export function TemplatesPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Prompt Template</label>
+                    <label className="text-sm font-medium mb-1.5 block">Prompt template</label>
                     <Textarea
                       placeholder="Use variables: {{transcript}}, {{title}}, {{date}}, {{summary}}"
                       value={recipePromptTemplate}
@@ -351,21 +356,21 @@ export function TemplatesPage() {
                     </p>
                   </div>
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Output Format</label>
+                    <label className="text-sm font-medium mb-1.5 block">Output format</label>
                     <Select
                       containerClassName="w-full"
                       value={recipeOutputFormat}
                       onChange={(e) => setRecipeOutputFormat(e.target.value)}
                     >
                       <option value="markdown">Markdown</option>
-                      <option value="plain">Plain Text</option>
+                      <option value="plain">Plain text</option>
                       <option value="json">JSON</option>
                     </Select>
                   </div>
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={resetRecipeForm}>Cancel</Button>
-                  <MotionButton
+                  <Button
                     onClick={handleRecipeSubmit}
                     disabled={
                       !recipeName.trim() ||
@@ -374,8 +379,8 @@ export function TemplatesPage() {
                       !!slashCommandError
                     }
                   >
-                    {editingRecipe ? "Save Changes" : "Create"}
-                  </MotionButton>
+                    {editingRecipe ? "Save" : "Create"}
+                  </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -388,25 +393,17 @@ export function TemplatesPage() {
               <EmptyState
                 icon={FileText}
                 title="No templates yet"
-                description="Templates shape how Nootle summarizes your meetings — cook up your first one"
+                description="Templates control how meetings are summarized."
                 action={
                   <Button size="sm" onClick={() => setDialogOpen(true)}>
-                    <Plus /> Add Template
+                    <Plus /> New template
                   </Button>
                 }
               />
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <AnimatePresence initial={false}>
-                  {templates.map((template, i) => (
-                    <motion.div
-                      key={template.id}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-                      transition={{ duration: 0.2, delay: Math.min(i * 0.05, 0.3) }}
-                      layout
-                    >
+                {templates.map((template) => (
+                    <div key={template.id}>
                       <Card className="h-full">
                         <CardContent>
                           <div className="flex flex-col gap-2">
@@ -419,6 +416,7 @@ export function TemplatesPage() {
                                   className="text-muted-foreground hover:text-foreground"
                                   onClick={() => startEditing(template)}
                                   title="Edit"
+                                  aria-label="Edit"
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
                                 </Button>
@@ -429,6 +427,7 @@ export function TemplatesPage() {
                                     className="text-muted-foreground hover:text-destructive"
                                     onClick={() => setDeleteTemplateTarget(template)}
                                     title="Delete"
+                                    aria-label="Delete"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </Button>
@@ -467,9 +466,8 @@ export function TemplatesPage() {
                           </div>
                         </CardContent>
                       </Card>
-                    </motion.div>
+                    </div>
                   ))}
-                </AnimatePresence>
               </div>
             )}
           </div>
@@ -481,31 +479,19 @@ export function TemplatesPage() {
               <LoadingState message={LOADING_COPY.slashCommands} layout="inline" />
             ) : recipes.length === 0 ? (
               <EmptyState
-                icon={ChefHat}
+                icon={SquareSlash}
                 title="No slash commands yet"
-                description="Whip up reusable AI prompts you can trigger with slash commands"
+                description="Slash commands are reusable prompts you can run from meeting chat."
                 action={
                   <Button size="sm" onClick={() => setRecipeDialogOpen(true)}>
-                    <Plus /> Add Slash Command
+                    <Plus /> New slash command
                   </Button>
                 }
               />
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <AnimatePresence initial={false}>
-                  {recipes.map((recipe, i) => (
-                    <motion.div
-                      key={recipe.id}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{
-                        opacity: 0,
-                        scale: 0.95,
-                        transition: { duration: 0.2 },
-                      }}
-                      transition={{ duration: 0.2, delay: Math.min(i * 0.05, 0.3) }}
-                      layout
-                    >
+                {recipes.map((recipe) => (
+                    <div key={recipe.id}>
                       <Card className="h-full">
                         <CardContent>
                           <div className="flex flex-col gap-2">
@@ -518,6 +504,7 @@ export function TemplatesPage() {
                                   className="text-muted-foreground hover:text-foreground"
                                   onClick={() => startEditingRecipe(recipe)}
                                   title="Edit"
+                                  aria-label="Edit"
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
                                 </Button>
@@ -528,6 +515,7 @@ export function TemplatesPage() {
                                     className="text-muted-foreground hover:text-destructive"
                                     onClick={() => setDeleteRecipeTarget(recipe)}
                                     title="Delete"
+                                    aria-label="Delete"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </Button>
@@ -552,84 +540,52 @@ export function TemplatesPage() {
                           </div>
                         </CardContent>
                       </Card>
-                    </motion.div>
+                    </div>
                   ))}
-                </AnimatePresence>
               </div>
             )}
           </div>
         </TabsContent>
 
         <TabsContent value="post-meeting" className="mt-0 flex-1 overflow-auto">
-          <div className="max-w-3xl p-6">
-            <WorkflowsManager />
+          <div className="p-6">
+            <WorkflowsManager
+              creating={workflowDialogOpen}
+              onCreatingChange={setWorkflowDialogOpen}
+            />
           </div>
         </TabsContent>
       </Tabs>
 
-      <Dialog
+      <ConfirmDialog
         open={deleteTemplateTarget !== null}
         onOpenChange={(open) => !open && setDeleteTemplateTarget(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete template?</DialogTitle>
-            <DialogDescription>
-              Permanently delete{" "}
-              <span className="font-medium text-foreground">{deleteTemplateTarget?.name}</span>.
-              Past summaries created with it stay intact.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTemplateTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={async () => {
-                if (deleteTemplateTarget) {
-                  await deleteTemplate(deleteTemplateTarget.id);
-                  setDeleteTemplateTarget(null);
-                }
-              }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="Delete template?"
+        description={
+          <>
+            <span className="font-medium text-foreground">{deleteTemplateTarget?.name}</span>{" "}
+            will be permanently deleted. Summaries already created with it are kept.
+          </>
+        }
+        onConfirm={async () => {
+          if (deleteTemplateTarget) await deleteTemplate(deleteTemplateTarget.id);
+        }}
+      />
 
-      <Dialog
+      <ConfirmDialog
         open={deleteRecipeTarget !== null}
         onOpenChange={(open) => !open && setDeleteRecipeTarget(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete slash command?</DialogTitle>
-            <DialogDescription>
-              Permanently delete{" "}
-              <span className="font-medium text-foreground">/{deleteRecipeTarget?.slash_command}</span>.
-              You can recreate it later if you change your mind.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteRecipeTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={async () => {
-                if (deleteRecipeTarget) {
-                  await deleteRecipe(deleteRecipeTarget.id);
-                  setDeleteRecipeTarget(null);
-                }
-              }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="Delete slash command?"
+        description={
+          <>
+            <span className="font-medium text-foreground">/{deleteRecipeTarget?.slash_command}</span>{" "}
+            will be permanently deleted.
+          </>
+        }
+        onConfirm={async () => {
+          if (deleteRecipeTarget) await deleteRecipe(deleteRecipeTarget.id);
+        }}
+      />
     </div>
   );
 }

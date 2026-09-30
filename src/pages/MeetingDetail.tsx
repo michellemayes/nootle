@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { MotionButton } from "@/components/MotionButton";
-import { SparkleEffect } from "@/components/SparkleEffect";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,7 +21,7 @@ import { useSummaries } from "@/hooks/useSummaries";
 import { useInsights } from "@/hooks/useInsights";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
-import { formatMs, formatDate, statusLabel } from "@/lib/utils";
+import { cn, formatMs, formatDate, statusLabel, statusVariant } from "@/lib/utils";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
@@ -41,6 +38,7 @@ import {
   BarChart3,
   Check,
   ChevronDown,
+  ChevronRight,
   FileText,
   Lightbulb,
   List,
@@ -58,12 +56,6 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { useWorkflows, useWorkflowRuns } from "@/hooks/useWorkflows";
-
-function runStatusVariant(status: string): "secondary" | "destructive" | "outline" {
-  if (status === "completed") return "secondary";
-  if (status === "failed") return "destructive";
-  return "outline";
-}
 
 function parseResultMessage(json: string | null): string | null {
   if (!json) return null;
@@ -233,21 +225,24 @@ function InsightSection({
     <div className="space-y-2">
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
         className="flex w-full items-center gap-2 text-left"
       >
+        {open ? (
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
         <Icon className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-semibold">{title}</span>
         <Badge variant="secondary" size="sm">
           {items.length}
         </Badge>
-        <span className="ml-auto text-xs text-muted-foreground">
-          {open ? "Collapse" : "Expand"}
-        </span>
       </button>
       <Collapsible open={open}>
         <div className="space-y-2">
           {items.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic pl-6">Nothing here yet — try extracting insights above</p>
+            <p className="pl-6 text-xs text-muted-foreground">None found in this meeting.</p>
           ) : (
             items.map((item) => (
               <div key={item.id}>{renderItem(item)}</div>
@@ -318,17 +313,17 @@ function InsightsPanel({
           {hasInsights ? (
             <>
               <RotateCw className={`h-3 w-3 mr-1 ${extracting ? "animate-spin" : ""}`} />
-              {extracting ? "Re-extracting..." : "Re-extract"}
+              {extracting ? "Re-extracting…" : "Re-extract"}
             </>
           ) : (
             <>
               <Lightbulb className={`h-3 w-3 mr-1 ${extracting ? "animate-pulse" : ""}`} />
-              {extracting ? "Extracting..." : "Extract Insights"}
+              {extracting ? "Extracting…" : "Extract insights"}
             </>
           )}
         </Button>
         {(extractError || insightsError) && (
-          <span className="text-xs text-destructive">Failed to extract insights. Please try again.</span>
+          <span className="text-xs text-destructive">Couldn't extract insights. Try again.</span>
         )}
       </div>
 
@@ -340,7 +335,7 @@ function InsightsPanel({
             description={
               noProviders
                 ? "Add an AI provider in Settings to extract insights."
-                : "No insights yet. Select a provider and model above to extract them."
+                : "No insights yet. Choose a model in the sidebar, then extract insights."
             }
           />
         ) : (
@@ -476,7 +471,7 @@ function CreateTicketButton({
           setOpen(true);
         }}
       >
-        Create Ticket
+        Create ticket
       </Button>
 
       {open && (
@@ -523,7 +518,7 @@ function CreateTicketButton({
               onClick={handleCreate}
               disabled={creating || !teamId || !selectedProvider || !selectedModel}
             >
-              {creating ? "Creating..." : "Create"}
+              {creating ? "Creating…" : "Create"}
             </Button>
             <Button
               variant="ghost"
@@ -594,9 +589,7 @@ function NotesPanel({
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <StickyNote className="h-3.5 w-3.5 text-highlight" />
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Quick notes captured during recording
-          </h3>
+          <h3 className="text-sm font-semibold">Quick notes</h3>
         </div>
         <div className="space-y-1.5">
           {scratchNotes.map((note) => (
@@ -649,7 +642,7 @@ function NotesPanel({
               disabled={enriching || !selectedProvider || !selectedModel}
             >
               <Sparkles className={`h-3 w-3 mr-1 ${enriching ? "animate-pulse" : ""}`} />
-              {enriching ? "Enriching..." : "Enrich with AI"}
+              {enriching ? "Enriching…" : "Enrich with AI"}
             </Button>
             {enrichError && (
               <span className="text-xs text-destructive">{enrichError}</span>
@@ -660,19 +653,21 @@ function NotesPanel({
           <div className="flex rounded-md border text-xs overflow-hidden">
             <button
               onClick={() => setViewMode("original")}
+              aria-pressed={viewMode === "original"}
               className={`px-3 py-1 transition-colors ${viewMode === "original" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
             >
               Original
             </button>
             <button
               onClick={() => setViewMode("enriched")}
+              aria-pressed={viewMode === "enriched"}
               className={`px-3 py-1 transition-colors ${viewMode === "enriched" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
             >
-              AI Enhanced
+              Enriched
             </button>
-            </div>
-          )}
-          <CopyButton text={displayContent} className="ml-auto" />
+          </div>
+        )}
+        <CopyButton text={displayContent} className="ml-auto" />
       </div>
 
       <ScrollArea className="flex-1">
@@ -680,33 +675,29 @@ function NotesPanel({
           {renderQuickNotes()}
           <div className="relative">
             {/* Enriched — always mounted so TipTap doesn't reinitialize */}
-            <motion.div
-              animate={{
-                opacity: viewMode === "enriched" || !hasEnriched ? 1 : 0,
-                filter: viewMode === "enriched" || !hasEnriched ? "blur(0px)" : "blur(4px)",
-              }}
-              transition={{ duration: 0.4, ease: "easeOut" }}
-              className={viewMode === "original" && hasEnriched ? "pointer-events-none" : ""}
+            <div
+              className={cn(
+                "transition-opacity duration-200",
+                viewMode === "original" && hasEnriched && "pointer-events-none opacity-0",
+              )}
             >
               <NotesEditor
                 content={displayContent}
                 hasHighlights={hasEnriched}
                 onChange={handleNotesChange}
               />
-            </motion.div>
+            </div>
 
             {/* Original — overlaid on top when active */}
             {hasEnriched && rawNotes && (
-              <motion.div
-                className="absolute inset-0"
-                animate={{
-                  opacity: viewMode === "original" ? 1 : 0,
-                }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
-                style={{ pointerEvents: viewMode === "original" ? "auto" : "none" }}
+              <div
+                className={cn(
+                  "absolute inset-0 transition-opacity duration-200",
+                  viewMode === "original" ? "opacity-100" : "pointer-events-none opacity-0",
+                )}
               >
                 <Markdown content={rawNotes} />
-              </motion.div>
+              </div>
             )}
           </div>
         </div>
@@ -739,7 +730,6 @@ export function MeetingDetail() {
   const [titleDraft, setTitleDraft] = useState("");
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
-  const [justGenerated, setJustGenerated] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const { isCompact } = useCompactMode();
@@ -915,8 +905,6 @@ export function MeetingDetail() {
     setGenerateError(null);
     try {
       await generateSummary(selectedTemplate, selectedProvider, selectedModel);
-      setJustGenerated(true);
-      setTimeout(() => setJustGenerated(false), 100);
     } catch (err) {
       setGenerateError(String(err));
     } finally {
@@ -936,7 +924,7 @@ export function MeetingDetail() {
         description="It may have been deleted."
         action={
           <Button variant="outline" onClick={() => navigate("/")}>
-            Back to Meetings
+            Back to meetings
           </Button>
         }
       />
@@ -944,11 +932,7 @@ export function MeetingDetail() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex flex-1 min-h-0 overflow-hidden"
-    >
+    <div className="flex flex-1 min-h-0 overflow-hidden">
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between border-b px-6 py-4">
@@ -982,7 +966,7 @@ export function MeetingDetail() {
                   <Pencil className="h-3.5 w-3.5 opacity-0 group-hover/title:opacity-50 transition-opacity" />
                 </h1>
               )}
-              <Badge variant="outline" size="sm">
+              <Badge variant={statusVariant(meeting.status)} size="sm">
                 {statusLabel(meeting.status)}
               </Badge>
             </div>
@@ -1092,22 +1076,14 @@ export function MeetingDetail() {
 
       {/* Two-column layout */}
       <div ref={containerRef} className="flex flex-1 min-h-0 overflow-hidden">
-        <AnimatePresence>
           {!transcriptCollapsed && (
-            <motion.div
-              key="transcript-panel"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
+            <div
               className="flex overflow-hidden"
               style={{ width: `${transcriptWidth}%` }}
             >
               <div className="flex flex-1 flex-col overflow-hidden">
-                <div className="flex items-center justify-between px-8 border-b h-12">
-                  <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                    Transcript
-                  </h2>
+                <div className="flex items-center justify-between px-5 border-b h-12">
+                  <h2 className="text-sm font-semibold">Transcript</h2>
                   <div className="flex items-center gap-1">
                     <CopyButton
                       text={segments.map((s) => `${s.speaker_label}: ${s.text}`).join("\n")}
@@ -1117,21 +1093,22 @@ export function MeetingDetail() {
                       size="icon-sm"
                       onClick={() => setCompactTranscript((v) => !v)}
                       title={compactTranscript ? "Spacious view" : "Compact view"}
+                      aria-label={compactTranscript ? "Spacious view" : "Compact view"}
                     >
                       {compactTranscript ? <AlignJustify className="h-4 w-4" /> : <List className="h-4 w-4" />}
                     </Button>
                   </div>
                 </div>
                 <ScrollArea className="flex-1">
-                  <div className={`px-8 py-4 ${compactTranscript ? "space-y-1" : "space-y-4"}`}>
+                  <div className={`p-5 ${compactTranscript ? "space-y-1" : "space-y-4"}`}>
                     {transcriptLoading ? (
                       <LoadingState
                         message={LOADING_COPY.transcript}
                         layout="inline"
                       />
                     ) : segments.length === 0 ? (
-                      <p className="text-sm text-muted-foreground italic">
-                        No transcript here — this one's a mystery
+                      <p className="text-sm text-muted-foreground">
+                        No transcript for this meeting.
                       </p>
                     ) : (
                       segments.map((seg) => (
@@ -1164,9 +1141,8 @@ export function MeetingDetail() {
                   document.body.style.userSelect = "none";
                 }}
               />
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
 
         <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
           <Tabs defaultValue="notes" className="flex flex-1 flex-col overflow-hidden">
@@ -1176,6 +1152,7 @@ export function MeetingDetail() {
                 size="icon-sm"
                 onClick={() => setTranscriptCollapsed((v) => !v)}
                 title={transcriptCollapsed ? "Show transcript" : "Hide transcript"}
+                aria-label={transcriptCollapsed ? "Show transcript" : "Hide transcript"}
               >
                 {transcriptCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
               </Button>
@@ -1219,21 +1196,16 @@ export function MeetingDetail() {
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </Select>
-                <div className="relative">
-                  <MotionButton
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs"
-                    onClick={handleGenerate}
-                    disabled={generating || !selectedTemplate || !selectedProvider || !selectedModel}
-                  >
-                    <Sparkles className={`h-3 w-3 mr-1 ${generating ? "animate-pulse" : ""}`} />
-                    {generating ? "Generating..." : "Generate"}
-                  </MotionButton>
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <SparkleEffect trigger={justGenerated} />
-                  </div>
-                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs"
+                  onClick={handleGenerate}
+                  disabled={generating || !selectedTemplate || !selectedProvider || !selectedModel}
+                >
+                  <Sparkles className={`h-3 w-3 mr-1 ${generating ? "animate-pulse" : ""}`} />
+                  {generating ? "Generating…" : "Generate summary"}
+                </Button>
               </div>
 
               {generateError && (
@@ -1248,7 +1220,7 @@ export function MeetingDetail() {
                   <EmptyState
                     icon={FileText}
                     size="panel"
-                    description="No summaries yet. Pick a template above and let Nootle distill the conversation."
+                    description="No summaries yet. Pick a template above and generate one."
                   />
                 ) : (
                   <div className="p-5 space-y-6">
@@ -1304,19 +1276,19 @@ export function MeetingDetail() {
                 <div className="p-5 space-y-3">
                   <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
                     <Zap className="h-4 w-4" />
-                    Workflow Runs
+                    Workflow runs
                   </h3>
                   {runs.length === 0 ? (
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <p>No workflow runs yet.</p>
                       <p>
-                        Configure workflows under{" "}
+                        Set up workflows under{" "}
                         <Link to="/templates" className="text-primary underline-offset-2 hover:underline">
                           Automations &rarr; Workflows
-                        </Link>
-                        , then toggle them on. Each enabled workflow shows as a
-                        button next to <span className="font-medium">Ask Nootle</span> at
-                        the top of this page — click it to run the workflow on this meeting.
+                        </Link>{" "}
+                        and turn them on. Enabled workflows appear in the{" "}
+                        <span className="font-medium">Run</span> menu at the top
+                        of this page.
                       </p>
                     </div>
                   ) : (
@@ -1328,8 +1300,8 @@ export function MeetingDetail() {
                         <div key={run.id} className="rounded-lg border px-4 py-3 space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-medium">{run.workflow_name ?? "Workflow"}</span>
-                            <Badge variant={runStatusVariant(run.status)}>
-                              {run.status}
+                            <Badge variant={statusVariant(run.status)} size="sm">
+                              {statusLabel(run.status)}
                             </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground">
@@ -1380,7 +1352,7 @@ export function MeetingDetail() {
       </div>
 
       {/* Audio player */}
-      <div className="shrink-0 border-t px-8 py-3">
+      <div className="shrink-0 border-t px-5 py-3">
         {audioSrc && <audio ref={audioRef} src={audioSrc} preload="metadata" />}
         <div className="flex items-center gap-4">
           <Button
@@ -1388,6 +1360,7 @@ export function MeetingDetail() {
             size="icon-sm"
             disabled={!audioSrc || audioLoading}
             onClick={togglePlayback}
+            aria-label={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? (
               <Pause className="h-4 w-4" />
@@ -1424,6 +1397,6 @@ export function MeetingDetail() {
         open={chatOpen}
         onClose={() => setChatOpen(false)}
       />
-    </motion.div>
+    </div>
   );
 }

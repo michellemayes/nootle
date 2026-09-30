@@ -55,7 +55,7 @@ export function NotesEditor({ content, hasHighlights, onChange }: NotesEditorPro
       StarterKit,
       Highlight.configure({ multicolor: false }),
       Placeholder.configure({
-        placeholder: "Start typing...",
+        placeholder: "Start typing…",
       }),
       Markdown,
     ],

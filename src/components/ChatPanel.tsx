@@ -1,13 +1,10 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { MotionButton } from "@/components/MotionButton";
-import { ThinkingDots } from "@/components/ThinkingDots";
-import { Input } from "@/components/ui/input";
+import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ResizeHandle } from "@/components/ResizeHandle";
-import { Markdown } from "@/components/Markdown";
 import { useChat } from "@/hooks/useChat";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useRecipes } from "@/hooks/useRecipes";
@@ -76,10 +73,8 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
     setInput("");
     setRecipeLoading(true);
 
-    setRecipeMessages((prev) => [
-      ...prev,
-      { role: "user", content: `/${recipes.find((r) => r.id === recipeId)?.slash_command || recipeName}` },
-    ]);
+    const command = `/${recipes.find((r) => r.id === recipeId)?.slash_command ?? recipeName}`;
+    setRecipeMessages((prev) => [...prev, { role: "user", content: command }]);
 
     try {
       const result = await runRecipe(
@@ -95,7 +90,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
     } catch (err) {
       setRecipeMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "Something went wrong. Please try again." },
+        { role: "assistant", content: `Couldn't run ${command}: ${String(err)}` },
       ]);
     } finally {
       setRecipeLoading(false);
@@ -179,8 +174,8 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
           />
           {/* Header */}
           <div className="flex items-center justify-between px-4 pt-10 pb-3 border-b">
-            <h3 className="font-semibold">Ask Nootle</h3>
-            <Button variant="ghost" size="icon-sm" onClick={onClose}>
+            <h3 className="text-sm font-semibold">Ask Nootle</h3>
+            <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close chat">
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -190,39 +185,13 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
             <div ref={scrollRef} className="flex flex-col gap-3 p-4">
               {allMessages.length === 0 && (
                 <p className="text-center text-sm text-muted-foreground py-8">
-                  Go ahead, quiz Nootle about this meeting
+                  Ask a question about this meeting, or type / for a slash command.
                 </p>
               )}
               {allMessages.map((msg, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground whitespace-pre-wrap"
-                        : "bg-muted text-foreground"
-                    }`}
-                  >
-                    {msg.role === "assistant" ? (
-                      <Markdown content={msg.content} />
-                    ) : (
-                      msg.content
-                    )}
-                  </div>
-                </motion.div>
+                <ChatMessage key={i} role={msg.role} content={msg.content} />
               ))}
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
-                    <ThinkingDots />
-                  </div>
-                </div>
-              )}
+              {isLoading && <ChatThinking />}
               {error && (
                 <p className="text-xs text-destructive text-center">{error}</p>
               )}
@@ -270,24 +239,16 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
               )}
             </AnimatePresence>
 
-            <div className="flex items-center gap-2 p-3">
-              <Input
-                ref={inputRef}
-                placeholder="Ask about this meeting... (type / for slash commands)"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={isLoading}
-                className="flex-1"
-              />
-              <MotionButton
-                size="sm"
-                onClick={handleSend}
-                disabled={isLoading || !input.trim()}
-              >
-                Ask
-              </MotionButton>
-            </div>
+            <ChatComposer
+              className="p-3"
+              inputRef={inputRef}
+              placeholder="Ask about this meeting…"
+              value={input}
+              onChange={setInput}
+              onSend={handleSend}
+              onKeyDown={handleKeyDown}
+              disabled={isLoading}
+            />
           </div>
 
           {/* Clear button */}

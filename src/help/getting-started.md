@@ -14,7 +14,7 @@ After changing permissions you may need to restart Nootle for them to take effec
 
 ## Your First Recording
 
-1. Click **Record Something** in the sidebar, or press **⌘N** from anywhere.
+1. Click **New recording** in the sidebar, or press **⌘N** from anywhere.
 2. Nootle begins capturing your microphone and (if permitted) system audio.
 3. A live transcript appears as you speak — you'll see text populate in real time with speaker labels.
 4. When the meeting ends, click **Stop** or press **⌘↵**.
