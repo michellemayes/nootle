@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { Check } from "lucide-react";
 import { DEFAULT_SURFACE, useTheme } from "@/hooks/useTheme";
+import { labelTextColor } from "@/lib/utils";
 
 const ACCENT_PRESETS = [
   { name: "Default", hue: 0, chroma: 0 },
@@ -76,15 +77,17 @@ interface SwatchPickerProps {
   swatches: Swatch[];
   /** Border for inactive swatches — light swatches need one to stay visible. */
   idleBorder: string;
-  /** Checkmark color that reads on top of the swatches. */
-  checkClass: string;
-  customColor: string | null;
+  /** Swatch color for the current value, shown on the custom button when no preset matches. */
+  currentColor: string;
   onCustom: (hex: string) => void;
 }
 
-function SwatchPicker({ label, description, swatches, idleBorder, checkClass, customColor, onCustom }: SwatchPickerProps) {
+function SwatchPicker({ label, description, swatches, idleBorder, currentColor, onCustom }: SwatchPickerProps) {
+  const customColor = swatches.some((s) => s.active) ? null : currentColor;
   const colorInputRef = useRef<HTMLInputElement>(null);
-  const check = <Check className={`absolute inset-0 m-auto h-3.5 w-3.5 ${checkClass}`} strokeWidth={3} />;
+  const check = (bg: string) => (
+    <Check className="absolute inset-0 m-auto h-3.5 w-3.5" style={{ color: labelTextColor(bg) }} strokeWidth={3} />
+  );
 
   return (
     <div className="space-y-2">
@@ -102,7 +105,7 @@ function SwatchPicker({ label, description, swatches, idleBorder, checkClass, cu
             className={SWATCH_CLASS}
             style={{ backgroundColor: s.color, borderColor: s.active ? "var(--primary)" : idleBorder }}
           >
-            {s.active && check}
+            {s.active && check(s.color)}
           </button>
         ))}
 
@@ -119,7 +122,7 @@ function SwatchPicker({ label, description, swatches, idleBorder, checkClass, cu
               borderColor: customColor ? "var(--primary)" : "transparent",
             }}
           >
-            {customColor && check}
+            {customColor && check(customColor)}
           </button>
           <input
             ref={colorInputRef}
@@ -144,16 +147,13 @@ export function AccentColorPicker() {
     active: near(p.hue, accentHue, 1) && near(p.chroma, accentChroma, 0.005),
     onSelect: () => setAccentColor(p.hue, p.chroma),
   }));
-  const isCustom = !swatches.some((s) => s.active);
-
   return (
     <SwatchPicker
       label="Accent color"
       description="Tints buttons, focus rings, and active elements"
       swatches={swatches}
       idleBorder="transparent"
-      checkClass="text-white"
-      customColor={isCustom ? `oklch(0.55 ${accentChroma} ${accentHue})` : null}
+      currentColor={`oklch(0.55 ${accentChroma} ${accentHue})`}
       onCustom={(hex) => {
         const { hue, chroma } = hexToHueChroma(hex);
         setAccentColor(hue, Math.max(chroma, 0.05));
@@ -173,16 +173,13 @@ export function BackgroundThemePicker() {
     active: near(p.tint, surfaceTint, 0.01) && (p.tint === 0 || near(p.hue, surfaceHue, 1)),
     onSelect: () => setSurfaceColor(p.hue, p.tint),
   }));
-  const isCustom = !swatches.some((s) => s.active);
-
   return (
     <SwatchPicker
       label="Background theme"
       description="Tints the window, sidebar, cards, and borders — separate from the accent color"
       swatches={swatches}
       idleBorder="var(--border)"
-      checkClass="text-foreground"
-      customColor={isCustom ? preview(surfaceHue, surfaceTint) : null}
+      currentColor={preview(surfaceHue, surfaceTint)}
       onCustom={(hex) => {
         const { hue, chroma } = hexToHueChroma(hex);
         // Map the picked color's saturation onto a subtle surface tint.

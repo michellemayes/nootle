@@ -75,15 +75,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return stored === "dark" ? "dark" : "light";
   });
 
-  const [accentHue, setAccentHue] = useState<number>(() => {
-    const stored = localStorage.getItem("accent-hue");
-    return stored ? (Number(stored) || 0) : 0;
-  });
-
-  const [accentChroma, setAccentChroma] = useState<number>(() => {
-    const stored = localStorage.getItem("accent-chroma");
-    return stored ? (Number(stored) || 0) : 0;
-  });
+  const [accentHue, setAccentHue] = useState(() => readStoredNumber("accent-hue", 0));
+  const [accentChroma, setAccentChroma] = useState(() => readStoredNumber("accent-chroma", 0));
 
   const [surfaceHue, setSurfaceHue] = useState(() => readStoredNumber("surface-hue", DEFAULT_SURFACE.hue));
   const [surfaceTint, setSurfaceTint] = useState(() => readStoredNumber("surface-tint", DEFAULT_SURFACE.tint));
