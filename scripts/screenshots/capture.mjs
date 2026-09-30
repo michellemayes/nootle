@@ -57,7 +57,7 @@ const SHOTS = [
   {
     name: "recording",
     route: "/recording",
-    ready: "text=Live Transcript",
+    ready: "text=Live transcript",
     async prepare(page) {
       await page.evaluate((segments) => {
         window.__NOOTLE_EMIT__("transcription-status", { available: true });
@@ -66,13 +66,13 @@ const SHOTS = [
       await page.getByRole("button", { name: "Untitled Recording" }).click();
       await page.locator("input:focus").fill("Design Review — Onboarding Flow");
       await page.getByLabel("Summary template").selectOption({ label: "Standard Summary" });
-      await page.getByPlaceholder("Take notes during the meeting...").fill(
+      await page.getByPlaceholder("Take notes during the meeting…").fill(
         "Permissions screen is the big leak — 31% drop\n" +
           "Try inline copy instead of the docs link, one sentence above the button\n" +
           "Two variants if traffic allows, behind the existing flag\n\n" +
           "Calendar permission: move it out of onboarding? Ask again on an empty library",
       );
-      await page.getByRole("button", { name: /Live Transcript/ }).click();
+      await page.getByRole("button", { name: /Live transcript/ }).click();
       // Let the timer run so the recording reads as in-progress.
       await page.waitForTimeout(8000);
     },
@@ -174,9 +174,26 @@ async function main() {
          localStorage.setItem("meetingViewMode", "grid");
          localStorage.setItem("nootle-sidebar-collapsed", "false");`,
       );
-      // Freeze "now" just after the demo library's latest meeting so relative
+      // Start "now" just after the demo library's latest meeting so relative
       // dates, the greeting, and the streak render the same on every run.
-      await context.clock.setFixedTime(DEMO_NOW);
+      // Only Date is shifted: any of Playwright's clock APIs also swap in fake
+      // timers and requestAnimationFrame, under which framer-motion entrance
+      // animations never finish and pages capture blank.
+      await context.addInitScript(
+        `(() => {
+           const RealDate = Date;
+           const offset = ${DEMO_NOW.getTime()} - RealDate.now();
+           class DemoDate extends RealDate {
+             constructor(...args) {
+               super(...(args.length ? args : [DemoDate.now()]));
+             }
+             static now() {
+               return RealDate.now() + offset;
+             }
+           }
+           globalThis.Date = DemoDate;
+         })();`,
+      );
       await context.addInitScript({ path: path.join(here, "mock-tauri.js") });
       // The demo audio is a one-second placeholder; report the meeting's real
       // length so the player reads like a finished recording.
