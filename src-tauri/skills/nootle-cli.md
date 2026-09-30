@@ -1,11 +1,11 @@
 ---
 name: nootle-cli
-description: Use when the user asks about meetings, transcripts, action items, insights, summaries, or anything related to recorded conversations from Nootle
+description: Use when the user asks about meetings, transcripts, action items, insights, summaries, or anything related to recorded conversations from Nootle, or wants to set up Nootle workflows, integrations, summary templates, or insight types
 ---
 
 # Nootle CLI
 
-`nootle-cli` is a read-only CLI for querying meeting data recorded by the Nootle app. Output is JSON by default. Add `--pretty` for human-readable output.
+`nootle-cli` is a CLI for querying meeting data recorded by the Nootle app and managing its automations. Output is JSON by default. Add `--pretty` for human-readable output.
 
 ## Database Location
 
@@ -19,9 +19,6 @@ Override: `--db <path>` or `NOOTLE_DB` env var
 ```bash
 # List all meetings
 nootle-cli meetings list
-
-# Filter by category
-nootle-cli meetings list --category <category-id>
 
 # Search by title
 nootle-cli meetings list --search "standup"
@@ -82,17 +79,11 @@ nootle-cli actions list --status done
 nootle-cli summaries get <meeting-id>
 ```
 
-### Categories
+### Templates
 
 ```bash
-nootle-cli categories list
-```
-
-### Prompts
-
-```bash
-nootle-cli prompts list
-nootle-cli prompts get <prompt-id>
+nootle-cli templates list
+nootle-cli templates get <template-id>
 ```
 
 ### Embeddings
@@ -106,6 +97,59 @@ nootle-cli embeddings status
 ```bash
 nootle-cli chat conversations
 nootle-cli chat messages <conversation-id>
+```
+
+## Automations
+
+Set these up when the user asks for them. Run `nootle-cli catalog` first: it lists each integration type's credential fields, its actions, each action's config fields, the `{{placeholders}}` text fields accept (`{{title}}`, `{{date}}`, `{{summary}}`, `{{template_summary}}`, `{{action_items}}`), and the icons insight types can use. Invalid input fails with an error listing what's allowed.
+
+### Integrations
+
+A workflow sends to an integration, so connect one first. Ask the user for credentials; pass them on stdin so they stay out of shell history. Credentials are never printed back.
+
+```bash
+echo '{"bot_token":"xoxb-..."}' | nootle-cli integrations create --type slack --credentials -
+nootle-cli integrations create --type email            # no credentials needed
+nootle-cli integrations list
+nootle-cli integrations update <id> --name "Work Slack"
+nootle-cli integrations delete <id>                    # also deletes its workflows
+```
+
+### Workflows
+
+A workflow sends a meeting's summary or action items to an integration. The user runs it from a meeting's Run menu; `workflows run` runs it now.
+
+```bash
+nootle-cli workflows create --name "Post to #eng" --integration <integration-id> --set channel=#eng
+nootle-cli workflows create --name "Issues" --integration <github-id> \
+  --config '{"repo":"acme/app","description_prompt":"Include why it matters"}'
+nootle-cli workflows update <id> --set message_template='*{{title}}*: {{summary}}'
+nootle-cli workflows disable <id>                      # hide from the Run menu
+nootle-cli workflows run <id> --meeting <meeting-id>   # sends to the external service
+nootle-cli workflows runs --meeting <meeting-id>
+```
+
+`--set` merges one field into the current config; `--config` replaces it. Set `template_id` to a template's ID to use that template's summary as `{{template_summary}}`. Pass `--provider` and `--model` to `run` when the workflow has a `description_prompt`, or a `template_id` the meeting has no summary for yet; without them it falls back to plain descriptions and the meeting's existing summary.
+
+### Summary templates
+
+```bash
+nootle-cli templates create --name "1:1" --section Wins --section Blockers --prompt "Be brief" --auto-run
+nootle-cli templates update <id> --auto-run false
+nootle-cli templates delete <id>                       # built-ins can't be deleted
+```
+
+`--auto-run` summarizes every new meeting with the template.
+
+### Insight types
+
+Custom things to extract from every transcript, alongside decisions and action items.
+
+```bash
+nootle-cli insight-types create --name Risk --prompt "Risks or concerns someone raised" --icon alert-triangle
+nootle-cli insight-types create --name "Follow-up" --prompt "..." --action-fields  # adds assignee, due date, status
+nootle-cli insight-types update <id> --prompt "..."
+nootle-cli insight-types delete <id>
 ```
 
 ## Output
@@ -125,6 +169,6 @@ nootle-cli meetings list --archived | jq 'group_by(.status) | map({status: .[0].
 
 ## Important
 
-- This tool is **read-only**. It queries data but never modifies it.
-- The Nootle app does not need to be running for the CLI to work.
+- Query commands never modify data. Automation commands do: confirm with the user before deleting anything or running a workflow, since runs post to external services.
+- The Nootle app does not need to be running for the CLI to work. If it's open, the user may need to reopen a page to see changes.
 - Meeting IDs are UUIDs. Get them from `meetings list` first.

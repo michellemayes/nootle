@@ -95,8 +95,8 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Templates** — customizable summary templates you can pick per recording, or mark auto-run so every meeting is summarized without asking (e.g. a standing template for 1:1s, standups, or interviews)
 - **Semantic search** — ask questions across your entire meeting history
 - **Noise cancellation** — built-in denoising for cleaner audio and transcripts
-- **MCP server** — integrate with Claude Code and other MCP-compatible tools
-- **CLI tool** — query meetings, transcripts, insights, and more from the terminal
+- **MCP server** — let Claude Code and other MCP clients read your meetings and set up workflows, integrations, templates, and insight types for you
+- **CLI tool** — query meetings and manage automations from the terminal or scripts
 - **Auto-titling** — meetings are automatically titled from transcript content
 - **Keyboard-first** — ⌘K command palette to jump to any meeting or ask a question, ⌘N to start recording from anywhere, ⌘↵ to stop
 - **Momentum at a glance** — workday recording streak, meetings this week, and open action items on the home screen, with a little celebration when you wrap a meeting
@@ -127,7 +127,7 @@ pnpm tauri dev
 
 ## CLI Tool
 
-`nootle-cli` is a standalone command-line tool for querying your meeting data. It reads the Nootle database directly — the app doesn't need to be running.
+`nootle-cli` is a standalone command-line tool for querying your meeting data and managing automations. It reads and writes the Nootle database directly — the app doesn't need to be running.
 
 ```bash
 # Build and install
@@ -145,13 +145,49 @@ nootle-cli actions list --status open
 
 Output is JSON by default. Add `--pretty` for human-readable formatting. See `nootle-cli --help` for all commands.
 
+### Automations
+
+Agents and scripts can set up the same automations as the app: integrations, workflows, summary templates, and insight types. Input is validated, and errors list what's allowed.
+
+```bash
+# What can be automated: integration types, actions, and their fields
+nootle-cli catalog
+
+# Connect Slack. Credentials can come from stdin or @file to keep them out of shell history.
+echo '{"bot_token":"xoxb-..."}' | nootle-cli integrations create --type slack --credentials -
+
+# Create a workflow that posts summaries to #eng
+nootle-cli workflows create --name "Post to #eng" --integration <integration-id> --set channel=#eng
+
+# Run it on a meeting now
+nootle-cli workflows run <workflow-id> --meeting <meeting-id>
+
+# Summarize every new meeting with a custom template
+nootle-cli templates create --name "1:1" --section Wins --section Blockers --auto-run
+
+# Extract a custom insight type from every transcript
+nootle-cli insight-types create --name Risk --prompt "Risks or concerns someone raised" --icon alert-triangle
+```
+
+Credentials are stored locally and never printed. If the app is open, reopen the page to see changes made from the CLI.
+
 ### Claude Code Skill
 
-Install the skill so Claude can query your meetings:
+Install the skill so Claude can query your meetings and manage automations:
 
 ```bash
 claude skill add --global --file "$(dirname $(which nootle-cli))/../skills/nootle-cli.md"
 ```
+
+## MCP Server
+
+Run the app binary with `--mcp` to use Nootle as an MCP server (Settings → About shows the exact command for your install):
+
+```bash
+claude mcp add nootle -- /Applications/Nootle.app/Contents/MacOS/nootle --mcp
+```
+
+Besides reading meetings and transcripts, the server has tools to list, create, update, run, and delete workflows, integrations, summary templates, and insight types, so you can ask an agent things like *"Set up a workflow that posts meeting recaps to #eng"* and it does the setup for you.
 
 ## URL Scheme
 

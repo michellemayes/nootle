@@ -354,6 +354,14 @@ pub struct Integration {
     pub created_at: String,
 }
 
+impl Integration {
+    /// The integration without its credentials, safe to return to callers.
+    pub fn redacted(mut self) -> Self {
+        self.credentials_json = String::new();
+        self
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workflow {
     pub id: String,
@@ -2668,6 +2676,13 @@ impl Database {
         Ok(rows)
     }
 
+    pub fn get_insight_type(&self, id: &str) -> Result<InsightType> {
+        self.list_insight_types()?
+            .into_iter()
+            .find(|t| t.id == id)
+            .ok_or_else(|| NootleError::Other(format!("Insight type not found: {id}")))
+    }
+
     pub fn create_insight_type(
         &self,
         name: &str,
@@ -2689,7 +2704,15 @@ impl Database {
             "INSERT INTO insight_types (id, name, slug, description, extraction_prompt, icon, has_action_fields, is_builtin, sort_order, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9)",
             params![id, name, slug, description, extraction_prompt, icon, has_action_fields as i32, max_sort + 1, now],
-        )?;
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::SqliteFailure(f, _)
+                if f.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                NootleError::Other(format!("An insight type with slug '{slug}' already exists"))
+            }
+            other => NootleError::Database(other),
+        })?;
         Ok(InsightType {
             id,
             name: name.to_string(),
@@ -3072,11 +3095,11 @@ impl Database {
     }
 
     pub fn list_integrations_safe(&self) -> Result<Vec<Integration>> {
-        let mut integrations = self.list_integrations()?;
-        for i in &mut integrations {
-            i.credentials_json = String::new();
-        }
-        Ok(integrations)
+        Ok(self
+            .list_integrations()?
+            .into_iter()
+            .map(Integration::redacted)
+            .collect())
     }
 
     pub fn update_integration(

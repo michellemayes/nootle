@@ -25,32 +25,31 @@ MCP (Model Context Protocol) is an open standard that lets AI assistants connect
 
 ## Available Tools
 
-Once connected, Claude has access to three tools:
+### Meetings
 
-### list_meetings
-
-Lists all your recorded meetings. Supports optional filtering.
-
-- **label_id** (optional) — filter by meeting label
-- **search** (optional) — search meetings by title
-
-Example: Ask Claude *"What meetings did I record this week?"*
-
-### get_meeting
-
-Retrieves full details for a single meeting, including the complete transcript and any generated summaries.
-
-- **id** (required) — the meeting ID
-
-Example: Ask Claude *"Show me the transcript from my last standup."*
-
-### search_transcripts
-
-Full-text search across all your meeting transcripts. Returns matching segments with speaker labels and timestamps.
-
-- **query** (required) — the text to search for
+- **list_meetings** — list recorded meetings, optionally filtered by title (`search`)
+- **get_meeting** — a meeting's details, full transcript, and summaries (`id`)
+- **search_transcripts** — full-text search across every transcript (`query`)
 
 Example: Ask Claude *"Find every time someone mentioned the Q3 roadmap across all my meetings."*
+
+### Automations
+
+Claude can also set up automations for you: the same integrations, workflows, summary templates, and insight types you manage under Automations and Settings.
+
+- **get_automation_catalog** — the integration types, their credential fields and actions, each action's config fields, and the `{{placeholders}}` text fields accept
+- **list_automations** — your integrations, workflows, templates, and insight types
+- **create_integration** / **update_integration** — connect Slack, Notion, GitHub, and the rest. Credentials are stored locally and never returned.
+- **create_workflow** / **update_workflow** — send a meeting's summary or action items to an integration; enable or disable a workflow
+- **run_workflow** — run a workflow on a meeting now
+- **list_workflow_runs** — past runs for a meeting
+- **create_template** / **update_template** — summary templates, including auto-run
+- **create_insight_type** / **update_insight_type** — custom things to extract from every transcript
+- **delete_automation** — delete any of the above
+
+Every input is validated, and errors say what's allowed so Claude can fix its request. If Nootle is open, reopen the page to see changes Claude made.
+
+Example: Ask Claude *"Set up a workflow that opens GitHub issues in acme/app for my action items."*
 
 ## Resources
 
@@ -71,6 +70,8 @@ Once connected, try asking Claude:
 - *"Search my meetings for discussions about hiring."*
 - *"Compare what was discussed in Monday's standup versus Friday's."*
 - *"What action items came out of the product review?"*
+- *"Make a 1:1 template with Wins, Blockers, and Feedback sections and run it on every meeting."*
+- *"Connect my Obsidian vault and add a workflow that saves meeting notes to the Meetings folder."*
 
 ## Troubleshooting MCP
 
