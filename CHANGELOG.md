@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.17] - 2026-09-30
+
+### Bug Fixes
+
+- **connectors:** Pass OAuth callback issuer so Linear sign-in succeeds (#146) ([c117b4e](https://github.com/michellemayes/nootle/commit/c117b4ed1970383e977f9b861260c0afde0a2932))
+
 ## [0.1.16] - 2026-09-30
 
 ### Bug Fixes
