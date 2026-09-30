@@ -191,34 +191,26 @@ pub async fn analyze_sentiment(
         .get_provider(provider)
         .ok_or_else(|| anyhow::anyhow!("LLM provider not found: {provider}"))?;
 
-    let batches = windows.chunks(SENTIMENT_WINDOWS_PER_CALL).map(|batch| async move {
-        let excerpts = batch
-            .iter()
-            .enumerate()
-            .map(|(i, (_, _, text))| format!("[{i}] {text}"))
-            .collect::<Vec<_>>()
-            .join("\n\n");
-        let prompt = format!(
-            "Classify the sentiment of each numbered meeting excerpt below as exactly one of: positive, neutral, negative.\n\
-             Also provide a confidence score from 0.0 to 1.0 for each.\n\
-             Respond ONLY with a JSON array containing one object per excerpt, in order:\n\
-             [{{\"index\": 0, \"sentiment\": \"...\", \"score\": 0.0}}, ...]\n\n\
-             Excerpts:\n{excerpts}"
-        );
-        let messages = vec![ChatMessage {
-            role: "user".to_string(),
-            content: prompt,
-        }];
-        (batch, llm_provider.chat(messages, model).await)
-    });
+    // Collect the (boxed) request futures up front: a closure returning an
+    // `async` block inside the stream makes the command future non-`Send`.
+    let requests: Vec<_> = windows
+        .chunks(SENTIMENT_WINDOWS_PER_CALL)
+        .map(|batch| {
+            let messages = vec![ChatMessage {
+                role: "user".to_string(),
+                content: sentiment_prompt(batch),
+            }];
+            llm_provider.chat(messages, model)
+        })
+        .collect();
+    let responses: Vec<_> = futures_util::stream::iter(requests)
+        .buffered(SENTIMENT_MAX_CONCURRENT_CALLS)
+        .collect()
+        .await;
 
     let mut segments = Vec::new();
     let mut last_error = None;
-    let results: Vec<_> = futures_util::stream::iter(batches)
-        .buffer_unordered(SENTIMENT_MAX_CONCURRENT_CALLS)
-        .collect()
-        .await;
-    for (batch, result) in results {
+    for (batch, result) in windows.chunks(SENTIMENT_WINDOWS_PER_CALL).zip(responses) {
         let response = match result {
             Ok(r) => r,
             Err(e) => {
@@ -252,6 +244,22 @@ pub async fn analyze_sentiment(
     }
     segments.sort_by_key(|s| s.start_ms);
     Ok(segments)
+}
+
+fn sentiment_prompt(batch: &[(i64, i64, String)]) -> String {
+    let excerpts = batch
+        .iter()
+        .enumerate()
+        .map(|(i, (_, _, text))| format!("[{i}] {text}"))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    format!(
+        "Classify the sentiment of each numbered meeting excerpt below as exactly one of: positive, neutral, negative.\n\
+         Also provide a confidence score from 0.0 to 1.0 for each.\n\
+         Respond ONLY with a JSON array containing one object per excerpt, in order:\n\
+         [{{\"index\": 0, \"sentiment\": \"...\", \"score\": 0.0}}, ...]\n\n\
+         Excerpts:\n{excerpts}"
+    )
 }
 
 /// Parse a batched sentiment response into `(index, sentiment, score)` tuples.
