@@ -56,7 +56,7 @@ impl NootleMcpServer {
         let json = serde_json::to_string_pretty(&meetings)
             .map_err(|e| McpError::internal_error(format!("Serialization error: {}", e), None))?;
 
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(json)]))
     }
 
     /// Get full meeting details including transcript and summaries
@@ -89,7 +89,7 @@ impl NootleMcpServer {
         let json = serde_json::to_string_pretty(&result)
             .map_err(|e| McpError::internal_error(format!("Serialization error: {}", e), None))?;
 
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(json)]))
     }
 
     /// Full-text search across all transcripts
@@ -107,7 +107,7 @@ impl NootleMcpServer {
         let json = serde_json::to_string_pretty(&results)
             .map_err(|e| McpError::internal_error(format!("Serialization error: {}", e), None))?;
 
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(json)]))
     }
 }
 
@@ -143,20 +143,16 @@ impl ServerHandler for NootleMcpServer {
         let resources: Vec<Resource> = meetings
             .iter()
             .map(|m| {
-                RawResource {
-                    uri: format!("nootle://meetings/{}/transcript", m.id),
-                    name: format!("Transcript: {}", m.title),
-                    title: Some(format!("Transcript for {}", m.title)),
-                    description: Some(format!(
-                        "Full transcript for meeting '{}' ({})",
-                        m.title, m.start_time
-                    )),
-                    mime_type: Some("text/plain".into()),
-                    size: None,
-                    icons: None,
-                    meta: None,
-                }
-                .no_annotation()
+                Resource::new(
+                    format!("nootle://meetings/{}/transcript", m.id),
+                    format!("Transcript: {}", m.title),
+                )
+                .with_title(format!("Transcript for {}", m.title))
+                .with_description(format!(
+                    "Full transcript for meeting '{}' ({})",
+                    m.title, m.start_time
+                ))
+                .with_mime_type("text/plain")
             })
             .collect();
 
@@ -213,15 +209,13 @@ impl ServerHandler for NootleMcpServer {
         _request: Option<PaginatedRequestParams>,
         _ctx: rmcp::service::RequestContext<RoleServer>,
     ) -> Result<ListResourceTemplatesResult, McpError> {
-        let templates = vec![RawResourceTemplate {
-            uri_template: "nootle://meetings/{id}/transcript".into(),
-            name: "Meeting Transcript".into(),
-            title: Some("Meeting Transcript".into()),
-            description: Some("Full transcript for a specific meeting".into()),
-            mime_type: Some("text/plain".into()),
-            icons: None,
-        }
-        .no_annotation()];
+        let templates =
+            vec![
+                ResourceTemplate::new("nootle://meetings/{id}/transcript", "Meeting Transcript")
+                    .with_title("Meeting Transcript")
+                    .with_description("Full transcript for a specific meeting")
+                    .with_mime_type("text/plain"),
+            ];
 
         Ok(ListResourceTemplatesResult {
             resource_templates: templates,
