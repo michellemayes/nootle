@@ -35,6 +35,7 @@ interface AnalyticsData {
   speakers: SpeakerAnalytics[];
   sentiment: SentimentSegment[];
   engagement: MeetingEngagement | null;
+  sentiment_running: boolean;
 }
 
 export function useAnalytics(meetingId: string) {
@@ -42,6 +43,7 @@ export function useAnalytics(meetingId: string) {
     speakers: [],
     sentiment: [],
     engagement: null,
+    sentiment_running: false,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +102,7 @@ export function useAnalytics(meetingId: string) {
     speakers: data.speakers,
     sentiment: data.sentiment,
     engagement: data.engagement,
+    sentimentRunning: data.sentiment_running,
     loading,
     error,
     refresh: fetchAnalytics,

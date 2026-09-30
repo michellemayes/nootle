@@ -142,11 +142,16 @@ pub fn compute_engagement(
     }
 }
 
+/// Max windows classified per LLM call. Keeps each prompt small enough for
+/// fast, reliable responses while avoiding one CLI/API round-trip per window.
+const SENTIMENT_WINDOWS_PER_CALL: usize = 40;
+
 /// Analyze sentiment of transcript chunks using an LLM.
 ///
-/// Groups transcript segments into ~30-second windows and asks the LLM to
-/// classify each window as positive, neutral, or negative with a confidence
-/// score. Windows that fail LLM classification are silently skipped.
+/// Groups transcript segments into ~30-second windows, then classifies them in
+/// batches (one LLM call per batch, batches run concurrently) as positive,
+/// neutral, or negative with a confidence score. Windows missing from a
+/// response are skipped; if no window could be classified, an error is returned.
 pub async fn analyze_sentiment(
     db: &Database,
     llm: &LlmRegistry,
@@ -183,70 +188,112 @@ pub async fn analyze_sentiment(
         .get_provider(provider)
         .ok_or_else(|| anyhow::anyhow!("LLM provider not found: {provider}"))?;
 
-    let mut segments = Vec::new();
-    for (start, end, text) in &windows {
+    let batches = windows.chunks(SENTIMENT_WINDOWS_PER_CALL).map(|batch| async move {
+        let excerpts = batch
+            .iter()
+            .enumerate()
+            .map(|(i, (_, _, text))| format!("[{i}] {text}"))
+            .collect::<Vec<_>>()
+            .join("\n\n");
         let prompt = format!(
-            "Classify the sentiment of this meeting excerpt as exactly one of: positive, neutral, negative.\n\
-             Also provide a confidence score from 0.0 to 1.0.\n\
-             Respond ONLY with JSON: {{\"sentiment\": \"...\", \"score\": 0.0}}\n\n\
-             Excerpt:\n{text}"
+            "Classify the sentiment of each numbered meeting excerpt below as exactly one of: positive, neutral, negative.\n\
+             Also provide a confidence score from 0.0 to 1.0 for each.\n\
+             Respond ONLY with a JSON array containing one object per excerpt, in order:\n\
+             [{{\"index\": 0, \"sentiment\": \"...\", \"score\": 0.0}}, ...]\n\n\
+             Excerpts:\n{excerpts}"
         );
-
         let messages = vec![ChatMessage {
             role: "user".to_string(),
             content: prompt,
         }];
+        (batch, llm_provider.chat(messages, model).await)
+    });
 
-        match llm_provider.chat(messages, model).await {
-            Ok(response) => {
-                // Try to extract JSON from the response (the LLM may include markdown fences)
-                let json_str = extract_json(&response);
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
-                    let sentiment = parsed["sentiment"]
-                        .as_str()
-                        .unwrap_or("neutral")
-                        .to_string();
-                    let score = parsed["score"].as_f64().unwrap_or(0.5);
-                    segments.push(SentimentSegment {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        meeting_id: meeting_id.to_string(),
-                        start_ms: *start,
-                        end_ms: *end,
-                        sentiment,
-                        score,
-                    });
-                } else {
-                    tracing::warn!(
-                        "Failed to parse sentiment JSON for window {start}-{end}: {response}"
-                    );
-                }
-            }
+    let mut segments = Vec::new();
+    let mut last_error = None;
+    for (batch, result) in futures_util::future::join_all(batches).await {
+        let response = match result {
+            Ok(r) => r,
             Err(e) => {
-                tracing::warn!("Sentiment analysis failed for window {start}-{end}: {e}");
+                tracing::warn!("Sentiment analysis batch failed: {e}");
+                last_error = Some(e.to_string());
+                continue;
             }
+        };
+        let Some(items) = parse_sentiment_batch(&response) else {
+            tracing::warn!("Failed to parse sentiment JSON: {response}");
+            last_error = Some("Could not parse sentiment response from the model".into());
+            continue;
+        };
+        for (i, sentiment, score) in items {
+            let Some((start, end, _)) = batch.get(i) else {
+                continue;
+            };
+            segments.push(SentimentSegment {
+                id: uuid::Uuid::new_v4().to_string(),
+                meeting_id: meeting_id.to_string(),
+                start_ms: *start,
+                end_ms: *end,
+                sentiment,
+                score,
+            });
         }
     }
 
+    if segments.is_empty() {
+        if let Some(e) = last_error {
+            anyhow::bail!("Sentiment analysis failed: {e}");
+        }
+    }
+    segments.sort_by_key(|s| s.start_ms);
     Ok(segments)
 }
 
-/// Extract the first JSON object from a string, handling markdown code fences.
-fn extract_json(s: &str) -> &str {
+/// Parse a batched sentiment response into `(index, sentiment, score)` tuples.
+/// Items without an explicit `index` fall back to their array position.
+fn parse_sentiment_batch(response: &str) -> Option<Vec<(usize, String, f64)>> {
+    let parsed: serde_json::Value = serde_json::from_str(extract_json_array(response)).ok()?;
+    let items = parsed.as_array()?;
+    Some(
+        items
+            .iter()
+            .enumerate()
+            .map(|(pos, item)| {
+                let index = item["index"].as_u64().map(|i| i as usize).unwrap_or(pos);
+                let sentiment = match item["sentiment"].as_str() {
+                    Some(s @ ("positive" | "neutral" | "negative")) => s.to_string(),
+                    _ => "neutral".to_string(),
+                };
+                let score = item["score"].as_f64().unwrap_or(0.5);
+                (index, sentiment, score)
+            })
+            .collect(),
+    )
+}
+
+/// Extract the outermost JSON array from a string (ignores markdown fences/prose).
+fn extract_json_array(s: &str) -> &str {
     let trimmed = s.trim();
-    if let Some(rest) = trimmed.strip_prefix("```json") {
-        if let Some(inner) = rest.strip_suffix("```") {
-            return inner.trim();
-        }
+    match (trimmed.find('['), trimmed.rfind(']')) {
+        (Some(start), Some(end)) if start < end => &trimmed[start..=end],
+        _ => trimmed,
     }
-    if let Some(rest) = trimmed.strip_prefix("```") {
-        if let Some(inner) = rest.strip_suffix("```") {
-            return inner.trim();
-        }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_fenced_sentiment_array() {
+        let resp = "```json\n[{\"index\": 1, \"sentiment\": \"negative\", \"score\": 0.9}, {\"sentiment\": \"weird\"}]\n```";
+        let items = parse_sentiment_batch(resp).unwrap();
+        assert_eq!(items[0], (1, "negative".to_string(), 0.9));
+        assert_eq!(items[1], (1, "neutral".to_string(), 0.5));
     }
-    if let Some(start) = trimmed.find('{') {
-        if let Some(end) = trimmed.rfind('}') {
-            return &trimmed[start..=end];
-        }
+
+    #[test]
+    fn rejects_non_array_response() {
+        assert!(parse_sentiment_batch("I can't do that").is_none());
     }
-    trimmed
 }

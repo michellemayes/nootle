@@ -29,6 +29,7 @@ export function AnalyticsPanel({
     speakers,
     sentiment,
     engagement,
+    sentimentRunning,
     loading,
     error,
     computeAnalytics,
@@ -37,7 +38,9 @@ export function AnalyticsPanel({
 
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [computing, setComputing] = useState(false);
-  const [analyzingSentiment, setAnalyzingSentiment] = useState(false);
+  const [startingSentiment, setStartingSentiment] = useState(false);
+  // The backend tracks in-flight jobs, so progress survives switching tabs.
+  const analyzingSentiment = startingSentiment || sentimentRunning;
   const [actionError, setActionError] = useState<string | null>(null);
 
   const hasSpeakers = speakers.length > 0;
@@ -62,14 +65,14 @@ export function AnalyticsPanel({
 
   const handleAnalyzeSentiment = async () => {
     if (!selectedProvider || !selectedModel) return;
-    setAnalyzingSentiment(true);
+    setStartingSentiment(true);
     setActionError(null);
     try {
       await computeSentiment(selectedProvider, selectedModel);
     } catch (err) {
       setActionError(String(err));
     } finally {
-      setAnalyzingSentiment(false);
+      setStartingSentiment(false);
     }
   };
 

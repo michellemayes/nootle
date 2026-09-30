@@ -27,7 +27,10 @@ pub mod transcription;
 pub mod vad;
 pub mod workflows;
 
-use commands::{DetectorState, DownloadManagerState, EmbeddingState, LlmState, RecordingState};
+use commands::{
+    DetectorState, DownloadManagerState, EmbeddingState, LlmState, RecordingState,
+    SentimentJobsState,
+};
 use detection::MeetingDetector;
 use llm::LlmRegistry;
 use model_download::DownloadManager;
@@ -142,6 +145,7 @@ pub fn run() {
         .manage(detector_state)
         .manage(download_manager)
         .manage(embedding_state)
+        .manage(SentimentJobsState::default())
         .manage(connectors::SignInState::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();

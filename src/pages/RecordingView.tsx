@@ -144,6 +144,20 @@ export function RecordingView() {
     if (stopping) return;
     setStopping(true);
     try {
+      // Title and type edits made before the meeting row existed (or while the
+      // title field still had focus) were never saved — flush them now so the
+      // finished meeting keeps them.
+      if (currentMeeting) {
+        const id = currentMeeting.id;
+        const latestTitle = latestTitleRef.current.trim();
+        await Promise.all([
+          latestTitle && invoke("update_meeting_title", { id, title: latestTitle }),
+          invoke("update_meeting_template", {
+            id,
+            templateId: latestTemplateRef.current || null,
+          }),
+        ]).catch((err) => console.error("Failed to save meeting details:", err));
+      }
       const meeting = await stopRecording();
       const notes = latestNotesRef.current;
       if (notes.trim()) {
@@ -153,7 +167,7 @@ export function RecordingView() {
     } catch {
       navigate("/");
     }
-  }, [stopping, stopRecording, navigate]);
+  }, [stopping, currentMeeting, stopRecording, navigate]);
 
   // ⌘↵ wraps up the meeting from anywhere on the page, notes included.
   useEffect(() => {
