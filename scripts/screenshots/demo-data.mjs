@@ -719,6 +719,7 @@ export const FIXTURES = {
   get_linear_setting: null,
 
   is_recording: false,
+  current_recording: null,
   start_recording: meeting(
     "m-live",
     "Design Review — Onboarding Flow",

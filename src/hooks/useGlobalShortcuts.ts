@@ -1,36 +1,36 @@
 import { useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { navItems } from "@/lib/navigation";
+import { toggleCommandPalette } from "@/components/CommandPalette";
+
+const ROUTES: Record<string, string> = {
+  n: "/recording",
+  ",": "/settings",
+  ...Object.fromEntries(navItems.map((item, i) => [String(i + 1), item.to])),
+};
 
 /**
- * App-wide shortcuts: ⌘N starts (or returns to) a recording, ⌘1…⌘6 jump
- * between pages, ⌘, opens Settings. ⌘K lives in CommandPalette.
+ * App-wide shortcuts: ⌘K opens the command palette, ⌘N starts (or returns
+ * to) a recording, ⌘1…⌘6 jump between pages, ⌘, opens Settings.
  */
 export function useGlobalShortcuts() {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!e.metaKey || e.altKey || e.ctrlKey) return;
+      if (!e.metaKey || e.altKey || e.ctrlKey || e.shiftKey) return;
       const key = e.key.toLowerCase();
-      if (key === "n" && !e.shiftKey) {
+      if (key === "k") {
         e.preventDefault();
-        if (pathname !== "/recording") navigate("/recording");
+        toggleCommandPalette();
         return;
       }
-      if (key === "," && !e.shiftKey) {
-        e.preventDefault();
-        navigate("/settings");
-        return;
-      }
-      const index = Number(e.key) - 1;
-      if (!e.shiftKey && index >= 0 && index < navItems.length) {
-        e.preventDefault();
-        navigate(navItems[index].to);
-      }
+      const to = ROUTES[key];
+      if (!to) return;
+      e.preventDefault();
+      if (window.location.pathname !== to) navigate(to);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [navigate, pathname]);
+  }, [navigate]);
 }

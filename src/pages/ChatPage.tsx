@@ -82,13 +82,12 @@ export function ChatPage() {
 
   const handleSend = async (text = input, conversationId = activeId) => {
     if (!text.trim() || !selectedProvider || !selectedModel || !conversationId) return;
-    const msg = text;
     setInput("");
     setLoading(true);
     try {
       await invoke<GlobalChatResponse>("send_chat_message", {
         conversationId,
-        message: msg,
+        message: text,
         provider: selectedProvider,
         model: selectedModel,
         labelIds: selectedLabel ? [selectedLabel] : [],

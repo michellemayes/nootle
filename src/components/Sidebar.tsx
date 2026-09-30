@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -16,12 +16,11 @@ import { Circle, Moon, Sun, Bot, PanelLeftClose, PanelLeftOpen, Search } from "l
 import { navItems } from "@/lib/navigation";
 import { Kbd } from "@/components/Kbd";
 import { useIsRecording } from "@/hooks/useRecording";
-import { openCommandPalette } from "@/components/CommandPalette";
+import { toggleCommandPalette } from "@/components/CommandPalette";
 
 export function Sidebar() {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const isRecording = useIsRecording(pathname);
+  const isRecording = useIsRecording();
   const { theme, toggleTheme } = useTheme();
   const version = useAppVersion();
   const { selectedProvider, selectedModel, providers, models, filteredModels, changeProvider, setSelectedModel } = useGlobalLLMSelection();
@@ -114,12 +113,12 @@ export function Sidebar() {
           )}
           {!isCompact && (isRecording ? "Back to recording" : "Record Something")}
           {!isCompact && !isRecording && (
-            <Kbd className="ml-auto border-white/30 bg-white/15 text-primary-foreground">⌘N</Kbd>
+            <Kbd onSolid className="ml-auto">⌘N</Kbd>
           )}
         </MotionButton>
         <button
           type="button"
-          onClick={openCommandPalette}
+          onClick={toggleCommandPalette}
           title="Search or jump to… (⌘K)"
           className={cn(
             "flex w-full items-center rounded-md border border-sidebar-border text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground",

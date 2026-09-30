@@ -10,15 +10,3 @@ export const navItems: { to: string; label: string; icon: LucideIcon }[] = [
   { to: "/settings", label: "Settings", icon: Settings },
   { to: "/help", label: "Help", icon: HelpCircle },
 ];
-
-/** True when a keypress is going into a text field and shouldn't trigger shortcuts. */
-export function isTypingTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  if (!el) return false;
-  return (
-    el.isContentEditable ||
-    el.tagName === "INPUT" ||
-    el.tagName === "TEXTAREA" ||
-    el.tagName === "SELECT"
-  );
-}

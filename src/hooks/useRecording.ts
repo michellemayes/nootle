@@ -1,6 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import type { Meeting } from "@/types";
+
+const checkIsRecording = () => invoke<boolean>("is_recording").catch(() => false);
 
 export function useRecording() {
   const [isRecording, setIsRecording] = useState(false);
@@ -8,18 +11,6 @@ export function useRecording() {
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const checkRecording = useCallback(async () => {
-    try {
-      const recording = await invoke<boolean>("is_recording");
-      setIsRecording(recording);
-    } catch {
-    }
-  }, []);
-
-  useEffect(() => {
-    checkRecording();
-  }, [checkRecording]);
 
   useEffect(() => {
     if (!isRecording) return;
@@ -59,18 +50,12 @@ export function useRecording() {
   // notification, or the user navigated away and came back) instead of
   // starting a second one, which the backend would reject.
   const resumeRecording = useCallback(async () => {
-    if (!(await invoke<boolean>("is_recording"))) return null;
-    const meetings = await invoke<Meeting[]>("list_meetings", {
-      search: null,
-      includeArchived: false,
-    });
-    const live = meetings.find((m) => m.status === "recording") ?? null;
-    if (live) {
-      setCurrentMeeting(live);
-      setElapsed(
-        Math.max(0, Math.floor((Date.now() - new Date(live.start_time).getTime()) / 1000)),
-      );
-    }
+    const live = await invoke<Meeting | null>("current_recording");
+    if (!live) return null;
+    setCurrentMeeting(live);
+    setElapsed(
+      Math.max(0, Math.floor((Date.now() - new Date(live.start_time).getTime()) / 1000)),
+    );
     setIsRecording(true);
     return live;
   }, []);
@@ -102,12 +87,11 @@ export function useRecording() {
  * recording view. Re-checks on every navigation, since starting and stopping
  * both route through /recording.
  */
-export function useIsRecording(pathname: string) {
+export function useIsRecording() {
+  const { pathname } = useLocation();
   const [recording, setRecording] = useState(false);
   useEffect(() => {
-    invoke<boolean>("is_recording")
-      .then(setRecording)
-      .catch(() => {});
+    checkIsRecording().then(setRecording);
   }, [pathname]);
   return recording;
 }

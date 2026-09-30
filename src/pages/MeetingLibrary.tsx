@@ -3,11 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { statusLabel, labelTextColor } from "@/lib/utils";
-import { groupByDay, relativeWhen } from "@/lib/momentum";
+import { statusLabel, labelTextColor, isTypingTarget } from "@/lib/utils";
+import { formatMinutes, groupByDay, relativeWhen } from "@/lib/momentum";
 import { MomentumStrip } from "@/components/MomentumStrip";
 import { Kbd } from "@/components/Kbd";
-import { isTypingTarget } from "@/lib/navigation";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
@@ -54,12 +53,7 @@ import {
 
 function formatDuration(start: string, end: string | null): string {
   if (!end) return "In progress";
-  const ms = new Date(end).getTime() - new Date(start).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.floor(mins / 60);
-  const remaining = mins % 60;
-  return `${hours}h ${remaining}m`;
+  return formatMinutes(Math.floor((new Date(end).getTime() - new Date(start).getTime()) / 60000));
 }
 
 function statusColor(
@@ -138,13 +132,17 @@ export function MeetingLibrary() {
   }, []);
 
   // Filter meetings by active labels (AND logic: meeting must have ALL selected labels)
-  const filteredMeetings = activeLabelIds.size === 0
-    ? meetings
-    : meetings.filter((meeting) => {
-        const meetingLabels = meetingLabelsMap[meeting.id] ?? [];
-        const meetingLabelIds = new Set(meetingLabels.map((t) => t.id));
-        return Array.from(activeLabelIds).every((labelId) => meetingLabelIds.has(labelId));
-      });
+  const filteredMeetings = useMemo(
+    () =>
+      activeLabelIds.size === 0
+        ? meetings
+        : meetings.filter((meeting) => {
+            const meetingLabels = meetingLabelsMap[meeting.id] ?? [];
+            const meetingLabelIds = new Set(meetingLabels.map((t) => t.id));
+            return Array.from(activeLabelIds).every((labelId) => meetingLabelIds.has(labelId));
+          }),
+    [meetings, activeLabelIds, meetingLabelsMap],
+  );
 
   // Drives the empty state copy: "no results" reads very differently from
   // "you haven't recorded anything yet".
@@ -335,7 +333,7 @@ export function MeetingLibrary() {
                 <Button className="mt-2 gap-2" onClick={() => navigate("/recording")}>
                   <Circle className="h-4 w-4" />
                   Record your first meeting
-                  <Kbd className="ml-1 border-white/30 bg-white/15 text-primary-foreground">⌘N</Kbd>
+                  <Kbd onSolid className="ml-1">⌘N</Kbd>
                 </Button>
               )
             }

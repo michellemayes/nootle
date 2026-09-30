@@ -68,29 +68,25 @@ export function RecordingCelebration() {
   const location = useLocation();
   const navigate = useNavigate();
   const [momentum, setMomentum] = useState<Momentum | null>(null);
-  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (!(location.state as { justRecorded?: boolean } | null)?.justRecorded) return;
     // Clear the flag so a reload or back-navigation doesn't celebrate twice.
     navigate(location.pathname, { replace: true, state: null });
     invoke<Meeting[]>("list_meetings", { search: null, includeArchived: true })
-      .then((meetings) => {
-        setMomentum(computeMomentum(meetings));
-        setVisible(true);
-      })
+      .then((meetings) => setMomentum(computeMomentum(meetings)))
       .catch(() => {});
   }, [location.state, location.pathname, navigate]);
 
   useEffect(() => {
-    if (!visible) return;
-    const t = setTimeout(() => setVisible(false), 5000);
+    if (!momentum) return;
+    const t = setTimeout(() => setMomentum(null), 5000);
     return () => clearTimeout(t);
-  }, [visible]);
+  }, [momentum]);
 
   return (
     <AnimatePresence>
-      {visible && momentum && (
+      {momentum && (
         <motion.div
           className="pointer-events-none fixed inset-x-0 top-10 z-50 flex justify-center"
           initial={{ opacity: 0, y: -16, scale: 0.96 }}
@@ -117,7 +113,7 @@ export function RecordingCelebration() {
             </div>
             <button
               type="button"
-              onClick={() => setVisible(false)}
+              onClick={() => setMomentum(null)}
               className="relative ml-1 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
               aria-label="Dismiss"
             >

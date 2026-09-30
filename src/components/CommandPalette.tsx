@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { Dialog as DialogPrimitive } from "radix-ui";
 import { motion } from "framer-motion";
 import { Circle, CornerDownLeft, FileText, Moon, Search, Sparkles, Sun } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -10,13 +9,14 @@ import { navItems } from "@/lib/navigation";
 import { relativeWhen } from "@/lib/momentum";
 import { useTheme } from "@/hooks/useTheme";
 import { Kbd } from "@/components/Kbd";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import type { Meeting } from "@/types";
 
-const OPEN_EVENT = "nootle:open-command-palette";
+const TOGGLE_EVENT = "nootle:toggle-command-palette";
 
-/** Opens the palette from anywhere (e.g. the sidebar search button). */
-export function openCommandPalette() {
-  window.dispatchEvent(new Event(OPEN_EVENT));
+/** Opens (or closes) the palette from anywhere: ⌘K, the sidebar button. */
+export function toggleCommandPalette() {
+  window.dispatchEvent(new Event(TOGGLE_EVENT));
 }
 
 interface PaletteItem {
@@ -25,6 +25,7 @@ interface PaletteItem {
   label: string;
   hint?: string;
   icon: LucideIcon;
+  iconClassName?: string;
   shortcut?: string;
   run: () => void;
 }
@@ -45,47 +46,39 @@ export function CommandPalette() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const [open, setOpen] = useState(false);
+  const openRef = useRef(open);
+  openRef.current = open;
   const [query, setQuery] = useState("");
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && !e.shiftKey && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setOpen((o) => !o);
-      }
-    };
-    const onOpen = () => setOpen(true);
-    window.addEventListener("keydown", onKey);
-    window.addEventListener(OPEN_EVENT, onOpen);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener(OPEN_EVENT, onOpen);
-    };
+  const setOpenAndReset = useCallback((next: boolean) => {
+    setOpen(next);
+    setQuery("");
+    setActive(0);
   }, []);
 
   useEffect(() => {
-    if (!open) {
-      setQuery("");
-      return;
-    }
-    // Empty query shows the most recent meetings; otherwise search titles.
-    const t = setTimeout(() => {
-      invoke<Meeting[]>("list_meetings", { search: query.trim() || null, includeArchived: false })
-        .then(setMeetings)
-        .catch(() => setMeetings([]));
-    }, query ? 120 : 0);
-    return () => clearTimeout(t);
-  }, [open, query]);
+    const onToggle = () => setOpenAndReset(!openRef.current);
+    window.addEventListener(TOGGLE_EVENT, onToggle);
+    return () => window.removeEventListener(TOGGLE_EVENT, onToggle);
+  }, [setOpenAndReset]);
+
+  // Load the library once per open and filter locally as the user types.
+  useEffect(() => {
+    if (!open) return;
+    invoke<Meeting[]>("list_meetings", { search: null, includeArchived: false })
+      .then(setMeetings)
+      .catch(() => setMeetings([]));
+  }, [open]);
 
   const go = useCallback(
     (fn: () => void) => () => {
-      setOpen(false);
+      setOpenAndReset(false);
       fn();
     },
-    [],
+    [setOpenAndReset],
   );
 
   const items = useMemo<PaletteItem[]>(() => {
@@ -96,6 +89,7 @@ export function CommandPalette() {
         group: "Actions",
         label: "Start recording",
         icon: Circle,
+        iconClassName: "text-destructive",
         shortcut: "⌘N",
         run: go(() => navigate("/recording")),
       },
@@ -119,7 +113,6 @@ export function CommandPalette() {
       }))
       .filter((p) => matches(q, p.label));
 
-    // Re-filter locally so a fast Enter never lands on a stale result.
     const meetingItems: PaletteItem[] = meetings
       .filter((m) => matches(q, m.title))
       .slice(0, q ? 8 : 5)
@@ -151,8 +144,6 @@ export function CommandPalette() {
       : [...actions, ...meetingItems, ...pages];
   }, [query, meetings, theme, toggleTheme, navigate, go]);
 
-  useEffect(() => setActive(0), [query]);
-
   useEffect(() => {
     listRef.current
       ?.querySelector(`[data-index="${active}"]`)
@@ -175,23 +166,25 @@ export function CommandPalette() {
   let lastGroup = "";
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px]" />
-        <DialogPrimitive.Content
-          className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed left-1/2 top-[18%] z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-2xl outline-none duration-150"
-          onKeyDown={onKeyDown}
-        >
-          <DialogPrimitive.Title className="sr-only">Command palette</DialogPrimitive.Title>
-          <DialogPrimitive.Description className="sr-only">
+    <Dialog open={open} onOpenChange={setOpenAndReset}>
+      <DialogContent
+        showCloseButton={false}
+        className="top-[18%] block max-w-xl translate-y-0 gap-0 overflow-hidden rounded-xl bg-popover p-0 text-popover-foreground shadow-2xl duration-150 sm:max-w-xl"
+        onKeyDown={onKeyDown}
+      >
+          <DialogTitle className="sr-only">Command palette</DialogTitle>
+          <DialogDescription className="sr-only">
             Search meetings, jump to a page, or run an action
-          </DialogPrimitive.Description>
+          </DialogDescription>
           <div className="flex items-center gap-3 border-b px-4">
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <input
               autoFocus
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setActive(0);
+              }}
               placeholder="Search meetings, jump anywhere, or ask a question…"
               className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               aria-label="Command palette search"
@@ -235,7 +228,7 @@ export function CommandPalette() {
                     <item.icon
                       className={cn(
                         "relative h-4 w-4 shrink-0",
-                        item.id === "record" ? "text-destructive" : "text-muted-foreground",
+                        item.iconClassName ?? "text-muted-foreground",
                       )}
                     />
                     <span className="relative flex-1 truncate">{item.label}</span>
@@ -263,8 +256,7 @@ export function CommandPalette() {
               <Kbd>⌘K</Kbd> toggle
             </span>
           </div>
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+      </DialogContent>
+    </Dialog>
   );
 }

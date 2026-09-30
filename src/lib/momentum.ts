@@ -2,6 +2,12 @@ import type { Meeting } from "@/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Built once: constructing Intl formatters per call is surprisingly costly.
+const monthYearFmt = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
+const weekdayFmt = new Intl.DateTimeFormat("en-US", { weekday: "short" });
+const timeFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
+const monthDayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
@@ -21,7 +27,11 @@ function startOfWeek(d: Date): Date {
   return new Date(day.getTime() - offset * DAY_MS);
 }
 
-export function meetingMinutes(m: Meeting): number {
+function startOfLastWeek(d: Date): number {
+  return startOfWeek(d).getTime() - 7 * DAY_MS;
+}
+
+function meetingMinutes(m: Meeting): number {
   if (!m.end_time) return 0;
   return Math.max(0, (new Date(m.end_time).getTime() - new Date(m.start_time).getTime()) / 60000);
 }
@@ -84,9 +94,7 @@ export function computeMomentum(meetings: Meeting[], now = new Date()): Momentum
 
 export function formatMinutes(mins: number): string {
   if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m ? `${h}h ${m}m` : `${h}h`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
 export function greeting(now = new Date()): string {
@@ -102,6 +110,7 @@ export function groupByDay(meetings: Meeting[], now = new Date()): { label: stri
   const today = startOfDay(now).getTime();
   const yesterday = today - DAY_MS;
   const week = startOfWeek(now).getTime();
+  const lastWeek = startOfLastWeek(now);
   const groups: { label: string; meetings: Meeting[] }[] = [];
   for (const m of meetings) {
     const d = new Date(m.start_time);
@@ -113,9 +122,9 @@ export function groupByDay(meetings: Meeting[], now = new Date()): { label: stri
           ? "Yesterday"
           : t >= week
             ? "Earlier this week"
-            : t >= week - 7 * DAY_MS
+            : t >= lastWeek
               ? "Last week"
-              : d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+              : monthYearFmt.format(d);
     const last = groups[groups.length - 1];
     if (last?.label === label) last.meetings.push(m);
     else groups.push({ label, meetings: [m] });
@@ -123,16 +132,15 @@ export function groupByDay(meetings: Meeting[], now = new Date()): { label: stri
   return groups;
 }
 
-/** "2h ago" for today, the time for this week, otherwise the date. */
+/** "2h ago" for today, weekday + time this week, otherwise the date. */
 export function relativeWhen(dateStr: string, now = new Date()): string {
   const d = new Date(dateStr);
   const diffMin = Math.round((now.getTime() - d.getTime()) / 60000);
   if (diffMin < 1) return "Just now";
   if (diffMin < 60) return `${diffMin}m ago`;
   if (d.getTime() >= startOfDay(now).getTime()) return `${Math.floor(diffMin / 60)}h ago`;
-  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  if (d.getTime() >= startOfWeek(now).getTime() - 7 * DAY_MS) {
-    return `${d.toLocaleDateString("en-US", { weekday: "short" })} ${time}`;
+  if (d.getTime() >= startOfWeek(now).getTime()) {
+    return `${weekdayFmt.format(d)} ${timeFmt.format(d)}`;
   }
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return monthDayFmt.format(d);
 }

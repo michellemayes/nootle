@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { Flame, CalendarCheck, ListTodo } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { computeMomentum, formatMinutes, greeting } from "@/lib/momentum";
-import type { InsightWithActionItem, Meeting } from "@/types";
+import { computeMomentum, formatMinutes, greeting, type Momentum } from "@/lib/momentum";
+import { useAllInsights } from "@/hooks/useInsights";
+import type { Meeting } from "@/types";
 
 function Stat({
   icon: Icon,
@@ -49,46 +48,33 @@ function Stat({
   );
 }
 
+function nudge(m: Momentum): string {
+  if (m.today > 0) {
+    return m.streak > 1
+      ? `You're on a ${m.streak}-day streak. Keep it rolling.`
+      : "First meeting of the day is in the bag.";
+  }
+  if (m.streak > 0) return `Record today to keep your ${m.streak}-day streak alive.`;
+  return "Nothing recorded yet today. Press ⌘N when your next meeting starts.";
+}
+
 /**
  * The home-screen pulse: a greeting plus streak, weekly volume, and open
  * action items. Gives people a reason to come back and a nudge to record.
  */
 export function MomentumStrip({ meetings }: { meetings: Meeting[] }) {
   const navigate = useNavigate();
-  const [openActions, setOpenActions] = useState<number | null>(null);
   const m = useMemo(() => computeMomentum(meetings), [meetings]);
-
-  useEffect(() => {
-    const load = () =>
-      invoke<InsightWithActionItem[]>("get_all_insights", {
-        insightType: "action_item",
-        status: "open",
-        search: null,
-      })
-        .then((items) => setOpenActions(items.length))
-        .catch(() => setOpenActions(null));
-    load();
-    const unlisten = listen("insights-updated", load);
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
+  const actions = useAllInsights("action_item", "open");
+  const openActions = actions.loading || actions.error ? null : actions.insights.length;
 
   if (m.total === 0) return null;
-
-  const nudge = m.today > 0
-    ? m.streak > 1
-      ? `You're on a ${m.streak}-day streak. Keep it rolling.`
-      : "First meeting of the day is in the bag."
-    : m.streak > 0
-      ? `Record today to keep your ${m.streak}-day streak alive.`
-      : "Nothing recorded yet today. Press ⌘N when your next meeting starts.";
 
   return (
     <div className="space-y-3">
       <div>
         <h2 className="text-base font-semibold">{greeting()}</h2>
-        <p className="text-sm text-muted-foreground">{nudge}</p>
+        <p className="text-sm text-muted-foreground">{nudge(m)}</p>
       </div>
       <div className="flex flex-wrap gap-3">
         <Stat

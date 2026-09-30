@@ -112,6 +112,8 @@ export function RecordingView() {
 
   const latestTitleRef = useRef(title);
   latestTitleRef.current = title;
+  const latestNotesRef = useRef(notes);
+  latestNotesRef.current = notes;
   const latestTemplateRef = useRef(selectedTemplateId);
   latestTemplateRef.current = selectedTemplateId;
 
@@ -156,6 +158,16 @@ export function RecordingView() {
     [currentMeeting],
   );
 
+  // Like the template, a renamed title is saved to the live meeting right
+  // away so it survives leaving the page mid-recording.
+  const commitTitle = useCallback(() => {
+    setIsEditingTitle(false);
+    if (!currentMeeting || !title.trim() || title === currentMeeting.title) return;
+    invoke("update_meeting_title", { id: currentMeeting.id, title }).catch((err) =>
+      console.error("Failed to update meeting title:", err),
+    );
+  }, [currentMeeting, title]);
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -168,9 +180,7 @@ export function RecordingView() {
     await new Promise((r) => setTimeout(r, 400));
     try {
       const meeting = await stopRecording();
-      if (title.trim() && title !== meeting.title) {
-        await invoke("update_meeting_title", { id: meeting.id, title }).catch(() => {});
-      }
+      const notes = latestNotesRef.current;
       if (notes.trim()) {
         await invoke("save_meeting_notes", { id: meeting.id, rawNotes: notes });
       }
@@ -178,7 +188,7 @@ export function RecordingView() {
     } catch {
       navigate("/");
     }
-  }, [stopping, stopRecording, navigate, notes, title]);
+  }, [stopping, stopRecording, navigate]);
 
   // ⌘↵ wraps up the meeting from anywhere on the page, notes included.
   useEffect(() => {
@@ -233,9 +243,9 @@ export function RecordingView() {
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                onBlur={() => setIsEditingTitle(false)}
+                onBlur={commitTitle}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") setIsEditingTitle(false);
+                  if (e.key === "Enter") commitTitle();
                 }}
                 className="text-sm font-semibold border-none bg-transparent h-auto py-0 max-w-xs"
                 autoFocus
@@ -290,7 +300,7 @@ export function RecordingView() {
             title="Stop and save (⌘↵)"
           >
             <Square className="h-3.5 w-3.5" /> Stop
-            {!isCompact && <Kbd className="ml-1 border-white/30 bg-white/15 text-white">⌘↵</Kbd>}
+            {!isCompact && <Kbd onSolid className="ml-1">⌘↵</Kbd>}
           </MotionButton>
           <AnimatePresence>
             {stopping && (
