@@ -498,6 +498,7 @@ pub async fn start_recording(
         let llm_clone = llm.inner().clone();
         let embedding_clone = embedding_state.inner().clone();
         let meeting_id = meeting.id.clone();
+        let initial_title = meeting.title.clone();
         let app_handle = app.clone();
 
         tokio::spawn(async move {
@@ -507,6 +508,7 @@ pub async fn start_recording(
                 llm_clone,
                 embedding_clone,
                 meeting_id,
+                initial_title,
                 app_handle,
             )
             .await;
@@ -518,17 +520,71 @@ pub async fn start_recording(
     Ok(meeting)
 }
 
-/// Background task: consume audio chunks, transcribe, diarize, persist, and emit events.
-/// Default titles given to a meeting before the user names it; only these are
-/// replaced by an auto-generated title once transcription finishes.
-const PLACEHOLDER_TITLES: &[&str] = &["", "Untitled Recording", "Detected Meeting"];
+/// The model for automatic post-recording LLM work (title, summaries,
+/// insights). Honours an explicit choice before falling back to registration
+/// order. Order is a fragile default: which provider summarises your meetings
+/// then depends on which ones happen to be installed, and standing up a new
+/// one silently moves your transcripts to a different vendor. Set
+/// `summarization_provider` to pin it.
+fn pick_auto_model(db: &Database, llm: &LlmRegistry) -> Option<crate::llm::ModelInfo> {
+    let preferred = db.get_setting("summarization_provider").unwrap_or(None);
+    let models = llm.all_models();
+    preferred
+        .and_then(|p| models.iter().find(|m| m.provider == p).cloned())
+        .or_else(|| models.into_iter().next())
+}
 
+/// Compute speaker analytics and engagement from the stored transcript.
+fn compute_analytics(db: &Database, app: &tauri::AppHandle, meeting_id: &str) {
+    let result = (|| -> anyhow::Result<()> {
+        let speaker_analytics = crate::analytics::compute_speaker_analytics(db, meeting_id)?;
+        db.save_speaker_analytics(meeting_id, &speaker_analytics)?;
+        let texts: Vec<String> = db
+            .get_transcript(meeting_id)?
+            .into_iter()
+            .map(|t| t.text)
+            .collect();
+        let engagement =
+            crate::analytics::compute_engagement(meeting_id, &speaker_analytics, &texts);
+        db.save_engagement(&engagement)?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => {
+            let _ = app.emit("analytics-ready", meeting_id);
+            tracing::info!("Analytics computed for meeting {meeting_id}");
+        }
+        Err(e) => tracing::warn!("Failed to compute analytics: {e}"),
+    }
+}
+
+async fn auto_extract_insights(
+    db: &Database,
+    llm_state: &LlmState,
+    app: &tauri::AppHandle,
+    meeting_id: &str,
+) {
+    let registry = llm_state.read().await;
+    let Some(model) = pick_auto_model(db, &registry) else {
+        return;
+    };
+    match extraction::extract_insights(db, &registry, meeting_id, &model.provider, &model.id).await
+    {
+        Ok(()) => {
+            let _ = app.emit("insights-updated", meeting_id);
+        }
+        Err(e) => tracing::warn!("Auto-extraction failed: {e}"),
+    }
+}
+
+/// Background task: consume audio chunks, transcribe, diarize, persist, and emit events.
 async fn run_transcription_pipeline(
     mut audio_rx: tokio::sync::mpsc::Receiver<Vec<f32>>,
     db: Arc<Database>,
     llm_state: LlmState,
     embedding_state: Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>,
     meeting_id: String,
+    initial_title: String,
     app: tauri::AppHandle,
 ) {
     // Try to load transcription engine
@@ -668,12 +724,11 @@ async fn run_transcription_pipeline(
     tracing::info!("[DIAG] Audio channel closed after {chunk_count} chunks");
 
     // Auto-generate title from transcript content using LLM, unless the user
-    // (or a calendar event) already gave the meeting a real title.
-    let has_placeholder_title = db
+    // renamed the meeting while recording.
+    let renamed = db
         .get_meeting(&meeting_id)
-        .map(|m| PLACEHOLDER_TITLES.contains(&m.title.trim()))
-        .unwrap_or(false);
-    if !has_placeholder_title {
+        .is_ok_and(|m| m.title != initial_title);
+    if renamed {
         tracing::info!("Keeping user-set title for {meeting_id}");
     } else if let Ok(segments) = db.get_transcript(&meeting_id) {
         let full_text: String = segments
@@ -687,7 +742,7 @@ async fn run_transcription_pipeline(
 
             let llm = llm_state.read().await;
             let fallback_title = || -> String { truncate_at_word_boundary(&full_text, 60, "...") };
-            let title = if let Some(model) = llm.all_models().first().cloned() {
+            let title = if let Some(model) = pick_auto_model(&db, &llm) {
                 if let Some(provider) = llm.get_provider(&model.provider) {
                     let prompt = format!(
                         "Generate a short, descriptive title (max 8 words) for this meeting based on the transcript below. \
@@ -730,13 +785,13 @@ async fn run_transcription_pipeline(
     // Run auto-run templates (summaries) if any are configured
     {
         let llm = llm_state.read().await;
-        if let Some(first_model) = llm.all_models().first().cloned() {
+        if let Some(model) = pick_auto_model(&db, &llm) {
             match summarization::run_auto_templates(
                 &db,
                 &llm,
                 &meeting_id,
-                &first_model.provider,
-                &first_model.id,
+                &model.provider,
+                &model.id,
             )
             .await
             {
@@ -755,49 +810,13 @@ async fn run_transcription_pipeline(
         }
     }
 
-    // Auto-extract insights now that the full transcript is available
-    if segment_count > 0 {
-        let registry = llm_state.read().await;
-        let providers = registry.provider_names();
-        // Honour an explicit choice before falling back to registration
-        // order. Order is a fragile default: which provider summarises your
-        // meetings then depends on which ones happen to be installed, and
-        // standing up a new one silently moves your transcripts to a
-        // different vendor. Set `summarization_provider` to pin it.
-        let preferred = db
-            .get_setting("summarization_provider")
-            .unwrap_or(None)
-            .filter(|p| providers.iter().any(|name| name == p));
-        let chosen = preferred.or_else(|| providers.first().cloned());
-        let model = chosen.as_ref().and_then(|provider_name| {
-            registry
-                .all_models()
-                .into_iter()
-                .find(|m| &m.provider == provider_name)
-        });
-        if let Some(model) = model {
-            match crate::extraction::extract_insights(
-                &db,
-                &registry,
-                &meeting_id,
-                &model.provider,
-                &model.id,
-            )
-            .await
-            {
-                Ok(()) => {
-                    let _ = app.emit("insights-updated", &meeting_id);
-                }
-                Err(e) => tracing::warn!("Auto-extraction failed: {e}"),
-            }
-        }
-    }
-
     // Mark meeting as done transcribing only if transcription produced segments
     if segment_count > 0 {
         if let Err(e) = db.update_meeting_status(&meeting_id, "summarized") {
             tracing::warn!("Failed to update meeting status to summarized: {e}");
         }
+        // Analytics need the full transcript, so they run only now.
+        compute_analytics(&db, &app, &meeting_id);
     } else {
         tracing::info!(
             "No transcript segments produced for {meeting_id}, not marking as summarized"
@@ -812,11 +831,16 @@ async fn run_transcription_pipeline(
             Err(e) => tracing::warn!("Failed to embed meeting {meeting_id}: {e}"),
         }
     }
+    drop(engine_lock);
+
+    // Insights also need the full transcript; this is the slowest step, so last.
+    if segment_count > 0 {
+        auto_extract_insights(&db, &llm_state, &app, &meeting_id).await;
+    }
 }
 
 #[tauri::command]
 pub async fn stop_recording(
-    app: tauri::AppHandle,
     db: State<'_, DbState>,
     recording: State<'_, RecordingState>,
 ) -> Result<Meeting, String> {
@@ -844,37 +868,6 @@ pub async fn stop_recording(
     let end_time = chrono::Utc::now().to_rfc3339();
     db.finalize_meeting(&meeting_id, &end_time, Some(&audio_path), "transcribing")
         .map_err(|e| e.to_string())?;
-
-    {
-        let db_analytics = db.inner().clone();
-        let app_analytics = app.clone();
-        let meeting_id_analytics = meeting_id.clone();
-
-        tauri::async_runtime::spawn(async move {
-            if let Err(e) = (|| -> std::result::Result<(), Box<dyn std::error::Error>> {
-                let speaker_analytics = crate::analytics::compute_speaker_analytics(
-                    &db_analytics,
-                    &meeting_id_analytics,
-                )?;
-                db_analytics.save_speaker_analytics(&meeting_id_analytics, &speaker_analytics)?;
-
-                let transcripts = db_analytics.get_transcript(&meeting_id_analytics)?;
-                let texts: Vec<String> = transcripts.iter().map(|t| t.text.clone()).collect();
-                let engagement = crate::analytics::compute_engagement(
-                    &meeting_id_analytics,
-                    &speaker_analytics,
-                    &texts,
-                );
-                db_analytics.save_engagement(&engagement)?;
-
-                let _ = app_analytics.emit("analytics-ready", &meeting_id_analytics);
-                tracing::info!("Analytics computed for meeting {}", meeting_id_analytics);
-                Ok(())
-            })() {
-                tracing::warn!("Failed to compute analytics: {e}");
-            }
-        });
-    }
 
     // Return the updated meeting
     db.get_meeting(&meeting_id).map_err(|e| e.to_string())

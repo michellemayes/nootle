@@ -88,14 +88,14 @@ export function useAnalytics(meetingId: string) {
 
   const computeSentiment = useCallback(
     async (provider: string, model: string) => {
+      // The backend emits `analytics-ready` when done, which refetches.
       await invoke("compute_meeting_sentiment", {
         meetingId,
         provider,
         model,
       });
-      await fetchAnalytics(true);
     },
-    [meetingId, fetchAnalytics],
+    [meetingId],
   );
 
   return {

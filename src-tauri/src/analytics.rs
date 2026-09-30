@@ -1,6 +1,7 @@
 use crate::db::{Database, MeetingEngagement, SpeakerAnalytics};
 use crate::llm::{ChatMessage, LlmRegistry};
 use anyhow::Result;
+use futures_util::StreamExt;
 use std::collections::HashMap;
 
 use crate::db::SentimentSegment;
@@ -145,11 +146,13 @@ pub fn compute_engagement(
 /// Max windows classified per LLM call. Keeps each prompt small enough for
 /// fast, reliable responses while avoiding one CLI/API round-trip per window.
 const SENTIMENT_WINDOWS_PER_CALL: usize = 40;
+/// Batches in flight at once; CLI providers spawn a process per call.
+const SENTIMENT_MAX_CONCURRENT_CALLS: usize = 3;
 
 /// Analyze sentiment of transcript chunks using an LLM.
 ///
 /// Groups transcript segments into ~30-second windows, then classifies them in
-/// batches (one LLM call per batch, batches run concurrently) as positive,
+/// batches (one LLM call per batch, a few batches at a time) as positive,
 /// neutral, or negative with a confidence score. Windows missing from a
 /// response are skipped; if no window could be classified, an error is returned.
 pub async fn analyze_sentiment(
@@ -211,7 +214,11 @@ pub async fn analyze_sentiment(
 
     let mut segments = Vec::new();
     let mut last_error = None;
-    for (batch, result) in futures_util::future::join_all(batches).await {
+    let results: Vec<_> = futures_util::stream::iter(batches)
+        .buffer_unordered(SENTIMENT_MAX_CONCURRENT_CALLS)
+        .collect()
+        .await;
+    for (batch, result) in results {
         let response = match result {
             Ok(r) => r,
             Err(e) => {
@@ -240,10 +247,8 @@ pub async fn analyze_sentiment(
         }
     }
 
-    if segments.is_empty() {
-        if let Some(e) = last_error {
-            anyhow::bail!("Sentiment analysis failed: {e}");
-        }
+    if let (true, Some(e)) = (segments.is_empty(), last_error) {
+        anyhow::bail!("Sentiment analysis failed: {e}");
     }
     segments.sort_by_key(|s| s.start_ms);
     Ok(segments)

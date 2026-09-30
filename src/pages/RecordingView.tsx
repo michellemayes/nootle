@@ -106,33 +106,62 @@ export function RecordingView() {
     }
   }, [hasStarted, startRecording, resumeRecording]);
 
-  // Recording starts the moment this view mounts, so a template picked
-  // afterwards has to be pushed to the meeting that's already in flight.
+  // Title and template edits are saved to the live meeting right away so
+  // they survive leaving the page mid-recording. `savedRef` mirrors what the
+  // meeting row holds, so only real changes are written.
+  const savedRef = useRef<{ id: string; title: string; templateId: string } | null>(null);
+  const hasPendingEditsRef = useRef(false);
+  const saveDetails = useCallback(async () => {
+    if (!currentMeeting) {
+      // Recording is still starting; the effect below saves once it exists.
+      hasPendingEditsRef.current = true;
+      return;
+    }
+    const { id } = currentMeeting;
+    if (savedRef.current?.id !== id) {
+      savedRef.current = {
+        id,
+        title: currentMeeting.title,
+        templateId: currentMeeting.template_id ?? "",
+      };
+    }
+    const saved = savedRef.current;
+    const title = latestTitleRef.current.trim();
+    const templateId = latestTemplateRef.current;
+    const writes: Promise<unknown>[] = [];
+    if (title && title !== saved.title) {
+      saved.title = title;
+      writes.push(invoke("update_meeting_title", { id, title }));
+    }
+    if (templateId !== saved.templateId) {
+      saved.templateId = templateId;
+      writes.push(invoke("update_meeting_template", { id, templateId: templateId || null }));
+    }
+    await Promise.all(writes).catch((err) =>
+      console.error("Failed to save meeting details:", err),
+    );
+  }, [currentMeeting]);
+
+  useEffect(() => {
+    if (currentMeeting && hasPendingEditsRef.current) {
+      hasPendingEditsRef.current = false;
+      saveDetails();
+    }
+  }, [currentMeeting, saveDetails]);
+
   const handleTemplateChange = useCallback(
-    async (templateId: string) => {
+    (templateId: string) => {
       setSelectedTemplateId(templateId);
-      if (!currentMeeting) return;
-      try {
-        await invoke("update_meeting_template", {
-          id: currentMeeting.id,
-          templateId: templateId || null,
-        });
-      } catch (err) {
-        console.error("Failed to update meeting template:", err);
-      }
+      latestTemplateRef.current = templateId;
+      saveDetails();
     },
-    [currentMeeting],
+    [saveDetails],
   );
 
-  // Like the template, a renamed title is saved to the live meeting right
-  // away so it survives leaving the page mid-recording.
   const commitTitle = useCallback(() => {
     setIsEditingTitle(false);
-    if (!currentMeeting || !title.trim() || title === currentMeeting.title) return;
-    invoke("update_meeting_title", { id: currentMeeting.id, title }).catch((err) =>
-      console.error("Failed to update meeting title:", err),
-    );
-  }, [currentMeeting, title]);
+    saveDetails();
+  }, [saveDetails]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -144,20 +173,8 @@ export function RecordingView() {
     if (stopping) return;
     setStopping(true);
     try {
-      // Title and type edits made before the meeting row existed (or while the
-      // title field still had focus) were never saved — flush them now so the
-      // finished meeting keeps them.
-      if (currentMeeting) {
-        const id = currentMeeting.id;
-        const latestTitle = latestTitleRef.current.trim();
-        await Promise.all([
-          latestTitle && invoke("update_meeting_title", { id, title: latestTitle }),
-          invoke("update_meeting_template", {
-            id,
-            templateId: latestTemplateRef.current || null,
-          }),
-        ]).catch((err) => console.error("Failed to save meeting details:", err));
-      }
+      // ⌘↵ can stop while the title field still has focus, before it commits.
+      await saveDetails();
       const meeting = await stopRecording();
       const notes = latestNotesRef.current;
       if (notes.trim()) {
@@ -167,7 +184,7 @@ export function RecordingView() {
     } catch {
       navigate("/");
     }
-  }, [stopping, currentMeeting, stopRecording, navigate]);
+  }, [stopping, saveDetails, stopRecording, navigate]);
 
   // ⌘↵ wraps up the meeting from anywhere on the page, notes included.
   useEffect(() => {

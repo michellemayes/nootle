@@ -112,13 +112,8 @@ async fn do_stop(app: &AppHandle) -> Outcome {
     if !is_recording(app).await {
         return Outcome::ok("Not recording");
     }
-    let result = commands::stop_recording(
-        app.clone(),
-        app.state::<DbState>(),
-        app.state::<LlmState>(),
-        app.state::<RecordingState>(),
-    )
-    .await;
+    let result =
+        commands::stop_recording(app.state::<DbState>(), app.state::<RecordingState>()).await;
     Outcome::from_meeting(result, "Recording stopped".into())
 }
 
