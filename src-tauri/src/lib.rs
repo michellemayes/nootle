@@ -113,11 +113,8 @@ pub fn run() {
                 .build()?;
             let help_menu = SubmenuBuilder::new(handle, "Help")
                 .item(
-                    &MenuItemBuilder::with_id(
-                        "check-for-updates",
-                        "Check for Updates\u{2026}",
-                    )
-                    .build(handle)?,
+                    &MenuItemBuilder::with_id("check-for-updates", "Check for Updates\u{2026}")
+                        .build(handle)?,
                 )
                 .build()?;
             MenuBuilder::new(handle)
@@ -194,10 +191,13 @@ pub fn run() {
                     };
 
                     if should_notify {
-                        let _ = app_handle.emit("meeting-detected-notify", serde_json::json!({
-                            "title": "Meeting Detected",
-                            "body": "It looks like you're in a meeting. Start recording?",
-                        }));
+                        let _ = app_handle.emit(
+                            "meeting-detected-notify",
+                            serde_json::json!({
+                                "title": "Meeting Detected",
+                                "body": "It looks like you're in a meeting. Start recording?",
+                            }),
+                        );
                     }
 
                     for meeting in newly_detected {
