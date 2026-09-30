@@ -13,6 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ScratchPad } from "@/components/ScratchPad";
 import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
+import { Kbd } from "@/components/Kbd";
 import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText } from "lucide-react";
 
 function formatTime(seconds: number): string {
@@ -32,7 +33,7 @@ interface TranscriptionStatus {
 
 export function RecordingView() {
   const navigate = useNavigate();
-  const { isRecording, currentMeeting, elapsed, error, startRecording, stopRecording } =
+  const { isRecording, currentMeeting, elapsed, error, startRecording, resumeRecording, stopRecording } =
     useRecording();
   const { templates } = useTemplates();
   const { isCompact } = useCompactMode();
@@ -77,6 +78,8 @@ export function RecordingView() {
 
   const latestTitleRef = useRef(title);
   latestTitleRef.current = title;
+  const latestNotesRef = useRef(notes);
+  latestNotesRef.current = notes;
   const latestTemplateRef = useRef(selectedTemplateId);
   latestTemplateRef.current = selectedTemplateId;
 
@@ -85,15 +88,23 @@ export function RecordingView() {
   useEffect(() => {
     if (!hasStarted) {
       setHasStarted(true);
-      startRecording(
-        latestTitleRef.current,
-        undefined,
-        latestTemplateRef.current || undefined,
-      ).catch(() => {
+      (async () => {
+        const live = await resumeRecording().catch(() => null);
+        if (live) {
+          setTitle(live.title);
+          setSelectedTemplateId(live.template_id ?? "");
+          return;
+        }
+        await startRecording(
+          latestTitleRef.current,
+          undefined,
+          latestTemplateRef.current || undefined,
+        );
+      })().catch(() => {
         // Error is captured in useRecording's error state
       });
     }
-  }, [hasStarted, startRecording]);
+  }, [hasStarted, startRecording, resumeRecording]);
 
   // Recording starts the moment this view mounts, so a template picked
   // afterwards has to be pushed to the meeting that's already in flight.
@@ -113,6 +124,16 @@ export function RecordingView() {
     [currentMeeting],
   );
 
+  // Like the template, a renamed title is saved to the live meeting right
+  // away so it survives leaving the page mid-recording.
+  const commitTitle = useCallback(() => {
+    setIsEditingTitle(false);
+    if (!currentMeeting || !title.trim() || title === currentMeeting.title) return;
+    invoke("update_meeting_title", { id: currentMeeting.id, title }).catch((err) =>
+      console.error("Failed to update meeting title:", err),
+    );
+  }, [currentMeeting, title]);
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -120,17 +141,31 @@ export function RecordingView() {
   }, [segments]);
 
   const handleStop = useCallback(async () => {
+    if (stopping) return;
     setStopping(true);
     try {
       const meeting = await stopRecording();
+      const notes = latestNotesRef.current;
       if (notes.trim()) {
         await invoke("save_meeting_notes", { id: meeting.id, rawNotes: notes });
       }
-      navigate(`/meeting/${meeting.id}`);
+      navigate(`/meeting/${meeting.id}`, { state: { justRecorded: true } });
     } catch {
       navigate("/");
     }
-  }, [stopRecording, navigate, notes]);
+  }, [stopping, stopRecording, navigate]);
+
+  // ⌘↵ wraps up the meeting from anywhere on the page, notes included.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key === "Enter" && isRecording) {
+        e.preventDefault();
+        handleStop();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleStop, isRecording]);
 
   // Show error state if recording failed to start
   if (error && !isRecording) {
@@ -169,9 +204,9 @@ export function RecordingView() {
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                onBlur={() => setIsEditingTitle(false)}
+                onBlur={commitTitle}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") setIsEditingTitle(false);
+                  if (e.key === "Enter") commitTitle();
                 }}
                 className="text-sm font-semibold border-none bg-transparent h-auto py-0 max-w-xs"
                 autoFocus
@@ -215,8 +250,10 @@ export function RecordingView() {
           className="ml-auto"
           onClick={handleStop}
           disabled={stopping}
+          title="Stop and save (⌘↵)"
         >
           <Square /> {stopping ? "Stopping…" : "Stop"}
+          {!isCompact && !stopping && <Kbd onSolid className="ml-1">⌘↵</Kbd>}
         </Button>
       </div>
 

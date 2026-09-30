@@ -1,8 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { formatDate, statusLabel, statusVariant, labelTextColor } from "@/lib/utils";
+import { statusLabel, statusVariant, labelTextColor, isTypingTarget } from "@/lib/utils";
+import { formatMinutes, groupByDay, relativeWhen } from "@/lib/momentum";
+import { MomentumStrip } from "@/components/MomentumStrip";
+import { Kbd } from "@/components/Kbd";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
@@ -46,12 +49,7 @@ import {
 
 function formatDuration(start: string, end: string | null): string {
   if (!end) return "In progress";
-  const ms = new Date(end).getTime() - new Date(start).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.floor(mins / 60);
-  const remaining = mins % 60;
-  return `${hours}h ${remaining}m`;
+  return formatMinutes(Math.floor((new Date(end).getTime() - new Date(start).getTime()) / 60000));
 }
 
 const dropdownPrimitives = {
@@ -75,6 +73,19 @@ export function MeetingLibrary() {
   const [showArchived, setShowArchived] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Meeting | null>(null);
   const [activeLabelIds, setActiveLabelIds] = useState<Set<string>>(new Set());
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // "/" jumps to search from anywhere on the page; Esc clears and leaves it.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "/" && !isTypingTarget(e.target) && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // Debounce search input so we don't hit the backend on every keystroke.
   useEffect(() => {
@@ -101,18 +112,24 @@ export function MeetingLibrary() {
   }, []);
 
   // Filter meetings by active labels (AND logic: meeting must have ALL selected labels)
-  const filteredMeetings = activeLabelIds.size === 0
-    ? meetings
-    : meetings.filter((meeting) => {
-        const meetingLabels = meetingLabelsMap[meeting.id] ?? [];
-        const meetingLabelIds = new Set(meetingLabels.map((t) => t.id));
-        return Array.from(activeLabelIds).every((labelId) => meetingLabelIds.has(labelId));
-      });
+  const filteredMeetings = useMemo(
+    () =>
+      activeLabelIds.size === 0
+        ? meetings
+        : meetings.filter((meeting) => {
+            const meetingLabels = meetingLabelsMap[meeting.id] ?? [];
+            const meetingLabelIds = new Set(meetingLabels.map((t) => t.id));
+            return Array.from(activeLabelIds).every((labelId) => meetingLabelIds.has(labelId));
+          }),
+    [meetings, activeLabelIds, meetingLabelsMap],
+  );
 
   // Drives the empty state copy: "no results" reads very differently from
   // "you haven't recorded anything yet".
   const hasFilters =
     debouncedSearch.trim().length > 0 || activeLabelIds.size > 0;
+
+  const groups = useMemo(() => groupByDay(filteredMeetings), [filteredMeetings]);
 
   const handleViewModeChange = useCallback((mode: "grid" | "list") => {
     setViewMode(mode);
@@ -172,16 +189,30 @@ export function MeetingLibrary() {
       />
 
       <div className="flex flex-1 flex-col gap-5 overflow-auto p-6">
+      {!loading && !hasFilters && !showArchived && (
+        <MomentumStrip meetings={meetings} />
+      )}
+
       {/* Search and filters */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
+            ref={searchRef}
             placeholder="Search meetings…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setSearch("");
+                e.currentTarget.blur();
+              }
+            }}
+            className="pl-9 pr-9"
           />
+          {!search && (
+            <Kbd className="absolute right-3 top-1/2 -translate-y-1/2">/</Kbd>
+          )}
         </div>
         <Button
           variant={showArchived ? "secondary" : "outline"}
@@ -274,13 +305,23 @@ export function MeetingLibrary() {
             !hasFilters && (
               <Button size="sm" onClick={() => navigate("/recording")}>
                 <Circle /> New recording
+                <Kbd onSolid className="ml-1">⌘N</Kbd>
               </Button>
             )
           }
         />
-      ) : viewMode === "grid" ? (
+      ) : (
+        groups.map((group) => (
+        <section key={group.label} className="space-y-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {group.label}
+            <span className="ml-2 font-normal normal-case tracking-normal opacity-70">
+              {group.meetings.length}
+            </span>
+          </h2>
+      {viewMode === "grid" ? (
         <div className={`grid gap-4 ${isCompact ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"}`}>
-          {filteredMeetings.map((meeting) => (
+          {group.meetings.map((meeting) => (
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
                 <div>
@@ -317,7 +358,7 @@ export function MeetingLibrary() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span>{formatDate(meeting.start_time)}</span>
+                        <span>{relativeWhen(meeting.start_time)}</span>
                         <span>·</span>
                         <span>
                           {formatDuration(
@@ -348,7 +389,7 @@ export function MeetingLibrary() {
         </div>
       ) : (
         <div className="flex flex-col divide-y rounded-md border">
-          {filteredMeetings.map((meeting) => (
+          {group.meetings.map((meeting) => (
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
                 <div
@@ -369,7 +410,7 @@ export function MeetingLibrary() {
                     />
                   </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {formatDate(meeting.start_time)}
+                    {relativeWhen(meeting.start_time)}
                   </span>
                   <span className="text-xs text-muted-foreground whitespace-nowrap w-12 text-right">
                     {formatDuration(meeting.start_time, meeting.end_time)}
@@ -400,6 +441,9 @@ export function MeetingLibrary() {
             </ContextMenu>
           ))}
         </div>
+      )}
+        </section>
+        ))
       )}
 
       </div>

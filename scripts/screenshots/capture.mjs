@@ -16,7 +16,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { AUDIO_DURATION_SECONDS, FIXTURES, LIVE_TRANSCRIPT } from "./demo-data.mjs";
+import { AUDIO_DURATION_SECONDS, DEMO_NOW, FIXTURES, LIVE_TRANSCRIPT } from "./demo-data.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -174,6 +174,9 @@ async function main() {
          localStorage.setItem("meetingViewMode", "grid");
          localStorage.setItem("nootle-sidebar-collapsed", "false");`,
       );
+      // Freeze "now" just after the demo library's latest meeting so relative
+      // dates, the greeting, and the streak render the same on every run.
+      await context.clock.setFixedTime(DEMO_NOW);
       await context.addInitScript({ path: path.join(here, "mock-tauri.js") });
       // The demo audio is a one-second placeholder; report the meeting's real
       // length so the player reads like a finished recording.

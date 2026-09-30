@@ -17,6 +17,19 @@
       const byId = fixtures.list_chat_messages || {};
       return byId[args?.conversationId] || [];
     }
+    // Mirror the backend's title search so the palette and library filter.
+    if (cmd === "list_meetings" && args?.search) {
+      const q = args.search.toLowerCase();
+      return (fixtures.list_meetings || []).filter((m) => m.title.toLowerCase().includes(q));
+    }
+    // Honour the Insights filters so counts (e.g. open action items) are real.
+    if (cmd === "get_all_insights") {
+      return (fixtures.get_all_insights || []).filter(
+        (i) =>
+          (!args?.insightType || i.type === args.insightType) &&
+          (!args?.status || i.status === args.status || i.status === null),
+      );
+    }
     if (cmd in fixtures) return fixtures[cmd];
     if (!cmd.startsWith("plugin:")) {
       console.warn(`[mock-tauri] no fixture for "${cmd}" — returning null`);

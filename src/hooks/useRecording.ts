@@ -1,6 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import type { Meeting } from "@/types";
+
+const checkIsRecording = () => invoke<boolean>("is_recording").catch(() => false);
 
 export function useRecording() {
   const [isRecording, setIsRecording] = useState(false);
@@ -9,23 +12,8 @@ export function useRecording() {
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const checkRecording = useCallback(async () => {
-    try {
-      const recording = await invoke<boolean>("is_recording");
-      setIsRecording(recording);
-    } catch {
-    }
-  }, []);
-
   useEffect(() => {
-    checkRecording();
-  }, [checkRecording]);
-
-  useEffect(() => {
-    if (!isRecording) {
-      setElapsed(0);
-      return;
-    }
+    if (!isRecording) return;
     timerRef.current = setInterval(() => {
       setElapsed((prev) => prev + 1);
     }, 1000);
@@ -58,6 +46,20 @@ export function useRecording() {
     [],
   );
 
+  // Pick up a recording that is already running (started from a meeting
+  // notification, or the user navigated away and came back) instead of
+  // starting a second one, which the backend would reject.
+  const resumeRecording = useCallback(async () => {
+    const live = await invoke<Meeting | null>("current_recording");
+    if (!live) return null;
+    setCurrentMeeting(live);
+    setElapsed(
+      Math.max(0, Math.floor((Date.now() - new Date(live.start_time).getTime()) / 1000)),
+    );
+    setIsRecording(true);
+    return live;
+  }, []);
+
   const stopRecording = useCallback(async () => {
     try {
       const meeting = await invoke<Meeting>("stop_recording");
@@ -65,6 +67,7 @@ export function useRecording() {
       return meeting;
     } finally {
       setIsRecording(false);
+      setElapsed(0);
     }
   }, []);
 
@@ -74,6 +77,21 @@ export function useRecording() {
     elapsed,
     error,
     startRecording,
+    resumeRecording,
     stopRecording,
   };
+}
+
+/**
+ * Lightweight "is anything recording?" check for chrome outside the
+ * recording view. Re-checks on every navigation, since starting and stopping
+ * both route through /recording.
+ */
+export function useIsRecording() {
+  const { pathname } = useLocation();
+  const [recording, setRecording] = useState(false);
+  useEffect(() => {
+    checkIsRecording().then(setRecording);
+  }, [pathname]);
+  return recording;
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -81,16 +81,15 @@ export function ChatPage() {
     setEditingTitleId(null);
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || !selectedProvider || !selectedModel || !activeId) return;
-    const msg = input;
+  const handleSend = async (text = input, conversationId = activeId) => {
+    if (!text.trim() || !selectedProvider || !selectedModel || !conversationId) return;
     setInput("");
     setLoading(true);
     setSendError(null);
     try {
       await invoke<GlobalChatResponse>("send_chat_message", {
-        conversationId: activeId,
-        message: msg,
+        conversationId,
+        message: text,
         provider: selectedProvider,
         model: selectedModel,
         labelIds: selectedLabel ? [selectedLabel] : [],
@@ -105,6 +104,22 @@ export function ChatPage() {
       setLoading(false);
     }
   };
+
+  // A question handed over from the command palette opens a fresh
+  // conversation and asks it straight away (or waits for a model to be picked).
+  const location = useLocation();
+  const handedOffRef = useRef(false);
+  useEffect(() => {
+    const prompt = (location.state as { prompt?: string } | null)?.prompt;
+    if (!prompt || handedOffRef.current) return;
+    handedOffRef.current = true;
+    navigate(location.pathname, { replace: true, state: null });
+    createConversation().then((conv) => {
+      setActiveId(conv.id);
+      if (selectedProvider && selectedModel) handleSend(prompt, conv.id);
+      else setInput(prompt);
+    });
+  }, [location.state]);
 
   // Parse sources from a message's sources_json field
   const parseSources = (sourcesJson: string | null): ChatSource[] => {
@@ -315,7 +330,7 @@ export function ChatPage() {
                   placeholder="Ask about your meetings…"
                   value={input}
                   onChange={setInput}
-                  onSend={handleSend}
+                  onSend={() => handleSend()}
                   disabled={loading}
                 />
               )}

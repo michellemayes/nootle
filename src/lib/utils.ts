@@ -78,3 +78,15 @@ export function statusVariant(
     default: return "outline";
   }
 }
+
+/** True when a keypress is going into a text field and shouldn't trigger shortcuts. */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  return (
+    el.isContentEditable ||
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT"
+  );
+}

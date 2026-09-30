@@ -2,7 +2,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Highlight from "@tiptap/extension-highlight";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Markdown as TiptapMarkdown } from "tiptap-markdown";
+import { Markdown } from "@tiptap/markdown";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
@@ -29,7 +29,7 @@ function markdownToHtml(text: string, hasHighlights: boolean): string {
   });
 }
 
-// Set TipTap content from HTML, bypassing tiptap-markdown's string parsing
+// Set TipTap content from HTML via ProseMirror's DOM parser, so <mark> maps to Highlight
 function setHtmlContent(editor: ReturnType<typeof useEditor>, html: string) {
   if (!editor) return;
   const el = document.createElement("div");
@@ -38,7 +38,7 @@ function setHtmlContent(editor: ReturnType<typeof useEditor>, html: string) {
   editor.commands.setContent(doc.toJSON());
 }
 
-// Convert ==...== (tiptap-markdown output for highlights) back to [[highlight]] for DB
+// Convert ==...== (the Highlight mark's markdown output) back to [[highlight]] for DB
 function fromEditorMarkdown(text: string): string {
   return text.replace(/==(.*?)==/gs, "[[highlight]]$1[[/highlight]]");
 }
@@ -48,6 +48,7 @@ export function NotesEditor({ content, hasHighlights, onChange }: NotesEditorPro
   const isExternalUpdate = useRef(false);
   const lastContentRef = useRef(content);
   const initialHtml = useRef(markdownToHtml(content, hasHighlights));
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
 
   const editor = useEditor({
     extensions: [
@@ -56,15 +57,21 @@ export function NotesEditor({ content, hasHighlights, onChange }: NotesEditorPro
       Placeholder.configure({
         placeholder: "Start typing…",
       }),
-      TiptapMarkdown.configure({
-        html: false,
-        transformPastedText: true,
-      }),
+      Markdown,
     ],
     content: "", // set via onCreate
     editorProps: {
       attributes: {
         class: "focus:outline-none min-h-[200px]",
+      },
+      // Plain-text pastes are treated as markdown, so pasted notes keep their
+      // headings and lists; rich (HTML) pastes use the default handling.
+      handlePaste: (_view, event) => {
+        const data = event.clipboardData;
+        const text = data?.getData("text/plain");
+        if (!text || data?.getData("text/html") || !editorRef.current) return false;
+        editorRef.current.commands.insertContent(text, { contentType: "markdown" });
+        return true;
       },
     },
     onCreate: ({ editor: ed }) => {
@@ -78,14 +85,14 @@ export function NotesEditor({ content, hasHighlights, onChange }: NotesEditorPro
       if (isExternalUpdate.current) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const md = (ed.storage as any).markdown.getMarkdown() as string;
+        const md = ed.getMarkdown();
         const output = hasHighlights ? fromEditorMarkdown(md) : md;
         lastContentRef.current = output;
         onChange(output);
       }, 600);
     },
   });
+  editorRef.current = editor;
 
   // Sync when content changes externally (e.g. after AI enrichment)
   useEffect(() => {

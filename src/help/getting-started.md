@@ -14,12 +14,28 @@ After changing permissions you may need to restart Nootle for them to take effec
 
 ## Your First Recording
 
-1. Click **New Recording** in the sidebar.
+1. Click **New recording** in the sidebar, or press **⌘N** from anywhere.
 2. Nootle begins capturing your microphone and (if permitted) system audio.
 3. A live transcript appears as you speak — you'll see text populate in real time with speaker labels.
-4. When the meeting ends, click **Stop Recording**.
+4. When the meeting ends, click **Stop** or press **⌘↵**.
 
-The recording is saved locally and appears in your **Meetings** library.
+The recording is saved locally and appears in your **Meetings** library. If you wander off to another page mid-meeting, the sidebar button turns into **Back to recording**.
+
+## Keyboard Shortcuts
+
+| Shortcut | What it does |
+| --- | --- |
+| ⌘K | Command palette — jump to any meeting or page, start a recording, or ask a question across all meetings |
+| ⌘N | Start a recording (or return to the one in progress) |
+| ⌘↵ | Stop and save the current recording |
+| ⌘1 – ⌘6 | Meetings, Insights, Chat, Automations, Settings, Help |
+| ⌘, | Settings |
+| / | Search the meeting library |
+| ⌘⇧N | Add a scratch note while recording |
+
+## Streaks
+
+The top of the Meetings page tracks your momentum: a streak of consecutive workdays with at least one recording (weekends never break it), how many meetings you've captured this week, and how many action items are still open.
 
 ## Reviewing a Meeting
 
