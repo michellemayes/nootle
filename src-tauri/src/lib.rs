@@ -237,6 +237,7 @@ pub fn run() {
         .manage(embedding_state)
         .setup(move |app| {
             let app_handle = app.handle().clone();
+            model_registry::migrate_legacy_files();
 
             // nootle:// URLs delivered while the app is already running.
             {

@@ -1,28 +1,9 @@
-//! Remote control via the `nootle://` URL scheme.
+//! Remote control via the `nootle://` URL scheme, so tools outside the app
+//! (e.g. an external meeting detector) can start and stop recordings.
 //!
-//! Nootle's recording commands are Tauri commands, which means they are
-//! reachable only from its own webview. Nothing outside the app can start a
-//! recording -- `nootle-cli` is query-only, and there is no listener.
-//!
-//! That is the gap this closes. An external meeting detector (mic activity plus
-//! WebRTC media flow, which is far more reliable than the process-presence
-//! check in `detection.rs`) can now drive recording:
-//!
-//!     open "nootle://record/start?title=Staff%20sync"
-//!     open "nootle://record/stop"
-//!     open "nootle://record/toggle?title=Ad-hoc%20call"
-//!
-//! Design notes:
-//!
-//! * Every action is idempotent in the direction that matters. Starting while
-//!   already recording is a no-op, not an error, because a detector that fires
-//!   twice must not interrupt a meeting in progress.
-//! * Results come back as events (`remote-control-result`) rather than being
-//!   swallowed, so the UI can surface a failure and the log has a record.
-//! * Unknown paths are logged and ignored. A malformed URL must never panic the
-//!   app or leave a half-open recording.
-//! * Off by default. Any web page can open a `nootle://` link, so remote control
-//!   only acts once the user enables it in Settings (`remote_control_enabled`).
+//! Off by default: any web page can open a `nootle://` link, so actions only run
+//! once the user enables `remote_control_enabled` in Settings. Every outcome is
+//! emitted as `remote-control-result` so the UI can notify the user.
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -30,7 +11,6 @@ use url::Url;
 
 use crate::commands::{self, DbState, EmbeddingState, LlmState, RecordingState};
 
-pub const SCHEME: &str = "nootle";
 pub const ENABLED_SETTING: &str = "remote_control_enabled";
 
 #[derive(Debug, Clone, Serialize)]
@@ -42,30 +22,44 @@ pub struct RemoteResult {
     pub meeting_id: Option<String>,
 }
 
-impl RemoteResult {
-    fn ok(action: &str, message: impl Into<String>, meeting_id: Option<String>) -> Self {
+/// Outcome of an action, before it is tagged with the action name.
+struct Outcome {
+    ok: bool,
+    message: String,
+    meeting_id: Option<String>,
+}
+
+impl Outcome {
+    fn ok(message: impl Into<String>) -> Self {
         Self {
-            action: action.to_string(),
             ok: true,
             message: message.into(),
-            meeting_id,
+            meeting_id: None,
         }
     }
 
-    fn err(action: &str, message: impl Into<String>) -> Self {
+    fn err(message: impl Into<String>) -> Self {
         Self {
-            action: action.to_string(),
             ok: false,
             message: message.into(),
             meeting_id: None,
         }
     }
+
+    fn from_meeting(result: Result<crate::db::Meeting, String>, message: String) -> Self {
+        match result {
+            Ok(meeting) => Self {
+                ok: true,
+                message,
+                meeting_id: Some(meeting.id),
+            },
+            Err(e) => Self::err(e),
+        }
+    }
 }
 
-/// A default title good enough to identify the meeting later.
-///
-/// The detector normally supplies one from the calendar. When it cannot -- an
-/// unscheduled call -- a timestamp beats "Untitled" for finding it again.
+/// Used when the caller supplies no title; a timestamp is easier to find
+/// later than "Untitled".
 fn fallback_title() -> String {
     format!("Meeting {}", chrono::Local::now().format("%Y-%m-%d %H:%M"))
 }
@@ -77,101 +71,99 @@ fn query_value(url: &Url, key: &str) -> Option<String> {
         .filter(|v| !v.trim().is_empty())
 }
 
-/// The action part of the URL, tolerating both `nootle://record/start` and
-/// `nootle:///record/start`. In the first form the host carries "record" and
-/// the path carries "/start"; in the second the host is empty.
+/// The action part of the URL, tolerating both `nootle://record/start` (host
+/// "record", path "/start") and `nootle:///record/start` (empty host).
 fn action_of(url: &Url) -> String {
-    let host = url.host_str().unwrap_or("").to_string();
-    let path = url.path().trim_matches('/').to_string();
-    match (host.is_empty(), path.is_empty()) {
-        (true, true) => String::new(),
-        (true, false) => path,
-        (false, true) => host,
-        (false, false) => format!("{host}/{path}"),
-    }
+    format!("{}/{}", url.host_str().unwrap_or(""), url.path())
+        .trim_matches('/')
+        .to_string()
 }
 
 async fn is_recording(app: &AppHandle) -> bool {
-    let recording = app.state::<RecordingState>();
-    let guard = recording.lock().await;
-    guard.is_some()
+    commands::is_recording(app.state::<RecordingState>())
+        .await
+        .unwrap_or(false)
 }
 
-async fn do_start(app: &AppHandle, title: Option<String>) -> RemoteResult {
+async fn do_start(app: &AppHandle, title: Option<String>) -> Outcome {
+    // A detector that fires twice must not disturb a meeting in progress.
     if is_recording(app).await {
-        // Not an error: a detector that fires twice must not disturb a meeting
-        // that is already being captured.
-        return RemoteResult::ok("start", "Already recording", None);
+        return Outcome::ok("Already recording");
     }
-
     let title = title.unwrap_or_else(fallback_title);
-    let db = app.state::<DbState>();
-    let llm = app.state::<LlmState>();
-    let recording = app.state::<RecordingState>();
-    let embedding = app.state::<EmbeddingState>();
-
-    match commands::start_recording(
+    let result = commands::start_recording(
         app.clone(),
-        db,
-        llm,
-        recording,
-        embedding,
+        app.state::<DbState>(),
+        app.state::<LlmState>(),
+        app.state::<RecordingState>(),
+        app.state::<EmbeddingState>(),
         title.clone(),
         None,
         None,
     )
-    .await
-    {
-        Ok(meeting) => {
-            tracing::info!("remote: started recording '{title}' ({})", meeting.id);
-            RemoteResult::ok("start", format!("Recording '{title}'"), Some(meeting.id))
-        }
-        Err(e) => {
-            tracing::error!("remote: start failed: {e}");
-            RemoteResult::err("start", e)
-        }
-    }
+    .await;
+    Outcome::from_meeting(result, format!("Recording '{title}'"))
 }
 
-async fn do_stop(app: &AppHandle) -> RemoteResult {
+async fn do_stop(app: &AppHandle) -> Outcome {
     if !is_recording(app).await {
-        return RemoteResult::ok("stop", "Not recording", None);
+        return Outcome::ok("Not recording");
     }
+    let result = commands::stop_recording(
+        app.clone(),
+        app.state::<DbState>(),
+        app.state::<LlmState>(),
+        app.state::<RecordingState>(),
+    )
+    .await;
+    Outcome::from_meeting(result, "Recording stopped".into())
+}
 
-    let db = app.state::<DbState>();
-    let llm = app.state::<LlmState>();
-    let recording = app.state::<RecordingState>();
-
-    match commands::stop_recording(app.clone(), db, llm, recording).await {
-        Ok(meeting) => {
-            tracing::info!("remote: stopped recording ({})", meeting.id);
-            RemoteResult::ok("stop", "Recording stopped", Some(meeting.id))
+async fn run_action(app: &AppHandle, action: &str, title: Option<String>) -> Outcome {
+    match action {
+        "record/start" => do_start(app, title).await,
+        "record/stop" => do_stop(app).await,
+        "record/toggle" => {
+            if is_recording(app).await {
+                do_stop(app).await
+            } else {
+                do_start(app, title).await
+            }
         }
-        Err(e) => {
-            tracing::error!("remote: stop failed: {e}");
-            RemoteResult::err("stop", e)
-        }
+        "record/status" => Outcome::ok(if is_recording(app).await {
+            "Recording"
+        } else {
+            "Idle"
+        }),
+        // macOS only lists an app under Privacy > Screen Recording once it has
+        // asked, so without this there is nothing for the user to enable.
+        "permissions/screen" => Outcome::ok(if crate::permissions::request_screen_recording() {
+            "Screen recording granted"
+        } else {
+            "Screen recording not granted; enable Nootle under \
+             Privacy & Security > Screen Recording, then restart it"
+        }),
+        "permissions/status" => Outcome::ok(format!(
+            "microphone={} screen_recording={}",
+            crate::permissions::check_microphone(),
+            crate::permissions::check_screen_recording()
+        )),
+        other => Outcome::err(format!("Unknown action: {other}")),
     }
 }
 
-/// Handle one `nootle://` URL. Never panics, never blocks the caller.
+/// Handle one `nootle://` URL. Never panics; unknown actions are reported, not
+/// acted on.
 pub async fn handle_url(app: AppHandle, raw: String) {
     let url = match Url::parse(&raw) {
-        Ok(u) => u,
-        Err(e) => {
-            tracing::warn!("remote: unparseable url {raw:?}: {e}");
+        Ok(u) if u.scheme() == "nootle" => u,
+        _ => {
+            tracing::warn!("remote: ignoring url {raw:?}");
             return;
         }
     };
 
-    if url.scheme() != SCHEME {
-        tracing::warn!("remote: ignoring non-{SCHEME} url {raw:?}");
-        return;
-    }
-
     let action = action_of(&url);
-    let title = query_value(&url, "title");
-
     let enabled = app
         .state::<DbState>()
         .get_setting(ENABLED_SETTING)
@@ -179,62 +171,23 @@ pub async fn handle_url(app: AppHandle, raw: String) {
         .flatten()
         .is_some_and(|v| v == "true");
 
-    let result = if !enabled {
-        tracing::warn!("remote: ignoring {raw:?}, remote control is disabled");
-        RemoteResult::err(
-            &action,
-            "URL control is disabled; enable it in Nootle Settings > Recording",
-        )
+    let outcome = if enabled {
+        run_action(&app, &action, query_value(&url, "title")).await
     } else {
-        match action.as_str() {
-            "record/start" | "record" => do_start(&app, title).await,
-            "record/stop" => do_stop(&app).await,
-            "record/toggle" => {
-                if is_recording(&app).await {
-                    do_stop(&app).await
-                } else {
-                    do_start(&app, title).await
-                }
-            }
-            // macOS only lists an app under Privacy > Screen Recording once it has
-            // actually asked. Without this there is nothing to toggle, and system
-            // audio -- everyone else's voice -- is silently never captured.
-            "permissions/screen" => {
-                let granted = crate::permissions::request_screen_recording();
-                tracing::info!("remote: screen recording request -> granted={granted}");
-                RemoteResult::ok(
-                    "permissions/screen",
-                    if granted {
-                        "Screen recording granted"
-                    } else {
-                        "Screen recording not granted; enable Nootle under \
-                     Privacy & Security > Screen Recording, then restart it"
-                    },
-                    None,
-                )
-            }
-            "permissions/status" => {
-                let mic = crate::permissions::check_microphone();
-                let screen = crate::permissions::check_screen_recording();
-                RemoteResult::ok(
-                    "permissions/status",
-                    format!("microphone={mic} screen_recording={screen}"),
-                    None,
-                )
-            }
-            "record/status" => {
-                let recording = is_recording(&app).await;
-                RemoteResult::ok("status", if recording { "Recording" } else { "Idle" }, None)
-            }
-            other => {
-                tracing::warn!("remote: unknown action {other:?} from {raw:?}");
-                RemoteResult::err("unknown", format!("Unknown action: {other}"))
-            }
-        }
+        Outcome::err("URL control is disabled; enable it in Nootle Settings > Recording")
     };
 
-    // Surface the outcome instead of swallowing it, so a failed remote start is
-    // visible in the UI rather than looking like nothing happened.
+    if outcome.ok {
+        tracing::info!("remote: {action}: {}", outcome.message);
+    } else {
+        tracing::warn!("remote: {action} failed: {}", outcome.message);
+    }
+    let result = RemoteResult {
+        action,
+        ok: outcome.ok,
+        message: outcome.message,
+        meeting_id: outcome.meeting_id,
+    };
     let _ = app.emit("remote-control-result", &result);
 }
 

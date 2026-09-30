@@ -67,10 +67,7 @@ clap = { version = "4", features = ["derive", "env"] }
 tempfile = "3"
 
 [features]
-# system-audio ON by default. Without it, system audio capture silently falls
-# back to a stub: recordings contain your microphone only, so a meeting
-# transcript has your half of the conversation and nobody else's. That looks
-# like a working recording right up until you read it. A meeting recorder that
-# cannot hear the meeting is not a useful default.
+# Without system-audio, capture is a mic-only stub, so a meeting recorder
+# would miss everyone else in the meeting.
 default = ["system-audio"]
 system-audio = ["cidre"]

@@ -40,18 +40,9 @@
     "macOS": {
       "dmg": {
         "background": "dmg/background.png",
-        "appPosition": {
-          "x": 180,
-          "y": 170
-        },
-        "applicationFolderPosition": {
-          "x": 480,
-          "y": 170
-        },
-        "windowSize": {
-          "width": 660,
-          "height": 400
-        }
+        "appPosition": { "x": 180, "y": 170 },
+        "applicationFolderPosition": { "x": 480, "y": 170 },
+        "windowSize": { "width": 660, "height": 400 }
       },
       "entitlements": "entitlements.plist",
       "minimumSystemVersion": "14.0"
@@ -67,9 +58,7 @@
     },
     "deep-link": {
       "desktop": {
-        "schemes": [
-          "nootle"
-        ]
+        "schemes": ["nootle"]
       }
     }
   }

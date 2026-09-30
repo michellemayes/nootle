@@ -70,39 +70,25 @@ pub struct TranscriptionEngine {
     state2_dims: [usize; 3],
 }
 
-/// Build an ONNX session, preferring CoreML but degrading to CPU.
-///
-/// CoreML cannot resolve a model whose weights live in an external data file
-/// (`model.onnx` plus `model.onnx.data`); it fails with
-/// `initializer.cc:45 !model_path.empty() was false`. The Parakeet encoder is
-/// exactly that shape -- 41MB of graph plus 2.4GB of external weights -- so
-/// hard-requiring CoreML made the entire transcription engine fail to load,
-/// and recordings completed with no transcript at all.
-///
-/// Accelerate when we can, stay working when we cannot.
-fn build_session(path: &Path, label: &str) -> anyhow::Result<Session> {
-    let coreml = Session::builder()
-        .and_then(|b| {
-            b.with_execution_providers([
-                ort::execution_providers::CoreMLExecutionProvider::default().build(),
-            ])
-        })
-        .and_then(|b| b.commit_from_file(path));
-
-    match coreml {
-        Ok(session) => {
-            tracing::info!("{label}: loaded with CoreML acceleration");
-            Ok(session)
-        }
-        Err(e) => {
-            tracing::warn!("{label}: CoreML unavailable for this model ({e}); using CPU");
-            let session = Session::builder()?
-                .commit_from_file(path)
-                .with_context(|| format!("Failed to load {label} model on CPU"))?;
-            tracing::info!("{label}: loaded on CPU");
-            Ok(session)
+/// Build an ONNX session, preferring CoreML (when `try_coreml`) but falling
+/// back to CPU so a CoreML failure only costs acceleration, not transcription.
+fn build_session(path: &Path, label: &str, try_coreml: bool) -> anyhow::Result<Session> {
+    if try_coreml {
+        let coreml = Session::builder()
+            .and_then(|b| {
+                b.with_execution_providers([
+                    ort::execution_providers::CoreMLExecutionProvider::default().build(),
+                ])
+            })
+            .and_then(|b| b.commit_from_file(path));
+        match coreml {
+            Ok(session) => return Ok(session),
+            Err(e) => tracing::warn!("{label}: CoreML unavailable ({e}); using CPU"),
         }
     }
+    Session::builder()?
+        .commit_from_file(path)
+        .with_context(|| format!("Failed to load {label} model on CPU"))
 }
 
 impl TranscriptionEngine {
@@ -143,8 +129,6 @@ impl TranscriptionEngine {
             ));
         }
 
-        crate::model_registry::migrate_legacy_files(&model_dir);
-
         let preprocessor_path = model_dir.join("nemo128.onnx");
         let encoder_path = model_dir.join("encoder.onnx");
         let decoder_path = model_dir.join("decoder.onnx");
@@ -171,8 +155,11 @@ impl TranscriptionEngine {
             None
         };
 
-        let encoder = build_session(&encoder_path, "encoder")?;
-        let decoder = build_session(&decoder_path, "decoder")?;
+        // CoreML can't load models with external weights (the fp32 encoder), so
+        // don't pay for a failed attempt on every recording.
+        let encoder_external = model_dir.join("encoder-model.onnx.data").exists();
+        let encoder = build_session(&encoder_path, "encoder", !encoder_external)?;
+        let decoder = build_session(&decoder_path, "decoder", true)?;
 
         // Load vocabulary (format: "token id" per line — extract just the token)
         let vocab_text =

@@ -37,12 +37,8 @@ impl LlmProvider for CodexCliProvider {
 
     fn available_models(&self) -> Vec<ModelInfo> {
         vec![
-            // Listed first so it is what `providers.first()` picks by default.
-            // Pinning a model id here is a trap: ChatGPT-account Codex rejects
-            // explicit ids outright ("The 'gpt-5-codex' model is not supported
-            // when using Codex with a ChatGPT account", HTTP 400), and the
-            // supported set moves with the CLI. Letting codex use its own
-            // configured default works on every auth mode and does not go stale.
+            // Listed first so auto-extraction picks it. ChatGPT-account Codex
+            // rejects explicit model ids, so let codex use its own default.
             ModelInfo {
                 id: DEFAULT_MODEL.into(),
                 name: "Codex default (subscription)".into(),

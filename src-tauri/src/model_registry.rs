@@ -78,12 +78,8 @@ const PARAKEET_FULL_FILES: &[ModelFile] = &[
         sha256: "98a74b21b4cc0017c1e7030319a4a96f4a9506e50f0708f3a516d02a77c96bb1",
     },
     ModelFile {
-        // MUST stay "encoder-model.onnx.data". encoder.onnx keeps its weights in
-        // an external data file and refers to it by name in the graph, using the
-        // upstream filename. Renaming it to match our local "encoder.onnx" makes
-        // ONNX Runtime unable to find the weights, and the encoder then fails to
-        // load on every execution provider -- recordings complete with no
-        // transcript at all.
+        // Must keep the upstream name: encoder.onnx references its external
+        // weights by this filename, and the encoder fails to load otherwise.
         local_name: "encoder-model.onnx.data",
         url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.onnx.data",
         size_bytes: 2_440_000_000,
@@ -296,9 +292,14 @@ fn is_variant_in_dir(dir: &std::path::Path, variant: &ModelVariant) -> bool {
 const LEGACY_RENAMES: &[(&str, &str)] = &[("encoder.onnx.data", "encoder-model.onnx.data")];
 
 /// Rename files downloaded by earlier releases so existing installs keep
-/// working without re-downloading. Best-effort: failures just mean the
-/// variant shows as not downloaded.
-pub fn migrate_legacy_files(dir: &std::path::Path) {
+/// working without re-downloading. Best-effort; run once at startup.
+pub fn migrate_legacy_files() {
+    for model in MODEL_REGISTRY {
+        migrate_legacy_files_in(&model_dir(model));
+    }
+}
+
+fn migrate_legacy_files_in(dir: &std::path::Path) {
     for (old, new) in LEGACY_RENAMES {
         let (old, new) = (dir.join(old), dir.join(new));
         if old.exists() && !new.exists() {
@@ -315,9 +316,7 @@ pub fn migrate_legacy_files(dir: &std::path::Path) {
 
 /// Check if all files for a variant are present on disk.
 pub fn is_variant_downloaded(model: &ModelDefinition, variant: &ModelVariant) -> bool {
-    let dir = model_dir(model);
-    migrate_legacy_files(&dir);
-    is_variant_in_dir(&dir, variant)
+    is_variant_in_dir(&model_dir(model), variant)
 }
 
 #[cfg(test)]
@@ -331,9 +330,6 @@ mod tests {
 
     #[test]
     fn external_data_keeps_the_name_the_graph_references() {
-        // encoder.onnx names its weights file internally as
-        // "encoder-model.onnx.data". Saving it under any other local name
-        // silently breaks transcription on every execution provider.
         let (_, variant) = get_variant("parakeet-tdt-0.6b-v3", "full").unwrap();
         let data = variant
             .files
@@ -347,7 +343,7 @@ mod tests {
     fn legacy_encoder_data_is_renamed() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("encoder.onnx.data"), b"weights").unwrap();
-        migrate_legacy_files(dir.path());
+        migrate_legacy_files_in(dir.path());
         assert!(!dir.path().join("encoder.onnx.data").exists());
         assert!(dir.path().join("encoder-model.onnx.data").exists());
     }
