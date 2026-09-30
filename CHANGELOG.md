@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- **settings:** Make Obsidian "Add person" button add a row (#144) ([3d80b24](https://github.com/michellemayes/nootle/commit/3d80b24488170e8476534114c4a9d65e69d867eb))
+- **macos:** Allow loopback listener so MCP sign-in works in the sandbox (#143) ([f2a8e55](https://github.com/michellemayes/nootle/commit/f2a8e5572ad170ceecd3a009e049b01da6237e13))
+
+## [0.1.14] - 2026-09-30
+
+### Bug Fixes
+
 - **llm:** Make login-shell PATH lookup robust so claude/codex CLIs are detected (#142) ([4a65729](https://github.com/michellemayes/nootle/commit/4a657295cc0ecd27cb5a75ee74ed8fa96b81cf91))
 
 ## [0.1.13] - 2026-09-30
