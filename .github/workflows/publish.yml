@@ -12,13 +12,26 @@ on:
 permissions:
   contents: write
 
-# Serialize publishes so two quick pushes can't claim the same version.
-concurrency:
-  group: publish
-  cancel-in-progress: false
-
 jobs:
+  # Debounce bursts of merges: each new push cancels the previous run's wait,
+  # so merging several PRs back to back produces a single publish of the
+  # latest main instead of one build per merge. Pushes more than 5 minutes
+  # apart still publish separately; widen the sleep to widen the window.
+  debounce:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish-debounce
+      cancel-in-progress: true
+    steps:
+      - name: Wait for more pushes
+        if: github.event_name == 'push'
+        run: sleep 300
+
   publish:
+    needs: debounce
+    # Serialize publishes so two runs can't claim the same version. Never
+    # cancel an in-flight publish; that could leave a half-uploaded release.
+    concurrency: publish
     strategy:
       fail-fast: false
       matrix:
