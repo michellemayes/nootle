@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.7] - 2026-09-30
+
+### CI
+
+- **publish:** Retry changelog push when main moves (#133) ([0d86972](https://github.com/michellemayes/nootle/commit/0d86972b8de2059b7d120d8a551573e219f029aa))
+
 ## [0.1.6] - 2026-09-30
 
 ### CI
