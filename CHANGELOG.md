@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.11] - 2026-09-30
+
+### Features
+
+- **theme:** Background themes independent of the accent color (#137) ([898b3a0](https://github.com/michellemayes/nootle/commit/898b3a01021fafeacfca44653b9d08e968ef16c8))
+
 ## [0.1.10] - 2026-09-30
 
 ### Features
