@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **analytics:** Make action buttons compact instead of full width (#149) ([698ca6b](https://github.com/michellemayes/nootle/commit/698ca6b4c48879dd08e82656bc6805255de1effd))
+- Fast sentiment, auto insights after transcription, keep user title/type (#148) ([b27167b](https://github.com/michellemayes/nootle/commit/b27167b3263c35800b7c53db030f6bbd5483987e))
+
+## [0.1.18] - 2026-09-30
+
+### Bug Fixes
+
+- **labels:** Make creating a label from the picker work (#147) ([b9034b3](https://github.com/michellemayes/nootle/commit/b9034b34cbbc33ce02cadd3ba8a2e7cc286d2179))
+
 ## [0.1.17] - 2026-09-30
 
 ### Bug Fixes
