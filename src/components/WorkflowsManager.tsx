@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +13,9 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Plus, Pencil, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import { useWorkflows } from "@/hooks/useWorkflows";
 import { useIntegrations } from "@/hooks/useIntegrations";
 import { useTemplates } from "@/hooks/useTemplates";
@@ -22,11 +23,18 @@ import { INTEGRATION_TYPES, ACTION_TYPES_BY_INTEGRATION } from "@/lib/integratio
 import { EmojiPicker } from "@/components/EmojiPicker";
 import type { Workflow } from "@/types";
 
-export function WorkflowsManager() {
+interface WorkflowsManagerProps {
+  /** Whether the "new workflow" dialog is open; owned by the page's tab bar. */
+  creating: boolean;
+  onCreatingChange: (creating: boolean) => void;
+}
+
+export function WorkflowsManager({ creating, onCreatingChange }: WorkflowsManagerProps) {
   const { workflows, loading, createWorkflow, updateWorkflow, deleteWorkflow } = useWorkflows();
   const { integrations } = useIntegrations();
   const { templates } = useTemplates();
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editing = creating ? "new" : editingId;
   const [formName, setFormName] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formIcon, setFormIcon] = useState("");
@@ -46,7 +54,8 @@ export function WorkflowsManager() {
   const selectedAction = availableActions.find((a) => a.value === formActionType);
 
   const resetForm = () => {
-    setEditing(null);
+    setEditingId(null);
+    onCreatingChange(false);
     setFormName("");
     setFormDescription("");
     setFormIcon("");
@@ -55,13 +64,8 @@ export function WorkflowsManager() {
     setFormConfig({});
   };
 
-  const startCreate = () => {
-    resetForm();
-    setEditing("new");
-  };
-
   const startEdit = (wf: Workflow) => {
-    setEditing(wf.id);
+    setEditingId(wf.id);
     setFormName(wf.name);
     setFormDescription(wf.description ?? "");
     setFormIcon(wf.icon ?? "");
@@ -120,43 +124,32 @@ export function WorkflowsManager() {
     );
   };
 
-  const getIntegrationTypeName = (integrationId: string) => {
-    const integration = integrations.find((i) => i.id === integrationId);
-    if (!integration) return "Unknown";
-    return INTEGRATION_TYPES.find((t) => t.type === integration.integration_type)?.name ?? integration.integration_type;
+  const describeWorkflow = (wf: Workflow) => {
+    const type = integrations.find((i) => i.id === wf.integration_id)?.integration_type;
+    const actions = ACTION_TYPES_BY_INTEGRATION[type ?? ""] ?? [];
+    return {
+      integrationName: type
+        ? INTEGRATION_TYPES.find((t) => t.type === type)?.name ?? type
+        : "Unknown",
+      actionLabel: actions.find((a) => a.value === wf.action_type)?.label ?? wf.action_type,
+    };
   };
 
   return (
-    <Card className="gap-3">
-      <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <CardTitle>Workflows</CardTitle>
-            <CardDescription className="mt-1">
-              Automate post-meeting actions like posting summaries, creating tickets, or drafting emails.
-            </CardDescription>
-          </div>
-          {editing === null && (
-            <Button size="sm" onClick={startCreate} className="shrink-0">
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Create Workflow
-            </Button>
-          )}
-        </div>
-      </CardHeader>
+    <>
       <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) resetForm(); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing === "new" ? "New Workflow" : "Edit Workflow"}</DialogTitle>
+            <DialogTitle>{editing === "new" ? "New workflow" : "Edit workflow"}</DialogTitle>
             <DialogDescription>
               {editing === "new"
                 ? "Automate a post-meeting action like posting a summary, creating a ticket, or drafting an email."
-                : "Update this workflow's details"}
+                : "Update what this workflow does after a meeting."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Name *</label>
+              <label className="text-sm font-medium mb-1.5 block">Name</label>
               <Input
                 placeholder="e.g. Post summary to Slack"
                 value={formName}
@@ -166,7 +159,7 @@ export function WorkflowsManager() {
             <div>
               <label className="text-sm font-medium mb-1.5 block">Description</label>
               <Input
-                placeholder="Optional description"
+                placeholder="Optional"
                 value={formDescription}
                 onChange={(e) => setFormDescription(e.target.value)}
               />
@@ -176,7 +169,7 @@ export function WorkflowsManager() {
               <EmojiPicker value={formIcon} onChange={setFormIcon} placeholder="Pick an emoji" />
             </div>
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Integration *</label>
+              <label className="text-sm font-medium mb-1.5 block">Integration</label>
               <Select
                 containerClassName="w-full"
                 value={formIntegrationId}
@@ -187,17 +180,22 @@ export function WorkflowsManager() {
                 }}
                 aria-label="Integration"
               >
-                <option value="">Select integration...</option>
+                <option value="">Select integration…</option>
                 {connectedIntegrations.map((i) => (
                   <option key={i.id} value={i.id}>
                     {INTEGRATION_TYPES.find((t) => t.type === i.integration_type)?.name ?? i.integration_type}
                   </option>
                 ))}
               </Select>
+              {connectedIntegrations.length === 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Connect an integration in Settings → Integrations first.
+                </p>
+              )}
             </div>
             {selectedIntegrationType && (
               <div>
-                <label className="text-sm font-medium mb-1.5 block">Action *</label>
+                <label className="text-sm font-medium mb-1.5 block">Action</label>
                 <Select
                   containerClassName="w-full"
                   value={formActionType}
@@ -207,7 +205,7 @@ export function WorkflowsManager() {
                   }}
                   aria-label="Action"
                 >
-                  <option value="">Select action...</option>
+                  <option value="">Select action…</option>
                   {availableActions.map((a) => (
                     <option key={a.value} value={a.value}>{a.label}</option>
                   ))}
@@ -217,7 +215,10 @@ export function WorkflowsManager() {
             {selectedAction && selectedAction.configFields.map((field) => (
               <div key={field.key}>
                 <label className="text-sm font-medium mb-1.5 block">
-                  {field.label}{field.required ? " *" : ""}
+                  {field.label}
+                  {!field.required && (
+                    <span className="font-normal text-muted-foreground"> (optional)</span>
+                  )}
                 </label>
                 {field.key === "template_id" ? (
                   <Select
@@ -250,103 +251,93 @@ export function WorkflowsManager() {
               onClick={handleSave}
               disabled={saving || !formName.trim() || !formIntegrationId || !formActionType}
             >
-              {saving ? "Saving..." : editing === "new" ? "Create" : "Save"}
+              {saving ? "Saving…" : editing === "new" ? "Create" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <CardContent>
-        {loading ? (
-          <LoadingState message={LOADING_COPY.workflows} layout="inline" />
-        ) : (
-          <div className="space-y-3">
-            {workflows.length === 0 && editing === null ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                No workflows yet. Set one up and Nootle will handle the busywork after every meeting.
-              </p>
-            ) : (
-              <div className="divide-y">
-                {workflows.map((wf) => (
-                  <div key={wf.id} className="flex items-center gap-3 py-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        {wf.icon && <span className="text-sm">{wf.icon}</span>}
-                        <span className="text-sm font-medium">{wf.name}</span>
-                        <Badge variant="secondary" size="sm">
-                          {getIntegrationTypeName(wf.integration_id)}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">{wf.action_type}</span>
-                      </div>
-                      {wf.description && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{wf.description}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        checked={wf.is_enabled}
-                        onCheckedChange={() => handleToggleEnabled(wf)}
-                        title={wf.is_enabled ? "Enabled" : "Disabled"}
-                        aria-label={`Enable ${wf.name}`}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => startEdit(wf)}
-                        disabled={editing !== null}
-                        title="Edit"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => setDeleteTarget(wf)}
-                        disabled={editing !== null}
-                        title="Delete"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+      {loading ? (
+        <LoadingState message={LOADING_COPY.workflows} layout="inline" />
+      ) : workflows.length === 0 ? (
+        <EmptyState
+          icon={WorkflowIcon}
+          title="No workflows yet"
+          description="Workflows run after a meeting to post summaries, create tickets, or draft emails."
+          action={
+            <Button size="sm" onClick={() => onCreatingChange(true)}>
+              <Plus /> New workflow
+            </Button>
+          }
+        />
+      ) : (
+        <div className="flex flex-col divide-y rounded-md border">
+          {workflows.map((wf) => {
+            const { integrationName, actionLabel } = describeWorkflow(wf);
+            return (
+            <div key={wf.id} className="flex items-center gap-3 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  {wf.icon && <span className="text-sm">{wf.icon}</span>}
+                  <span className="text-sm font-medium">{wf.name}</span>
+                  <Badge variant="secondary" size="sm">
+                    {integrationName}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">{actionLabel}</span>
+                </div>
+                {wf.description && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{wf.description}</p>
+                )}
               </div>
-            )}
-          </div>
-        )}
-      </CardContent>
+              <div className="flex items-center gap-1">
+                <Switch
+                  checked={wf.is_enabled}
+                  onCheckedChange={() => handleToggleEnabled(wf)}
+                  title={wf.is_enabled ? "Enabled" : "Disabled"}
+                  aria-label={`Enable ${wf.name}`}
+                  className="mr-2"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => startEdit(wf)}
+                  title="Edit"
+                  aria-label="Edit"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => setDeleteTarget(wf)}
+                  title="Delete"
+                  aria-label="Delete"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+            );
+          })}
+        </div>
+      )}
 
-      <Dialog
+      <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete workflow?</DialogTitle>
-            <DialogDescription>
-              Permanently delete{" "}
-              <span className="font-medium text-foreground">{deleteTarget?.name}</span>.
-              Past runs stay in their meeting history.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={async () => {
-                if (deleteTarget) {
-                  await deleteWorkflow(deleteTarget.id);
-                  setDeleteTarget(null);
-                }
-              }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
+        title="Delete workflow?"
+        description={
+          <>
+            <span className="font-medium text-foreground">{deleteTarget?.name}</span>{" "}
+            will be permanently deleted. Past runs stay in their meeting history.
+          </>
+        }
+        onConfirm={async () => {
+          if (deleteTarget) await deleteWorkflow(deleteTarget.id);
+        }}
+      />
+    </>
   );
 }

@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect, useCallback, type ReactNode } from "react
 import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { MotionButton } from "@/components/MotionButton";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -10,6 +9,7 @@ import {
   MODELS_REQUIRING_AUTH,
   type ModelDefinition,
 } from "@/hooks/useModelDownload";
+import { VariantPicker, DownloadProgressBar } from "@/components/ModelDownload";
 import { Mic, Monitor, Calendar } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 
@@ -23,40 +23,6 @@ const PROVIDERS = [
   { id: "groq", name: "Groq", placeholder: "gsk_..." },
   { id: "openrouter", name: "OpenRouter", placeholder: "sk-or-..." },
 ] as const;
-
-function SparkleShower() {
-  const particles = Array.from({ length: 12 }, (_, i) => ({
-    id: i,
-    left: Math.random() * 100,
-    delay: Math.random() * 2,
-    duration: 2 + Math.random() * 2,
-    size: 2 + Math.random() * 3,
-  }));
-
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {particles.map((p) => (
-        <motion.div
-          key={p.id}
-          className="absolute rounded-full bg-primary/30"
-          style={{
-            left: `${p.left}%`,
-            width: p.size,
-            height: p.size,
-          }}
-          initial={{ y: -10, opacity: 0 }}
-          animate={{ y: "100%", opacity: [0, 0.8, 0] }}
-          transition={{
-            duration: p.duration,
-            delay: p.delay,
-            repeat: Infinity,
-            ease: "linear",
-          }}
-        />
-      ))}
-    </div>
-  );
-}
 
 export function Onboarding({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState<Step>("Welcome");
@@ -124,12 +90,12 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                   Welcome to Nootle
                 </h1>
                 <p className="mb-8 text-muted-foreground">
-                  Nootle captures your meetings, transcribes them live, and
-                  cooks up smart summaries — all on your Mac.
+                  Nootle records your meetings, transcribes them on your Mac,
+                  and summarizes them with the AI provider you choose.
                 </p>
-                <MotionButton size="lg" onClick={next}>
-                  Get Started
-                </MotionButton>
+                <Button size="lg" onClick={next}>
+                  Get started
+                </Button>
               </div>
             )}
 
@@ -142,12 +108,12 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             {step === "API Keys" && (
               <div>
                 <h2 className="mb-2 text-2xl font-bold text-foreground">
-                  AI Providers
+                  AI providers
                 </h2>
                 <p className="mb-6 text-sm text-muted-foreground">
-                  Add API keys for AI-powered summaries and chat. You can skip
-                  this and add them later in Settings. Using Ollama? No key
-                  needed — Nootle auto-detects it.
+                  Add API keys for summaries and chat, or skip and add them
+                  later in Settings. Ollama and the Claude and Codex CLIs are
+                  detected automatically and don't need a key.
                 </p>
                 <div className="space-y-4">
                   {PROVIDERS.map((p) => (
@@ -173,24 +139,23 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                   <Button variant="ghost" onClick={next}>
                     Skip
                   </Button>
-                  <MotionButton onClick={next}>Continue</MotionButton>
+                  <Button onClick={next}>Continue</Button>
                 </div>
               </div>
             )}
 
             {step === "Done" && (
-              <div className="relative text-center">
-                <SparkleShower />
-                <h2 className="relative mb-2 text-3xl font-bold text-foreground">
-                  You're ready to nootle!
+              <div className="text-center">
+                <h2 className="mb-2 text-3xl font-bold text-foreground">
+                  You're all set
                 </h2>
-                <p className="relative mb-8 text-muted-foreground">
-                  Nootle will automatically detect meetings in Zoom, Teams, and
-                  Google Meet. You can also start recording manually anytime.
+                <p className="mb-8 text-muted-foreground">
+                  Nootle detects meetings in Zoom, Teams, and Google Meet. You
+                  can also start a recording yourself at any time.
                 </p>
-                <MotionButton size="lg" onClick={finish} disabled={saving} className="relative">
-                  {saving ? "Setting up..." : "Start Using Nootle"}
-                </MotionButton>
+                <Button size="lg" onClick={finish} disabled={saving}>
+                  {saving ? "Setting up…" : "Open Nootle"}
+                </Button>
               </div>
             )}
           </motion.div>
@@ -224,10 +189,9 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
     return () => clearInterval(interval);
   }, [checkStatus]);
 
-  const allGranted =
-    status?.microphone === "granted" &&
-    status?.screen_recording === true &&
-    status?.calendar === "granted";
+  // Calendar access only powers meeting detection, so it doesn't block setup.
+  const requiredGranted =
+    status?.microphone === "granted" && status?.screen_recording === true;
 
   const requestPermission = async (type: "microphone" | "screen_recording" | "calendar") => {
     setRequesting(type);
@@ -268,7 +232,7 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
         />
         <PermissionRow
           icon={<Monitor className="h-5 w-5" />}
-          title="Screen Recording"
+          title="Screen recording"
           desc="Capture system audio from meeting apps"
           granted={screenGranted}
           onRequest={() => requestPermission("screen_recording")}
@@ -278,21 +242,22 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
         <PermissionRow
           icon={<Calendar className="h-5 w-5" />}
           title="Calendar"
-          desc="Auto-detect meetings from your calendar"
+          desc="Optional. Detect meetings from your calendar"
           granted={calGranted}
           onRequest={() => requestPermission("calendar")}
           requesting={requesting === "calendar"}
         />
       </div>
-      {!allGranted && (
+      {!screenGranted && (
         <p className="mt-4 text-xs text-muted-foreground">
-          Screen Recording requires toggling in System Settings. It will be detected automatically.
+          Screen recording is turned on in System Settings. Nootle picks up the
+          change automatically.
         </p>
       )}
       <div className="mt-8 flex justify-end">
-        <MotionButton onClick={onNext} disabled={!allGranted}>
+        <Button onClick={onNext} disabled={!requiredGranted}>
           Continue
-        </MotionButton>
+        </Button>
       </div>
     </div>
   );
@@ -372,20 +337,12 @@ function ModelsStep({ onNext }: { onNext: () => void }) {
     return diskStatus.find((d) => d.model_id === model.id);
   };
 
-  const getProgressState = (): string => {
-    if (!progress) return "";
-    if (typeof progress.state === "string") return progress.state;
-    if (typeof progress.state === "object" && "error" in progress.state)
-      return `Error: ${progress.state.error.message}`;
-    return "";
-  };
-
   return (
     <div>
-      <h2 className="mb-2 text-2xl font-bold text-foreground">AI Models</h2>
+      <h2 className="mb-2 text-2xl font-bold text-foreground">Local models</h2>
       <p className="mb-6 text-sm text-muted-foreground">
-        Download local AI models for transcription and speaker identification.
-        These run entirely on your Mac for privacy and speed.
+        Download the models used for transcription and speaker identification.
+        They run entirely on your Mac.
       </p>
 
       <div className="space-y-4">
@@ -413,34 +370,16 @@ function ModelsStep({ onNext }: { onNext: () => void }) {
                 {model.description}
               </p>
 
-              {/* Variant picker for models with multiple variants */}
               {!status?.downloaded && model.variants.length > 1 && (
-                <div className="flex gap-3 mb-3">
-                  {model.variants.map((variant) => (
-                    <label
-                      key={variant.id}
-                      className="flex items-center gap-2 cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name={`variant-${model.id}`}
-                        checked={variantSelections[model.id] === variant.id}
-                        onChange={() =>
-                          setSelectedVariants((prev) => ({
-                            ...prev,
-                            [model.id]: variant.id,
-                          }))
-                        }
-                        className="accent-primary"
-                      />
-                      <span className="text-sm text-foreground">
-                        {variant.label}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        ({formatBytes(variant.total_size_bytes)})
-                      </span>
-                    </label>
-                  ))}
+                <div className="mb-3">
+                  <VariantPicker
+                    name={`variant-${model.id}`}
+                    variants={model.variants}
+                    selected={variantSelections[model.id]}
+                    onSelect={(variantId) =>
+                      setSelectedVariants((prev) => ({ ...prev, [model.id]: variantId }))
+                    }
+                  />
                 </div>
               )}
 
@@ -458,27 +397,9 @@ function ModelsStep({ onNext }: { onNext: () => void }) {
                 </p>
               )}
 
-              {/* Progress bar for this model */}
               {isThisModelDownloading && progress && (
                 <div className="mt-2">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                    <span>
-                      {getProgressState() === "verifying"
-                        ? "Verifying..."
-                        : `Downloading ${progress.current_file}`}
-                    </span>
-                    <span>
-                      {Math.round(progress.overall_percent * 100)}%
-                    </span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-primary transition-[width] duration-300"
-                      style={{
-                        width: `${Math.round(progress.overall_percent * 100)}%`,
-                      }}
-                    />
-                  </div>
+                  <DownloadProgressBar progress={progress} />
                 </div>
               )}
             </div>
@@ -509,9 +430,7 @@ function ModelsStep({ onNext }: { onNext: () => void }) {
               onClick={handleDownloadAll}
               disabled={isDownloading || downloadingAll || registry.length === 0}
             >
-              {isDownloading
-                ? "Downloading..."
-                : "Download All"}
+              {isDownloading ? "Downloading…" : "Download all"}
             </Button>
           )}
         </div>
@@ -545,13 +464,7 @@ function PermissionRow({
         <p className="text-sm text-muted-foreground">{desc}</p>
       </div>
       {granted ? (
-        <motion.div
-          initial={{ scale: 1 }}
-          animate={{ scale: [1, 1.15, 1] }}
-          transition={{ duration: 0.3 }}
-        >
-          <Badge variant="success">Granted</Badge>
-        </motion.div>
+        <Badge variant="success">Granted</Badge>
       ) : (
         <Button
           variant="outline"
@@ -559,7 +472,7 @@ function PermissionRow({
           onClick={onRequest}
           disabled={requesting}
         >
-          {requesting ? "..." : buttonLabel || "Grant"}
+          {requesting ? "Requesting…" : buttonLabel || "Grant"}
         </Button>
       )}
     </div>

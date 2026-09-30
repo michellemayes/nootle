@@ -2,21 +2,14 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { MotionButton } from "@/components/MotionButton";
-import { ThinkingDots } from "@/components/ThinkingDots";
-import { Input } from "@/components/ui/input";
+import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
 import { Select } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Markdown } from "@/components/Markdown";
 import { useGlobalChat } from "@/hooks/useGlobalChat";
 import { useLabels } from "@/hooks/useLabels";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
-import {
-  X,
-  MessageSquare,
-  GripHorizontal,
-} from "lucide-react";
+import { X, MessageSquare, GripHorizontal } from "lucide-react";
 import { SourceCitation } from "@/components/SourceCitation";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 
@@ -159,6 +152,7 @@ export function GlobalChatPanel() {
             onClick={() => setOpen(true)}
             className={`fixed right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-shadow ${onMeetingPage ? "bottom-24" : "bottom-6"}`}
             title="Ask across meetings"
+            aria-label="Ask across meetings"
           >
             <MessageSquare className="h-5 w-5" />
           </motion.button>
@@ -195,6 +189,7 @@ export function GlobalChatPanel() {
                 size="icon-sm"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => setOpen(false)}
+                aria-label="Close chat"
               >
                 <X className="h-4 w-4" />
               </Button>
@@ -246,7 +241,7 @@ export function GlobalChatPanel() {
                       onClick={handleEmbedAll}
                       disabled={embedding}
                     >
-                      {embedding ? "Indexing..." : `Index ${embeddingStatus.total - embeddingStatus.embedded} meetings`}
+                      {embedding ? "Indexing…" : `Index ${embeddingStatus.total - embeddingStatus.embedded} meetings`}
                     </Button>
                   )}
                 </div>
@@ -260,42 +255,25 @@ export function GlobalChatPanel() {
                 className="flex flex-col gap-3 p-4"
               >
                 {modelNotReady && (
-                  <div className="rounded-lg bg-muted p-4 text-center text-sm text-muted-foreground">
-                    <p className="mb-2">
-                      Download the search model in Settings to
-                      search across meetings.
-                    </p>
-                  </div>
+                  <p className="rounded-lg bg-muted p-4 text-center text-sm text-muted-foreground">
+                    Download the search model in Settings → Models to search
+                    across meetings.
+                  </p>
                 )}
 
-                {messages.length === 0 &&
-                  !modelNotReady && (
-                    <p className="text-center text-sm text-muted-foreground py-8">
-                      Nootle has total recall — ask away
-                    </p>
-                  )}
+                {messages.length === 0 && !modelNotReady && (
+                  <p className="text-center text-sm text-muted-foreground py-8">
+                    Ask a question across all of your meetings.
+                  </p>
+                )}
 
                 {messages.map((msg, i) => (
-                  <motion.div
+                  <ChatMessage
                     key={i}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.15 }}
-                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                        msg.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-foreground"
-                      }`}
-                    >
-                      {msg.role === "assistant" ? (
-                        <Markdown content={msg.content} />
-                      ) : (
-                        msg.content
-                      )}
-                      {msg.sources && msg.sources.length > 0 && (
+                    role={msg.role}
+                    content={msg.content}
+                    footer={
+                      msg.sources && msg.sources.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
                           {msg.sources.map((source, j) => (
                             <SourceCitation
@@ -303,25 +281,17 @@ export function GlobalChatPanel() {
                               source={source}
                               onClick={() => {
                                 setOpen(false);
-                                navigate(
-                                  `/meeting/${source.meeting_id}`
-                                );
+                                navigate(`/meeting/${source.meeting_id}`);
                               }}
                             />
                           ))}
                         </div>
-                      )}
-                    </div>
-                  </motion.div>
+                      )
+                    }
+                  />
                 ))}
 
-                {loading && (
-                  <div className="flex justify-start">
-                    <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
-                      <ThinkingDots />
-                    </div>
-                  </div>
-                )}
+                {loading && <ChatThinking />}
 
                 {error && (
                   <p className="text-xs text-destructive text-center">
@@ -334,28 +304,14 @@ export function GlobalChatPanel() {
             <Separator />
 
             {/* Input */}
-            <div className="flex items-center gap-2 p-3">
-              <Input
-                placeholder="Ask about your meetings..."
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                disabled={loading || !!modelNotReady}
-                className="flex-1"
-              />
-              <MotionButton
-                size="sm"
-                onClick={handleSend}
-                disabled={loading || !input.trim() || !!modelNotReady}
-              >
-                Ask
-              </MotionButton>
-            </div>
+            <ChatComposer
+              className="p-3"
+              placeholder="Ask about your meetings…"
+              value={input}
+              onChange={setInput}
+              onSend={handleSend}
+              disabled={loading || !!modelNotReady}
+            />
 
             {/* Clear button */}
             <div className="px-3 pb-3">

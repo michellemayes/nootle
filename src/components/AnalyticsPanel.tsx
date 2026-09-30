@@ -82,11 +82,11 @@ export function AnalyticsPanel({
       <EmptyState
         icon={BarChart3}
         size="panel"
-        description="No analytics yet. Let Nootle crunch the numbers — who talked the most, how engaged everyone was, and more."
+        description="No analytics yet. Compute talk time, interruptions, and engagement from the transcript."
         action={
           <div className="flex flex-col items-center gap-2">
             <Button size="sm" onClick={handleCompute} disabled={computing}>
-              {computing ? "Crunching..." : "Crunch the Numbers"}
+              {computing ? "Computing…" : "Compute analytics"}
             </Button>
             {(actionError || error) && (
               <p className="text-xs text-destructive">{actionError || error}</p>
@@ -99,10 +99,10 @@ export function AnalyticsPanel({
 
   return (
     <ScrollArea className="flex-1">
-      <div className="space-y-6 p-4">
+      <div className="space-y-6 p-5">
         {hasSpeakers && (
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold">Talk Time</h3>
+            <h3 className="text-sm font-semibold">Talk time</h3>
             <div className="space-y-2">
               {speakers.map((speaker, i) => {
                 const pct = totalTalkTime > 0 ? (speaker.talk_time_ms / totalTalkTime) * 100 : 0;
@@ -132,28 +132,28 @@ export function AnalyticsPanel({
           <div className="rounded-lg border p-3 space-y-1">
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <Timer className="h-3.5 w-3.5" />
-              <span className="text-[10px] uppercase tracking-wider">Talk time</span>
+              <span className="text-xs">Talk time</span>
             </div>
             <p className="text-lg font-semibold">{formatMs(totalTalkTime)}</p>
           </div>
           <div className="rounded-lg border p-3 space-y-1">
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <Users className="h-3.5 w-3.5" />
-              <span className="text-[10px] uppercase tracking-wider">Speakers</span>
+              <span className="text-xs">Speakers</span>
             </div>
             <p className="text-lg font-semibold">{speakers.length}</p>
           </div>
           <div className="rounded-lg border p-3 space-y-1">
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <Zap className="h-3.5 w-3.5" />
-              <span className="text-[10px] uppercase tracking-wider">Interruptions</span>
+              <span className="text-xs">Interruptions</span>
             </div>
             <p className="text-lg font-semibold">{totalInterruptions}</p>
           </div>
           <div className="rounded-lg border p-3 space-y-1">
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <MessageCircleQuestion className="h-3.5 w-3.5" />
-              <span className="text-[10px] uppercase tracking-wider">Questions</span>
+              <span className="text-xs">Questions</span>
             </div>
             <p className="text-lg font-semibold">{engagement?.question_count ?? 0}</p>
           </div>
@@ -174,7 +174,7 @@ export function AnalyticsPanel({
               >
                 {engagement.engagement_level.charAt(0).toUpperCase() +
                   engagement.engagement_level.slice(1)}{" "}
-                Engagement
+                engagement
               </Badge>
               <span className="text-xs text-muted-foreground">
                 {Math.round(engagement.participation_balance * 100)}% balanced
@@ -185,7 +185,7 @@ export function AnalyticsPanel({
 
         {hasSentiment && (
           <div className="space-y-2">
-            <h3 className="text-sm font-semibold">Sentiment Timeline</h3>
+            <h3 className="text-sm font-semibold">Sentiment timeline</h3>
             <div className="flex h-4 w-full overflow-hidden rounded-full">
               {sentiment.map((seg) => {
                 const segDuration = seg.end_ms - seg.start_ms;
@@ -207,7 +207,7 @@ export function AnalyticsPanel({
                 );
               })}
             </div>
-            <div className="flex gap-3 text-[10px] text-muted-foreground">
+            <div className="flex gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <span className="h-2 w-2 rounded-full bg-success" /> Positive
               </span>
@@ -222,7 +222,7 @@ export function AnalyticsPanel({
         )}
 
         <div className="border-t pt-4 space-y-2">
-          <h3 className="text-sm font-semibold">Sentiment Analysis</h3>
+          <h3 className="text-sm font-semibold">Sentiment analysis</h3>
           <Button
             variant={hasSentiment ? "outline" : "default"}
             size="sm"
@@ -232,10 +232,10 @@ export function AnalyticsPanel({
           >
             <RotateCw className={`h-3 w-3 mr-1 ${analyzingSentiment ? "animate-spin" : ""}`} />
             {analyzingSentiment
-              ? "Analyzing..."
+              ? "Analyzing…"
               : hasSentiment
-                ? "Re-analyze Sentiment"
-                : "Analyze Sentiment"}
+                ? "Re-analyze sentiment"
+                : "Analyze sentiment"}
           </Button>
         </div>
 
@@ -249,7 +249,7 @@ export function AnalyticsPanel({
               disabled={computing}
             >
               <RotateCw className={`h-3 w-3 mr-1 ${computing ? "animate-spin" : ""}`} />
-              {computing ? "Re-computing..." : "Re-compute Analytics"}
+              {computing ? "Recomputing…" : "Recompute analytics"}
             </Button>
           </div>
         )}

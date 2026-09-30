@@ -1,34 +1,18 @@
 import { cn } from "@/lib/utils";
 
-/**
- * Loading copy, kept in one place so the app's voice stays consistent instead
- * of drifting between playful lines and bare "Loading...".
- */
+/** Loading copy, kept in one place so every surface reads the same way. */
 export const LOADING_COPY = {
-  meetings: [
-    "Warming up the noodles...",
-    "Untangling the transcript...",
-    "Slurping through the data...",
-    "Almost there, just al dente...",
-    "Stirring the meeting pot...",
-    "Draining the audio linguine...",
-  ],
-  meeting: "Setting the table...",
-  insights: "Fishing out the good bits...",
-  transcript: "Unspooling the transcript...",
-  analytics: "Tallying up the numbers...",
-  templates: "Simmering your templates...",
-  slashCommands: "Sharpening the knives...",
-  workflows: "Prepping the workflows...",
-  integrations: "Checking the pantry...",
-  permissions: "Checking permissions...",
+  meetings: "Loading meetings…",
+  meeting: "Loading meeting…",
+  insights: "Loading insights…",
+  transcript: "Loading transcript…",
+  analytics: "Loading analytics…",
+  templates: "Loading templates…",
+  slashCommands: "Loading slash commands…",
+  workflows: "Loading workflows…",
+  integrations: "Loading integrations…",
+  permissions: "Checking permissions…",
 } as const;
-
-/** Picks a random line from `LOADING_COPY.meetings`. */
-export function randomMeetingsLoadingMessage(): string {
-  const messages = LOADING_COPY.meetings;
-  return messages[Math.floor(Math.random() * messages.length)];
-}
 
 interface LoadingStateProps {
   message: string;

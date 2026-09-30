@@ -56,6 +56,9 @@ function Button({
       data-variant={variant}
       data-size={size}
       className={cn(buttonVariants({ variant, size, className }))}
+      aria-label={
+        props["aria-label"] ?? (size?.startsWith("icon") ? props.title : undefined)
+      }
       {...props}
     />
   )

@@ -65,6 +65,20 @@ export function statusLabel(status: string): string {
   }
 }
 
+/** Badge variant for a meeting or workflow-run status, so every view agrees. */
+export function statusVariant(
+  status: string,
+): "destructive" | "warning" | "success" | "secondary" | "outline" {
+  switch (status) {
+    case "recording":
+    case "failed": return "destructive";
+    case "completed": return "success";
+    case "transcribing": return "warning";
+    case "summarized": return "secondary";
+    default: return "outline";
+  }
+}
+
 /** True when a keypress is going into a text field and shouldn't trigger shortcuts. */
 export function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
