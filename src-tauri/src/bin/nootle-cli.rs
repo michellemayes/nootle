@@ -656,7 +656,10 @@ fn run_command(
                 provider,
                 model,
             } => {
-                let llm = nootle_app_lib::llm::LlmRegistry::detect(db);
+                let llm = match provider {
+                    Some(_) => nootle_app_lib::llm::LlmRegistry::detect(db),
+                    None => nootle_app_lib::llm::LlmRegistry::new(),
+                };
                 let run = tokio::runtime::Runtime::new()?.block_on(
                     nootle_app_lib::workflows::run_workflow_for_meeting(
                         db,

@@ -255,7 +255,17 @@ impl NootleMcpServer {
         &self,
         Parameters(p): Parameters<RunWorkflowParams>,
     ) -> Result<CallToolResult, McpError> {
-        let llm = crate::llm::LlmRegistry::detect(&self.db);
+        // Detection probes Ollama and spawns processes, so skip it when no
+        // provider was asked for and keep it off the async worker otherwise.
+        let llm = match p.llm_provider {
+            Some(_) => {
+                let db = self.db.clone();
+                tokio::task::spawn_blocking(move || crate::llm::LlmRegistry::detect(&db))
+                    .await
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?
+            }
+            None => crate::llm::LlmRegistry::new(),
+        };
         respond(
             crate::workflows::run_workflow_for_meeting(
                 &self.db,
@@ -265,8 +275,7 @@ impl NootleMcpServer {
                 p.llm_provider.as_deref(),
                 p.llm_model.as_deref(),
             )
-            .await
-            .map_err(crate::error::NootleError::Other),
+            .await,
         )
     }
 

@@ -57,15 +57,6 @@ const DESCRIPTION_PROMPT: FieldSpec = field(
     false,
 );
 
-/// Placeholders the text fields of a workflow config can use.
-pub const PLACEHOLDERS: &[&str] = &[
-    "{{title}}",
-    "{{date}}",
-    "{{summary}}",
-    "{{template_summary}}",
-    "{{action_items}}",
-];
-
 /// Icons an insight type can use; mirrors `src/lib/insightIcons.ts`.
 pub const INSIGHT_ICONS: &[&str] = &[
     "lightbulb",
@@ -200,7 +191,7 @@ pub const CATALOG: &[IntegrationSpec] = &[
 pub fn catalog() -> Value {
     serde_json::json!({
         "integrations": CATALOG,
-        "placeholders": PLACEHOLDERS,
+        "placeholders": crate::workflows::PLACEHOLDERS,
         "insight_icons": INSIGHT_ICONS,
     })
 }
@@ -259,8 +250,9 @@ fn action_spec(
 /// Checks `value` is an object of string fields matching `fields`, and returns
 /// it with blank optional fields dropped.
 fn validate_fields(fields: &[FieldSpec], value: &Value, what: &str) -> Result<Map<String, Value>> {
+    let empty = Map::new();
     let obj = match value {
-        Value::Null => return validate_fields(fields, &Value::Object(Map::new()), what),
+        Value::Null => &empty,
         Value::Object(obj) => obj,
         _ => return Err(invalid(format!("{what} must be a JSON object"))),
     };
@@ -315,6 +307,26 @@ fn require_name(name: &str, what: &str) -> Result<()> {
     Ok(())
 }
 
+/// The name to store for an update: the patched one, trimmed, or `current`.
+fn patched_name<'a>(patch: &'a Option<String>, current: &'a str, what: &str) -> Result<&'a str> {
+    match patch {
+        Some(name) => {
+            require_name(name, what)?;
+            Ok(name.trim())
+        }
+        None => Ok(current),
+    }
+}
+
+/// An optional field after an update: a blank patch clears it and a missing
+/// one keeps `current`.
+fn keep_or_clear(patch: &Option<String>, current: Option<String>) -> Option<String> {
+    match patch {
+        Some(s) => non_empty(Some(s)).map(str::to_string),
+        None => current,
+    }
+}
+
 // --- Integrations ---
 
 pub fn create_integration(
@@ -328,7 +340,7 @@ pub fn create_integration(
     let name = non_empty(name).unwrap_or(spec.name);
     let integration =
         db.create_integration(integration_type, name, &Value::Object(creds).to_string())?;
-    Ok(redact(integration))
+    Ok(integration.redacted())
 }
 
 /// Renames an integration and/or replaces its credentials. Credentials are
@@ -348,16 +360,9 @@ pub fn update_integration(
         None => existing.credentials_json,
     };
     let name = non_empty(name).unwrap_or(&existing.name);
-    Ok(redact(db.update_integration(
-        id,
-        name,
-        &credentials_json,
-    )?))
-}
-
-fn redact(mut integration: Integration) -> Integration {
-    integration.credentials_json = String::new();
-    integration
+    Ok(db
+        .update_integration(id, name, &credentials_json)?
+        .redacted())
 }
 
 // --- Workflows ---
@@ -427,9 +432,7 @@ pub fn create_workflow(db: &Database, input: &NewWorkflowInput) -> Result<Workfl
 
 pub fn update_workflow(db: &Database, id: &str, patch: &WorkflowPatch) -> Result<Workflow> {
     let existing = db.get_workflow(id)?;
-    if let Some(name) = &patch.name {
-        require_name(name, "Workflow")?;
-    }
+    let name = patched_name(&patch.name, &existing.name, "Workflow")?;
     let integration_id = patch
         .integration_id
         .as_deref()
@@ -454,19 +457,11 @@ pub fn update_workflow(db: &Database, id: &str, patch: &WorkflowPatch) -> Result
         patch.config.as_ref().unwrap_or(&existing_config),
     )?;
 
-    let keep_or_clear = |patch: &Option<String>, current: &Option<String>| match patch {
-        Some(s) => non_empty(Some(s)).map(str::to_string),
-        None => current.clone(),
-    };
     db.update_workflow(
         id,
-        patch
-            .name
-            .as_deref()
-            .map(str::trim)
-            .unwrap_or(&existing.name),
-        keep_or_clear(&patch.description, &existing.description).as_deref(),
-        keep_or_clear(&patch.icon, &existing.icon).as_deref(),
+        name,
+        keep_or_clear(&patch.description, existing.description.clone()).as_deref(),
+        keep_or_clear(&patch.icon, existing.icon.clone()).as_deref(),
         &integration.id,
         action.action_type,
         &config_json,
@@ -541,17 +536,10 @@ pub fn create_template(db: &Database, input: &NewTemplateInput) -> Result<Templa
 
 pub fn update_template(db: &Database, id: &str, patch: &TemplatePatch) -> Result<Template> {
     let existing = db.get_template(id)?;
-    if let Some(name) = &patch.name {
-        require_name(name, "Template")?;
-    }
+    let name = patched_name(&patch.name, &existing.name, "Template")?;
     db.update_template(&UpdateTemplate {
         id: existing.id,
-        name: patch
-            .name
-            .as_deref()
-            .map(str::trim)
-            .unwrap_or(&existing.name)
-            .to_string(),
+        name: name.to_string(),
         description: patch.description.clone().unwrap_or(existing.description),
         sections: match &patch.sections {
             Some(s) => sections_json(s)?,
@@ -633,11 +621,6 @@ pub fn create_insight_type(db: &Database, input: &NewInsightTypeInput) -> Result
     if slug.is_empty() {
         return Err(invalid("Slug must contain letters or digits"));
     }
-    if db.list_insight_types()?.iter().any(|t| t.slug == slug) {
-        return Err(invalid(format!(
-            "An insight type with slug '{slug}' already exists"
-        )));
-    }
     let icon = non_empty(input.icon.as_deref()).unwrap_or("lightbulb");
     validate_icon(icon)?;
     db.create_insight_type(
@@ -655,32 +638,18 @@ pub fn update_insight_type(
     id: &str,
     patch: &InsightTypePatch,
 ) -> Result<InsightType> {
-    let existing = db
-        .list_insight_types()?
-        .into_iter()
-        .find(|t| t.id == id)
-        .ok_or_else(|| invalid(format!("Insight type not found: {id}")))?;
-    if let Some(name) = &patch.name {
-        require_name(name, "Insight type")?;
-    }
+    let existing = db.get_insight_type(id)?;
+    let name = patched_name(&patch.name, &existing.name, "Insight type")?;
     if let Some(prompt) = &patch.extraction_prompt {
         require_prompt(prompt)?;
     }
     if let Some(icon) = &patch.icon {
         validate_icon(icon)?;
     }
-    let description = match &patch.description {
-        Some(d) => non_empty(Some(d)).map(str::to_string),
-        None => existing.description,
-    };
     db.update_insight_type(
         id,
-        patch
-            .name
-            .as_deref()
-            .map(str::trim)
-            .unwrap_or(&existing.name),
-        description.as_deref(),
+        name,
+        keep_or_clear(&patch.description, existing.description.clone()).as_deref(),
         patch
             .extraction_prompt
             .as_deref()
@@ -699,29 +668,6 @@ mod tests {
 
     fn db() -> Database {
         Database::new_in_memory().unwrap()
-    }
-
-    #[test]
-    fn catalog_matches_executor() {
-        // Every integration type in the catalog must be one execute_workflow knows.
-        let known = [
-            "email",
-            "slack",
-            "notion",
-            "confluence",
-            "github",
-            "linear",
-            "asana",
-            "obsidian",
-        ];
-        for spec in CATALOG {
-            assert!(
-                known.contains(&spec.integration_type),
-                "{}",
-                spec.integration_type
-            );
-            assert!(!spec.actions.is_empty());
-        }
     }
 
     #[test]

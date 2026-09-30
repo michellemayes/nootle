@@ -953,17 +953,9 @@ pub async fn store_api_key(
     // Hot-reload: register the provider in the LLM registry
     let mut registry = llm.write().await;
     registry.unregister(&provider);
-    let new_provider: Box<dyn crate::llm::LlmProvider> = match provider.as_str() {
-        "openai" => Box::new(crate::llm::OpenAiProvider::new(key)),
-        "anthropic" => Box::new(crate::llm::AnthropicProvider::new(key)),
-        "google" => Box::new(crate::llm::GoogleProvider::new(key)),
-        "groq" => Box::new(crate::llm::GroqProvider::new(key)),
-        "openrouter" => Box::new(crate::llm::OpenRouterProvider::new(key)),
-        "bedrock" => Box::new(crate::llm::BedrockProvider::new(key)),
-        "codex" => Box::new(crate::llm::CodexProvider::new(key)),
-        _ => return Ok(()),
-    };
-    registry.register(new_provider);
+    if let Some(new_provider) = crate::llm::provider_for_key(&provider, key) {
+        registry.register(new_provider);
+    }
 
     Ok(())
 }
@@ -2100,4 +2092,5 @@ pub async fn run_workflow(
         llm_model.as_deref(),
     )
     .await
+    .map_err(|e| e.to_string())
 }

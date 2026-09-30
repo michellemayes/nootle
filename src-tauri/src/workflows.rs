@@ -66,16 +66,12 @@ pub async fn run_workflow_for_meeting(
     workflow_id: &str,
     llm_provider: Option<&str>,
     llm_model: Option<&str>,
-) -> std::result::Result<crate::db::WorkflowRun, String> {
-    let workflow = db.get_workflow(workflow_id).map_err(|e| e.to_string())?;
-    let integration = db
-        .get_integration(&workflow.integration_id)
-        .map_err(|e| e.to_string())?;
-    let meeting = db.get_meeting(meeting_id).map_err(|e| e.to_string())?;
+) -> crate::error::Result<crate::db::WorkflowRun> {
+    let workflow = db.get_workflow(workflow_id)?;
+    let integration = db.get_integration(&workflow.integration_id)?;
+    let meeting = db.get_meeting(meeting_id)?;
 
-    let summaries = db
-        .get_summaries_for_meeting(meeting_id)
-        .map_err(|e| e.to_string())?;
+    let summaries = db.get_summaries_for_meeting(meeting_id)?;
     let summary_text = summaries.first().map(|s| s.content.clone());
 
     // If the workflow has a source template configured, use that template's
@@ -112,9 +108,7 @@ pub async fn run_workflow_for_meeting(
         None
     };
 
-    let insights = db
-        .get_insights_for_meeting(meeting_id)
-        .map_err(|e| e.to_string())?;
+    let insights = db.get_insights_for_meeting(meeting_id)?;
     let action_items: Vec<ActionItemContext> = insights
         .iter()
         .filter(|i| i.insight_type == "action_item")
@@ -134,12 +128,9 @@ pub async fn run_workflow_for_meeting(
         action_items,
     };
 
-    let run = db
-        .create_workflow_run(meeting_id, workflow_id)
-        .map_err(|e| e.to_string())?;
+    let run = db.create_workflow_run(meeting_id, workflow_id)?;
 
-    db.update_workflow_run_status(&run.id, "running", None, None)
-        .map_err(|e| e.to_string())?;
+    db.update_workflow_run_status(&run.id, "running", None, None)?;
 
     match execute_workflow(
         &workflow,
@@ -153,16 +144,14 @@ pub async fn run_workflow_for_meeting(
     {
         Ok(result) => {
             let result_json = serde_json::to_string(&result).unwrap_or_default();
-            db.update_workflow_run_status(&run.id, "completed", Some(&result_json), None)
-                .map_err(|e| e.to_string())?;
+            db.update_workflow_run_status(&run.id, "completed", Some(&result_json), None)?;
         }
         Err(e) => {
-            db.update_workflow_run_status(&run.id, "failed", None, Some(&e))
-                .map_err(|e| e.to_string())?;
+            db.update_workflow_run_status(&run.id, "failed", None, Some(&e))?;
         }
     }
 
-    db.get_workflow_run(&run.id).map_err(|e| e.to_string())
+    db.get_workflow_run(&run.id)
 }
 
 /// Render an issue description for a single action item. If the workflow's
@@ -265,6 +254,15 @@ fn looks_like_uuid(s: &str) -> bool {
         _ => b.is_ascii_hexdigit(),
     })
 }
+
+/// Placeholders `render_template` substitutes.
+pub const PLACEHOLDERS: &[&str] = &[
+    "{{title}}",
+    "{{date}}",
+    "{{summary}}",
+    "{{template_summary}}",
+    "{{action_items}}",
+];
 
 fn render_template(template: &str, context: &WorkflowContext) -> String {
     let action_items_text = context

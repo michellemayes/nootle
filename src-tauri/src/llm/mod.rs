@@ -22,6 +22,32 @@ pub use openai::OpenAiProvider;
 pub use openrouter::OpenRouterProvider;
 pub use types::{ChatMessage, LlmProvider, ModelInfo};
 
+/// Providers that authenticate with an API key stored in the database.
+const KEYED_PROVIDERS: [&str; 7] = [
+    "openai",
+    "anthropic",
+    "google",
+    "groq",
+    "openrouter",
+    "bedrock",
+    "codex",
+];
+
+/// Builds the provider named `name` from its API key, or `None` if `name`
+/// isn't a key-authenticated provider.
+pub fn provider_for_key(name: &str, key: String) -> Option<Box<dyn LlmProvider>> {
+    Some(match name {
+        "openai" => Box::new(OpenAiProvider::new(key)),
+        "anthropic" => Box::new(AnthropicProvider::new(key)),
+        "google" => Box::new(GoogleProvider::new(key)),
+        "groq" => Box::new(GroqProvider::new(key)),
+        "openrouter" => Box::new(OpenRouterProvider::new(key)),
+        "bedrock" => Box::new(BedrockProvider::new(key)),
+        "codex" => Box::new(CodexProvider::new(key)),
+        _ => return None,
+    })
+}
+
 pub struct LlmRegistry {
     providers: Vec<Box<dyn LlmProvider>>,
 }
@@ -64,26 +90,10 @@ impl LlmRegistry {
         }
 
         // Register providers with stored API keys.
-        if let Ok(Some(key)) = db.get_api_key("openai") {
-            registry.register(Box::new(OpenAiProvider::new(key)));
-        }
-        if let Ok(Some(key)) = db.get_api_key("anthropic") {
-            registry.register(Box::new(AnthropicProvider::new(key)));
-        }
-        if let Ok(Some(key)) = db.get_api_key("google") {
-            registry.register(Box::new(GoogleProvider::new(key)));
-        }
-        if let Ok(Some(key)) = db.get_api_key("groq") {
-            registry.register(Box::new(GroqProvider::new(key)));
-        }
-        if let Ok(Some(key)) = db.get_api_key("openrouter") {
-            registry.register(Box::new(OpenRouterProvider::new(key)));
-        }
-        if let Ok(Some(key)) = db.get_api_key("bedrock") {
-            registry.register(Box::new(BedrockProvider::new(key)));
-        }
-        if let Ok(Some(key)) = db.get_api_key("codex") {
-            registry.register(Box::new(CodexProvider::new(key)));
+        for name in KEYED_PROVIDERS {
+            if let Ok(Some(key)) = db.get_api_key(name) {
+                registry.register(provider_for_key(name, key).expect("keyed provider"));
+            }
         }
 
         registry
