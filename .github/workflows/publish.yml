@@ -64,6 +64,17 @@ jobs:
           ' "$VERSION"
           sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
+      # Release notes = conventional commits since the latest tag, grouped
+      # by cliff.toml. Used as the GitHub release body.
+      - name: Generate release notes
+        id: release-notes
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
+        with:
+          config: cliff.toml
+          args: --unreleased --tag ${{ env.RELEASE_TAG }} --strip header
+        env:
+          OUTPUT: RELEASE_NOTES.md
+
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
           targets: aarch64-apple-darwin
@@ -117,6 +128,7 @@ jobs:
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: ${{ env.RELEASE_TAG }}
+          releaseBody: ${{ steps.release-notes.outputs.content }}
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
@@ -133,3 +145,21 @@ jobs:
           ASSETS=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
           echo "$ASSETS" | grep -q 'latest.json' || { echo "Missing latest.json"; exit 1; }
           echo "$ASSETS" | grep -qE '\.sig$' || { echo "Missing .sig files"; exit 1; }
+
+      # Regenerate CHANGELOG.md on the latest main now that the new tag exists.
+      # The commit only touches a .md file, so it doesn't trigger another publish.
+      # git-cliff-action above left its binary at ./bin/git-cliff.
+      - name: Update CHANGELOG.md
+        run: |
+          git fetch --tags origin main
+          git checkout -f origin/main
+          ./bin/git-cliff --config cliff.toml --output CHANGELOG.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "CHANGELOG.md already up to date"
+          else
+            git commit -m "chore: update changelog for $RELEASE_TAG"
+            git push origin HEAD:main
+          fi
