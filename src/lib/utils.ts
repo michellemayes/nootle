@@ -65,12 +65,14 @@ export function statusLabel(status: string): string {
   }
 }
 
-/** Badge variant for a meeting status, so the library and detail views agree. */
+/** Badge variant for a meeting or workflow-run status, so every view agrees. */
 export function statusVariant(
   status: string,
-): "destructive" | "warning" | "secondary" | "outline" {
+): "destructive" | "warning" | "success" | "secondary" | "outline" {
   switch (status) {
-    case "recording": return "destructive";
+    case "recording":
+    case "failed": return "destructive";
+    case "completed": return "success";
     case "transcribing": return "warning";
     case "summarized": return "secondary";
     default: return "outline";

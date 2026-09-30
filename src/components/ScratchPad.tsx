@@ -104,7 +104,7 @@ export function ScratchPad({ meetingId, elapsedMs }: ScratchPadProps) {
                       </span>
                       <button
                         onClick={() => deleteNote(note.id)}
-                        className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 shrink-0"
+                        className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity mt-0.5 shrink-0"
                         title="Delete note"
                         aria-label="Delete note"
                       >

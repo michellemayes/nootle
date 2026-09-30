@@ -404,10 +404,7 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
         onOpenChange={setConfirmingDelete}
         title="Delete API key?"
         description={`Nootle will stop using ${displayName} until you add a new key.`}
-        onConfirm={async () => {
-          await onDelete();
-          setConfirmingDelete(false);
-        }}
+        onConfirm={onDelete}
       />
     </div>
   );
@@ -658,10 +655,7 @@ function InsightTypesManager() {
           </>
         }
         onConfirm={async () => {
-          if (deleteTarget) {
-            await deleteInsightType(deleteTarget.id);
-            setDeleteTarget(null);
-          }
+          if (deleteTarget) await deleteInsightType(deleteTarget.id);
         }}
       />
     </Card>

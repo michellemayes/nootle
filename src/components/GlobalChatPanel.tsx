@@ -2,15 +2,14 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { ChatMessage, ChatThinking } from "@/components/ChatMessage";
-import { Input } from "@/components/ui/input";
+import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
 import { Select } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useGlobalChat } from "@/hooks/useGlobalChat";
 import { useLabels } from "@/hooks/useLabels";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
-import { X, MessageSquare, GripHorizontal, Send } from "lucide-react";
+import { X, MessageSquare, GripHorizontal } from "lucide-react";
 import { SourceCitation } from "@/components/SourceCitation";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 
@@ -305,29 +304,14 @@ export function GlobalChatPanel() {
             <Separator />
 
             {/* Input */}
-            <div className="flex items-center gap-2 p-3">
-              <Input
-                placeholder="Ask about your meetings…"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                disabled={loading || !!modelNotReady}
-                className="flex-1"
-              />
-              <Button
-                size="icon"
-                onClick={handleSend}
-                disabled={loading || !input.trim() || !!modelNotReady}
-                aria-label="Send"
-              >
-                <Send />
-              </Button>
-            </div>
+            <ChatComposer
+              className="p-3"
+              placeholder="Ask about your meetings…"
+              value={input}
+              onChange={setInput}
+              onSend={handleSend}
+              disabled={loading || !!modelNotReady}
+            />
 
             {/* Clear button */}
             <div className="px-3 pb-3">

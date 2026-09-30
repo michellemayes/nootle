@@ -5,6 +5,9 @@ import { CopyButton } from "@/components/CopyButton";
 
 const DEFAULT_EXE_PATH = "/Applications/Nootle.app/Contents/MacOS/nootle";
 
+// The executable path can't change while the app runs, so fetch it once.
+let exePathPromise: Promise<string | null> | undefined;
+
 function CodeSnippet({ code }: { code: string }) {
   return (
     <div className="relative">
@@ -24,9 +27,8 @@ export function McpSetup() {
   const [exePath, setExePath] = useState(DEFAULT_EXE_PATH);
 
   useEffect(() => {
-    invoke<string | null>("get_exe_path")
-      .then((path) => path && setExePath(path))
-      .catch(() => {});
+    exePathPromise ??= invoke<string | null>("get_exe_path").catch(() => null);
+    exePathPromise.then((path) => path && setExePath(path));
   }, []);
 
   const mcpConfig = `{

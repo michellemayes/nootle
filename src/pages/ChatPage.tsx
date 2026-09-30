@@ -7,14 +7,14 @@ import { Select } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { EmptyState } from "@/components/EmptyState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { ChatMessage, ChatThinking } from "@/components/ChatMessage";
+import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
 import { ResizeHandle } from "@/components/ResizeHandle";
 import { useChatConversations, useChatMessages } from "@/hooks/useChatHistory";
 import { useLabels } from "@/hooks/useLabels";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import type { ChatSource, GlobalChatResponse } from "@/types";
-import { Plus, Trash2, MessageSquare, Send, PanelLeftOpen, PanelLeftClose } from "lucide-react";
+import { Plus, Trash2, MessageSquare, PanelLeftOpen, PanelLeftClose } from "lucide-react";
 import { SourceCitation } from "@/components/SourceCitation";
 
 export function ChatPage() {
@@ -311,29 +311,13 @@ export function ChatPage() {
                   Choose a model in the sidebar to start chatting. Add API keys in Settings.
                 </p>
               ) : (
-                <div className="flex gap-2">
-                  <Input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Ask about your meetings…"
-                    className="flex-1"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend();
-                      }
-                    }}
-                    disabled={loading}
-                  />
-                  <Button
-                    size="icon"
-                    onClick={handleSend}
-                    disabled={loading || !input.trim()}
-                    aria-label="Send"
-                  >
-                    <Send />
-                  </Button>
-                </div>
+                <ChatComposer
+                  placeholder="Ask about your meetings…"
+                  value={input}
+                  onChange={setInput}
+                  onSend={handleSend}
+                  disabled={loading}
+                />
               )}
             </div>
           </>
@@ -351,10 +335,7 @@ export function ChatPage() {
           </>
         }
         onConfirm={async () => {
-          if (deleteTarget) {
-            await handleDelete(deleteTarget.id);
-            setDeleteTarget(null);
-          }
+          if (deleteTarget) await handleDelete(deleteTarget.id);
         }}
       />
     </div>

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import {
   Dialog,
@@ -19,7 +19,7 @@ interface ConfirmDialogProps {
   onConfirm: () => void | Promise<void>;
 }
 
-/** Destructive confirmation used for every delete in the app. */
+/** Destructive confirmation used for every delete in the app. Closes itself once `onConfirm` resolves. */
 export function ConfirmDialog({
   open,
   onOpenChange,
@@ -28,6 +28,18 @@ export function ConfirmDialog({
   confirmLabel = "Delete",
   onConfirm,
 }: ConfirmDialogProps) {
+  const [pending, setPending] = useState(false);
+
+  const handleConfirm = async () => {
+    setPending(true);
+    try {
+      await onConfirm();
+      onOpenChange(false);
+    } finally {
+      setPending(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -39,7 +51,7 @@ export function ConfirmDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant="destructive" onClick={onConfirm}>
+          <Button variant="destructive" onClick={handleConfirm} disabled={pending}>
             {confirmLabel}
           </Button>
         </DialogFooter>

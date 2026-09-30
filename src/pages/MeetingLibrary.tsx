@@ -138,7 +138,6 @@ export function MeetingLibrary() {
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     await deleteMeeting(deleteTarget.id);
-    setDeleteTarget(null);
     refresh();
   }, [deleteTarget, refresh]);
 

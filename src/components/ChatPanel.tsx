@@ -1,15 +1,14 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { ChatMessage, ChatThinking } from "@/components/ChatMessage";
-import { Input } from "@/components/ui/input";
+import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ResizeHandle } from "@/components/ResizeHandle";
 import { useChat } from "@/hooks/useChat";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useRecipes } from "@/hooks/useRecipes";
-import { Send, X, Zap } from "lucide-react";
+import { X, Zap } from "lucide-react";
 
 interface ChatPanelProps {
   meetingId: string;
@@ -74,10 +73,8 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
     setInput("");
     setRecipeLoading(true);
 
-    setRecipeMessages((prev) => [
-      ...prev,
-      { role: "user", content: `/${recipes.find((r) => r.id === recipeId)?.slash_command || recipeName}` },
-    ]);
+    const command = `/${recipes.find((r) => r.id === recipeId)?.slash_command ?? recipeName}`;
+    setRecipeMessages((prev) => [...prev, { role: "user", content: command }]);
 
     try {
       const result = await runRecipe(
@@ -93,7 +90,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
     } catch (err) {
       setRecipeMessages((prev) => [
         ...prev,
-        { role: "assistant", content: `Couldn't run /${recipes.find((r) => r.id === recipeId)?.slash_command ?? recipeName}: ${String(err)}` },
+        { role: "assistant", content: `Couldn't run ${command}: ${String(err)}` },
       ]);
     } finally {
       setRecipeLoading(false);
@@ -242,25 +239,16 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
               )}
             </AnimatePresence>
 
-            <div className="flex items-center gap-2 p-3">
-              <Input
-                ref={inputRef}
-                placeholder="Ask about this meeting…"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={isLoading}
-                className="flex-1"
-              />
-              <Button
-                size="icon"
-                onClick={handleSend}
-                disabled={isLoading || !input.trim()}
-                aria-label="Send"
-              >
-                <Send />
-              </Button>
-            </div>
+            <ChatComposer
+              className="p-3"
+              inputRef={inputRef}
+              placeholder="Ask about this meeting…"
+              value={input}
+              onChange={setInput}
+              onSend={handleSend}
+              onKeyDown={handleKeyDown}
+              disabled={isLoading}
+            />
           </div>
 
           {/* Clear button */}

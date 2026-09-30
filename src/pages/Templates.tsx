@@ -568,10 +568,7 @@ export function TemplatesPage() {
           </>
         }
         onConfirm={async () => {
-          if (deleteTemplateTarget) {
-            await deleteTemplate(deleteTemplateTarget.id);
-            setDeleteTemplateTarget(null);
-          }
+          if (deleteTemplateTarget) await deleteTemplate(deleteTemplateTarget.id);
         }}
       />
 
@@ -586,10 +583,7 @@ export function TemplatesPage() {
           </>
         }
         onConfirm={async () => {
-          if (deleteRecipeTarget) {
-            await deleteRecipe(deleteRecipeTarget.id);
-            setDeleteRecipeTarget(null);
-          }
+          if (deleteRecipeTarget) await deleteRecipe(deleteRecipeTarget.id);
         }}
       />
     </div>

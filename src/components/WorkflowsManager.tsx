@@ -124,16 +124,15 @@ export function WorkflowsManager({ creating, onCreatingChange }: WorkflowsManage
     );
   };
 
-  const getActionLabel = (wf: Workflow) => {
-    const integration = integrations.find((i) => i.id === wf.integration_id);
-    const actions = ACTION_TYPES_BY_INTEGRATION[integration?.integration_type ?? ""] ?? [];
-    return actions.find((a) => a.value === wf.action_type)?.label ?? wf.action_type;
-  };
-
-  const getIntegrationTypeName = (integrationId: string) => {
-    const integration = integrations.find((i) => i.id === integrationId);
-    if (!integration) return "Unknown";
-    return INTEGRATION_TYPES.find((t) => t.type === integration.integration_type)?.name ?? integration.integration_type;
+  const describeWorkflow = (wf: Workflow) => {
+    const type = integrations.find((i) => i.id === wf.integration_id)?.integration_type;
+    const actions = ACTION_TYPES_BY_INTEGRATION[type ?? ""] ?? [];
+    return {
+      integrationName: type
+        ? INTEGRATION_TYPES.find((t) => t.type === type)?.name ?? type
+        : "Unknown",
+      actionLabel: actions.find((a) => a.value === wf.action_type)?.label ?? wf.action_type,
+    };
   };
 
   return (
@@ -273,16 +272,18 @@ export function WorkflowsManager({ creating, onCreatingChange }: WorkflowsManage
         />
       ) : (
         <div className="flex flex-col divide-y rounded-md border">
-          {workflows.map((wf) => (
+          {workflows.map((wf) => {
+            const { integrationName, actionLabel } = describeWorkflow(wf);
+            return (
             <div key={wf.id} className="flex items-center gap-3 px-4 py-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   {wf.icon && <span className="text-sm">{wf.icon}</span>}
                   <span className="text-sm font-medium">{wf.name}</span>
                   <Badge variant="secondary" size="sm">
-                    {getIntegrationTypeName(wf.integration_id)}
+                    {integrationName}
                   </Badge>
-                  <span className="text-xs text-muted-foreground">{getActionLabel(wf)}</span>
+                  <span className="text-xs text-muted-foreground">{actionLabel}</span>
                 </div>
                 {wf.description && (
                   <p className="text-xs text-muted-foreground mt-0.5">{wf.description}</p>
@@ -318,7 +319,8 @@ export function WorkflowsManager({ creating, onCreatingChange }: WorkflowsManage
                 </Button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -333,10 +335,7 @@ export function WorkflowsManager({ creating, onCreatingChange }: WorkflowsManage
           </>
         }
         onConfirm={async () => {
-          if (deleteTarget) {
-            await deleteWorkflow(deleteTarget.id);
-            setDeleteTarget(null);
-          }
+          if (deleteTarget) await deleteWorkflow(deleteTarget.id);
         }}
       />
     </>

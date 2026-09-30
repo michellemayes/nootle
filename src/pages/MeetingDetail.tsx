@@ -57,12 +57,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { useWorkflows, useWorkflowRuns } from "@/hooks/useWorkflows";
 
-function runStatusVariant(status: string): "success" | "destructive" | "outline" {
-  if (status === "completed") return "success";
-  if (status === "failed") return "destructive";
-  return "outline";
-}
-
 function parseResultMessage(json: string | null): string | null {
   if (!json) return null;
   try {
@@ -1306,7 +1300,7 @@ export function MeetingDetail() {
                         <div key={run.id} className="rounded-lg border px-4 py-3 space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-medium">{run.workflow_name ?? "Workflow"}</span>
-                            <Badge variant={runStatusVariant(run.status)} size="sm">
+                            <Badge variant={statusVariant(run.status)} size="sm">
                               {statusLabel(run.status)}
                             </Badge>
                           </div>
