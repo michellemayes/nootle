@@ -16,9 +16,13 @@ import { InsightsDashboard } from "@/pages/InsightsDashboard";
 import { ChatPage } from "@/pages/ChatPage";
 import { useMeetingDetection } from "@/hooks/useMeetingDetection";
 import { CompactModeProvider } from "@/contexts/CompactModeContext";
+import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
+import { CommandPalette } from "@/components/CommandPalette";
+import { RecordingCelebration } from "@/components/RecordingCelebration";
 
 function Layout({ children }: { children: React.ReactNode }) {
   useMeetingDetection();
+  useGlobalShortcuts();
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -28,6 +32,8 @@ function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       <GlobalChatPanel />
+      <CommandPalette />
+      <RecordingCelebration />
     </div>
   );
 }

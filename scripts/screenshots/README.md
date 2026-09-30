@@ -25,8 +25,9 @@ screenshots the next time this runs — no mockup to keep in sync.
 
 ## Editing
 
-- **Demo content** — `demo-data.mjs`. Every value is fictional. Dates are fixed
-  so re-running produces the same images.
+- **Demo content** — `demo-data.mjs`. Every value is fictional. Dates are fixed,
+  and the browser clock is frozen at `DEMO_NOW`, so relative dates and the
+  streak render the same on every run.
 - **Which screens get captured** — the `SHOTS` array in `capture.mjs`.
 - **Window chrome** — the `frame()` function in `capture.mjs`.
 

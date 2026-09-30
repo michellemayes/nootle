@@ -12,20 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { MotionButton } from "@/components/MotionButton";
 import { NootleLogo } from "@/components/NootleLogo";
-import { Mic, Settings, HelpCircle, Circle, Moon, Sun, Lightbulb, MessageSquare, FileText, Bot, PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-
-const navItems: { to: string; label: string; icon: LucideIcon }[] = [
-  { to: "/", label: "Meetings", icon: Mic },
-  { to: "/insights", label: "Insights", icon: Lightbulb },
-  { to: "/chat", label: "Chat", icon: MessageSquare },
-  { to: "/templates", label: "Automations", icon: FileText },
-  { to: "/settings", label: "Settings", icon: Settings },
-  { to: "/help", label: "Help", icon: HelpCircle },
-];
+import { Circle, Moon, Sun, Bot, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { navItems } from "@/lib/navigation";
+import { Kbd } from "@/components/Kbd";
+import { useIsRecording } from "@/hooks/useRecording";
+import { toggleCommandPalette } from "@/components/CommandPalette";
 
 export function Sidebar() {
   const navigate = useNavigate();
+  const isRecording = useIsRecording();
   const { theme, toggleTheme } = useTheme();
   const version = useAppVersion();
   const { selectedProvider, selectedModel, providers, models, filteredModels, changeProvider, setSelectedModel } = useGlobalLLMSelection();
@@ -98,27 +93,58 @@ export function Sidebar() {
       </div>
 
       {/* New Recording Button */}
-      <div className="px-3 pb-2">
+      <div className="space-y-1.5 px-3 pb-2">
         <MotionButton
-          className={isCompact ? "w-full aspect-square justify-center" : "w-full justify-start gap-2"}
+          className={cn(
+            isCompact ? "w-full aspect-square justify-center" : "w-full justify-start gap-2",
+            isRecording && "bg-destructive hover:bg-destructive/90 text-white",
+          )}
           onClick={() => navigate("/recording")}
-          title={isCompact ? "Start recording" : undefined}
+          title={isRecording ? "Back to recording" : "Start recording (⌘N)"}
         >
-          <Circle className="h-4 w-4" />
-          {!isCompact && "Record Something"}
+          {isRecording ? (
+            <motion.span
+              className="h-2.5 w-2.5 rounded-full bg-white"
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            />
+          ) : (
+            <Circle className="h-4 w-4" />
+          )}
+          {!isCompact && (isRecording ? "Back to recording" : "Record Something")}
+          {!isCompact && !isRecording && (
+            <Kbd onSolid className="ml-auto">⌘N</Kbd>
+          )}
         </MotionButton>
+        <button
+          type="button"
+          onClick={toggleCommandPalette}
+          title="Search or jump to… (⌘K)"
+          className={cn(
+            "flex w-full items-center rounded-md border border-sidebar-border text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground",
+            isCompact ? "justify-center py-2" : "gap-2 px-2.5 py-1.5",
+          )}
+        >
+          <Search className="h-3.5 w-3.5 shrink-0" />
+          {!isCompact && (
+            <>
+              <span className="flex-1 text-left">Search or jump to…</span>
+              <Kbd>⌘K</Kbd>
+            </>
+          )}
+        </button>
       </div>
 
       <Separator />
 
       {/* Navigation */}
       <nav className="flex flex-1 flex-col gap-1 px-3 pt-3">
-        {navItems.map((item) => (
+        {navItems.map((item, i) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === "/"}
-            title={isCompact ? item.label : undefined}
+            title={`${item.label} (⌘${i + 1})`}
             className={({ isActive }) =>
               cn(
                 "flex items-center rounded-md transition-colors",
