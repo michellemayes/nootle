@@ -7,15 +7,16 @@ import { Plus, X } from "lucide-react";
 import { labelTextColor } from "@/lib/utils";
 import type { Label } from "@/types";
 
+// Hex, because the backend only accepts #rrggbb label colors.
 const LABEL_COLORS = [
-  "oklch(0.75 0.17 168)",
-  "oklch(0.65 0.19 300)",
-  "oklch(0.70 0.17 350)",
-  "oklch(0.60 0.19 260)",
-  "oklch(0.70 0.19 55)",
-  "oklch(0.75 0.17 95)",
-  "oklch(0.65 0.19 155)",
-  "oklch(0.65 0.02 260)",
+  "#00cf99",
+  "#a36df0",
+  "#e96cad",
+  "#337aef",
+  "#f47600",
+  "#d0ab00",
+  "#00af58",
+  "#88909c",
 ];
 
 export function LabelEditor({
@@ -36,6 +37,7 @@ export function LabelEditor({
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[0]);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const meetingLabelIds = new Set(meetingLabels.map((t) => t.id));
 
   const handleToggleLabel = async (labelId: string) => {
@@ -49,13 +51,14 @@ export function LabelEditor({
   const handleCreateLabel = async () => {
     const name = newLabelName.trim();
     if (!name) return;
+    setCreateError(null);
     try {
       const label = await onCreateLabel(name, newLabelColor);
       await onAddLabel(meetingId, label.id);
       setNewLabelName("");
       setNewLabelColor(LABEL_COLORS[0]);
-    } catch {
-      // Label name may already exist
+    } catch (err) {
+      setCreateError(String(err));
     }
   };
 
@@ -117,7 +120,10 @@ export function LabelEditor({
               <div className="flex gap-2">
                 <Input
                   value={newLabelName}
-                  onChange={(e) => setNewLabelName(e.target.value)}
+                  onChange={(e) => {
+                    setNewLabelName(e.target.value);
+                    setCreateError(null);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleCreateLabel();
                   }}
@@ -133,6 +139,7 @@ export function LabelEditor({
                   Add
                 </Button>
               </div>
+              {createError && <p className="text-xs text-destructive">{createError}</p>}
               <div className="flex gap-1.5 flex-wrap">
                 {LABEL_COLORS.map((color) => (
                   <button

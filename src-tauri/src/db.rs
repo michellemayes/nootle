@@ -4,6 +4,18 @@ use serde::{Deserialize, Serialize};
 use sqlite_vec::sqlite3_vec_init;
 use std::sync::{Mutex, MutexGuard};
 
+/// Label names are UNIQUE; turn that constraint failure into a readable error.
+fn duplicate_label_error(e: rusqlite::Error, name: &str) -> NootleError {
+    match e {
+        rusqlite::Error::SqliteFailure(err, _)
+            if err.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE =>
+        {
+            NootleError::Other(format!("A label named \"{}\" already exists", name))
+        }
+        other => NootleError::Database(other),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Meeting {
     pub id: String,
@@ -1345,7 +1357,8 @@ impl Database {
         conn.execute(
             "INSERT INTO labels (id, name, color, icon, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![id, name, color, icon, now],
-        )?;
+        )
+        .map_err(|e| duplicate_label_error(e, name))?;
 
         Ok(Label {
             id,
@@ -1387,7 +1400,8 @@ impl Database {
         conn.execute(
             "UPDATE labels SET name = ?1, color = ?2, icon = ?3 WHERE id = ?4",
             params![name, color, icon, id],
-        )?;
+        )
+        .map_err(|e| duplicate_label_error(e, name))?;
         let mut stmt =
             conn.prepare("SELECT id, name, color, icon, created_at FROM labels WHERE id = ?1")?;
         let label = stmt

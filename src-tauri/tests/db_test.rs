@@ -403,6 +403,20 @@ fn test_update_label() {
 }
 
 #[test]
+fn test_duplicate_label_name_errors() {
+    let db = Database::new_in_memory().unwrap();
+    db.create_label("1:1", "#4EEABB", None).unwrap();
+    let err = db.create_label("1:1", "#C084FC", None).unwrap_err();
+    assert_eq!(err.to_string(), "A label named \"1:1\" already exists");
+
+    let other = db.create_label("Standup", "#C084FC", None).unwrap();
+    let err = db
+        .update_label(&other.id, "1:1", "#C084FC", None)
+        .unwrap_err();
+    assert_eq!(err.to_string(), "A label named \"1:1\" already exists");
+}
+
+#[test]
 fn test_delete_label() {
     let db = Database::new_in_memory().unwrap();
     let label = db.create_label("Engineering", "#4EEABB", None).unwrap();
