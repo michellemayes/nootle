@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.10] - 2026-09-30
+
+### Features
+
+- **integrations:** One-click sign-in via MCP connectors, GitHub CLI, and token shortcuts (#136) ([2ff7f80](https://github.com/michellemayes/nootle/commit/2ff7f804780c8ffb023aceaf125f6ac194edf1c9))
+
 ## [0.1.9] - 2026-09-30
 
 ### Features
