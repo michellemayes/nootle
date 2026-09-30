@@ -1,4 +1,5 @@
 import type { DownloadProgress, ModelVariant } from "@/hooks/useModelDownload";
+import { Progress } from "@/components/ui/progress";
 import { formatBytes } from "@/lib/utils";
 
 /** Radio group for choosing which variant of a model to download. */
@@ -48,12 +49,7 @@ export function DownloadProgressBar({ progress }: { progress: DownloadProgress }
         </span>
         <span>{percent}%</span>
       </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full rounded-full bg-primary transition-[width] duration-300"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
+      <Progress percent={percent} />
     </div>
   );
 }

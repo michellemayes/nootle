@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,9 +23,10 @@ import { useTheme } from "@/hooks/useTheme";
 
 import { useInsightTypes } from "@/hooks/useInsightTypes";
 import { useAppVersion } from "@/hooks/useAppVersion";
+import { checkForUpdates, useUpdater } from "@/hooks/useUpdater";
 import { AccentColorPicker, BackgroundThemePicker } from "@/components/ThemePickers";
 import { VariantPicker, DownloadProgressBar } from "@/components/ModelDownload";
-import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus, Link, Unlink, LogIn, ExternalLink, Terminal } from "lucide-react";
+import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus, Link, Unlink, LogIn, ExternalLink, Terminal, Loader2, RefreshCw } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { formatBytes } from "@/lib/utils";
 import { useIntegrations } from "@/hooks/useIntegrations";
@@ -961,6 +962,9 @@ export function SettingsPage() {
                 <CardDescription>
                   Nootle v{version}
                 </CardDescription>
+                <CardAction>
+                  <CheckForUpdatesButton />
+                </CardAction>
               </CardHeader>
               <CardContent>
                 <McpSetup />
@@ -970,6 +974,17 @@ export function SettingsPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function CheckForUpdatesButton() {
+  const { status } = useUpdater();
+  const busy = status === "checking" || status === "downloading";
+  return (
+    <Button variant="outline" size="sm" disabled={busy} onClick={() => checkForUpdates(true)}>
+      {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+      {status === "downloading" ? "Installing…" : "Check for updates"}
+    </Button>
   );
 }
 
