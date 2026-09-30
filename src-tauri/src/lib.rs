@@ -1,5 +1,6 @@
 pub mod analytics;
 pub mod audio;
+pub mod automation;
 pub mod chunking;
 pub mod commands;
 pub mod db;
@@ -23,7 +24,7 @@ pub mod workflows;
 
 use commands::{DetectorState, DownloadManagerState, EmbeddingState, LlmState, RecordingState};
 use detection::MeetingDetector;
-use llm::{CodexCliProvider, LlmRegistry, OllamaProvider};
+use llm::LlmRegistry;
 use model_download::DownloadManager;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
@@ -51,52 +52,7 @@ pub fn run() {
 
     let recording_state: RecordingState = Arc::new(TokioMutex::new(None));
 
-    // Initialize LLM registry with available providers
-    let mut llm_registry = LlmRegistry::new();
-
-    // Register Ollama only if it's reachable locally
-    if std::net::TcpStream::connect_timeout(
-        &"127.0.0.1:11434".parse().unwrap(),
-        std::time::Duration::from_millis(500),
-    )
-    .is_ok()
-    {
-        llm_registry.register(Box::new(OllamaProvider::new()));
-    }
-
-    // Register Codex CLI (ChatGPT subscription) only if the `codex` binary is installed
-    if CodexCliProvider::is_available() {
-        llm_registry.register(Box::new(CodexCliProvider::new()));
-    }
-
-    // Auth is delegated to the user's existing Claude subscription, so no API key.
-    if let Some(provider) = llm::ClaudeAgentProvider::detect() {
-        tracing::info!("Claude Agent SDK detected at {}", provider.binary_path());
-        llm_registry.register(Box::new(provider));
-    }
-
-    // Register providers with stored API keys.
-    if let Ok(Some(key)) = db.get_api_key("openai") {
-        llm_registry.register(Box::new(llm::OpenAiProvider::new(key)));
-    }
-    if let Ok(Some(key)) = db.get_api_key("anthropic") {
-        llm_registry.register(Box::new(llm::AnthropicProvider::new(key)));
-    }
-    if let Ok(Some(key)) = db.get_api_key("google") {
-        llm_registry.register(Box::new(llm::GoogleProvider::new(key)));
-    }
-    if let Ok(Some(key)) = db.get_api_key("groq") {
-        llm_registry.register(Box::new(llm::GroqProvider::new(key)));
-    }
-    if let Ok(Some(key)) = db.get_api_key("openrouter") {
-        llm_registry.register(Box::new(llm::OpenRouterProvider::new(key)));
-    }
-    if let Ok(Some(key)) = db.get_api_key("bedrock") {
-        llm_registry.register(Box::new(llm::BedrockProvider::new(key)));
-    }
-    if let Ok(Some(key)) = db.get_api_key("codex") {
-        llm_registry.register(Box::new(llm::CodexProvider::new(key)));
-    }
+    let llm_registry = LlmRegistry::detect(&db);
 
     let llm_state: LlmState = Arc::new(tokio::sync::RwLock::new(llm_registry));
 

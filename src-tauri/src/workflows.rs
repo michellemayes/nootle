@@ -56,6 +56,115 @@ pub async fn execute_workflow(
     }
 }
 
+/// Runs `workflow_id` against `meeting_id` and records the attempt as a
+/// workflow run. The returned run is `completed` or `failed`; `Err` means the
+/// run couldn't be started or recorded at all.
+pub async fn run_workflow_for_meeting(
+    db: &crate::db::Database,
+    llm: &crate::llm::LlmRegistry,
+    meeting_id: &str,
+    workflow_id: &str,
+    llm_provider: Option<&str>,
+    llm_model: Option<&str>,
+) -> std::result::Result<crate::db::WorkflowRun, String> {
+    let workflow = db.get_workflow(workflow_id).map_err(|e| e.to_string())?;
+    let integration = db
+        .get_integration(&workflow.integration_id)
+        .map_err(|e| e.to_string())?;
+    let meeting = db.get_meeting(meeting_id).map_err(|e| e.to_string())?;
+
+    let summaries = db
+        .get_summaries_for_meeting(meeting_id)
+        .map_err(|e| e.to_string())?;
+    let summary_text = summaries.first().map(|s| s.content.clone());
+
+    // If the workflow has a source template configured, use that template's
+    // summary. Auto-generate one if it doesn't exist yet (requires LLM).
+    let workflow_config: serde_json::Value =
+        serde_json::from_str(&workflow.config_json).unwrap_or_else(|_| serde_json::json!({}));
+    let configured_template_id = workflow_config
+        .get("template_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+
+    let template_summary = if let Some(template_id) = configured_template_id {
+        match summaries
+            .iter()
+            .find(|s| s.template_id.as_deref() == Some(template_id))
+        {
+            Some(existing) => Some(existing.content.clone()),
+            None => match (llm_provider, llm_model) {
+                (Some(provider), Some(model)) => crate::summarization::summarize_meeting(
+                    db,
+                    llm,
+                    meeting_id,
+                    template_id,
+                    provider,
+                    model,
+                )
+                .await
+                .ok()
+                .map(|s| s.content),
+                _ => None,
+            },
+        }
+    } else {
+        None
+    };
+
+    let insights = db
+        .get_insights_for_meeting(meeting_id)
+        .map_err(|e| e.to_string())?;
+    let action_items: Vec<ActionItemContext> = insights
+        .iter()
+        .filter(|i| i.insight_type == "action_item")
+        .map(|i| ActionItemContext {
+            content: i.content.clone(),
+            assignee: i.assignee.clone(),
+            due_date: i.due_date.clone(),
+            context: i.context.clone(),
+        })
+        .collect();
+
+    let context = WorkflowContext {
+        meeting_title: meeting.title.clone(),
+        meeting_date: meeting.start_time.clone(),
+        summary: summary_text,
+        template_summary,
+        action_items,
+    };
+
+    let run = db
+        .create_workflow_run(meeting_id, workflow_id)
+        .map_err(|e| e.to_string())?;
+
+    db.update_workflow_run_status(&run.id, "running", None, None)
+        .map_err(|e| e.to_string())?;
+
+    match execute_workflow(
+        &workflow,
+        &integration,
+        &context,
+        Some(llm),
+        llm_provider,
+        llm_model,
+    )
+    .await
+    {
+        Ok(result) => {
+            let result_json = serde_json::to_string(&result).unwrap_or_default();
+            db.update_workflow_run_status(&run.id, "completed", Some(&result_json), None)
+                .map_err(|e| e.to_string())?;
+        }
+        Err(e) => {
+            db.update_workflow_run_status(&run.id, "failed", None, Some(&e))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    db.get_workflow_run(&run.id).map_err(|e| e.to_string())
+}
+
 /// Render an issue description for a single action item. If the workflow's
 /// config has a `description_prompt` and an LLM is available, ask the LLM to
 /// compose the description from the user's instructions plus all available
