@@ -217,6 +217,10 @@ open "nootle://permissions/status"
 
 Nootle shows a notification whenever a link starts or stops a recording, or fails.
 
+### Releases
+
+Every push to `main` publishes a release. The version comes from the [conventional commits](https://www.conventionalcommits.org/) since the last tag. Any `feat:` bumps the minor version, and anything else bumps the patch. A breaking change (`feat!:` or a `BREAKING CHANGE:` footer) bumps the minor version while Nootle is on 0.x, and the major version from 1.0 on. The rules live in the `[bump]` section of `cliff.toml`.
+
 ## Testing
 
 ```bash

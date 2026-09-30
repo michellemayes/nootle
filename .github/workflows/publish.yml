@@ -58,14 +58,29 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
-      # Next version = latest v* tag with the patch bumped. Written into the
-      # manifests for this build only, so no version-bump commit is needed.
+      # Next version comes from the conventional commits since the latest v*
+      # tag; the rules live in cliff.toml's [bump] section.
+      - name: Compute bumped version
+        id: bump
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
+        with:
+          args: --bumped-version
+
+      # Written into the manifests for this build only, so no version-bump
+      # commit is needed.
       - name: Compute release version
         id: version
+        env:
+          BUMPED: ${{ steps.bump.outputs.content }}
         run: |
           LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
-          IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
-          VERSION="${MAJOR:-0}.${MINOR:-0}.$(( ${PATCH:-0} + 1 ))"
+          BUMPED="${BUMPED//[[:space:]]/}"
+          if [ -z "$BUMPED" ] || [ "$BUMPED" = "$LATEST" ]; then
+            # Nothing git-cliff counts as releasable (e.g. only chores): patch bump.
+            IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+            BUMPED="v${MAJOR:-0}.${MINOR:-0}.$(( ${PATCH:-0} + 1 ))"
+          fi
+          VERSION="${BUMPED#v}"
           echo "Latest tag: ${LATEST:-none} -> releasing v$VERSION"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 

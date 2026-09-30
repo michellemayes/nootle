@@ -36,3 +36,11 @@ commit_parsers = [
 ]
 tag_pattern = "v[0-9].*"
 sort_commits = "newest"
+
+# Next release version, from the commits since the latest tag (used by the
+# publish workflow). fix/perf/etc. bump the patch and feat bumps the minor.
+# A breaking change (feat!: or a BREAKING CHANGE: footer) bumps the minor
+# while on 0.x and the major from 1.0 on. Going to 1.0.0 is a manual call,
+# not something a commit triggers.
+[bump]
+breaking_always_bump_major = false
