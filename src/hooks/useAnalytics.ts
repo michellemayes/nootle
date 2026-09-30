@@ -35,6 +35,7 @@ interface AnalyticsData {
   speakers: SpeakerAnalytics[];
   sentiment: SentimentSegment[];
   engagement: MeetingEngagement | null;
+  sentiment_running: boolean;
 }
 
 export function useAnalytics(meetingId: string) {
@@ -42,6 +43,7 @@ export function useAnalytics(meetingId: string) {
     speakers: [],
     sentiment: [],
     engagement: null,
+    sentiment_running: false,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,20 +88,21 @@ export function useAnalytics(meetingId: string) {
 
   const computeSentiment = useCallback(
     async (provider: string, model: string) => {
+      // The backend emits `analytics-ready` when done, which refetches.
       await invoke("compute_meeting_sentiment", {
         meetingId,
         provider,
         model,
       });
-      await fetchAnalytics(true);
     },
-    [meetingId, fetchAnalytics],
+    [meetingId],
   );
 
   return {
     speakers: data.speakers,
     sentiment: data.sentiment,
     engagement: data.engagement,
+    sentimentRunning: data.sentiment_running,
     loading,
     error,
     refresh: fetchAnalytics,

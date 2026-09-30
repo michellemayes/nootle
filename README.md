@@ -87,7 +87,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Live transcription** — speech-to-text powered by Parakeet via ONNX Runtime
 - **Speaker identification** — know who said what with automatic diarization
 - **AI summaries and chat** — ask questions about your meetings using your preferred LLM
-- **Insight extraction** — automatically extract decisions, action items, and key moments
+- **Insight extraction** — decisions, action items, and key moments are extracted automatically once a recording finishes transcribing
 - **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, or your existing Claude / ChatGPT subscription via the Claude Code (`claude -p`) and Codex CLIs
 - **Meeting detection** — auto-detects active meeting apps and calendar events
 - **Runs in the background** — closing the window (⌘W) keeps Nootle running, so recordings and meeting detection continue; click the Dock icon to bring it back, ⌘Q to quit
@@ -98,7 +98,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Noise cancellation** — built-in denoising for cleaner audio and transcripts
 - **MCP server** — let Claude Code and other MCP clients read your meetings and set up workflows, integrations, templates, and insight types for you
 - **CLI tool** — query meetings and manage automations from the terminal or scripts
-- **Auto-titling** — meetings are automatically titled from transcript content
+- **Auto-titling** — untitled meetings are automatically titled from transcript content; a title you set yourself is kept
 - **Keyboard-first** — ⌘K command palette to jump to any meeting or ask a question, ⌘N to start recording from anywhere, ⌘↵ to stop
 - **Momentum at a glance** — workday recording streak, meetings this week, and open action items on the home screen, with a little celebration when you wrap a meeting
 - **In-app updates** — new versions are detected automatically and installed with one click, no trip to GitHub
