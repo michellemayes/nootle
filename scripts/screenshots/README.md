@@ -27,8 +27,7 @@ screenshots the next time this runs — no mockup to keep in sync.
 
 - **Demo content** — `demo-data.mjs`. Every value is fictional. Dates are fixed,
   and the browser's `Date` starts at `DEMO_NOW`, so relative dates and the
-  streak render the same on every run. Only `Date` is shifted — freezing the
-  whole clock stalls the page's entrance animations and leaves screens blank.
+  streak render the same on every run.
 - **Which screens get captured** — the `SHOTS` array in `capture.mjs`.
 - **Window chrome** — the `frame()` function in `capture.mjs`.
 

@@ -176,16 +176,16 @@ async function main() {
       );
       // Start "now" just after the demo library's latest meeting so relative
       // dates, the greeting, and the streak render the same on every run.
-      // Only Date is shifted: Playwright's clock API also freezes
-      // performance.now and requestAnimationFrame, which leaves framer-motion
-      // entrance animations stuck at opacity 0 and the page blank.
+      // Only Date is shifted: any of Playwright's clock APIs also swap in fake
+      // timers and requestAnimationFrame, under which framer-motion entrance
+      // animations never finish and pages capture blank.
       await context.addInitScript(
         `(() => {
            const RealDate = Date;
            const offset = ${DEMO_NOW.getTime()} - RealDate.now();
            class DemoDate extends RealDate {
              constructor(...args) {
-               super(...(args.length ? args : [RealDate.now() + offset]));
+               super(...(args.length ? args : [DemoDate.now()]));
              }
              static now() {
                return RealDate.now() + offset;
