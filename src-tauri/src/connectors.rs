@@ -186,8 +186,10 @@ pub async fn connect(
         _ => return Err(failed("no authorization code returned".into())),
     };
 
+    // Servers that advertise RFC 9207 (Linear does) require the callback's
+    // `iss` to match their metadata's issuer.
     session
-        .handle_callback(&code, &csrf)
+        .handle_callback_with_issuer(&code, &csrf, param("iss").as_deref())
         .await
         .map_err(|e| failed(auth_err(e)))?;
 
