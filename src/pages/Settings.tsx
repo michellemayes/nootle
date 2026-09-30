@@ -23,7 +23,7 @@ import { useTheme } from "@/hooks/useTheme";
 
 import { useInsightTypes } from "@/hooks/useInsightTypes";
 import { useAppVersion } from "@/hooks/useAppVersion";
-import { AccentColorPicker } from "@/components/AccentColorPicker";
+import { AccentColorPicker, BackgroundThemePicker } from "@/components/ThemePickers";
 import { VariantPicker, DownloadProgressBar } from "@/components/ModelDownload";
 import { EyeOff, Eye, Moon, Sun, Pencil, Trash2, Plus, Link, Unlink, LogIn, ExternalLink, Terminal } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -819,7 +819,7 @@ export function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Appearance</CardTitle>
-                <CardDescription>Theme and accent color</CardDescription>
+                <CardDescription>Theme, background, and accent color</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -833,6 +833,7 @@ export function SettingsPage() {
                     {theme === "light" ? <><Moon className="h-4 w-4" /> Dark</> : <><Sun className="h-4 w-4" /> Light</>}
                   </Button>
                 </div>
+                <BackgroundThemePicker />
                 <AccentColorPicker />
               </CardContent>
             </Card>
