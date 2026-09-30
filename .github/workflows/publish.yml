@@ -167,22 +167,28 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Regenerate CHANGELOG.md
-        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
-        env:
-          OUTPUT: CHANGELOG.md
-
-      - name: Commit CHANGELOG.md
+      # Regenerated from scratch on each attempt: if main moves between
+      # checkout and push, rebuild on the new main rather than rebasing a
+      # changelog that would miss the commit that just landed.
+      - name: Regenerate and push CHANGELOG.md
         run: |
+          pipx install git-cliff
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
-          if git diff --cached --quiet; then
-            echo "CHANGELOG.md already up to date"
-          else
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git reset --hard origin/main
+            git-cliff --output CHANGELOG.md
+            git add CHANGELOG.md
+            if git diff --cached --quiet; then
+              echo "CHANGELOG.md already up to date"
+              exit 0
+            fi
             git commit -m "chore: update changelog for $TAG"
-            git push origin HEAD:main
-          fi
+            git push origin HEAD:main && exit 0
+            echo "Push rejected (attempt $attempt); retrying on latest main"
+          done
+          exit 1
 
   # Drop the draft if tests or the build failed, so the next run's draft for
   # the same version starts clean.
