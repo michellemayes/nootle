@@ -17,6 +17,7 @@ pub mod model_download;
 pub mod model_registry;
 pub mod permissions;
 pub mod remote;
+pub mod shell_env;
 pub mod summarization;
 pub mod transcription;
 pub mod vad;
@@ -35,6 +36,8 @@ pub fn run() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .init();
+
+    shell_env::fix_path();
 
     let app_dir = dirs::data_dir()
         .expect("Could not determine data directory")
