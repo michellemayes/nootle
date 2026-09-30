@@ -79,13 +79,14 @@ jobs:
           ' "$VERSION"
           sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 20
-
       - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
         with:
           version: 9
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: pnpm
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -138,18 +139,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.build.outputs.tag }}
     steps:
       - name: Verify updater assets and publish
         run: |
-          ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
-            --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id" | head -1)
-          [ -n "$ID" ] || { echo "No draft release for $TAG"; exit 1; }
-          ASSETS=$(gh api "repos/$GITHUB_REPOSITORY/releases/$ID" --jq '.assets[].name')
+          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
           echo "$ASSETS" | grep -q 'latest.json' || { echo "Missing latest.json"; exit 1; }
           echo "$ASSETS" | grep -qE '\.sig$' || { echo "Missing .sig files"; exit 1; }
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$ID" \
-            -F draft=false -f make_latest=true --jq '.html_url'
+          gh release edit "$TAG" --draft=false --latest
 
   # Drop the draft if tests or the build failed, so the next run's draft for
   # the same version starts clean.
@@ -159,10 +157,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.build.outputs.tag }}
     steps:
       - name: Delete draft release
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/releases" \
-            --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id" |
-            xargs -r -I{} gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/{}"
+        run: gh release delete "$TAG" --yes || true
