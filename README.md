@@ -101,6 +101,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Auto-titling** — meetings are automatically titled from transcript content
 - **Keyboard-first** — ⌘K command palette to jump to any meeting or ask a question, ⌘N to start recording from anywhere, ⌘↵ to stop
 - **Momentum at a glance** — workday recording streak, meetings this week, and open action items on the home screen, with a little celebration when you wrap a meeting
+- **Themes** — light or dark mode, a background theme (Lavender, White, Slate, Ocean, Sage, Sand, Mocha, Rose, or any custom color), and a separate accent color for buttons and highlights, all in Settings → General
 
 ## Install
 

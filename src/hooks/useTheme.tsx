@@ -8,6 +8,9 @@ interface ThemeContextType {
   accentHue: number;
   accentChroma: number;
   setAccentColor: (hue: number, chroma: number) => void;
+  surfaceHue: number;
+  surfaceTint: number;
+  setSurfaceColor: (hue: number, tint: number) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | null>(null);
@@ -46,21 +49,37 @@ function applyAccentToDOM(hue: number, chroma: number, theme: Theme) {
   }
 }
 
+// Background theme: hue plus a chroma multiplier for every surface color
+// (see --surface-hue / --surface-tint in index.css). Tint 0 is neutral, which
+// also switches light mode to a pure-white page.
+export const DEFAULT_SURFACE = { hue: 293, tint: 1 } as const;
+
+function applySurfaceToDOM(hue: number, tint: number) {
+  const root = document.documentElement;
+  root.style.setProperty("--surface-hue", String(hue));
+  root.style.setProperty("--surface-tint", String(tint));
+  if (tint === 0) root.dataset.surface = "neutral";
+  else delete root.dataset.surface;
+}
+
+function readStoredNumber(key: string, fallback: number): number {
+  const stored = localStorage.getItem(key);
+  if (stored === null) return fallback;
+  const n = Number(stored);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     const stored = localStorage.getItem("theme");
     return stored === "dark" ? "dark" : "light";
   });
 
-  const [accentHue, setAccentHue] = useState<number>(() => {
-    const stored = localStorage.getItem("accent-hue");
-    return stored ? (Number(stored) || 0) : 0;
-  });
+  const [accentHue, setAccentHue] = useState(() => readStoredNumber("accent-hue", 0));
+  const [accentChroma, setAccentChroma] = useState(() => readStoredNumber("accent-chroma", 0));
 
-  const [accentChroma, setAccentChroma] = useState<number>(() => {
-    const stored = localStorage.getItem("accent-chroma");
-    return stored ? (Number(stored) || 0) : 0;
-  });
+  const [surfaceHue, setSurfaceHue] = useState(() => readStoredNumber("surface-hue", DEFAULT_SURFACE.hue));
+  const [surfaceTint, setSurfaceTint] = useState(() => readStoredNumber("surface-tint", DEFAULT_SURFACE.tint));
 
   useEffect(() => {
     // Apply the .dark class to <html> so it's on the same element as the inline
@@ -76,6 +95,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("accent-chroma", String(accentChroma));
   }, [accentHue, accentChroma, theme]);
 
+  useEffect(() => {
+    applySurfaceToDOM(surfaceHue, surfaceTint);
+    localStorage.setItem("surface-hue", String(surfaceHue));
+    localStorage.setItem("surface-tint", String(surfaceTint));
+  }, [surfaceHue, surfaceTint]);
+
   const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));
 
   const setAccentColor = useCallback((hue: number, chroma: number) => {
@@ -83,8 +108,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setAccentChroma(chroma);
   }, []);
 
+  const setSurfaceColor = useCallback((hue: number, tint: number) => {
+    setSurfaceHue(hue);
+    setSurfaceTint(tint);
+  }, []);
+
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, accentHue, accentChroma, setAccentColor }}>
+    <ThemeContext.Provider
+      value={{ theme, toggleTheme, accentHue, accentChroma, setAccentColor, surfaceHue, surfaceTint, setSurfaceColor }}
+    >
       {children}
     </ThemeContext.Provider>
   );
