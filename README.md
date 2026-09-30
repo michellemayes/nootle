@@ -90,6 +90,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Insight extraction** — automatically extract decisions, action items, and key moments
 - **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, or your existing Claude / ChatGPT subscription via the Claude Code (`claude -p`) and Codex CLIs
 - **Meeting detection** — auto-detects active meeting apps and calendar events
+- **Runs in the background** — closing the window (⌘W) keeps Nootle running, so recordings and meeting detection continue; click the Dock icon to bring it back, ⌘Q to quit
 - **URL scheme** — start and stop recordings from other apps or scripts via `nootle://` links (opt-in)
 - **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email
 - **Templates** — customizable summary templates you can pick per recording, or mark auto-run so every meeting is summarized without asking (e.g. a standing template for 1:1s, standups, or interviews)
