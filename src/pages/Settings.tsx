@@ -651,6 +651,7 @@ export function SettingsPage() {
   const [exePath, setExePath] = useState("/path/to/nootle");
   const [denoiseEnabled, setDenoiseEnabled] = useState(true);
   const [detectionEnabled, setDetectionEnabled] = useState(true);
+  const [remoteControlEnabled, setRemoteControlEnabled] = useState(false);
 
   useEffect(() => {
     invoke<string>("get_exe_path").then(setExePath).catch(() => {});
@@ -659,6 +660,9 @@ export function SettingsPage() {
       .catch(() => {});
     invoke<string | null>("get_app_setting", { key: "detection_enabled" })
       .then((val) => setDetectionEnabled(val !== "false"))
+      .catch(() => {});
+    invoke<string | null>("get_app_setting", { key: "remote_control_enabled" })
+      .then((val) => setRemoteControlEnabled(val === "true"))
       .catch(() => {});
   }, []);
 
@@ -674,6 +678,14 @@ export function SettingsPage() {
     setDetectionEnabled(enabled);
     await invoke("set_app_setting", {
       key: "detection_enabled",
+      value: String(enabled),
+    });
+  };
+
+  const toggleRemoteControl = async (enabled: boolean) => {
+    setRemoteControlEnabled(enabled);
+    await invoke("set_app_setting", {
+      key: "remote_control_enabled",
       value: String(enabled),
     });
   };
@@ -759,6 +771,19 @@ export function SettingsPage() {
                     checked={detectionEnabled}
                     onCheckedChange={toggleDetection}
                     aria-label="Auto-detect meetings"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Allow URL control</p>
+                    <p className="text-sm text-muted-foreground">
+                      Let other apps start and stop recordings via nootle:// links
+                    </p>
+                  </div>
+                  <Switch
+                    checked={remoteControlEnabled}
+                    onCheckedChange={toggleRemoteControl}
+                    aria-label="Allow URL control"
                   />
                 </div>
               </CardContent>

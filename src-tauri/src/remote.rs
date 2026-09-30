@@ -21,6 +21,8 @@
 //!   swallowed, so the UI can surface a failure and the log has a record.
 //! * Unknown paths are logged and ignored. A malformed URL must never panic the
 //!   app or leave a half-open recording.
+//! * Off by default. Any web page can open a `nootle://` link, so remote control
+//!   only acts once the user enables it in Settings (`remote_control_enabled`).
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -29,6 +31,7 @@ use url::Url;
 use crate::commands::{self, DbState, EmbeddingState, LlmState, RecordingState};
 
 pub const SCHEME: &str = "nootle";
+pub const ENABLED_SETTING: &str = "remote_control_enabled";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RemoteResult {
@@ -169,53 +172,64 @@ pub async fn handle_url(app: AppHandle, raw: String) {
     let action = action_of(&url);
     let title = query_value(&url, "title");
 
-    let result = match action.as_str() {
-        "record/start" | "record" => do_start(&app, title).await,
-        "record/stop" => do_stop(&app).await,
-        "record/toggle" => {
-            if is_recording(&app).await {
-                do_stop(&app).await
-            } else {
-                do_start(&app, title).await
-            }
-        }
-        // macOS only lists an app under Privacy > Screen Recording once it has
-        // actually asked. Without this there is nothing to toggle, and system
-        // audio -- everyone else's voice -- is silently never captured.
-        "permissions/screen" => {
-            let granted = crate::permissions::request_screen_recording();
-            tracing::info!("remote: screen recording request -> granted={granted}");
-            RemoteResult::ok(
-                "permissions/screen",
-                if granted {
-                    "Screen recording granted"
+    let enabled = app
+        .state::<DbState>()
+        .get_setting(ENABLED_SETTING)
+        .ok()
+        .flatten()
+        .is_some_and(|v| v == "true");
+
+    let result = if !enabled {
+        tracing::warn!("remote: ignoring {raw:?}, remote control is disabled");
+        RemoteResult::err(
+            &action,
+            "URL control is disabled; enable it in Nootle Settings > Recording",
+        )
+    } else {
+        match action.as_str() {
+            "record/start" | "record" => do_start(&app, title).await,
+            "record/stop" => do_stop(&app).await,
+            "record/toggle" => {
+                if is_recording(&app).await {
+                    do_stop(&app).await
                 } else {
-                    "Screen recording not granted; enable Nootle under \
+                    do_start(&app, title).await
+                }
+            }
+            // macOS only lists an app under Privacy > Screen Recording once it has
+            // actually asked. Without this there is nothing to toggle, and system
+            // audio -- everyone else's voice -- is silently never captured.
+            "permissions/screen" => {
+                let granted = crate::permissions::request_screen_recording();
+                tracing::info!("remote: screen recording request -> granted={granted}");
+                RemoteResult::ok(
+                    "permissions/screen",
+                    if granted {
+                        "Screen recording granted"
+                    } else {
+                        "Screen recording not granted; enable Nootle under \
                      Privacy & Security > Screen Recording, then restart it"
-                },
-                None,
-            )
-        }
-        "permissions/status" => {
-            let mic = crate::permissions::check_microphone();
-            let screen = crate::permissions::check_screen_recording();
-            RemoteResult::ok(
-                "permissions/status",
-                format!("microphone={mic} screen_recording={screen}"),
-                None,
-            )
-        }
-        "record/status" => {
-            let recording = is_recording(&app).await;
-            RemoteResult::ok(
-                "status",
-                if recording { "Recording" } else { "Idle" },
-                None,
-            )
-        }
-        other => {
-            tracing::warn!("remote: unknown action {other:?} from {raw:?}");
-            RemoteResult::err("unknown", format!("Unknown action: {other}"))
+                    },
+                    None,
+                )
+            }
+            "permissions/status" => {
+                let mic = crate::permissions::check_microphone();
+                let screen = crate::permissions::check_screen_recording();
+                RemoteResult::ok(
+                    "permissions/status",
+                    format!("microphone={mic} screen_recording={screen}"),
+                    None,
+                )
+            }
+            "record/status" => {
+                let recording = is_recording(&app).await;
+                RemoteResult::ok("status", if recording { "Recording" } else { "Idle" }, None)
+            }
+            other => {
+                tracing::warn!("remote: unknown action {other:?} from {raw:?}");
+                RemoteResult::err("unknown", format!("Unknown action: {other}"))
+            }
         }
     };
 
@@ -255,7 +269,10 @@ mod tests {
 
     #[test]
     fn blank_title_is_treated_as_absent() {
-        assert_eq!(query_value(&parse("nootle://record/start?title="), "title"), None);
+        assert_eq!(
+            query_value(&parse("nootle://record/start?title="), "title"),
+            None
+        );
         assert_eq!(
             query_value(&parse("nootle://record/start?title=%20%20"), "title"),
             None

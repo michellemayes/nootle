@@ -84,7 +84,7 @@ fn build_session(path: &Path, label: &str) -> anyhow::Result<Session> {
     let coreml = Session::builder()
         .and_then(|b| {
             b.with_execution_providers([
-                ort::execution_providers::CoreMLExecutionProvider::default().build()
+                ort::execution_providers::CoreMLExecutionProvider::default().build(),
             ])
         })
         .and_then(|b| b.commit_from_file(path));
@@ -143,6 +143,8 @@ impl TranscriptionEngine {
             ));
         }
 
+        crate::model_registry::migrate_legacy_files(&model_dir);
+
         let preprocessor_path = model_dir.join("nemo128.onnx");
         let encoder_path = model_dir.join("encoder.onnx");
         let decoder_path = model_dir.join("decoder.onnx");
@@ -169,7 +171,6 @@ impl TranscriptionEngine {
             None
         };
 
-        // Load ONNX sessions with CoreML EP for Apple Silicon acceleration
         let encoder = build_session(&encoder_path, "encoder")?;
         let decoder = build_session(&decoder_path, "decoder")?;
 

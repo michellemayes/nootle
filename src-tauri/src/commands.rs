@@ -819,7 +819,7 @@ pub async fn stop_recording(
                 .get_setting("summarization_provider")
                 .unwrap_or(None)
                 .filter(|p| providers.iter().any(|name| name == p));
-            let chosen = preferred.clone().or_else(|| providers.first().cloned());
+            let chosen = preferred.or_else(|| providers.first().cloned());
             if let Some(provider_name) = chosen.as_ref() {
                 let models = registry.all_models();
                 let provider_models: Vec<_> = models
@@ -1679,7 +1679,11 @@ pub async fn set_app_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
-    const ALLOWED_SETTING_KEYS: &[&str] = &["denoise_enabled", "detection_enabled"];
+    const ALLOWED_SETTING_KEYS: &[&str] = &[
+        "denoise_enabled",
+        "detection_enabled",
+        crate::remote::ENABLED_SETTING,
+    ];
     if !ALLOWED_SETTING_KEYS.contains(&key.as_str()) {
         return Err(format!("Invalid setting key: {key}"));
     }
