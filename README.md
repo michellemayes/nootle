@@ -114,6 +114,8 @@ Nootle supports Apple Silicon Macs only (M1, M2, M3, M4, and M5). Intel Macs are
 
 You only download from Releases once. Nootle checks for new versions on launch and every few hours. When one is out, a card appears in the corner of the app. Click **Install & Restart** and Nootle downloads the update, installs it, and relaunches itself. You can also check any time from **Help → Check for Updates…** or **Settings → About**. The install button stays disabled while you're recording, so an update never cuts off a meeting.
 
+If you're on v0.1.15 or earlier, in-app updates fail with "Couldn't update". Those builds ran in the macOS App Sandbox, which blocks the updater from replacing the app. Download the latest `.dmg` from Releases and drag it over the old app once. On first launch it moves your meetings, recordings, and settings out of the sandbox container, and updates work from then on.
+
 ### Permissions
 
 On first launch, Nootle will ask for:

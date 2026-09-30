@@ -15,6 +15,7 @@ static EMBEDDED_INFO_PLIST: [u8; INFO_PLIST_BYTES.len()] = *include_bytes!("../I
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    nootle_app_lib::sandbox_migration::migrate();
 
     if args.contains(&"--mcp".to_string()) {
         // Run as MCP server (stdio mode, no GUI)

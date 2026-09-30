@@ -20,6 +20,7 @@ pub mod model_download;
 pub mod model_registry;
 pub mod permissions;
 pub mod remote;
+pub mod sandbox_migration;
 pub mod shell_env;
 pub mod summarization;
 pub mod transcription;
