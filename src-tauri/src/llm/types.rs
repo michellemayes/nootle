@@ -13,6 +13,9 @@ pub struct ModelInfo {
     pub provider: String,
 }
 
+// async-trait <0.1.92 marks its boxed-future methods #[must_use], which clippy
+// 1.99 flags as redundant; 0.1.92 fixes it but pulls in syn 3.
+#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait LlmProvider: Send + Sync {
     fn provider_name(&self) -> &str;

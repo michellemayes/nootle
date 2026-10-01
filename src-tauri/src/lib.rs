@@ -28,8 +28,7 @@ pub mod vad;
 pub mod workflows;
 
 use commands::{
-    DetectorState, DownloadManagerState, EmbeddingState, LlmState, RecordingState,
-    SentimentJobsState,
+    DownloadManagerState, EmbeddingState, LlmState, RecordingState, SentimentJobsState,
 };
 use detection::MeetingDetector;
 use llm::LlmRegistry;
@@ -37,6 +36,15 @@ use model_download::DownloadManager;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tokio::sync::Mutex as TokioMutex;
+
+/// Show a macOS notification. Goes through the Tauri plugin because the
+/// webview's `window.Notification` doesn't work in WKWebView.
+pub(crate) fn notify(app: &tauri::AppHandle, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    if let Err(e) = app.notification().builder().title(title).body(body).show() {
+        tracing::warn!("Failed to show notification: {e}");
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -66,8 +74,6 @@ pub fn run() {
 
     let llm_state: LlmState = Arc::new(tokio::sync::RwLock::new(llm_registry));
 
-    let detector = Arc::new(std::sync::Mutex::new(MeetingDetector::new()));
-    let detector_state: DetectorState = detector.clone();
     let download_manager: DownloadManagerState = Arc::new(TokioMutex::new(DownloadManager::new()));
 
     let embedding_engine = if crate::embedding::EmbeddingEngine::is_available() {
@@ -89,6 +95,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         .menu(|handle| {
             use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
             let app_menu = SubmenuBuilder::new(handle, "Nootle")
@@ -142,7 +149,6 @@ pub fn run() {
         .manage(db)
         .manage(recording_state)
         .manage(llm_state)
-        .manage(detector_state)
         .manage(download_manager)
         .manage(embedding_state)
         .manage(SentimentJobsState::default())
@@ -163,11 +169,11 @@ pub fn run() {
                     }
                 });
             }
-            let detector = detector.clone();
             let db_for_detection = app.state::<Arc<db::Database>>().inner().clone();
 
             // Spawn polling task for meeting detection
             tauri::async_runtime::spawn(async move {
+                let mut detector = MeetingDetector::default();
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
@@ -181,33 +187,24 @@ pub fn run() {
                         continue;
                     }
 
-                    let (newly_detected, should_notify) = {
-                        let mut d = detector.lock().unwrap();
-                        let newly_detected = d.check();
-                        let has_app = d.has_active_meeting_app();
-
-                        // Use process detection as speech proxy for now.
-                        // Full VAD with audio sampling will be added later.
-                        let has_speech = has_app;
-
-                        let should_notify = d.should_notify(has_app, has_speech);
-                        d.reset_session();
-                        (newly_detected, should_notify)
+                    let Some(meeting) = detector.check() else {
+                        continue;
                     };
-
-                    if should_notify {
-                        let _ = app_handle.emit(
-                            "meeting-detected-notify",
-                            serde_json::json!({
-                                "title": "Meeting Detected",
-                                "body": "It looks like you're in a meeting. Start recording?",
-                            }),
-                        );
+                    // Already recording it; no need to ask.
+                    if remote::is_recording(&app_handle).await {
+                        continue;
                     }
-
-                    for meeting in newly_detected {
-                        let _ = app_handle.emit("meeting-detected", &meeting);
-                    }
+                    // Sent from Rust rather than the webview, which may be
+                    // hidden and throttled while the window is closed.
+                    notify(
+                        &app_handle,
+                        "Meeting detected",
+                        &format!(
+                            "{} is using your microphone. Open Nootle to start recording.",
+                            meeting.display_name
+                        ),
+                    );
+                    let _ = app_handle.emit("meeting-detected", &meeting);
                 }
             });
 

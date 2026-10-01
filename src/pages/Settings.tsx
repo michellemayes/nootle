@@ -853,7 +853,7 @@ export function SettingsPage() {
                   <div>
                     <p className="text-sm font-medium">Auto-detect meetings</p>
                     <p className="text-sm text-muted-foreground">
-                      Get notified when a meeting is detected so you can start recording
+                      Get notified when a meeting app starts using your microphone so you can start recording
                     </p>
                   </div>
                   <Switch
