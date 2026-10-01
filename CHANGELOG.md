@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.20] - 2026-10-01
+
+### Bug Fixes
+
+- **detection:** Actually notify when a meeting starts (#150) ([651c7c9](https://github.com/michellemayes/nootle/commit/651c7c9204ccaf500f997019f91ed46fb0e607b7))
+
 ## [0.1.19] - 2026-09-30
 
 ### Bug Fixes
