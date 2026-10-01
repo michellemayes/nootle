@@ -25,7 +25,6 @@ fn truncate_at_word_boundary(text: &str, max_chars: usize, suffix: &str) -> Stri
 pub type DbState = Arc<Database>;
 pub type RecordingState = Arc<TokioMutex<Option<RecordingSession>>>;
 pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
-pub type DetectorState = Arc<std::sync::Mutex<crate::detection::MeetingDetector>>;
 pub type DownloadManagerState = Arc<TokioMutex<DownloadManager>>;
 pub type EmbeddingState = Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>;
 /// Meeting IDs with a sentiment analysis in flight, so a remounted view can

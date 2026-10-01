@@ -3,7 +3,8 @@
 //!
 //! Off by default: any web page can open a `nootle://` link, so actions only run
 //! once the user enables `remote_control_enabled` in Settings. Every outcome is
-//! emitted as `remote-control-result` so the UI can notify the user.
+//! emitted as `remote-control-result`, and the user gets a system notification
+//! for anything worth interrupting them for.
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -82,7 +83,7 @@ fn action_of(url: &Url) -> String {
     }
 }
 
-async fn is_recording(app: &AppHandle) -> bool {
+pub(crate) async fn is_recording(app: &AppHandle) -> bool {
     commands::is_recording(app.state::<RecordingState>())
         .await
         .unwrap_or(false)
@@ -179,6 +180,15 @@ pub async fn handle_url(app: AppHandle, raw: String) {
         tracing::info!("remote: {action}: {}", outcome.message);
     } else {
         tracing::warn!("remote: {action} failed: {}", outcome.message);
+    }
+    // Only a started/stopped meeting or a failure is worth interrupting for.
+    if !outcome.ok || outcome.meeting_id.is_some() {
+        let title = if outcome.ok {
+            "Nootle"
+        } else {
+            "Nootle: URL action failed"
+        };
+        crate::notify(&app, title, &outcome.message);
     }
     let result = RemoteResult {
         action,
