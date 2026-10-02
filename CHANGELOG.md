@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.21] - 2026-10-02
+
+### Features
+
+- **detection:** Show a Granola-style pop-up when a meeting starts (#151) ([97e3846](https://github.com/michellemayes/nootle/commit/97e3846dcd61d40785b3292fc2091fedbbd56476))
+
 ## [0.1.20] - 2026-10-01
 
 ### Bug Fixes
