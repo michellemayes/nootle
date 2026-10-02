@@ -16,6 +16,16 @@ export default defineConfig(async () => ({
     },
   },
 
+  // The meeting pop-up is its own window with its own page.
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        popup: path.resolve(__dirname, "popup.html"),
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

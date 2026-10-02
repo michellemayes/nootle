@@ -14,16 +14,15 @@ import { HelpPage } from "@/pages/Help";
 import { GlobalChatPanel } from "@/components/GlobalChatPanel";
 import { InsightsDashboard } from "@/pages/InsightsDashboard";
 import { ChatPage } from "@/pages/ChatPage";
-import { useMeetingDetection } from "@/hooks/useMeetingDetection";
+import { useOpenRecordingEvent } from "@/hooks/useOpenRecordingEvent";
 import { CompactModeProvider } from "@/contexts/CompactModeContext";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { CommandPalette } from "@/components/CommandPalette";
 import { RecordingCelebration } from "@/components/RecordingCelebration";
 import { UpdateBanner } from "@/components/UpdateBanner";
-import { MeetingDetectedBanner } from "@/components/MeetingDetectedBanner";
 
 function Layout({ children }: { children: React.ReactNode }) {
-  const { detected, startRecording, dismiss } = useMeetingDetection();
+  useOpenRecordingEvent();
   useGlobalShortcuts();
 
   return (
@@ -37,7 +36,6 @@ function Layout({ children }: { children: React.ReactNode }) {
       <CommandPalette />
       <RecordingCelebration />
       <UpdateBanner />
-      <MeetingDetectedBanner meeting={detected} onStart={startRecording} onDismiss={dismiss} />
     </div>
   );
 }

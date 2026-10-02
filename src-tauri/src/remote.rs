@@ -24,9 +24,9 @@ pub struct RemoteResult {
 }
 
 /// Outcome of an action, before it is tagged with the action name.
-struct Outcome {
-    ok: bool,
-    message: String,
+pub(crate) struct Outcome {
+    pub(crate) ok: bool,
+    pub(crate) message: String,
     meeting_id: Option<String>,
 }
 
@@ -89,7 +89,7 @@ pub(crate) async fn is_recording(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-async fn do_start(app: &AppHandle, title: Option<String>) -> Outcome {
+pub(crate) async fn do_start(app: &AppHandle, title: Option<String>) -> Outcome {
     // A detector that fires twice must not disturb a meeting in progress.
     if is_recording(app).await {
         return Outcome::ok("Already recording");

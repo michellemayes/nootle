@@ -16,6 +16,7 @@ pub mod http;
 pub mod linear;
 pub mod llm;
 pub mod mcp;
+pub mod meeting_popup;
 pub mod model_download;
 pub mod model_registry;
 pub mod permissions;
@@ -43,6 +44,14 @@ pub(crate) fn notify(app: &tauri::AppHandle, title: &str, body: &str) {
     use tauri_plugin_notification::NotificationExt;
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         tracing::warn!("Failed to show notification: {e}");
+    }
+}
+
+/// Bring the main window back; closing it only hides it.
+pub(crate) fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
     }
 }
 
@@ -138,11 +147,8 @@ pub fn run() {
         .on_menu_event(|app, event| {
             // The frontend owns the updater UI, so it can download and install in place.
             if event.id().as_ref() == "check-for-updates" {
-                // The window may be hidden (closing only hides it); show it so the result is seen.
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                // The window may be hidden; show it so the result is seen.
+                show_main_window(app);
                 let _ = app.emit("menu-check-for-updates", ());
             }
         })
@@ -153,6 +159,7 @@ pub fn run() {
         .manage(embedding_state)
         .manage(SentimentJobsState::default())
         .manage(connectors::SignInState::default())
+        .manage(meeting_popup::PopupState::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             model_registry::migrate_legacy_files();
@@ -166,6 +173,19 @@ pub fn run() {
                         let handle = deep_link_handle.clone();
                         let raw = url.to_string();
                         tauri::async_runtime::spawn(remote::handle_url(handle, raw));
+                    }
+                });
+            }
+            // Closing the main window hides it instead of quitting, so
+            // recordings, meeting detection and URL control keep running in
+            // the background. Clicking the Dock icon brings it back; Cmd+Q
+            // still quits.
+            if let Some(main) = app.get_webview_window("main") {
+                let window = main.clone();
+                main.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = window.hide();
                     }
                 });
             }
@@ -194,17 +214,17 @@ pub fn run() {
                     if remote::is_recording(&app_handle).await {
                         continue;
                     }
-                    // Sent from Rust rather than the webview, which may be
-                    // hidden and throttled while the window is closed.
-                    notify(
-                        &app_handle,
-                        "Meeting detected",
-                        &format!(
-                            "{} is using your microphone. Open Nootle to start recording.",
-                            meeting.display_name
-                        ),
-                    );
-                    let _ = app_handle.emit("meeting-detected", &meeting);
+                    if let Err(e) = meeting_popup::show(&app_handle, &meeting) {
+                        tracing::warn!("Failed to show meeting pop-up: {e}");
+                        notify(
+                            &app_handle,
+                            "Meeting detected",
+                            &format!(
+                                "{} is using your microphone. Open Nootle to start recording.",
+                                meeting.display_name
+                            ),
+                        );
+                    }
                 }
             });
 
@@ -312,16 +332,10 @@ pub fn run() {
             commands::delete_workflow,
             commands::list_workflow_runs,
             commands::run_workflow,
+            meeting_popup::get_popup_meeting,
+            meeting_popup::dismiss_meeting_popup,
+            meeting_popup::record_from_meeting_popup,
         ])
-        .on_window_event(|window, event| {
-            // Closing the window hides it instead of quitting, so recordings,
-            // meeting detection and URL control keep running in the background.
-            // Clicking the Dock icon brings it back; Cmd+Q still quits.
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
-            }
-        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
@@ -330,10 +344,7 @@ pub fn run() {
                 ..
             } = event
             {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                show_main_window(app);
             }
         });
 }

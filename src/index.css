@@ -169,6 +169,11 @@
     }
 }
 
+/* The meeting pop-up window is transparent around its rounded card. */
+body.popup {
+  background: transparent;
+}
+
 /* TipTap editor */
 .tiptap {
   outline: none;
