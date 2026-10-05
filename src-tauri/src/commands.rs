@@ -33,21 +33,8 @@ pub type EmbeddingState = Arc<TokioMutex<Option<crate::embedding::EmbeddingEngin
 /// show progress for a job started before the user navigated away.
 pub type SentimentJobsState = Arc<std::sync::Mutex<std::collections::HashSet<String>>>;
 
-const ALLOWED_PROVIDERS: &[&str] = &[
-    "openai",
-    "anthropic",
-    "google",
-    "groq",
-    "openrouter",
-    "bedrock",
-    "codex",
-    "claude-agent",
-    "linear",
-    "asana",
-];
-
 fn validate_provider(provider: &str) -> Result<(), String> {
-    if ALLOWED_PROVIDERS.contains(&provider) {
+    if crate::ops::API_KEY_PROVIDERS.contains(&provider) {
         Ok(())
     } else {
         Err(format!("Invalid provider: {}", provider))
@@ -80,8 +67,7 @@ pub fn update_meeting_status(
     id: String,
     status: String,
 ) -> Result<(), String> {
-    const VALID_STATUSES: &[&str] = &["recording", "transcribing", "summarized", "archived"];
-    if !VALID_STATUSES.contains(&status.as_str()) {
+    if !crate::ops::MEETING_STATUSES.contains(&status.as_str()) {
         return Err(format!("Invalid meeting status: {}", status));
     }
     db.update_meeting_status(&id, &status)
@@ -111,14 +97,7 @@ pub fn update_meeting_template(
 }
 
 fn validate_hex_color(color: &str) -> Result<(), String> {
-    if color.len() == 7
-        && color.starts_with('#')
-        && color[1..].chars().all(|ch| ch.is_ascii_hexdigit())
-    {
-        Ok(())
-    } else {
-        Err(format!("Invalid hex color: {}", color))
-    }
+    crate::ops::validate_hex_color(color).map_err(|e| e.to_string())
 }
 
 /// Linear access from the legacy API key setting, or else the Linear
@@ -1843,8 +1822,7 @@ pub fn update_action_item_status(
     id: String,
     status: String,
 ) -> Result<(), String> {
-    const VALID_STATUSES: &[&str] = &["open", "done", "cancelled"];
-    if !VALID_STATUSES.contains(&status.as_str()) {
+    if !crate::ops::ACTION_ITEM_STATUSES.contains(&status.as_str()) {
         return Err(format!("Invalid action item status: {status}"));
     }
     db.update_action_item_status(&id, &status)
@@ -1900,13 +1878,7 @@ pub async fn set_app_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
-    const ALLOWED_SETTING_KEYS: &[&str] = &[
-        "denoise_enabled",
-        "detection_enabled",
-        crate::remote::ENABLED_SETTING,
-        crate::dictionary::AUTO_LEARN_SETTING,
-    ];
-    if !ALLOWED_SETTING_KEYS.contains(&key.as_str()) {
+    if !crate::ops::TOGGLE_SETTINGS.contains(&key.as_str()) {
         return Err(format!("Invalid setting key: {key}"));
     }
     db.set_setting(&key, &value).map_err(|e| e.to_string())

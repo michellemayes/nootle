@@ -1,6 +1,6 @@
 ---
 name: nootle-cli
-description: Use when the user asks about meetings, transcripts, action items, insights, summaries, or anything related to recorded conversations from Nootle, or wants to set up Nootle workflows, integrations, summary templates, or insight types
+description: Use when the user asks about meetings, transcripts, action items, insights, summaries, or anything related to recorded conversations from Nootle, wants to organize or edit meetings (labels, notes, titles, transcript fixes), ask questions across meetings, or set up Nootle workflows, integrations, summary templates, recipes, or insight types
 ---
 
 # Nootle CLI
@@ -38,6 +38,50 @@ nootle-cli meetings export <meeting-id> --format srt --output call.srt
 
 # Put a name to a diarized speaker
 nootle-cli meetings rename-speaker <meeting-id> "Speaker 2" "Priya"
+
+# Meeting with its labels, summaries, and scratch notes
+nootle-cli meetings get <meeting-id> --full
+
+# Edit: title, status (recording|transcribing|summarized|archived), template ("" clears), notes (text, @file, or -)
+nootle-cli meetings update <meeting-id> --title "Q3 planning" --status archived
+nootle-cli meetings update <meeting-id> --notes @notes.md
+
+# Fix a transcript segment (segment IDs come from `meetings transcript`)
+nootle-cli meetings edit-segment <segment-id> "We ship Kubernetes on Friday"
+
+# Delete a meeting with its transcript, audio, and snapshots (confirm first)
+nootle-cli meetings delete <meeting-id>
+```
+
+### Labels
+
+Labels are referenced by ID or name.
+
+```bash
+nootle-cli labels list
+nootle-cli labels create --name Customer --color "#3b82f6"
+nootle-cli labels update Customer --name Customers
+nootle-cli labels delete Customers
+nootle-cli meetings label <meeting-id> --add Customer --remove Internal
+nootle-cli meetings labels <meeting-id>
+nootle-cli meetings list --label Customer
+```
+
+### Scratch notes, snapshots, dictionary
+
+```bash
+nootle-cli scratch-notes list <meeting-id>
+nootle-cli scratch-notes add <meeting-id> "Follow up on pricing" --at-ms 120000
+nootle-cli scratch-notes delete <note-id>
+
+nootle-cli snapshots list <meeting-id>          # text read off shared screens
+nootle-cli snapshots delete <snapshot-id>
+
+nootle-cli dictionary list
+nootle-cli dictionary add Kubernetes --misheard "cooper netties"
+nootle-cli dictionary update <id> --misheard "cooper netties" --misheard "kuber nettis"
+nootle-cli dictionary delete <id>
+nootle-cli dictionary apply <meeting-id>        # re-correct an existing transcript
 ```
 
 ### Search
@@ -78,6 +122,48 @@ nootle-cli actions list
 # Filter by status
 nootle-cli actions list --status open
 nootle-cli actions list --status done
+
+# Update (ID is action_item_id, or the insight's id); "" clears assignee or due date
+nootle-cli actions update <id> --status done
+nootle-cli actions update <id> --assignee Priya --due-date 2026-10-31
+```
+
+### AI features
+
+These send the transcript to an LLM. All take optional `--provider` and `--model`; without them Nootle uses the model it uses for automatic summaries. `nootle-cli llm models` lists what's available; if nothing is, the user needs to add an API key in Nootle's settings, install the Claude or Codex CLI, or run Ollama. Answers print as `{"response": ...}`; add `--pretty` for plain text.
+
+```bash
+nootle-cli llm models
+nootle-cli meetings summarize <meeting-id> --template <template-id>   # defaults to the meeting's template
+nootle-cli meetings ask <meeting-id> "What did we decide about pricing?"
+nootle-cli meetings enrich-notes <meeting-id>
+nootle-cli insights extract <meeting-id>             # --replace deletes existing insights first
+nootle-cli analytics sentiment <meeting-id>
+nootle-cli analytics get <meeting-id>                # speakers, engagement, sentiment (no LLM)
+nootle-cli analytics compute <meeting-id>            # recompute speakers and engagement (no LLM)
+```
+
+### Asking across all meetings
+
+Needs the search model, which the user downloads in Nootle under Settings → Models (`embeddings status` shows `model_available`).
+
+```bash
+nootle-cli embeddings embed --all                    # index meetings not yet searchable
+nootle-cli ask "When did we last talk about hiring?" --label Customer --from 2026-01-01 --to 2026-06-30
+nootle-cli ask "..." --save                          # keep it as a chat conversation
+nootle-cli chat send <conversation-id> "And who owns it?"   # continue a conversation
+```
+
+### Recipes
+
+Slash-command prompts run against a meeting. Prompts may use `{{transcript}}`, `{{title}}`, `{{date}}`, `{{summary}}`.
+
+```bash
+nootle-cli recipes list
+nootle-cli recipes create --name "Brief" --command brief --prompt @prompt.txt --format markdown   # markdown|plain|json
+nootle-cli recipes update <id> --prompt "..."
+nootle-cli recipes delete <id>
+nootle-cli recipes run <id> --meeting <meeting-id>
 ```
 
 ### Summaries
@@ -104,7 +190,33 @@ nootle-cli embeddings status
 ```bash
 nootle-cli chat conversations
 nootle-cli chat messages <conversation-id>
+nootle-cli chat create
+nootle-cli chat rename <conversation-id> "Hiring questions"
+nootle-cli chat delete <conversation-id>
 ```
+
+### Settings, API keys, Linear
+
+```bash
+nootle-cli settings list
+nootle-cli settings set dictionary_auto_learn false       # also denoise_enabled, detection_enabled, remote_control_enabled
+nootle-cli settings set summarization_provider anthropic  # provider automatic work uses
+nootle-cli api-keys list                                  # keys are never shown
+echo "$KEY" | nootle-cli api-keys set anthropic           # or --key @file; never inline
+nootle-cli api-keys delete anthropic
+nootle-cli linear tickets <meeting-id>
+```
+
+Never ask the user to paste an API key into the chat; have them run `api-keys set` themselves.
+
+### Recording and calendar (macOS)
+
+```bash
+nootle-cli record start --title "Design review"   # also: record stop, record toggle
+nootle-cli calendar --hours 24
+```
+
+`record` sends a `nootle://` URL to the running app, which must have Settings → Recording → Allow URL control on (`settings set remote_control_enabled true`). The app reports the result as a notification, not to the CLI.
 
 ## Automations
 
@@ -176,6 +288,7 @@ nootle-cli meetings list --archived | jq 'group_by(.status) | map({status: .[0].
 
 ## Important
 
-- Query commands never modify data. Automation commands do: confirm with the user before deleting anything or running a workflow, since runs post to external services.
-- The Nootle app does not need to be running for the CLI to work. If it's open, the user may need to reopen a page to see changes.
+- Query commands never modify data. Other commands do: confirm with the user before deleting anything (meetings, labels, snapshots, recipes, conversations), running a workflow (runs post to external services), or replacing insights.
+- AI commands send transcripts to the chosen LLM provider and can take a while.
+- The Nootle app does not need to be running for the CLI to work (except `record`). If it's open, the user may need to reopen a page to see changes.
 - Meeting IDs are UUIDs. Get them from `meetings list` first.

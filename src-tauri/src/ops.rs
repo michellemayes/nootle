@@ -6,7 +6,7 @@
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 
-use crate::db::Database;
+use crate::db::{Database, NewRecipe};
 use crate::embedding::EmbeddingEngine;
 use crate::llm::{ChatMessage, LlmRegistry, ModelInfo};
 
@@ -31,6 +31,110 @@ pub fn delete_meeting(db: &Database, id: &str) -> Result<()> {
         let _ = std::fs::remove_dir_all(crate::snapshots::dir_for(&dir, id));
     }
     Ok(())
+}
+
+pub const MEETING_STATUSES: &[&str] = &["recording", "transcribing", "summarized", "archived"];
+pub const ACTION_ITEM_STATUSES: &[&str] = &["open", "done", "cancelled"];
+pub const RECIPE_FORMATS: &[&str] = &["markdown", "plain", "json"];
+/// Providers whose API keys can be stored.
+pub const API_KEY_PROVIDERS: &[&str] = &[
+    "openai",
+    "anthropic",
+    "google",
+    "groq",
+    "openrouter",
+    "bedrock",
+    "codex",
+    "claude-agent",
+    "linear",
+    "asana",
+];
+/// The provider automatic work (titles, summaries, insights) uses; empty or
+/// unset means the first available.
+pub const SUMMARIZATION_PROVIDER_SETTING: &str = "summarization_provider";
+/// On/off settings the app's settings screen changes.
+pub const TOGGLE_SETTINGS: &[&str] = &[
+    "denoise_enabled",
+    "detection_enabled",
+    crate::remote::ENABLED_SETTING,
+    crate::dictionary::AUTO_LEARN_SETTING,
+];
+/// Settings the CLI and MCP server can read and change.
+pub const EDITABLE_SETTINGS: &[&str] = &[
+    "denoise_enabled",
+    "detection_enabled",
+    crate::remote::ENABLED_SETTING,
+    crate::dictionary::AUTO_LEARN_SETTING,
+    SUMMARIZATION_PROVIDER_SETTING,
+];
+
+pub fn validate_one_of(what: &str, value: &str, allowed: &[&str]) -> Result<()> {
+    if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Invalid {what} '{value}'. Allowed: {}",
+            allowed.join(", ")
+        ))
+    }
+}
+
+pub fn validate_hex_color(color: &str) -> Result<()> {
+    let hex = color.strip_prefix('#').unwrap_or_default();
+    if hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Invalid color '{color}': use a hex color like #4f46e5"
+        ))
+    }
+}
+
+/// Checks a setting the CLI or MCP server may change: a toggle takes "true"
+/// or "false", and the summarization provider any name ("" for automatic).
+pub fn validate_setting(key: &str, value: &str) -> Result<()> {
+    validate_one_of("setting", key, EDITABLE_SETTINGS)?;
+    if key == SUMMARIZATION_PROVIDER_SETTING {
+        return Ok(());
+    }
+    validate_one_of("value", value, &["true", "false"])
+}
+
+/// Checks a recipe the way the app's editor does, including that no other
+/// recipe than `id` uses its slash command.
+pub fn validate_recipe(db: &Database, recipe: &NewRecipe, id: Option<&str>) -> Result<()> {
+    if recipe.name.trim().is_empty() || recipe.prompt_template.trim().is_empty() {
+        return Err(anyhow!("A recipe needs a name and a prompt"));
+    }
+    let command = &recipe.slash_command;
+    if command.is_empty()
+        || !command
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return Err(anyhow!(
+            "Invalid command '{command}': use only letters, numbers, and hyphens"
+        ));
+    }
+    validate_one_of("format", &recipe.output_format, RECIPE_FORMATS)?;
+    match db.get_recipe_by_command(command) {
+        Ok(other) if Some(other.id.as_str()) != id => {
+            Err(anyhow!("Recipe '{}' already uses /{command}", other.name))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Loads the embedding model that asking across meetings and the search
+/// index need, or explains how to get it.
+pub fn load_embedding_engine() -> Result<EmbeddingEngine> {
+    if !EmbeddingEngine::is_available() {
+        return Err(anyhow!(
+            "The search model isn't downloaded. Download it in Nootle under Settings → Models, \
+             then try again."
+        ));
+    }
+    EmbeddingEngine::load()
 }
 
 /// Recomputes speaker analytics and engagement from the stored transcript.
@@ -97,20 +201,22 @@ pub fn resolve_model(
     provider: Option<&str>,
     model: Option<&str>,
 ) -> Result<(String, String)> {
-    let not_found = || {
-        anyhow!(
-            "No LLM provider available. Available: {}. Add an API key in Nootle's settings, \
-             install the Claude or Codex CLI, or run Ollama.",
-            llm.provider_names().join(", ")
-        )
+    let available = || match llm.provider_names() {
+        names if names.is_empty() => "none".to_string(),
+        names => names.join(", "),
     };
     let info = match provider {
         Some(p) => llm
             .all_models()
             .into_iter()
             .find(|m| m.provider == p)
-            .ok_or_else(|| anyhow!("Provider '{p}' isn't available. {}", not_found()))?,
-        None => pick_auto_model(db, llm).ok_or_else(not_found)?,
+            .ok_or_else(|| anyhow!("Provider '{p}' isn't available. Available: {}", available()))?,
+        None => pick_auto_model(db, llm).ok_or_else(|| {
+            anyhow!(
+                "No LLM provider available. Add an API key in Nootle's settings, install the \
+                 Claude or Codex CLI, or run Ollama."
+            )
+        })?,
     };
     Ok((info.provider, model.map(str::to_string).unwrap_or(info.id)))
 }
@@ -355,6 +461,42 @@ pub async fn send_chat_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_recipes_like_the_app() {
+        let db = Database::new_in_memory().unwrap();
+        let recipe = |command: &str, format: &str| NewRecipe {
+            name: "Brief".into(),
+            description: String::new(),
+            slash_command: command.into(),
+            prompt_template: "Summarize {{transcript}}".into(),
+            output_format: format.into(),
+        };
+        assert!(validate_recipe(&db, &recipe("brief-2", "markdown"), None).is_ok());
+        assert!(validate_recipe(&db, &recipe("has space", "markdown"), None).is_err());
+        assert!(validate_recipe(&db, &recipe("", "markdown"), None).is_err());
+        assert!(validate_recipe(&db, &recipe("brief", "html"), None).is_err());
+
+        let saved = db.create_recipe(recipe("team-brief", "markdown")).unwrap();
+        assert!(validate_recipe(&db, &recipe("team-brief", "markdown"), None).is_err());
+        assert!(validate_recipe(&db, &recipe("team-brief", "markdown"), Some(&saved.id)).is_ok());
+    }
+
+    #[test]
+    fn settings_are_allow_listed_and_toggles_are_boolean() {
+        assert!(validate_setting("denoise_enabled", "true").is_ok());
+        assert!(validate_setting("denoise_enabled", "yes").is_err());
+        assert!(validate_setting(SUMMARIZATION_PROVIDER_SETTING, "anthropic").is_ok());
+        assert!(validate_setting(SUMMARIZATION_PROVIDER_SETTING, "").is_ok());
+        assert!(validate_setting("theme", "dark").is_err());
+    }
+
+    #[test]
+    fn checks_hex_colors() {
+        assert!(validate_hex_color("#3b82F6").is_ok());
+        assert!(validate_hex_color("3b82f6").is_err());
+        assert!(validate_hex_color("#3b82fg").is_err());
+    }
 
     #[test]
     fn truncates_at_word_boundary() {
