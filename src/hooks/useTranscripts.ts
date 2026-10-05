@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { TranscriptSegment } from "@/types";
 
 export function useTranscript(meetingId: string) {
@@ -9,7 +10,6 @@ export function useTranscript(meetingId: string) {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<TranscriptSegment[]>("get_transcript", {
         meetingId,
@@ -23,8 +23,23 @@ export function useTranscript(meetingId: string) {
   }, [meetingId]);
 
   useEffect(() => {
+    setLoading(true);
     refresh();
   }, [refresh]);
+
+  // Segments still being transcribed after a recording stops stream in live.
+  useEffect(() => {
+    const unlisten = listen<TranscriptSegment[]>("transcript-update", (event) => {
+      const incoming = event.payload.filter((seg) => seg.meeting_id === meetingId);
+      if (incoming.length === 0) return;
+      setSegments((prev) => {
+        const seen = new Set(prev.map((seg) => seg.id));
+        const fresh = incoming.filter((seg) => !seen.has(seg.id));
+        return fresh.length ? [...prev, ...fresh] : prev;
+      });
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [meetingId]);
 
   return { segments, loading, error, refresh };
 }

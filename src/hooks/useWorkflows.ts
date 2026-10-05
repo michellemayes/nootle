@@ -4,12 +4,11 @@ import type { Workflow, WorkflowRun } from "@/types";
 
 export function useWorkflows() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       const result = await invoke<Workflow[]>("list_workflows");
       setWorkflows(result);
       setError(null);

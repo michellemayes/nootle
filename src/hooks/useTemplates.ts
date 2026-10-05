@@ -9,7 +9,6 @@ export function useTemplates() {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<Template[]>("list_templates");
       setTemplates(result);

@@ -99,9 +99,9 @@ export function useInsights(meetingId: string) {
         id: actionItemId,
         status: newStatus,
       });
-      await refresh();
+      await fetchInsights(true);
     },
-    [refresh],
+    [fetchInsights],
   );
 
   const updateActionItem = useCallback(
@@ -115,9 +115,9 @@ export function useInsights(meetingId: string) {
         assignee,
         dueDate,
       });
-      await refresh();
+      await fetchInsights(true);
     },
-    [refresh],
+    [fetchInsights],
   );
 
   return {
@@ -149,7 +149,6 @@ export function useAllInsights(
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const [result, types] = await Promise.all([
         invoke<InsightWithActionItem[]>("get_all_insights", {

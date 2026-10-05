@@ -1,30 +1,44 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { Meeting } from "@/types";
 
+// Last result per query, so returning to the library paints instantly while
+// a fresh copy loads in the background.
+const meetingsCache = new Map<string, Meeting[]>();
+
 export function useMeetings(search?: string, includeArchived?: boolean) {
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `${includeArchived ? 1 : 0}|${search ?? ""}`;
+  const [meetings, setMeetings] = useState<Meeting[]>(() => meetingsCache.get(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => !meetingsCache.has(cacheKey));
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<Meeting[]>("list_meetings", {
         search: search ?? null,
         includeArchived: includeArchived ?? false,
       });
+      meetingsCache.set(cacheKey, result);
       setMeetings(result);
     } catch (err) {
       setError(String(err));
     } finally {
       setLoading(false);
     }
-  }, [search, includeArchived]);
+  }, [search, includeArchived, cacheKey]);
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  // Keep titles and statuses current while post-recording processing runs.
+  useEffect(() => {
+    const unlisten = listen<Meeting>("meeting-updated", () => {
+      refresh();
+    });
+    return () => { unlisten.then((fn) => fn()); };
   }, [refresh]);
 
   return { meetings, loading, error, refresh };
@@ -37,7 +51,6 @@ export function useMeeting(id: string) {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<Meeting>("get_meeting", { id });
       setMeeting(result);
@@ -49,8 +62,18 @@ export function useMeeting(id: string) {
   }, [id]);
 
   useEffect(() => {
+    setLoading(true);
     refresh();
   }, [refresh]);
+
+  // The backend sends the whole updated meeting (new title, status), so
+  // apply it directly instead of refetching.
+  useEffect(() => {
+    const unlisten = listen<Meeting>("meeting-updated", (event) => {
+      if (event.payload.id === id) setMeeting(event.payload);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [id]);
 
   return { meeting, loading, error, refresh };
 }
