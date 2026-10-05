@@ -126,7 +126,7 @@ Credentials and API keys are never printed. If Nootle is open, reopen the page t
 | `analytics get <meeting-id>` | Speaker, engagement, and sentiment analytics |
 | `analytics compute <meeting-id>` | Recompute speaker and engagement analytics |
 | `analytics sentiment <meeting-id>` | Analyze sentiment over the meeting (LLM) |
-| `embeddings embed <meeting-id>` / `embed --all` | Add meetings to the search index `ask` uses |
+| `embeddings embed <meeting-id>` / `embed --all` | Add meetings to the search index `ask` uses (`--all`: every meeting not archived or already indexed). Prints `chunks_added` and any `failed` meetings |
 | `llm models` | List available LLM providers and models |
 | `summaries get <meeting-id>` | Get summaries for a meeting |
 | `embeddings status` | Show embedding status |

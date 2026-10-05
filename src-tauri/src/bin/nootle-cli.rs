@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use nootle_app_lib::db::{Database, Label, NewRecipe};
+use nootle_app_lib::db::{Database, NewRecipe};
 use nootle_app_lib::embedding::EmbeddingEngine;
 use nootle_app_lib::llm::LlmRegistry;
 use nootle_app_lib::{automation, ops};
@@ -947,49 +947,37 @@ fn block_on<T, E: Into<Box<dyn std::error::Error>>>(
 /// The LLM providers on this machine, with the provider and model `args`
 /// resolve to.
 fn llm(db: &Database, args: &LlmArgs) -> CliResult<(LlmRegistry, String, String)> {
-    let llm = LlmRegistry::detect(db);
-    let (provider, model) =
-        ops::resolve_model(db, &llm, args.provider.as_deref(), args.model.as_deref())?;
-    Ok((llm, provider, model))
+    Ok(ops::detect_llm(
+        db,
+        args.provider.as_deref(),
+        args.model.as_deref(),
+    )?)
 }
 
-/// A label by ID, or by name ignoring case.
-fn find_label(db: &Database, key: &str) -> CliResult<Label> {
-    db.list_labels()?
-        .into_iter()
-        .find(|l| l.id == key || l.name.eq_ignore_ascii_case(key))
-        .ok_or_else(|| format!("Label not found: {key}").into())
-}
-
-fn ask_filters(db: &Database, args: &AskFilterArgs) -> CliResult<ops::AskFilters> {
-    Ok(ops::AskFilters {
-        label_ids: args
-            .labels
-            .iter()
-            .map(|l| find_label(db, l).map(|l| l.id))
-            .collect::<CliResult<_>>()?,
-        date_from: args.from.clone(),
-        date_to: args.to.clone(),
-    })
-}
-
-/// Answers `message` from all meetings, saved in `conversation_id`.
-fn send_chat(
+/// Answers `question` from all meetings: in `conversation_id`, in a new
+/// saved conversation with `save`, or else one-off.
+fn ask(
     db: &Database,
-    conversation_id: &str,
-    message: &str,
+    question: &str,
+    conversation_id: Option<&str>,
+    save: bool,
     filters: &AskFilterArgs,
     llm_args: &LlmArgs,
 ) -> CliResult<serde_json::Value> {
-    let filters = ask_filters(db, filters)?;
-    let embedding = ops::embed_question(&mut ops::load_embedding_engine()?, message)?;
+    let filters = ops::AskFilters {
+        label_ids: ops::find_label_ids(db, &filters.labels)?,
+        date_from: filters.from.clone(),
+        date_to: filters.to.clone(),
+    };
+    let embedding = ops::embed_question(&mut ops::load_embedding_engine()?, question)?;
     let (llm, provider, model) = llm(db, llm_args)?;
-    block_on(ops::send_chat_message(
+    block_on(ops::ask(
         db,
         &llm,
         &embedding,
+        question,
         conversation_id,
-        message,
+        save,
         &provider,
         &model,
         &filters,
@@ -1030,32 +1018,7 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
             filters,
             save,
             llm: llm_args,
-        } => {
-            if *save {
-                let conversation = db.create_chat_conversation()?;
-                let mut answer = send_chat(db, &conversation.id, question, filters, llm_args)?;
-                answer["conversation_id"] = conversation.id.into();
-                print_json(&answer, pretty);
-            } else {
-                let filters = ask_filters(db, filters)?;
-                let embedding = ops::embed_question(&mut ops::load_embedding_engine()?, question)?;
-                let (llm, provider, model) = llm(db, llm_args)?;
-                let (response, sources) = block_on(ops::rag_chat(
-                    db,
-                    &llm,
-                    &embedding,
-                    question,
-                    Vec::new(),
-                    &provider,
-                    &model,
-                    &filters,
-                ))?;
-                print_json(
-                    &serde_json::json!({ "response": response, "sources": sources }),
-                    pretty,
-                );
-            }
-        }
+        } => print_json(&ask(db, question, None, *save, filters, llm_args)?, pretty),
         Commands::Insights { action } => match action {
             InsightsAction::List {
                 insight_type,
@@ -1063,6 +1026,7 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
                 search,
             } => {
                 let insights = db.get_all_insights(
+                    None,
                     insight_type.as_deref(),
                     status.as_deref(),
                     search.as_deref(),
@@ -1082,24 +1046,18 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
                 replace,
                 llm: llm_args,
             } => {
-                use nootle_app_lib::extraction;
                 db.get_meeting(meeting_id)?;
                 let (llm, provider, model) = llm(db, llm_args)?;
-                if *replace {
-                    block_on(extraction::re_extract_insights(
-                        db, &llm, meeting_id, &provider, &model,
-                    ))?;
-                } else {
-                    block_on(extraction::extract_insights(
-                        db, &llm, meeting_id, &provider, &model,
-                    ))?;
-                }
-                print_json(&db.get_insights_for_meeting(meeting_id)?, pretty);
+                let insights = block_on(ops::extract_insights(
+                    db, &llm, meeting_id, &provider, &model, *replace,
+                ))?;
+                print_json(&insights, pretty);
             }
         },
         Commands::Actions { action } => match action {
             ActionsAction::List { status } => {
-                let insights = db.get_all_insights(Some("action_item"), status.as_deref(), None)?;
+                let insights =
+                    db.get_all_insights(None, Some("action_item"), status.as_deref(), None)?;
                 print_json(&insights, pretty);
             }
             ActionsAction::Update {
@@ -1111,32 +1069,19 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
                 if status.is_none() && assignee.is_none() && due_date.is_none() {
                     return Err("Pass --status, --assignee, or --due-date".into());
                 }
-                let find = || -> CliResult<_> {
-                    db.get_all_insights(None, None, None)?
-                        .into_iter()
-                        .find(|i| i.action_item_id.as_deref() == Some(id) || i.id == *id)
-                        .filter(|i| i.action_item_id.is_some())
-                        .ok_or_else(|| format!("Action item not found: {id}").into())
+                // Accept the insight's ID too, since `actions list` shows both.
+                let item_id = match db.get_action_item_id_for_insight(id)? {
+                    Some(item_id) => item_id,
+                    None => id.clone(),
                 };
-                let item = find()?;
-                let item_id = item.action_item_id.as_deref().unwrap_or(id);
-                if let Some(status) = status {
-                    ops::validate_one_of("status", status, ops::ACTION_ITEM_STATUSES)?;
-                    db.update_action_item_status(item_id, status)?;
-                }
-                if assignee.is_some() || due_date.is_some() {
-                    // An empty value clears the field.
-                    let pick = |new: &Option<String>, old: Option<String>| match new {
-                        Some(v) => Some(v.trim().to_string()).filter(|v| !v.is_empty()),
-                        None => old,
-                    };
-                    db.update_action_item(
-                        item_id,
-                        pick(assignee, item.assignee).as_deref(),
-                        pick(due_date, item.due_date).as_deref(),
-                    )?;
-                }
-                print_json(&find()?, pretty);
+                let item = ops::update_action_item(
+                    db,
+                    &item_id,
+                    status.as_deref(),
+                    assignee.as_deref(),
+                    due_date.as_deref(),
+                )?;
+                print_json(&item, pretty);
             }
         },
         Commands::Summaries { action } => match action {
@@ -1148,12 +1093,8 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
         Commands::Labels { action } => match action {
             LabelsAction::List => print_json(&db.list_labels()?, pretty),
             LabelsAction::Create { name, color, icon } => {
-                ops::validate_hex_color(color)?;
-                let name = name.trim();
-                if name.is_empty() {
-                    return Err("Label name can't be empty".into());
-                }
-                print_json(&db.create_label(name, color, icon.as_deref())?, pretty);
+                let label = ops::create_label(db, name, color, icon.as_deref())?;
+                print_json(&label, pretty);
             }
             LabelsAction::Update {
                 id,
@@ -1161,25 +1102,20 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
                 color,
                 icon,
             } => {
-                let label = find_label(db, id)?;
-                let color = color.as_deref().unwrap_or(&label.color);
-                ops::validate_hex_color(color)?;
-                let icon = match icon {
-                    Some(i) => Some(i.as_str()).filter(|i| !i.is_empty()),
-                    None => label.icon.as_deref(),
-                };
-                let updated = db.update_label(
-                    &label.id,
-                    name.as_deref().unwrap_or(&label.name),
-                    color,
-                    icon,
+                let label_id = ops::find_label(&db.list_labels()?, id)?.id.clone();
+                let updated = ops::update_label(
+                    db,
+                    &label_id,
+                    name.as_deref(),
+                    color.as_deref(),
+                    icon.as_deref(),
                 )?;
                 print_json(&updated, pretty);
             }
             LabelsAction::Delete { id } => {
-                let label = find_label(db, id)?;
-                db.delete_label(&label.id)?;
-                print_deleted(&label.id, pretty);
+                let label_id = ops::find_label(&db.list_labels()?, id)?.id.clone();
+                db.delete_label(&label_id)?;
+                print_deleted(&label_id, pretty);
             }
         },
         Commands::ScratchNotes { action } => match action {
@@ -1205,10 +1141,7 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
                 print_json(&db.get_snapshots(meeting_id)?, pretty)
             }
             SnapshotsAction::Delete { id } => {
-                let snapshot = db
-                    .delete_snapshot(id)?
-                    .ok_or_else(|| format!("Snapshot not found: {id}"))?;
-                let _ = std::fs::remove_file(&snapshot.image_path);
+                ops::delete_snapshot(db, id)?;
                 print_deleted(id, pretty);
             }
         },
@@ -1428,15 +1361,7 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
         },
         Commands::Analytics { action } => match action {
             AnalyticsAction::Get { meeting_id } => {
-                db.get_meeting(meeting_id)?;
-                print_json(
-                    &serde_json::json!({
-                        "speakers": db.get_speaker_analytics(meeting_id)?,
-                        "sentiment": db.get_sentiment_segments(meeting_id)?,
-                        "engagement": db.get_engagement(meeting_id)?,
-                    }),
-                    pretty,
-                );
+                print_json(&ops::meeting_analytics(db, meeting_id)?, pretty)
             }
             AnalyticsAction::Compute { meeting_id } => {
                 db.get_meeting(meeting_id)?;
@@ -1455,10 +1380,9 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
             } => {
                 db.get_meeting(meeting_id)?;
                 let (llm, provider, model) = llm(db, llm_args)?;
-                let segments = block_on(nootle_app_lib::analytics::analyze_sentiment(
+                let segments = block_on(ops::analyze_sentiment(
                     db, &llm, meeting_id, &provider, &model,
                 ))?;
-                db.save_sentiment_segments(meeting_id, &segments)?;
                 print_json(&segments, pretty);
             }
         },
@@ -1474,28 +1398,18 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
                     pretty,
                 );
             }
-            EmbeddingsAction::Embed { meeting_id, all } => {
-                use nootle_app_lib::chunking::embed_meeting;
+            EmbeddingsAction::Embed { meeting_id, .. } => {
+                let ids = match meeting_id {
+                    Some(id) => vec![db.get_meeting(id)?.id],
+                    None => ops::meetings_to_index(db)?,
+                };
                 let mut engine = ops::load_embedding_engine()?;
-                if *all {
-                    let mut chunks = 0;
-                    let mut failed = Vec::new();
-                    for meeting in db.list_meetings(None, true)? {
-                        match embed_meeting(db, &mut engine, &meeting.id) {
-                            Ok(n) => chunks += n,
-                            Err(e) => failed.push(
-                                serde_json::json!({ "meeting_id": meeting.id, "error": e.to_string() }),
-                            ),
-                        }
-                    }
-                    print_json(
-                        &serde_json::json!({ "embedded_chunks": chunks, "failed": failed }),
-                        pretty,
-                    );
-                } else if let Some(id) = meeting_id {
-                    db.get_meeting(id)?;
-                    let chunks = embed_meeting(db, &mut engine, id)?;
-                    print_json(&serde_json::json!({ "embedded_chunks": chunks }), pretty);
+                let report = ops::embed_meetings(&ids, |id| {
+                    nootle_app_lib::chunking::embed_meeting(db, &mut engine, id)
+                });
+                print_json(&report, pretty);
+                if meeting_id.is_some() && !report.failed.is_empty() {
+                    process::exit(1);
                 }
             }
         },
@@ -1514,13 +1428,7 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
             }
             ChatAction::Create => print_json(&db.create_chat_conversation()?, pretty),
             ChatAction::Rename { id, title } => {
-                require_conversation(db, id)?;
-                let title = title.trim();
-                if title.is_empty() {
-                    return Err("Title can't be empty".into());
-                }
-                db.update_chat_conversation_title(id, title)?;
-                print_json(&require_conversation(db, id)?, pretty);
+                print_json(&ops::rename_conversation(db, id, title)?, pretty)
             }
             ChatAction::Delete { id } => {
                 db.delete_chat_conversation(id)?;
@@ -1532,27 +1440,21 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
                 filters,
                 llm: llm_args,
             } => {
-                require_conversation(db, conversation_id)?;
-                let answer = send_chat(db, conversation_id, message, filters, llm_args)?;
+                // Fail fast, before loading the search model.
+                db.get_chat_conversation(conversation_id)?;
+                let answer = ask(db, message, Some(conversation_id), false, filters, llm_args)?;
                 print_json(&answer, pretty);
             }
         },
         Commands::Settings { action } => match action {
-            SettingsAction::List => {
-                let settings = ops::EDITABLE_SETTINGS
-                    .iter()
-                    .map(|key| Ok((key.to_string(), db.get_setting(key)?.into())))
-                    .collect::<CliResult<serde_json::Map<_, _>>>()?;
-                print_json(&settings, pretty);
-            }
-            SettingsAction::Get { key } => {
-                ops::validate_one_of("setting", key, ops::EDITABLE_SETTINGS)?;
-                print_json(&serde_json::json!({ key: db.get_setting(key)? }), pretty);
-            }
+            SettingsAction::List => print_json(&ops::settings_map(db)?, pretty),
+            SettingsAction::Get { key } => print_json(
+                &serde_json::json!({ key: ops::get_setting(db, key)? }),
+                pretty,
+            ),
             SettingsAction::Set { key, value } => {
-                ops::validate_setting(key, value)?;
-                db.set_setting(key, value.trim())?;
-                print_json(&serde_json::json!({ key: value.trim() }), pretty);
+                let value = ops::set_setting(db, key, value)?;
+                print_json(&serde_json::json!({ key: value }), pretty);
             }
         },
         Commands::Linear { action } => match action {
@@ -1606,16 +1508,6 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
     Ok(())
 }
 
-fn require_conversation(
-    db: &Database,
-    id: &str,
-) -> CliResult<nootle_app_lib::db::ChatConversation> {
-    db.list_chat_conversations()?
-        .into_iter()
-        .find(|c| c.id == id)
-        .ok_or_else(|| format!("Conversation not found: {id}").into())
-}
-
 fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResult {
     match action {
         MeetingsAction::List {
@@ -1623,17 +1515,11 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
             archived,
             label,
         } => {
-            let mut meetings = db.list_meetings(search.as_deref(), *archived)?;
-            if let Some(label) = label {
-                let label_id = find_label(db, label)?.id;
-                let ids: std::collections::HashSet<String> = db
-                    .get_all_meeting_labels()?
-                    .into_iter()
-                    .filter(|(_, l)| l.id == label_id)
-                    .map(|(meeting_id, _)| meeting_id)
-                    .collect();
-                meetings.retain(|m| ids.contains(&m.id));
-            }
+            let label_id = match label {
+                Some(label) => Some(ops::find_label(&db.list_labels()?, label)?.id.clone()),
+                None => None,
+            };
+            let meetings = db.list_meetings(search.as_deref(), *archived, label_id.as_deref())?;
             print_json(&meetings, pretty);
         }
         MeetingsAction::Get { id, full } => {
@@ -1671,10 +1557,12 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
             }
         }
         MeetingsAction::RenameSpeaker { id, from, to } => {
-            // Rebuild the search index too when the model is there to do it.
-            let mut engine = EmbeddingEngine::is_available()
-                .then(EmbeddingEngine::load)
-                .and_then(Result::ok);
+            // Rebuild the search index too, if there is one and the model is
+            // there to do it.
+            let mut engine = match db.has_meeting_chunks(id)? {
+                true => ops::try_load_embedding_engine(),
+                false => None,
+            };
             let changed = ops::rename_speaker(db, engine.as_mut(), id, from, to)?;
             print_json(&serde_json::json!({ "renamed_segments": changed }), pretty);
         }
@@ -1688,34 +1576,13 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
             if title.is_none() && status.is_none() && template.is_none() && notes.is_none() {
                 return Err("Pass --title, --status, --template, or --notes".into());
             }
-            db.get_meeting(id)?;
-            let title = title.as_deref().map(str::trim);
-            if title == Some("") {
-                return Err("Title can't be empty".into());
-            }
-            if let Some(status) = status {
-                ops::validate_one_of("status", status, ops::MEETING_STATUSES)?;
-            }
-            // An empty --template clears it.
-            let template_id = template.as_deref().filter(|t| !t.is_empty());
-            if let Some(template_id) = template_id {
-                db.get_template(template_id)?;
-            }
-            let notes = notes.as_deref().map(read_text_arg).transpose()?;
-
-            if let Some(title) = title {
-                db.update_meeting_title(id, title)?;
-            }
-            if let Some(status) = status {
-                db.update_meeting_status(id, status)?;
-            }
-            if template.is_some() {
-                db.update_meeting_template(id, template_id)?;
-            }
-            if let Some(notes) = notes {
-                db.update_meeting_notes(id, &notes)?;
-            }
-            print_json(&db.get_meeting(id)?, pretty);
+            let patch = ops::MeetingPatch {
+                title: title.clone(),
+                status: status.clone(),
+                template_id: template.clone(),
+                notes: notes.as_deref().map(read_text_arg).transpose()?,
+            };
+            print_json(&ops::update_meeting(db, id, patch)?, pretty);
         }
         MeetingsAction::Delete { id } => {
             db.get_meeting(id)?;
@@ -1728,11 +1595,18 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
                 return Err("Pass --add or --remove".into());
             }
             db.get_meeting(id)?;
-            for label in add {
-                db.add_meeting_label(id, &find_label(db, label)?.id)?;
+            let labels = db.list_labels()?;
+            let ids = |keys: &[String]| -> CliResult<Vec<String>> {
+                keys.iter()
+                    .map(|key| Ok(ops::find_label(&labels, key)?.id.clone()))
+                    .collect()
+            };
+            let (add, remove) = (ids(add)?, ids(remove)?);
+            for label_id in add {
+                db.add_meeting_label(id, &label_id)?;
             }
-            for label in remove {
-                db.remove_meeting_label(id, &find_label(db, label)?.id)?;
+            for label_id in remove {
+                db.remove_meeting_label(id, &label_id)?;
             }
             print_json(&db.get_meeting_labels(id)?, pretty);
         }
@@ -1785,7 +1659,6 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
 }
 
 fn run_dictionary(db: &Database, action: &DictionaryAction, pretty: bool) -> CliResult {
-    use nootle_app_lib::dictionary;
     match action {
         DictionaryAction::List => print_json(&db.list_dictionary_entries()?, pretty),
         DictionaryAction::Add { term, misheard } => {
@@ -1795,30 +1668,15 @@ fn run_dictionary(db: &Database, action: &DictionaryAction, pretty: bool) -> Cli
             );
         }
         DictionaryAction::Update { id, term, misheard } => {
-            let entry = db
-                .list_dictionary_entries()?
-                .into_iter()
-                .find(|e| e.id == *id)
-                .ok_or_else(|| format!("Dictionary entry not found: {id}"))?;
-            db.update_dictionary_entry(
-                id,
-                term.as_deref().unwrap_or(&entry.term),
-                misheard.as_deref().unwrap_or(&entry.misheard),
-            )?;
-            let updated = db
-                .list_dictionary_entries()?
-                .into_iter()
-                .find(|e| e.id == *id);
-            print_json(&updated, pretty);
+            let entry = ops::update_dictionary_entry(db, id, term.as_deref(), misheard.as_deref())?;
+            print_json(&entry, pretty);
         }
         DictionaryAction::Delete { id } => {
             db.delete_dictionary_entry(id)?;
             print_deleted(id, pretty);
         }
         DictionaryAction::Apply { meeting_id } => {
-            db.get_meeting(meeting_id)?;
-            let rules = dictionary::Rules::new(&db.list_dictionary_entries()?);
-            let changed = dictionary::apply_to_meeting(db, meeting_id, &rules, None)?;
+            let changed = ops::apply_dictionary(db, meeting_id)?;
             print_json(
                 &serde_json::json!({ "corrected_segments": changed }),
                 pretty,
@@ -1840,14 +1698,13 @@ fn run_recipes(db: &Database, action: &RecipesAction, pretty: bool) -> CliResult
             format,
         } => {
             let recipe = NewRecipe {
-                name: name.trim().to_string(),
+                name: name.clone(),
                 description: description.clone(),
-                slash_command: command.trim_start_matches('/').to_string(),
+                slash_command: command.clone(),
                 prompt_template: read_text_arg(prompt)?,
                 output_format: format.clone(),
             };
-            ops::validate_recipe(db, &recipe, None)?;
-            print_json(&db.create_recipe(recipe)?, pretty);
+            print_json(&ops::create_recipe(db, recipe)?, pretty);
         }
         RecipesAction::Update {
             id,
@@ -1857,31 +1714,14 @@ fn run_recipes(db: &Database, action: &RecipesAction, pretty: bool) -> CliResult
             description,
             format,
         } => {
-            let current = db.get_recipe(id)?;
-            let recipe = NewRecipe {
-                name: name
-                    .as_deref()
-                    .map_or(current.name, |n| n.trim().to_string()),
-                description: description.clone().unwrap_or(current.description),
-                slash_command: command
-                    .as_deref()
-                    .map_or(current.slash_command, |c| c.trim_start_matches('/').into()),
-                prompt_template: match prompt {
-                    Some(p) => read_text_arg(p)?,
-                    None => current.prompt_template,
-                },
-                output_format: format.clone().unwrap_or(current.output_format),
+            let patch = ops::RecipePatch {
+                name: name.clone(),
+                description: description.clone(),
+                slash_command: command.clone(),
+                prompt_template: prompt.as_deref().map(read_text_arg).transpose()?,
+                output_format: format.clone(),
             };
-            ops::validate_recipe(db, &recipe, Some(id))?;
-            let updated = db.update_recipe(
-                id,
-                &recipe.name,
-                &recipe.description,
-                &recipe.slash_command,
-                &recipe.prompt_template,
-                &recipe.output_format,
-            )?;
-            print_json(&updated, pretty);
+            print_json(&ops::update_recipe(db, id, patch)?, pretty);
         }
         RecipesAction::Delete { id } => {
             db.delete_recipe(id)?;
@@ -1904,26 +1744,12 @@ fn run_recipes(db: &Database, action: &RecipesAction, pretty: bool) -> CliResult
 }
 
 fn run_api_keys(db: &Database, action: &ApiKeysAction, pretty: bool) -> CliResult {
-    // Linear's key lives with the other Linear settings, as in the app.
     match action {
-        ApiKeysAction::List => {
-            let mut providers = db.list_api_key_providers()?;
-            if db
-                .get_linear_setting("api_key")?
-                .is_some_and(|k| !k.is_empty())
-            {
-                providers.push("linear".into());
-            }
-            print_json(&providers, pretty);
-        }
+        ApiKeysAction::List => print_json(&ops::list_api_key_providers(db)?, pretty),
         ApiKeysAction::Set { provider, key } => {
+            // Check before waiting on stdin for the key.
             ops::validate_one_of("provider", provider, ops::API_KEY_PROVIDERS)?;
-            let key = read_secret_arg(key)?;
-            if provider == "linear" {
-                db.set_linear_setting("api_key", &key)?;
-            } else {
-                db.store_api_key(provider, &key)?;
-            }
+            ops::store_api_key(db, provider, &read_secret_arg(key)?)?;
             print_json(
                 &serde_json::json!({
                     "stored": provider,
@@ -1933,12 +1759,7 @@ fn run_api_keys(db: &Database, action: &ApiKeysAction, pretty: bool) -> CliResul
             );
         }
         ApiKeysAction::Delete { provider } => {
-            ops::validate_one_of("provider", provider, ops::API_KEY_PROVIDERS)?;
-            if provider == "linear" {
-                db.delete_linear_setting("api_key")?;
-            } else {
-                db.delete_api_key(provider)?;
-            }
+            ops::delete_api_key(db, provider)?;
             print_deleted(provider, pretty);
         }
     }
@@ -1953,14 +1774,5 @@ mod tests {
     fn refuses_inline_secrets() {
         let err = read_secret_arg("sk-123").unwrap_err();
         assert!(err.to_string().contains("stdin"));
-    }
-
-    #[test]
-    fn finds_labels_by_id_or_name() {
-        let db = Database::new_in_memory().unwrap();
-        let label = db.create_label("Customer", "#ff0000", None).unwrap();
-        assert_eq!(find_label(&db, &label.id).unwrap().id, label.id);
-        assert_eq!(find_label(&db, "customer").unwrap().id, label.id);
-        assert!(find_label(&db, "nope").is_err());
     }
 }

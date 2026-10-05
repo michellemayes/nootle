@@ -148,7 +148,7 @@ nootle-cli analytics compute <meeting-id>            # recompute speakers and en
 Needs the search model, which the user downloads in Nootle under Settings → Models (`embeddings status` shows `model_available`).
 
 ```bash
-nootle-cli embeddings embed --all                    # index meetings not yet searchable
+nootle-cli embeddings embed --all                    # index unarchived meetings not yet searchable; prints chunks_added, failed
 nootle-cli ask "When did we last talk about hiring?" --label Customer --from 2026-01-01 --to 2026-06-30
 nootle-cli ask "..." --save                          # keep it as a chat conversation
 nootle-cli chat send <conversation-id> "And who owns it?"   # continue a conversation

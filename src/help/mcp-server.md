@@ -43,10 +43,10 @@ MCP (Model Context Protocol) is an open standard that lets AI assistants connect
 - **export_meeting** — the meeting as Markdown, a plain transcript, or SRT/VTT subtitles
 - **rename_speaker** — rename "Speaker 2" to a real name everywhere in a meeting, or merge two speakers
 - **edit_transcript_segment** — correct a line of the transcript (`get_meeting` with `include_segment_ids` shows the IDs). With auto-learn on, the fix joins your dictionary.
-- **list_labels**, **create_label**, **update_label**, **delete_label**, **update_meeting_labels** — organize meetings with labels
-- **add_scratch_note** / **delete_scratch_note** — timestamped notes on a meeting
-- **list_snapshots** / **delete_snapshot** — screenshots of shared screens and the text read off them
-- **list_dictionary**, **save_dictionary_entry**, **delete_dictionary_entry**, **apply_dictionary** — the custom dictionary of names and jargon, and re-applying it to a recorded meeting
+- **list_labels**, **save_label**, **update_meeting_labels** — organize meetings with labels (`save_label` creates one, or with `id` changes it)
+- **add_scratch_note** — timestamped notes on a meeting
+- **list_snapshots** — screenshots of shared screens and the text read off them
+- **list_dictionary**, **save_dictionary_entry**, **apply_dictionary** — the custom dictionary of names and jargon, and re-applying it to a recorded meeting
 - **list_insights** — decisions, action items, and custom insights, across all meetings or one, filtered by type, status, or text
 - **update_action_item** — mark an action item done or cancelled, or change its assignee or due date
 
@@ -65,17 +65,17 @@ These send the meeting's transcript to an LLM provider, just like the same butto
 - **ask_meetings** — answer a question from all your meetings, citing them. It can continue or save a conversation in the Ask view. Needs the search model, downloaded in Nootle's settings.
 - **enrich_notes** — merge your notes with details from the transcript
 - **analyze_sentiment** — score the meeting's sentiment over time
-- **list_recipes**, **create_recipe**, **update_recipe**, **delete_recipe**, **run_recipe** — reusable prompts like `/email`, run on a meeting
+- **list_recipes**, **create_recipe**, **update_recipe**, **run_recipe** — reusable prompts like `/email`, run on a meeting
 
 ### Analytics, search index, and conversations
 
-- **get_meeting_analytics** — talk time, turns, interruptions, engagement, and saved sentiment
-- **get_embedding_status** / **embed_meetings** — how many meetings are indexed for **ask_meetings**, and index the rest
-- **list_conversations**, **get_conversation**, **rename_conversation**, **delete_conversation** — your saved Ask conversations
+- **get_meeting_analytics** — talk time, turns, interruptions, engagement, and saved sentiment (computed the first time if needed)
+- **get_embedding_status** / **embed_meetings** — how many meetings are indexed for **ask_meetings**, and index the rest (archived meetings are skipped unless indexed one by one)
+- **list_conversations**, **get_conversation**, **rename_conversation** — your saved Ask conversations
 
 ### Settings
 
-- **get_settings** / **set_setting** — noise reduction, call detection, dictionary auto-learn, and which provider automatic summaries use. Claude can read but not turn on URL control for recording; change that in Nootle.
+- **get_settings** / **set_setting** — noise reduction, call detection, dictionary auto-learn, and which provider automatic summaries use. Claude can read but not change URL control for recording or snapshots; change those in Nootle.
 
 ### Automations
 
@@ -89,7 +89,10 @@ Claude can also set up automations for you: the same integrations, workflows, su
 - **list_workflow_runs** — past runs for a meeting
 - **create_template** / **update_template** — summary templates, including auto-run
 - **create_insight_type** / **update_insight_type** — custom things to extract from every transcript
-- **delete_automation** — delete any of the above
+### Deleting
+
+- **delete_meeting** — a meeting with its recording and everything derived from it
+- **delete** — anything else by `kind`: an integration (with its workflows), workflow, template, insight type, recipe, label, dictionary entry, scratch note, snapshot, or conversation
 
 Claude asks before anything that deletes data.
 

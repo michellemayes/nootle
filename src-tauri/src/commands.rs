@@ -34,11 +34,8 @@ pub type EmbeddingState = Arc<TokioMutex<Option<crate::embedding::EmbeddingEngin
 pub type SentimentJobsState = Arc<std::sync::Mutex<std::collections::HashSet<String>>>;
 
 fn validate_provider(provider: &str) -> Result<(), String> {
-    if crate::ops::API_KEY_PROVIDERS.contains(&provider) {
-        Ok(())
-    } else {
-        Err(format!("Invalid provider: {}", provider))
-    }
+    crate::ops::validate_one_of("provider", provider, crate::ops::API_KEY_PROVIDERS)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -47,7 +44,7 @@ pub fn list_meetings(
     search: Option<String>,
     include_archived: Option<bool>,
 ) -> Result<Vec<Meeting>, String> {
-    db.list_meetings(search.as_deref(), include_archived.unwrap_or(false))
+    db.list_meetings(search.as_deref(), include_archived.unwrap_or(false), None)
         .map_err(|e| e.to_string())
 }
 
@@ -67,9 +64,7 @@ pub fn update_meeting_status(
     id: String,
     status: String,
 ) -> Result<(), String> {
-    if !crate::ops::MEETING_STATUSES.contains(&status.as_str()) {
-        return Err(format!("Invalid meeting status: {}", status));
-    }
+    crate::ops::validate_meeting_status(&status).map_err(|e| e.to_string())?;
     db.update_meeting_status(&id, &status)
         .map_err(|e| e.to_string())
 }
@@ -80,7 +75,8 @@ pub fn update_meeting_title(
     id: String,
     title: String,
 ) -> Result<(), String> {
-    db.update_meeting_title(&id, &title)
+    let title = crate::ops::non_empty_name("Title", &title).map_err(|e| e.to_string())?;
+    db.update_meeting_title(&id, title)
         .map_err(|e| e.to_string())
 }
 
@@ -92,12 +88,11 @@ pub fn update_meeting_template(
     id: String,
     template_id: Option<String>,
 ) -> Result<(), String> {
+    if let Some(template_id) = &template_id {
+        crate::ops::validate_template(&db, template_id).map_err(|e| e.to_string())?;
+    }
     db.update_meeting_template(&id, template_id.as_deref())
         .map_err(|e| e.to_string())
-}
-
-fn validate_hex_color(color: &str) -> Result<(), String> {
-    crate::ops::validate_hex_color(color).map_err(|e| e.to_string())
 }
 
 /// Linear access from the legacy API key setting, or else the Linear
@@ -125,9 +120,7 @@ pub fn create_label(
     color: String,
     icon: Option<String>,
 ) -> Result<Label, String> {
-    validate_hex_color(&color)?;
-    db.create_label(&name, &color, icon.as_deref())
-        .map_err(|e| e.to_string())
+    crate::ops::create_label(&db, &name, &color, icon.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -143,9 +136,15 @@ pub fn update_label(
     color: String,
     icon: Option<String>,
 ) -> Result<Label, String> {
-    validate_hex_color(&color)?;
-    db.update_label(&id, &name, &color, icon.as_deref())
-        .map_err(|e| e.to_string())
+    // The app sends every field; no icon means none rather than unchanged.
+    crate::ops::update_label(
+        &db,
+        &id,
+        Some(&name),
+        Some(&color),
+        Some(icon.as_deref().unwrap_or_default()),
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -234,10 +233,7 @@ pub fn list_snapshots(
 
 #[tauri::command(async)]
 pub fn delete_snapshot(db: State<'_, DbState>, id: String) -> Result<(), String> {
-    if let Some(snapshot) = db.delete_snapshot(&id).map_err(|e| e.to_string())? {
-        let _ = std::fs::remove_file(&snapshot.image_path);
-    }
-    Ok(())
+    crate::ops::delete_snapshot(&db, &id).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -315,9 +311,7 @@ pub async fn apply_dictionary_to_meeting(
     db: State<'_, DbState>,
     meeting_id: String,
 ) -> Result<usize, String> {
-    let entries = db.list_dictionary_entries().map_err(|e| e.to_string())?;
-    let rules = crate::dictionary::Rules::new(&entries);
-    crate::dictionary::apply_to_meeting(&db, &meeting_id, &rules, None).map_err(|e| e.to_string())
+    crate::ops::apply_dictionary(&db, &meeting_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -337,13 +331,16 @@ pub fn create_recipe(
     prompt_template: String,
     output_format: String,
 ) -> Result<Recipe, String> {
-    db.create_recipe(NewRecipe {
-        name,
-        description,
-        slash_command,
-        prompt_template,
-        output_format,
-    })
+    crate::ops::create_recipe(
+        &db,
+        NewRecipe {
+            name,
+            description,
+            slash_command,
+            prompt_template,
+            output_format,
+        },
+    )
     .map_err(|e| e.to_string())
 }
 
@@ -362,15 +359,14 @@ pub fn update_recipe(
     prompt_template: String,
     output_format: String,
 ) -> Result<Recipe, String> {
-    db.update_recipe(
-        &id,
-        &name,
-        &description,
-        &slash_command,
-        &prompt_template,
-        &output_format,
-    )
-    .map_err(|e| e.to_string())
+    let patch = crate::ops::RecipePatch {
+        name: Some(name),
+        description: Some(description),
+        slash_command: Some(slash_command),
+        prompt_template: Some(prompt_template),
+        output_format: Some(output_format),
+    };
+    crate::ops::update_recipe(&db, &id, patch).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -1215,16 +1211,10 @@ pub async fn store_api_key(
     provider: String,
     key: String,
 ) -> Result<(), String> {
-    validate_provider(&provider)?;
-    // Linear keys are stored in the database alongside other Linear settings
+    crate::ops::store_api_key(&db, &provider, &key).map_err(|e| e.to_string())?;
     if provider == "linear" {
-        db.set_linear_setting("api_key", &key)
-            .map_err(|e| e.to_string())?;
         return Ok(());
     }
-
-    db.store_api_key(&provider, &key)
-        .map_err(|e| e.to_string())?;
 
     // Hot-reload: register the provider in the LLM registry
     let mut registry = llm.write().await;
@@ -1256,14 +1246,10 @@ pub async fn delete_api_key(
     llm: State<'_, LlmState>,
     provider: String,
 ) -> Result<(), String> {
-    validate_provider(&provider)?;
+    crate::ops::delete_api_key(&db, &provider).map_err(|e| e.to_string())?;
     if provider == "linear" {
-        db.delete_linear_setting("api_key")
-            .map_err(|e| e.to_string())?;
         return Ok(());
     }
-
-    db.delete_api_key(&provider).map_err(|e| e.to_string())?;
 
     // Hot-reload: remove the provider from the LLM registry
     let mut registry = llm.write().await;
@@ -1274,14 +1260,7 @@ pub async fn delete_api_key(
 
 #[tauri::command(async)]
 pub fn list_stored_providers(db: State<'_, DbState>) -> Result<Vec<String>, String> {
-    let mut providers = db.list_api_key_providers().map_err(|e| e.to_string())?;
-    // Check if Linear API key is stored in the database
-    if let Ok(Some(key)) = db.get_linear_setting("api_key") {
-        if !key.is_empty() {
-            providers.push("linear".to_string());
-        }
-    }
-    Ok(providers)
+    crate::ops::list_api_key_providers(&db).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1658,25 +1637,29 @@ pub async fn embed_all_meetings(
     db: State<'_, DbState>,
     embedding_state: State<'_, EmbeddingState>,
 ) -> Result<(), String> {
-    let meetings = db.list_meetings(None, false).map_err(|e| e.to_string())?;
-    let total = meetings.len();
+    let ids = crate::ops::meetings_to_index(&db).map_err(|e| e.to_string())?;
+    let total = ids.len();
 
     let mut engine_lock = embedding_state.lock().await;
     let engine = engine_lock
         .as_mut()
         .ok_or_else(|| "Embedding model not loaded".to_string())?;
 
-    for (i, meeting) in meetings.iter().enumerate() {
-        match crate::chunking::embed_meeting(&db, engine, &meeting.id) {
-            Ok(_) => {}
-            Err(e) => tracing::warn!("Failed to embed meeting {}: {e}", meeting.id),
-        }
+    let mut current = 0;
+    let report = crate::ops::embed_meetings(&ids, |id| {
+        let result = crate::chunking::embed_meeting(&db, engine, id);
+        current += 1;
         let _ = app.emit(
             "embedding-progress",
-            serde_json::json!({
-                "current": i + 1,
-                "total": total,
-            }),
+            serde_json::json!({ "current": current, "total": total }),
+        );
+        result
+    });
+    for failure in report.failed {
+        tracing::warn!(
+            "Failed to embed meeting {}: {}",
+            failure.meeting_id,
+            failure.error
         );
     }
     Ok(())
@@ -1766,6 +1749,7 @@ pub fn get_all_insights(
     search: Option<String>,
 ) -> Result<Vec<crate::db::InsightWithActionItem>, String> {
     db.get_all_insights(
+        None,
         insight_type.as_deref(),
         status.as_deref(),
         search.as_deref(),
@@ -1822,9 +1806,12 @@ pub fn update_action_item_status(
     id: String,
     status: String,
 ) -> Result<(), String> {
-    if !crate::ops::ACTION_ITEM_STATUSES.contains(&status.as_str()) {
-        return Err(format!("Invalid action item status: {status}"));
-    }
+    crate::ops::validate_one_of(
+        "action item status",
+        &status,
+        crate::ops::ACTION_ITEM_STATUSES,
+    )
+    .map_err(|e| e.to_string())?;
     db.update_action_item_status(&id, &status)
         .map_err(|e| e.to_string())
 }
@@ -1878,10 +1865,9 @@ pub async fn set_app_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
-    if !crate::ops::TOGGLE_SETTINGS.contains(&key.as_str()) {
-        return Err(format!("Invalid setting key: {key}"));
-    }
-    db.set_setting(&key, &value).map_err(|e| e.to_string())
+    crate::ops::set_setting(&db, &key, &value)
+        .map(drop)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -1955,7 +1941,8 @@ pub fn update_chat_conversation_title(
     id: String,
     title: String,
 ) -> Result<(), String> {
-    db.update_chat_conversation_title(&id, &title)
+    crate::ops::rename_conversation(&db, &id, &title)
+        .map(drop)
         .map_err(|e| e.to_string())
 }
 
@@ -2019,11 +2006,9 @@ pub async fn compute_meeting_sentiment(
 
     let result = async {
         let registry = llm.read().await;
-        let segments =
-            crate::analytics::analyze_sentiment(&db, &registry, &meeting_id, &provider, &model)
-                .await
-                .map_err(|e| e.to_string())?;
-        db.save_sentiment_segments(&meeting_id, &segments)
+        crate::ops::analyze_sentiment(&db, &registry, &meeting_id, &provider, &model)
+            .await
+            .map(drop)
             .map_err(|e| e.to_string())
     }
     .await;

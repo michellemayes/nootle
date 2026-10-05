@@ -6,7 +6,11 @@
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 
-use crate::db::{Database, NewRecipe};
+use crate::db::{
+    ChatConversation, Database, InsightWithActionItem, Label, Meeting, NewRecipe, Recipe,
+    SentimentSegment,
+};
+use crate::dictionary::DictionaryEntry;
 use crate::embedding::EmbeddingEngine;
 use crate::llm::{ChatMessage, LlmRegistry, ModelInfo};
 
@@ -58,15 +62,23 @@ pub const TOGGLE_SETTINGS: &[&str] = &[
     "detection_enabled",
     crate::remote::ENABLED_SETTING,
     crate::dictionary::AUTO_LEARN_SETTING,
+    crate::snapshots::SETTING_KEY,
 ];
-/// Settings the CLI and MCP server can read and change.
-pub const EDITABLE_SETTINGS: &[&str] = &[
-    "denoise_enabled",
-    "detection_enabled",
+/// Settings the MCP server refuses to change. URL control lets other apps
+/// start recordings and snapshots capture shared screens, so turning either
+/// on stays a decision made by the user.
+pub const AGENT_LOCKED_SETTINGS: &[&str] = &[
     crate::remote::ENABLED_SETTING,
-    crate::dictionary::AUTO_LEARN_SETTING,
-    SUMMARIZATION_PROVIDER_SETTING,
+    crate::snapshots::SETTING_KEY,
 ];
+
+/// Settings the app, CLI, and MCP server can read and change.
+pub fn editable_settings() -> impl Iterator<Item = &'static str> {
+    TOGGLE_SETTINGS
+        .iter()
+        .copied()
+        .chain([SUMMARIZATION_PROVIDER_SETTING])
+}
 
 pub fn validate_one_of(what: &str, value: &str, allowed: &[&str]) -> Result<()> {
     if allowed.contains(&value) {
@@ -90,14 +102,201 @@ pub fn validate_hex_color(color: &str) -> Result<()> {
     }
 }
 
-/// Checks a setting the CLI or MCP server may change: a toggle takes "true"
-/// or "false", and the summarization provider any name ("" for automatic).
+/// A trimmed name, or an error when nothing is left.
+pub fn non_empty_name<'a>(what: &str, name: &'a str) -> Result<&'a str> {
+    match name.trim() {
+        "" => Err(anyhow!("{what} can't be empty")),
+        name => Ok(name),
+    }
+}
+
+/// For fields where omitting keeps the current value and "" clears it:
+/// `None` keeps, `Some(None)` clears.
+fn clearable(value: Option<&str>) -> Option<Option<&str>> {
+    value.map(|v| Some(v.trim()).filter(|v| !v.is_empty()))
+}
+
+fn validate_setting_key(key: &str) -> Result<()> {
+    validate_one_of("setting", key, &editable_settings().collect::<Vec<_>>())
+}
+
+/// Checks a setting change: a toggle takes "true" or "false", and the
+/// summarization provider any name ("" for automatic).
 pub fn validate_setting(key: &str, value: &str) -> Result<()> {
-    validate_one_of("setting", key, EDITABLE_SETTINGS)?;
+    validate_setting_key(key)?;
     if key == SUMMARIZATION_PROVIDER_SETTING {
         return Ok(());
     }
     validate_one_of("value", value, &["true", "false"])
+}
+
+/// One editable setting's value; `None` when unset.
+pub fn get_setting(db: &Database, key: &str) -> Result<Option<String>> {
+    validate_setting_key(key)?;
+    Ok(db.get_setting(key)?)
+}
+
+/// Every editable setting, unset ones as null.
+pub fn settings_map(db: &Database) -> Result<serde_json::Map<String, Value>> {
+    editable_settings()
+        .map(|key| Ok((key.to_string(), json!(db.get_setting(key)?))))
+        .collect()
+}
+
+/// Validates and saves a setting, returning the value stored.
+pub fn set_setting(db: &Database, key: &str, value: &str) -> Result<String> {
+    let value = value.trim();
+    validate_setting(key, value)?;
+    db.set_setting(key, value)?;
+    Ok(value.to_string())
+}
+
+// --- Meetings ---
+
+/// Changes to a meeting. `None` keeps a field; a `template_id` of "" clears
+/// it so the auto-run templates apply.
+#[derive(Debug, Default)]
+pub struct MeetingPatch {
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub template_id: Option<String>,
+    pub notes: Option<String>,
+}
+
+pub fn validate_meeting_status(status: &str) -> Result<()> {
+    validate_one_of("meeting status", status, MEETING_STATUSES)
+}
+
+pub fn validate_template(db: &Database, template_id: &str) -> Result<()> {
+    db.get_template(template_id)
+        .map(drop)
+        .map_err(|_| anyhow!("Template '{template_id}' not found"))
+}
+
+/// Applies `patch` to a meeting, checking every field before writing any,
+/// and returns the updated meeting.
+pub fn update_meeting(db: &Database, id: &str, patch: MeetingPatch) -> Result<Meeting> {
+    db.get_meeting(id)?;
+    let title = patch
+        .title
+        .as_deref()
+        .map(|t| non_empty_name("Title", t))
+        .transpose()?;
+    if let Some(status) = &patch.status {
+        validate_meeting_status(status)?;
+    }
+    let template_id = clearable(patch.template_id.as_deref());
+    if let Some(Some(template_id)) = template_id {
+        validate_template(db, template_id)?;
+    }
+
+    if let Some(title) = title {
+        db.update_meeting_title(id, title)?;
+    }
+    if let Some(status) = &patch.status {
+        db.update_meeting_status(id, status)?;
+    }
+    if let Some(template_id) = template_id {
+        db.update_meeting_template(id, template_id)?;
+    }
+    if let Some(notes) = &patch.notes {
+        db.update_meeting_notes(id, notes)?;
+    }
+    Ok(db.get_meeting(id)?)
+}
+
+// --- Labels ---
+
+pub fn create_label(db: &Database, name: &str, color: &str, icon: Option<&str>) -> Result<Label> {
+    let name = non_empty_name("Label name", name)?;
+    validate_hex_color(color)?;
+    Ok(db.create_label(name, color, clearable(icon).flatten())?)
+}
+
+/// Updates a label; `None` keeps a field, and an icon of "" removes it.
+pub fn update_label(
+    db: &Database,
+    id: &str,
+    name: Option<&str>,
+    color: Option<&str>,
+    icon: Option<&str>,
+) -> Result<Label> {
+    let label = db.get_label(id)?;
+    let name = non_empty_name("Label name", name.unwrap_or(&label.name))?;
+    let color = color.unwrap_or(&label.color);
+    validate_hex_color(color)?;
+    let icon = clearable(icon).unwrap_or(label.icon.as_deref());
+    Ok(db.update_label(id, name, color, icon)?)
+}
+
+/// The label in `labels` with ID `key`, or named `key` ignoring case.
+pub fn find_label<'a>(labels: &'a [Label], key: &str) -> Result<&'a Label> {
+    labels
+        .iter()
+        .find(|l| l.id == key || l.name.eq_ignore_ascii_case(key))
+        .ok_or_else(|| anyhow!("Label not found: {key}"))
+}
+
+/// The IDs of the labels `keys` name (by ID or name), in order.
+pub fn find_label_ids(db: &Database, keys: &[String]) -> Result<Vec<String>> {
+    if keys.is_empty() {
+        return Ok(Vec::new());
+    }
+    let labels = db.list_labels()?;
+    keys.iter()
+        .map(|key| find_label(&labels, key).map(|l| l.id.clone()))
+        .collect()
+}
+
+// --- Recipes ---
+
+/// Changes to a recipe; `None` keeps a field.
+#[derive(Debug, Default)]
+pub struct RecipePatch {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub slash_command: Option<String>,
+    pub prompt_template: Option<String>,
+    pub output_format: Option<String>,
+}
+
+/// Trims the name and accepts a slash command typed with its "/".
+fn normalize_recipe(recipe: NewRecipe) -> NewRecipe {
+    NewRecipe {
+        name: recipe.name.trim().to_string(),
+        slash_command: recipe
+            .slash_command
+            .trim()
+            .trim_start_matches('/')
+            .to_string(),
+        ..recipe
+    }
+}
+
+pub fn create_recipe(db: &Database, recipe: NewRecipe) -> Result<Recipe> {
+    let recipe = normalize_recipe(recipe);
+    validate_recipe(db, &recipe, None)?;
+    Ok(db.create_recipe(recipe)?)
+}
+
+pub fn update_recipe(db: &Database, id: &str, patch: RecipePatch) -> Result<Recipe> {
+    let current = db.get_recipe(id)?;
+    let recipe = normalize_recipe(NewRecipe {
+        name: patch.name.unwrap_or(current.name),
+        description: patch.description.unwrap_or(current.description),
+        slash_command: patch.slash_command.unwrap_or(current.slash_command),
+        prompt_template: patch.prompt_template.unwrap_or(current.prompt_template),
+        output_format: patch.output_format.unwrap_or(current.output_format),
+    });
+    validate_recipe(db, &recipe, Some(id))?;
+    Ok(db.update_recipe(
+        id,
+        &recipe.name,
+        &recipe.description,
+        &recipe.slash_command,
+        &recipe.prompt_template,
+        &recipe.output_format,
+    )?)
 }
 
 /// Checks a recipe the way the app's editor does, including that no other
@@ -125,6 +324,115 @@ pub fn validate_recipe(db: &Database, recipe: &NewRecipe, id: Option<&str>) -> R
     }
 }
 
+// --- Action items, snapshots, dictionary, conversations ---
+
+/// Updates an action item: `None` keeps a field, and an assignee or due date
+/// of "" clears it. Returns the updated item.
+pub fn update_action_item(
+    db: &Database,
+    id: &str,
+    status: Option<&str>,
+    assignee: Option<&str>,
+    due_date: Option<&str>,
+) -> Result<InsightWithActionItem> {
+    let current = db.get_insight_by_action_item(id)?;
+    if let Some(status) = status {
+        validate_one_of("action item status", status, ACTION_ITEM_STATUSES)?;
+    }
+    let (assignee, due_date) = (clearable(assignee), clearable(due_date));
+
+    if let Some(status) = status {
+        db.update_action_item_status(id, status)?;
+    }
+    if assignee.is_some() || due_date.is_some() {
+        db.update_action_item(
+            id,
+            assignee.unwrap_or(current.assignee.as_deref()),
+            due_date.unwrap_or(current.due_date.as_deref()),
+        )?;
+    }
+    Ok(db.get_insight_by_action_item(id)?)
+}
+
+/// Deletes a snapshot and its image file.
+pub fn delete_snapshot(db: &Database, id: &str) -> Result<()> {
+    let snapshot = db
+        .delete_snapshot(id)?
+        .ok_or_else(|| anyhow!("Snapshot not found: {id}"))?;
+    let _ = std::fs::remove_file(&snapshot.image_path);
+    Ok(())
+}
+
+/// Updates a dictionary entry; `None` keeps a field. Returns the entry.
+pub fn update_dictionary_entry(
+    db: &Database,
+    id: &str,
+    term: Option<&str>,
+    misheard: Option<&[String]>,
+) -> Result<DictionaryEntry> {
+    let entry = db.get_dictionary_entry(id)?;
+    db.update_dictionary_entry(
+        id,
+        term.unwrap_or(&entry.term),
+        misheard.unwrap_or(&entry.misheard),
+    )?;
+    Ok(db.get_dictionary_entry(id)?)
+}
+
+/// Rewrites a recorded meeting's transcript with the dictionary's
+/// corrections, returning how many segments changed.
+pub fn apply_dictionary(db: &Database, meeting_id: &str) -> Result<usize> {
+    db.get_meeting(meeting_id)?;
+    let rules = crate::dictionary::Rules::new(&db.list_dictionary_entries()?);
+    Ok(crate::dictionary::apply_to_meeting(
+        db, meeting_id, &rules, None,
+    )?)
+}
+
+pub fn rename_conversation(db: &Database, id: &str, title: &str) -> Result<ChatConversation> {
+    db.get_chat_conversation(id)?;
+    db.update_chat_conversation_title(id, non_empty_name("Title", title)?)?;
+    Ok(db.get_chat_conversation(id)?)
+}
+
+// --- API keys ---
+
+/// Stores a provider's API key. Linear's lives with the other Linear
+/// settings.
+pub fn store_api_key(db: &Database, provider: &str, key: &str) -> Result<()> {
+    validate_one_of("provider", provider, API_KEY_PROVIDERS)?;
+    if provider == "linear" {
+        db.set_linear_setting("api_key", key)?;
+    } else {
+        db.store_api_key(provider, key)?;
+    }
+    Ok(())
+}
+
+pub fn delete_api_key(db: &Database, provider: &str) -> Result<()> {
+    validate_one_of("provider", provider, API_KEY_PROVIDERS)?;
+    if provider == "linear" {
+        db.delete_linear_setting("api_key")?;
+    } else {
+        db.delete_api_key(provider)?;
+    }
+    Ok(())
+}
+
+/// Providers with a stored API key.
+pub fn list_api_key_providers(db: &Database) -> Result<Vec<String>> {
+    let mut providers = db.list_api_key_providers()?;
+    if db
+        .get_linear_setting("api_key")?
+        .is_some_and(|k| !k.is_empty())
+    {
+        providers.push("linear".into());
+    }
+    Ok(providers)
+}
+
+// --- Analytics and search index ---
+
 /// Loads the embedding model that asking across meetings and the search
 /// index need, or explains how to get it.
 pub fn load_embedding_engine() -> Result<EmbeddingEngine> {
@@ -135,6 +443,54 @@ pub fn load_embedding_engine() -> Result<EmbeddingEngine> {
         ));
     }
     EmbeddingEngine::load()
+}
+
+/// The embedding model if it's downloaded and loads, for work that can do
+/// without it.
+pub fn try_load_embedding_engine() -> Option<EmbeddingEngine> {
+    EmbeddingEngine::is_available()
+        .then(EmbeddingEngine::load)
+        .and_then(Result::ok)
+}
+
+/// The meetings "index everything" covers: those not archived and not yet
+/// indexed.
+pub fn meetings_to_index(db: &Database) -> Result<Vec<String>> {
+    let mut ids = Vec::new();
+    for meeting in db.list_meetings(None, false, None)? {
+        if !db.has_meeting_chunks(&meeting.id)? {
+            ids.push(meeting.id);
+        }
+    }
+    Ok(ids)
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct EmbedFailure {
+    pub meeting_id: String,
+    pub error: String,
+}
+
+#[derive(Debug, Default, serde::Serialize)]
+pub struct EmbedReport {
+    pub chunks_added: usize,
+    pub failed: Vec<EmbedFailure>,
+}
+
+/// Indexes each meeting with `embed` (`chunking::embed_meeting` with an
+/// engine, which callers may lock per meeting), carrying on past failures.
+pub fn embed_meetings(ids: &[String], mut embed: impl FnMut(&str) -> Result<usize>) -> EmbedReport {
+    let mut report = EmbedReport::default();
+    for id in ids {
+        match embed(id) {
+            Ok(n) => report.chunks_added += n,
+            Err(e) => report.failed.push(EmbedFailure {
+                meeting_id: id.clone(),
+                error: format!("{e:#}"),
+            }),
+        }
+    }
+    report
 }
 
 /// Recomputes speaker analytics and engagement from the stored transcript.
@@ -149,6 +505,22 @@ pub fn refresh_analytics(db: &Database, meeting_id: &str) -> Result<()> {
     let engagement = crate::analytics::compute_engagement(meeting_id, &speaker_analytics, &texts);
     db.save_engagement(&engagement)?;
     Ok(())
+}
+
+/// A meeting's stored speaker analytics, engagement, and sentiment,
+/// computing the first two if they haven't been yet.
+pub fn meeting_analytics(db: &Database, meeting_id: &str) -> Result<Value> {
+    db.get_meeting(meeting_id)?;
+    let mut speakers = db.get_speaker_analytics(meeting_id)?;
+    if speakers.is_empty() {
+        refresh_analytics(db, meeting_id)?;
+        speakers = db.get_speaker_analytics(meeting_id)?;
+    }
+    Ok(json!({
+        "speakers": speakers,
+        "engagement": db.get_engagement(meeting_id)?,
+        "sentiment": db.get_sentiment_segments(meeting_id)?,
+    }))
 }
 
 /// Renames a speaker throughout a meeting ("Speaker 2" → "Priya"), or merges
@@ -185,7 +557,9 @@ pub fn rename_speaker(
 /// one silently moves your transcripts to a different vendor. Set
 /// `summarization_provider` to pin it.
 pub fn pick_auto_model(db: &Database, llm: &LlmRegistry) -> Option<ModelInfo> {
-    let preferred = db.get_setting("summarization_provider").unwrap_or(None);
+    let preferred = db
+        .get_setting(SUMMARIZATION_PROVIDER_SETTING)
+        .unwrap_or(None);
     let models = llm.all_models();
     preferred
         .and_then(|p| models.iter().find(|m| m.provider == p).cloned())
@@ -219,6 +593,19 @@ pub fn resolve_model(
         })?,
     };
     Ok((info.provider, model.map(str::to_string).unwrap_or(info.id)))
+}
+
+/// The LLM providers on this machine, with the provider and model the caller
+/// asked for resolved as `resolve_model` does. Detection probes Ollama and
+/// spawns processes, so async callers should run it off their workers.
+pub fn detect_llm(
+    db: &Database,
+    provider: Option<&str>,
+    model: Option<&str>,
+) -> Result<(LlmRegistry, String, String)> {
+    let llm = LlmRegistry::detect(db);
+    let (provider, model) = resolve_model(db, &llm, provider, model)?;
+    Ok((llm, provider, model))
 }
 
 async fn chat(
@@ -283,6 +670,40 @@ pub async fn enrich_notes(
     let enriched = chat(llm, provider, model, messages).await?;
     db.update_meeting_enriched_notes(meeting_id, &enriched)?;
     Ok(enriched)
+}
+
+/// Extracts decisions, action items, and custom insights from a meeting,
+/// first deleting its existing ones with `replace`. Returns its insights.
+pub async fn extract_insights(
+    db: &Database,
+    llm: &LlmRegistry,
+    meeting_id: &str,
+    provider: &str,
+    model: &str,
+    replace: bool,
+) -> Result<Vec<InsightWithActionItem>> {
+    db.get_meeting(meeting_id)?;
+    if replace {
+        crate::extraction::re_extract_insights(db, llm, meeting_id, provider, model).await?;
+    } else {
+        crate::extraction::extract_insights(db, llm, meeting_id, provider, model).await?;
+    }
+    Ok(db.get_insights_for_meeting(meeting_id)?)
+}
+
+/// Scores a meeting's sentiment over time and saves it with its analytics.
+pub async fn analyze_sentiment(
+    db: &Database,
+    llm: &LlmRegistry,
+    meeting_id: &str,
+    provider: &str,
+    model: &str,
+) -> Result<Vec<SentimentSegment>> {
+    db.get_meeting(meeting_id)?;
+    let segments =
+        crate::analytics::analyze_sentiment(db, llm, meeting_id, provider, model).await?;
+    db.save_sentiment_segments(meeting_id, &segments)?;
+    Ok(segments)
 }
 
 /// Filters for questions asked across all meetings.
@@ -458,6 +879,54 @@ pub async fn send_chat_message(
     Ok(json!({ "response": response, "sources": sources }))
 }
 
+/// Answers a question from all meetings: in the saved conversation
+/// `conversation_id`, in a new saved one with `save`, or else one-off.
+/// Returns `{"response", "sources"}`, plus `"conversation_id"` when saved.
+#[allow(clippy::too_many_arguments)]
+pub async fn ask(
+    db: &Database,
+    llm: &LlmRegistry,
+    query_embedding: &[f32],
+    question: &str,
+    conversation_id: Option<&str>,
+    save: bool,
+    provider: &str,
+    model: &str,
+    filters: &AskFilters,
+) -> Result<Value> {
+    let conversation_id = match conversation_id {
+        Some(id) => db.get_chat_conversation(id)?.id,
+        None if save => db.create_chat_conversation()?.id,
+        None => {
+            let (response, sources) = rag_chat(
+                db,
+                llm,
+                query_embedding,
+                question,
+                Vec::new(),
+                provider,
+                model,
+                filters,
+            )
+            .await?;
+            return Ok(json!({ "response": response, "sources": sources }));
+        }
+    };
+    let mut result = send_chat_message(
+        db,
+        llm,
+        query_embedding,
+        &conversation_id,
+        question,
+        provider,
+        model,
+        filters,
+    )
+    .await?;
+    result["conversation_id"] = json!(conversation_id);
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -489,6 +958,234 @@ mod tests {
         assert!(validate_setting(SUMMARIZATION_PROVIDER_SETTING, "anthropic").is_ok());
         assert!(validate_setting(SUMMARIZATION_PROVIDER_SETTING, "").is_ok());
         assert!(validate_setting("theme", "dark").is_err());
+    }
+
+    fn db_with_meeting() -> (Database, String) {
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(crate::db::NewMeeting {
+                title: "Sync".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        db.create_transcript_segment(crate::db::NewTranscriptSegment {
+            meeting_id: meeting.id.clone(),
+            speaker_label: "Alice".into(),
+            text: "We ship cooper netties next week.".into(),
+            start_ms: 0,
+            end_ms: 3000,
+            confidence: 0.9,
+        })
+        .unwrap();
+        (db, meeting.id)
+    }
+
+    #[test]
+    fn update_meeting_checks_everything_before_writing() {
+        let (db, id) = db_with_meeting();
+        let patch = |title: &str, status: &str| MeetingPatch {
+            title: Some(title.into()),
+            status: Some(status.into()),
+            ..Default::default()
+        };
+        assert!(update_meeting(&db, &id, patch("Renamed", "bogus")).is_err());
+        assert_eq!(db.get_meeting(&id).unwrap().title, "Sync");
+        assert!(update_meeting(&db, &id, patch("  ", "archived")).is_err());
+        let err = update_meeting(
+            &db,
+            &id,
+            MeetingPatch {
+                template_id: Some("nope".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("Template 'nope' not found"));
+
+        let meeting = update_meeting(&db, &id, patch(" Renamed ", "archived")).unwrap();
+        assert_eq!(meeting.title, "Renamed");
+        assert_eq!(meeting.status, "archived");
+        assert!(update_meeting(&db, "missing", MeetingPatch::default()).is_err());
+    }
+
+    #[test]
+    fn labels_validate_and_resolve_by_id_or_name() {
+        let (db, id) = db_with_meeting();
+        assert!(create_label(&db, " ", "#ff0000", None).is_err());
+        assert!(create_label(&db, "Customer", "red", None).is_err());
+        let label = create_label(&db, " Customer ", "#ff0000", Some("star")).unwrap();
+        assert_eq!(label.name, "Customer");
+
+        let updated = update_label(&db, &label.id, None, Some("#00ff00"), Some("")).unwrap();
+        assert_eq!(updated.name, "Customer");
+        assert_eq!(updated.color, "#00ff00");
+        assert!(updated.icon.is_none());
+        assert!(update_label(&db, "missing", None, None, None).is_err());
+
+        let labels = db.list_labels().unwrap();
+        assert_eq!(find_label(&labels, &label.id).unwrap().id, label.id);
+        assert_eq!(find_label(&labels, "customer").unwrap().id, label.id);
+        assert!(find_label(&labels, "nope").is_err());
+        assert_eq!(
+            find_label_ids(&db, &["CUSTOMER".into()]).unwrap(),
+            vec![label.id.clone()]
+        );
+
+        db.add_meeting_label(&id, &label.id).unwrap();
+        assert_eq!(
+            db.list_meetings(None, true, Some(&label.id)).unwrap().len(),
+            1
+        );
+        assert!(db
+            .list_meetings(None, true, Some("other"))
+            .unwrap()
+            .is_empty());
+        let pairs = db.get_labels_for_meetings(&[id.as_str()]).unwrap();
+        assert_eq!(pairs[0].1.name, "Customer");
+    }
+
+    #[test]
+    fn recipes_accept_a_leading_slash() {
+        let db = Database::new_in_memory().unwrap();
+        let recipe = create_recipe(
+            &db,
+            NewRecipe {
+                name: " Email ".into(),
+                description: String::new(),
+                slash_command: "/follow-up".into(),
+                prompt_template: "Draft an email from {{transcript}}".into(),
+                output_format: "markdown".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(recipe.name, "Email");
+        assert_eq!(recipe.slash_command, "follow-up");
+
+        let patch = RecipePatch {
+            slash_command: Some("/bad command".into()),
+            ..Default::default()
+        };
+        assert!(update_recipe(&db, &recipe.id, patch).is_err());
+        let patch = RecipePatch {
+            output_format: Some("plain".into()),
+            ..Default::default()
+        };
+        let updated = update_recipe(&db, &recipe.id, patch).unwrap();
+        assert_eq!(updated.output_format, "plain");
+        assert_eq!(updated.slash_command, "follow-up");
+    }
+
+    #[test]
+    fn action_items_keep_omitted_fields_and_clear_empty_ones() {
+        let (db, id) = db_with_meeting();
+        let insight = db
+            .create_insight(crate::db::NewInsight {
+                meeting_id: id.clone(),
+                insight_type: "action_item".into(),
+                content: "Write the doc".into(),
+                context: None,
+                transcript_start_ms: None,
+                transcript_end_ms: None,
+            })
+            .unwrap();
+        let item = db
+            .create_action_item(crate::db::NewActionItem {
+                insight_id: insight.id.clone(),
+                assignee: Some("Alice".into()),
+                due_date: Some("2026-01-01".into()),
+            })
+            .unwrap();
+
+        let updated = update_action_item(&db, &item.id, Some("done"), Some("Bob"), None).unwrap();
+        assert_eq!(updated.status.as_deref(), Some("done"));
+        assert_eq!(updated.assignee.as_deref(), Some("Bob"));
+        assert_eq!(updated.due_date.as_deref(), Some("2026-01-01"));
+        let updated = update_action_item(&db, &item.id, None, None, Some("")).unwrap();
+        assert!(updated.due_date.is_none());
+        assert!(update_action_item(&db, &item.id, Some("finished"), None, None).is_err());
+        assert_eq!(
+            db.get_action_item_id_for_insight(&insight.id).unwrap(),
+            Some(item.id)
+        );
+        assert_eq!(
+            db.get_all_insights(Some(&id), None, None, None)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(db
+            .get_all_insights(Some("other"), None, None, None)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn dictionary_conversations_and_snapshots() {
+        let (db, id) = db_with_meeting();
+        let entry = db
+            .upsert_dictionary_entry("Kubernetes", &["cooper netties".into()], "manual")
+            .unwrap();
+        let entry = update_dictionary_entry(&db, &entry.id, Some("Kubernetes"), None).unwrap();
+        assert_eq!(entry.misheard, vec!["cooper netties".to_string()]);
+        assert!(update_dictionary_entry(&db, "missing", None, None).is_err());
+        assert_eq!(apply_dictionary(&db, &id).unwrap(), 1);
+        assert!(apply_dictionary(&db, "missing").is_err());
+
+        let conversation = db.create_chat_conversation().unwrap();
+        assert!(rename_conversation(&db, &conversation.id, " ").is_err());
+        let renamed = rename_conversation(&db, &conversation.id, " Plans ").unwrap();
+        assert_eq!(renamed.title, "Plans");
+        assert!(rename_conversation(&db, "missing", "Plans").is_err());
+
+        assert!(delete_snapshot(&db, "missing").is_err());
+    }
+
+    #[test]
+    fn analytics_are_computed_once_then_read_back() {
+        let (db, id) = db_with_meeting();
+        assert!(db.get_speaker_analytics(&id).unwrap().is_empty());
+        let analytics = meeting_analytics(&db, &id).unwrap();
+        assert_eq!(analytics["speakers"][0]["speaker_label"], "Alice");
+        assert_eq!(db.get_speaker_analytics(&id).unwrap().len(), 1);
+        assert!(meeting_analytics(&db, "missing").is_err());
+    }
+
+    #[test]
+    fn embed_report_collects_failures() {
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let report = embed_meetings(&ids, |id| match id {
+            "a" => Ok(3),
+            _ => Err(anyhow!("no transcript")),
+        });
+        assert_eq!(report.chunks_added, 3);
+        assert_eq!(report.failed[0].meeting_id, "b");
+
+        let (db, id) = db_with_meeting();
+        assert_eq!(meetings_to_index(&db).unwrap(), vec![id]);
+    }
+
+    #[test]
+    fn settings_and_api_keys() {
+        let db = Database::new_in_memory().unwrap();
+        assert_eq!(
+            set_setting(&db, "denoise_enabled", " true ").unwrap(),
+            "true"
+        );
+        assert!(set_setting(&db, "denoise_enabled", "on").is_err());
+        assert!(get_setting(&db, "theme").is_err());
+        let settings = settings_map(&db).unwrap();
+        assert_eq!(settings["denoise_enabled"], "true");
+        assert!(settings[SUMMARIZATION_PROVIDER_SETTING].is_null());
+
+        store_api_key(&db, "linear", "lin_123").unwrap();
+        store_api_key(&db, "openai", "sk-123").unwrap();
+        assert!(store_api_key(&db, "nope", "x").is_err());
+        let mut providers = list_api_key_providers(&db).unwrap();
+        providers.sort();
+        assert_eq!(providers, vec!["linear", "openai"]);
+        delete_api_key(&db, "linear").unwrap();
+        assert_eq!(list_api_key_providers(&db).unwrap(), vec!["openai"]);
     }
 
     #[test]

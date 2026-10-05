@@ -27,7 +27,7 @@ pub struct ListMeetingsParams {
     /// Include archived meetings
     #[serde(default)]
     pub include_archived: bool,
-    /// Meetings to skip, from a previous page's `next_offset`
+    /// From next_offset
     #[serde(default)]
     pub offset: usize,
 }
@@ -36,7 +36,7 @@ pub struct ListMeetingsParams {
 pub struct GetMeetingParams {
     /// The meeting ID to retrieve
     pub id: String,
-    /// Transcript lines to skip, from a previous call's `transcript.next_offset`
+    /// From transcript.next_offset
     #[serde(default)]
     pub transcript_offset: usize,
     /// Prefix each transcript line with its segment ID, for edit_transcript_segment
@@ -48,7 +48,7 @@ pub struct GetMeetingParams {
 pub struct SearchTranscriptsParams {
     /// Full-text search query to match against transcript segments
     pub query: String,
-    /// Matches to skip, from a previous page's `next_offset`
+    /// From next_offset
     #[serde(default)]
     pub offset: usize,
 }
@@ -109,17 +109,23 @@ pub struct ListWorkflowRunsParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum AutomationKind {
+pub enum DeleteKind {
     Integration,
     Workflow,
     Template,
     InsightType,
+    Recipe,
+    Label,
+    DictionaryEntry,
+    ScratchNote,
+    Snapshot,
+    Conversation,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct DeleteAutomationParams {
-    /// What to delete. Deleting an integration also deletes its workflows.
-    pub kind: AutomationKind,
+pub struct DeleteParams {
+    /// What to delete
+    pub kind: DeleteKind,
     /// ID of the item
     pub id: String,
 }
@@ -140,7 +146,7 @@ pub struct MeetingIdParams {
 pub struct MeetingPageParams {
     /// Meeting ID
     pub meeting_id: String,
-    /// Items to skip, from a previous page's `next_offset`
+    /// From next_offset
     #[serde(default)]
     pub offset: usize,
 }
@@ -191,27 +197,17 @@ pub struct EditSegmentParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct CreateLabelParams {
-    /// Label name, unique
-    pub name: String,
-    /// Hex color, e.g. "#4f46e5"
-    pub color: String,
-    /// Optional icon name
+pub struct SaveLabelParams {
+    /// Label to update. Omit to create one.
     #[serde(default)]
-    pub icon: Option<String>,
-}
-
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct UpdateLabelParams {
-    /// Label ID
-    pub id: String,
-    /// New name
+    pub id: Option<String>,
+    /// Unique name; required to create
     #[serde(default)]
     pub name: Option<String>,
-    /// New hex color, e.g. "#4f46e5"
+    /// Hex color, e.g. "#4f46e5"; required to create
     #[serde(default)]
     pub color: Option<String>,
-    /// New icon name; "" removes the icon
+    /// Icon name; "" removes it
     #[serde(default)]
     pub icon: Option<String>,
 }
@@ -247,9 +243,10 @@ pub struct SaveDictionaryEntryParams {
     pub id: Option<String>,
     /// Correct spelling, e.g. "Kubernetes"
     pub term: String,
-    /// Ways transcription gets it wrong, e.g. ["cooper netties"]
+    /// Ways transcription gets it wrong, e.g. ["cooper netties"]. With id,
+    /// replaces the entry's variants; omit to keep them.
     #[serde(default)]
-    pub misheard: Vec<String>,
+    pub misheard: Option<Vec<String>>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -266,7 +263,7 @@ pub struct ListInsightsParams {
     /// Only insights whose text contains this
     #[serde(default)]
     pub search: Option<String>,
-    /// Insights to skip, from a previous page's `next_offset`
+    /// From next_offset
     #[serde(default)]
     pub offset: usize,
 }
@@ -433,7 +430,7 @@ pub struct EmbedMeetingsParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct PageParams {
-    /// Items to skip, from a previous page's `next_offset`
+    /// From next_offset
     #[serde(default)]
     pub offset: usize,
 }
@@ -442,7 +439,7 @@ pub struct PageParams {
 pub struct GetConversationParams {
     /// Conversation ID
     pub id: String,
-    /// Messages to skip, from a previous call's `messages.next_offset`
+    /// From messages.next_offset
     #[serde(default)]
     pub offset: usize,
 }
@@ -468,20 +465,8 @@ fn invalid(msg: impl Into<String>) -> NootleError {
     NootleError::Other(msg.into())
 }
 
-/// `Some("")` means "clear it".
-fn non_empty(value: Option<&str>) -> Option<&str> {
-    value.filter(|v| !v.trim().is_empty())
-}
-
-/// Checks a `set_setting` key and value. URL control can't be changed here:
-/// it lets other apps start recordings, so it stays a decision made in the app.
-fn validate_setting(key: &str, value: &str) -> crate::error::Result<()> {
-    if key == crate::remote::ENABLED_SETTING {
-        return Err(invalid(format!(
-            "'{key}' can only be changed in Nootle's settings"
-        )));
-    }
-    Ok(ops::validate_setting(key, value)?)
+fn deleted(id: &str) -> serde_json::Value {
+    json!({ "deleted": id })
 }
 
 /// Runs blocking work (database scans, model inference, process probes) off
@@ -528,9 +513,20 @@ const TRANSCRIPT_PAGE_SIZE: usize = 300;
 /// remain, the offset of the next page.
 fn page<T: serde::Serialize>(items: Vec<T>, offset: usize, size: usize) -> serde_json::Value {
     let total = items.len();
+    let items: Vec<T> = items.into_iter().skip(offset).take(size).collect();
+    paged(items, total, offset, size)
+}
+
+/// A page already cut from `total` items at `offset`.
+fn paged<T: serde::Serialize>(
+    items: Vec<T>,
+    total: usize,
+    offset: usize,
+    size: usize,
+) -> serde_json::Value {
     let next = offset.saturating_add(size);
     json!({
-        "items": items.into_iter().skip(offset).take(size).collect::<Vec<_>>(),
+        "items": items,
         "total": total,
         "next_offset": (next < total).then_some(next),
     })
@@ -545,29 +541,50 @@ fn transcript_line(s: &crate::db::TranscriptSegment) -> String {
     )
 }
 
+type EngineSlot = Arc<tokio::sync::Mutex<Option<EmbeddingEngine>>>;
+
 #[derive(Clone)]
 pub struct NootleMcpServer {
     db: Arc<Database>,
-    /// Loaded on first use and kept, since loading takes a while.
-    engine: Arc<tokio::sync::Mutex<Option<EmbeddingEngine>>>,
+    /// Loaded on first use and kept, since loading takes a while. Lock it
+    /// from blocking work only, and release it before calling an LLM.
+    engine: EngineSlot,
+    /// The LLMs on this machine, detected on first use and again when a
+    /// caller asks for one that wasn't there.
+    llm: Arc<tokio::sync::RwLock<Option<Arc<LlmRegistry>>>>,
 }
 
 impl NootleMcpServer {
-    /// Runs `f` with the cached embedding engine slot, off the async workers.
-    /// The engine is released when `f` returns, so call LLMs afterwards.
-    async fn with_engine<T: Send + 'static>(
-        &self,
-        f: impl FnOnce(&mut Option<EmbeddingEngine>) -> crate::error::Result<T> + Send + 'static,
-    ) -> crate::error::Result<T> {
-        let mut slot = self.engine.clone().lock_owned().await;
-        blocking(move || f(&mut slot)).await
-    }
-
-    /// Detects the LLMs on this machine and picks the provider and model.
-    async fn llm(&self, choice: &LlmChoice) -> crate::error::Result<(LlmRegistry, String, String)> {
+    /// Detects the LLMs on this machine and caches them.
+    async fn detect_llms(&self) -> crate::error::Result<Arc<LlmRegistry>> {
         let db = self.db.clone();
         // Detection probes Ollama and spawns processes.
-        let llm = blocking(move || Ok(LlmRegistry::detect(&db))).await?;
+        let llm = Arc::new(blocking(move || Ok(LlmRegistry::detect(&db))).await?);
+        *self.llm.write().await = Some(llm.clone());
+        Ok(llm)
+    }
+
+    /// The cached LLMs, detected again if `provider` (or, without one, any
+    /// provider) is missing, since it may have been set up since.
+    async fn registry(&self, provider: Option<&str>) -> crate::error::Result<Arc<LlmRegistry>> {
+        if let Some(llm) = self.llm.read().await.as_ref() {
+            let found = match provider {
+                Some(p) => llm.get_provider(p).is_some(),
+                None => !llm.provider_names().is_empty(),
+            };
+            if found {
+                return Ok(llm.clone());
+            }
+        }
+        self.detect_llms().await
+    }
+
+    /// The LLMs on this machine, with the provider and model `choice` resolves to.
+    async fn llm(
+        &self,
+        choice: &LlmChoice,
+    ) -> crate::error::Result<(Arc<LlmRegistry>, String, String)> {
+        let llm = self.registry(choice.provider.as_deref()).await?;
         let (provider, model) = ops::resolve_model(
             &self.db,
             &llm,
@@ -584,83 +601,95 @@ impl NootleMcpServer {
         Self {
             db,
             engine: Arc::default(),
+            llm: Arc::default(),
         }
     }
 
     #[tool(
         title = "List meetings",
-        description = "List meetings, newest first, optionally filtered by title or label. Archived meetings are left out unless include_archived. Returns id, title, start/end time, status, and label names, 50 per page; pass next_offset as offset for the next page.",
+        description = "List meetings, newest first, with their label names, optionally filtered by title or label. Archived meetings are left out unless include_archived.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
-    fn list_meetings(
+    async fn list_meetings(
         &self,
         Parameters(params): Parameters<ListMeetingsParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond((|| {
-            let mut labels: std::collections::HashMap<String, Vec<crate::db::Label>> =
-                std::collections::HashMap::new();
-            for (meeting_id, label) in self.db.get_all_meeting_labels()? {
-                labels.entry(meeting_id).or_default().push(label);
-            }
-            let meetings: Vec<_> = self
-                .db
-                .list_meetings(params.search.as_deref(), params.include_archived)?
-                .into_iter()
-                .filter_map(|m| {
-                    let labels = labels.remove(&m.id).unwrap_or_default();
-                    if let Some(wanted) = &params.label_id {
-                        if !labels.iter().any(|l| &l.id == wanted) {
-                            return None;
-                        }
-                    }
-                    Some(json!({
-                        "id": m.id,
-                        "title": m.title,
-                        "start_time": m.start_time,
-                        "end_time": m.end_time,
-                        "status": m.status,
-                        "labels": labels.into_iter().map(|l| l.name).collect::<Vec<_>>(),
-                    }))
-                })
-                .collect();
-            Ok(page(meetings, params.offset, PAGE_SIZE))
-        })())
+        let db = self.db.clone();
+        respond(
+            blocking(move || {
+                let meetings = db.list_meetings(
+                    params.search.as_deref(),
+                    params.include_archived,
+                    params.label_id.as_deref(),
+                )?;
+                let total = meetings.len();
+                let meetings: Vec<_> = meetings
+                    .into_iter()
+                    .skip(params.offset)
+                    .take(PAGE_SIZE)
+                    .collect();
+                let ids: Vec<&str> = meetings.iter().map(|m| m.id.as_str()).collect();
+                let mut labels: std::collections::HashMap<String, Vec<String>> =
+                    std::collections::HashMap::new();
+                for (meeting_id, label) in db.get_labels_for_meetings(&ids)? {
+                    labels.entry(meeting_id).or_default().push(label.name);
+                }
+                let items: Vec<_> = meetings
+                    .into_iter()
+                    .map(|m| {
+                        json!({
+                            "id": m.id,
+                            "title": m.title,
+                            "start_time": m.start_time,
+                            "end_time": m.end_time,
+                            "status": m.status,
+                            "labels": labels.remove(&m.id).unwrap_or_default(),
+                        })
+                    })
+                    .collect();
+                Ok(paged(items, total, params.offset, PAGE_SIZE))
+            })
+            .await,
+        )
     }
 
     #[tool(
         title = "Get meeting",
-        description = "Get a meeting's details, notes, summaries, labels, scratch notes, Linear tickets, and transcript. The transcript comes as \"[HH:MM:SS.mmm] Speaker: text\" lines (prefixed with \"segment_id \" when include_segment_ids), 300 per call; pass transcript.next_offset as transcript_offset for the rest.",
+        description = "Get a meeting's details, notes, summaries, labels, scratch notes, Linear tickets, and transcript as \"[HH:MM:SS.mmm] Speaker: text\" lines, 300 per call.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
-    fn get_meeting(
+    async fn get_meeting(
         &self,
         Parameters(params): Parameters<GetMeetingParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond((|| {
-            let meeting = self.db.get_meeting(&params.id)?;
-            let lines: Vec<String> = self
-                .db
-                .get_transcript(&params.id)?
-                .iter()
-                .map(|s| match params.include_segment_ids {
-                    true => format!("{} {}", s.id, transcript_line(s)),
-                    false => transcript_line(s),
-                })
-                .collect();
-            Ok(json!({
-                "meeting": meeting,
-                "labels": self.db.get_meeting_labels(&params.id)?,
-                "summaries": self.db.get_summaries_for_meeting(&params.id)?,
-                "scratch_notes": self.db.get_scratch_notes(&params.id)?,
-                "linear_tickets": self.db.get_linear_tickets(&params.id)?,
-                "transcript": page(lines, params.transcript_offset, TRANSCRIPT_PAGE_SIZE),
-            }))
-        })())
+        let db = self.db.clone();
+        respond(
+            blocking(move || {
+                let meeting = db.get_meeting(&params.id)?;
+                let lines: Vec<String> = db
+                    .get_transcript(&params.id)?
+                    .iter()
+                    .map(|s| match params.include_segment_ids {
+                        true => format!("{} {}", s.id, transcript_line(s)),
+                        false => transcript_line(s),
+                    })
+                    .collect();
+                Ok(json!({
+                    "meeting": meeting,
+                    "labels": db.get_meeting_labels(&params.id)?,
+                    "summaries": db.get_summaries_for_meeting(&params.id)?,
+                    "scratch_notes": db.get_scratch_notes(&params.id)?,
+                    "linear_tickets": db.get_linear_tickets(&params.id)?,
+                    "transcript": page(lines, params.transcript_offset, TRANSCRIPT_PAGE_SIZE),
+                }))
+            })
+            .await,
+        )
     }
 
     #[tool(
         title = "Search transcripts",
-        description = "Full-text phrase search across all meeting transcripts. Returns matching segments with their meeting's id and title, best match first, 50 per page; pass next_offset as offset for the next page.",
+        description = "Full-text phrase search across all meeting transcripts. Returns matching segments with their meeting's id and title, best match first.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn search_transcripts(
@@ -774,26 +803,23 @@ impl NootleMcpServer {
         &self,
         Parameters(p): Parameters<RunWorkflowParams>,
     ) -> Result<CallToolResult, McpError> {
-        // Detection probes Ollama and spawns processes, so skip it when no
-        // provider was asked for and keep it off the async worker otherwise.
-        let llm = match p.llm_provider {
-            Some(_) => {
-                let db = self.db.clone();
-                tokio::task::spawn_blocking(move || crate::llm::LlmRegistry::detect(&db))
-                    .await
-                    .map_err(|e| McpError::internal_error(e.to_string(), None))?
-            }
-            None => crate::llm::LlmRegistry::new(),
-        };
         respond(
-            crate::workflows::run_workflow_for_meeting(
-                &self.db,
-                &llm,
-                &p.meeting_id,
-                &p.workflow_id,
-                p.llm_provider.as_deref(),
-                p.llm_model.as_deref(),
-            )
+            async {
+                // Steps only need an LLM when one was asked for.
+                let llm = match p.llm_provider.as_deref() {
+                    Some(provider) => self.registry(Some(provider)).await?,
+                    None => Arc::default(),
+                };
+                crate::workflows::run_workflow_for_meeting(
+                    &self.db,
+                    &llm,
+                    &p.meeting_id,
+                    &p.workflow_id,
+                    p.llm_provider.as_deref(),
+                    p.llm_model.as_deref(),
+                )
+                .await
+            }
             .await,
         )
     }
@@ -867,25 +893,31 @@ impl NootleMcpServer {
     }
 
     #[tool(
-        title = "Delete automation",
-        description = "Permanently delete an integration (and its workflows), workflow, template, or insight type. Built-in templates and insight types can't be deleted. Confirm with the user first.",
+        title = "Delete",
+        description = "Permanently delete an item other than a meeting. Deleting an integration deletes its workflows; deleting a label removes it from meetings. Built-in templates and insight types can't be deleted.",
         annotations(
             destructive_hint = true,
             idempotent_hint = true,
             open_world_hint = false
         )
     )]
-    fn delete_automation(
-        &self,
-        Parameters(p): Parameters<DeleteAutomationParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let result = match p.kind {
-            AutomationKind::Integration => self.db.delete_integration(&p.id),
-            AutomationKind::Workflow => self.db.delete_workflow(&p.id),
-            AutomationKind::Template => self.db.delete_template(&p.id),
-            AutomationKind::InsightType => self.db.delete_insight_type(&p.id),
-        };
-        respond(result.map(|()| json!({ "deleted": p.id })))
+    fn delete(&self, Parameters(p): Parameters<DeleteParams>) -> Result<CallToolResult, McpError> {
+        respond((|| {
+            let db = &self.db;
+            match p.kind {
+                DeleteKind::Integration => db.delete_integration(&p.id)?,
+                DeleteKind::Workflow => db.delete_workflow(&p.id)?,
+                DeleteKind::Template => db.delete_template(&p.id)?,
+                DeleteKind::InsightType => db.delete_insight_type(&p.id)?,
+                DeleteKind::Recipe => db.delete_recipe(&p.id)?,
+                DeleteKind::Label => db.delete_label(&p.id)?,
+                DeleteKind::DictionaryEntry => db.delete_dictionary_entry(&p.id)?,
+                DeleteKind::ScratchNote => db.delete_scratch_note(&p.id)?,
+                DeleteKind::Snapshot => ops::delete_snapshot(db, &p.id)?,
+                DeleteKind::Conversation => db.delete_chat_conversation(&p.id)?,
+            }
+            Ok(deleted(&p.id))
+        })())
     }
 
     // --- Meeting edits ---
@@ -903,40 +935,18 @@ impl NootleMcpServer {
         &self,
         Parameters(p): Parameters<UpdateMeetingParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond((|| {
-            self.db.get_meeting(&p.id)?;
-            if let Some(title) = &p.title {
-                let title = title.trim();
-                if title.is_empty() {
-                    return Err(invalid("Title can't be empty"));
-                }
-                self.db.update_meeting_title(&p.id, title)?;
-            }
-            if let Some(status) = &p.status {
-                ops::validate_one_of("meeting status", status, ops::MEETING_STATUSES)?;
-                self.db.update_meeting_status(&p.id, status)?;
-            }
-            if let Some(template_id) = &p.template_id {
-                let template_id = non_empty(Some(template_id));
-                if let Some(id) = template_id {
-                    self.db.get_template(id).map_err(|_| {
-                        invalid(format!(
-                            "Template '{id}' not found; list_automations lists them"
-                        ))
-                    })?;
-                }
-                self.db.update_meeting_template(&p.id, template_id)?;
-            }
-            if let Some(notes) = &p.notes {
-                self.db.update_meeting_notes(&p.id, notes)?;
-            }
-            self.db.get_meeting(&p.id)
-        })())
+        let patch = ops::MeetingPatch {
+            title: p.title,
+            status: p.status,
+            template_id: p.template_id,
+            notes: p.notes,
+        };
+        respond(ops::update_meeting(&self.db, &p.id, patch).map_err(Into::into))
     }
 
     #[tool(
         title = "Delete meeting",
-        description = "Permanently delete a meeting with its transcript, summaries, insights, audio recording, and snapshots. Confirm with the user first.",
+        description = "Permanently delete a meeting with its transcript, summaries, insights, audio recording, and snapshots.",
         annotations(
             destructive_hint = true,
             idempotent_hint = true,
@@ -949,7 +959,7 @@ impl NootleMcpServer {
     ) -> Result<CallToolResult, McpError> {
         respond(
             ops::delete_meeting(&self.db, &p.id)
-                .map(|()| json!({ "deleted": p.id }))
+                .map(|()| deleted(&p.id))
                 .map_err(Into::into),
         )
     }
@@ -959,15 +969,19 @@ impl NootleMcpServer {
         description = "Render a meeting as Markdown (md: summaries, notes, insights, and transcript), a plain transcript (txt), or subtitles (srt, vtt). Returns the text.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
-    fn export_meeting(
+    async fn export_meeting(
         &self,
         Parameters(p): Parameters<ExportMeetingParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond((|| {
-            let format = crate::export::ExportFormat::parse(&p.format)?;
-            let content = crate::export::export_meeting(&self.db, &p.meeting_id, format)?;
-            Ok(json!({ "content": content }))
-        })())
+        let db = self.db.clone();
+        respond(
+            blocking(move || {
+                let format = crate::export::ExportFormat::parse(&p.format)?;
+                let content = crate::export::export_meeting(&db, &p.meeting_id, format)?;
+                Ok(json!({ "content": content }))
+            })
+            .await,
+        )
     }
 
     #[tool(
@@ -983,12 +997,18 @@ impl NootleMcpServer {
         &self,
         Parameters(p): Parameters<RenameSpeakerParams>,
     ) -> Result<CallToolResult, McpError> {
-        let db = self.db.clone();
+        let (db, engine) = (self.db.clone(), self.engine.clone());
         respond(
-            self.with_engine(move |slot| {
-                // Without the search model the index is just left as it was.
-                let engine = loaded_engine(slot).ok();
-                let changed = ops::rename_speaker(&db, engine, &p.meeting_id, &p.from, &p.to)?;
+            blocking(move || {
+                let rename =
+                    |engine| ops::rename_speaker(&db, engine, &p.meeting_id, &p.from, &p.to);
+                // Rebuild the search index only if the meeting is in it, and
+                // leave it as it was without the search model.
+                let changed = if db.has_meeting_chunks(&p.meeting_id)? {
+                    rename(loaded_engine(&mut engine.blocking_lock()).ok())?
+                } else {
+                    rename(None)?
+                };
                 Ok(json!({ "changed_segments": changed }))
             })
             .await,
@@ -1004,15 +1024,12 @@ impl NootleMcpServer {
             open_world_hint = false
         )
     )]
-    fn edit_transcript_segment(
+    async fn edit_transcript_segment(
         &self,
         Parameters(p): Parameters<EditSegmentParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond(crate::dictionary::record_edit(
-            &self.db,
-            &p.segment_id,
-            &p.text,
-        ))
+        let db = self.db.clone();
+        respond(blocking(move || crate::dictionary::record_edit(&db, &p.segment_id, &p.text)).await)
     }
 
     // --- Labels ---
@@ -1027,77 +1044,24 @@ impl NootleMcpServer {
     }
 
     #[tool(
-        title = "Create label",
-        description = "Create a label for tagging meetings.",
+        title = "Save label",
+        description = "Create a label for tagging meetings, or with id, change a label's name, color, or icon. Omitted fields keep their value.",
         annotations(destructive_hint = false, open_world_hint = false)
     )]
-    fn create_label(
+    fn save_label(
         &self,
-        Parameters(p): Parameters<CreateLabelParams>,
+        Parameters(p): Parameters<SaveLabelParams>,
     ) -> Result<CallToolResult, McpError> {
+        let (name, color, icon) = (p.name.as_deref(), p.color.as_deref(), p.icon.as_deref());
         respond((|| {
-            ops::validate_hex_color(&p.color)?;
-            let name = p.name.trim();
-            if name.is_empty() {
-                return Err(invalid("Label name can't be empty"));
-            }
-            self.db
-                .create_label(name, &p.color, non_empty(p.icon.as_deref()))
+            Ok(match &p.id {
+                Some(id) => ops::update_label(&self.db, id, name, color, icon)?,
+                None => {
+                    let color = color.ok_or_else(|| invalid("A new label needs a color"))?;
+                    ops::create_label(&self.db, name.unwrap_or_default(), color, icon)?
+                }
+            })
         })())
-    }
-
-    #[tool(
-        title = "Update label",
-        description = "Rename a label or change its color or icon.",
-        annotations(
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn update_label(
-        &self,
-        Parameters(p): Parameters<UpdateLabelParams>,
-    ) -> Result<CallToolResult, McpError> {
-        respond((|| {
-            let label = self
-                .db
-                .list_labels()?
-                .into_iter()
-                .find(|l| l.id == p.id)
-                .ok_or_else(|| invalid(format!("Label '{}' not found", p.id)))?;
-            let name = p.name.as_deref().map(str::trim).unwrap_or(&label.name);
-            if name.is_empty() {
-                return Err(invalid("Label name can't be empty"));
-            }
-            let color = p.color.as_deref().unwrap_or(&label.color);
-            ops::validate_hex_color(color)?;
-            let icon = match &p.icon {
-                Some(icon) => non_empty(Some(icon)),
-                None => label.icon.as_deref(),
-            };
-            self.db.update_label(&p.id, name, color, icon)
-        })())
-    }
-
-    #[tool(
-        title = "Delete label",
-        description = "Delete a label and remove it from every meeting. The meetings themselves are kept. Confirm with the user first.",
-        annotations(
-            destructive_hint = true,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn delete_label(
-        &self,
-        Parameters(p): Parameters<IdParams>,
-    ) -> Result<CallToolResult, McpError> {
-        respond(
-            self.db
-                .delete_label(&p.id)
-                .map(|()| json!({ "deleted": p.id })),
-        )
     }
 
     #[tool(
@@ -1150,28 +1114,8 @@ impl NootleMcpServer {
     }
 
     #[tool(
-        title = "Delete scratch note",
-        description = "Delete a scratch note. Confirm with the user first.",
-        annotations(
-            destructive_hint = true,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn delete_scratch_note(
-        &self,
-        Parameters(p): Parameters<IdParams>,
-    ) -> Result<CallToolResult, McpError> {
-        respond(
-            self.db
-                .delete_scratch_note(&p.id)
-                .map(|()| json!({ "deleted": p.id })),
-        )
-    }
-
-    #[tool(
         title = "List snapshots",
-        description = "List the screenshots of shared screens taken during a meeting, with the text read off each, in meeting order, 50 per page.",
+        description = "List the screenshots of shared screens taken during a meeting, with the text read off each, in meeting order.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn list_snapshots(
@@ -1183,27 +1127,6 @@ impl NootleMcpServer {
                 .get_snapshots(&p.meeting_id)
                 .map(|snapshots| page(snapshots, p.offset, PAGE_SIZE)),
         )
-    }
-
-    #[tool(
-        title = "Delete snapshot",
-        description = "Delete a snapshot and its image file. Confirm with the user first.",
-        annotations(
-            destructive_hint = true,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn delete_snapshot(
-        &self,
-        Parameters(p): Parameters<IdParams>,
-    ) -> Result<CallToolResult, McpError> {
-        respond(self.db.delete_snapshot(&p.id).map(|snapshot| {
-            if let Some(snapshot) = snapshot {
-                let _ = std::fs::remove_file(&snapshot.image_path);
-            }
-            json!({ "deleted": p.id })
-        }))
     }
 
     // --- Dictionary ---
@@ -1219,7 +1142,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Save dictionary entry",
-        description = "Add a term to the dictionary, or with id, replace an entry's term and misheard variants. New recordings and LLM prompts use it; apply_dictionary fixes existing meetings.",
+        description = "Add a term to the dictionary, or with id, change an entry. New recordings and LLM prompts use it; apply_dictionary fixes existing meetings.",
         annotations(
             destructive_hint = false,
             idempotent_hint = true,
@@ -1231,38 +1154,18 @@ impl NootleMcpServer {
         Parameters(p): Parameters<SaveDictionaryEntryParams>,
     ) -> Result<CallToolResult, McpError> {
         respond((|| match &p.id {
-            Some(id) => {
-                self.db.update_dictionary_entry(id, &p.term, &p.misheard)?;
-                self.db
-                    .list_dictionary_entries()?
-                    .into_iter()
-                    .find(|e| &e.id == id)
-                    .ok_or_else(|| invalid(format!("Dictionary entry '{id}' not found")))
-            }
-            None => self
-                .db
-                .upsert_dictionary_entry(&p.term, &p.misheard, "manual"),
+            Some(id) => Ok(ops::update_dictionary_entry(
+                &self.db,
+                id,
+                Some(&p.term),
+                p.misheard.as_deref(),
+            )?),
+            None => self.db.upsert_dictionary_entry(
+                &p.term,
+                p.misheard.as_deref().unwrap_or_default(),
+                "manual",
+            ),
         })())
-    }
-
-    #[tool(
-        title = "Delete dictionary entry",
-        description = "Delete a dictionary entry. Confirm with the user first.",
-        annotations(
-            destructive_hint = true,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn delete_dictionary_entry(
-        &self,
-        Parameters(p): Parameters<IdParams>,
-    ) -> Result<CallToolResult, McpError> {
-        respond(
-            self.db
-                .delete_dictionary_entry(&p.id)
-                .map(|()| json!({ "deleted": p.id })),
-        )
     }
 
     #[tool(
@@ -1274,23 +1177,25 @@ impl NootleMcpServer {
             open_world_hint = false
         )
     )]
-    fn apply_dictionary(
+    async fn apply_dictionary(
         &self,
         Parameters(p): Parameters<MeetingIdParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond((|| {
-            let rules = crate::dictionary::Rules::new(&self.db.list_dictionary_entries()?);
-            let changed =
-                crate::dictionary::apply_to_meeting(&self.db, &p.meeting_id, &rules, None)?;
-            Ok(json!({ "changed_segments": changed }))
-        })())
+        let db = self.db.clone();
+        respond(
+            blocking(move || {
+                let changed = ops::apply_dictionary(&db, &p.meeting_id)?;
+                Ok(json!({ "changed_segments": changed }))
+            })
+            .await,
+        )
     }
 
     // --- Insights and action items ---
 
     #[tool(
         title = "List insights",
-        description = "List insights extracted from meetings (decisions, action items, custom types), newest first, filtered by meeting, type, action item status, or text, 50 per page. Action items carry action_item_id, assignee, due_date, and status.",
+        description = "List insights extracted from meetings (decisions, action items, custom types), newest first, filtered by meeting, type, action item status, or text. Action items carry action_item_id, assignee, due_date, and status.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn list_insights(
@@ -1300,16 +1205,12 @@ impl NootleMcpServer {
         respond(
             self.db
                 .get_all_insights(
+                    p.meeting_id.as_deref(),
                     p.insight_type.as_deref(),
                     p.status.as_deref(),
                     p.search.as_deref(),
                 )
-                .map(|mut insights| {
-                    if let Some(meeting_id) = &p.meeting_id {
-                        insights.retain(|i| &i.meeting_id == meeting_id);
-                    }
-                    page(insights, p.offset, PAGE_SIZE)
-                }),
+                .map(|insights| page(insights, p.offset, PAGE_SIZE)),
         )
     }
 
@@ -1326,24 +1227,16 @@ impl NootleMcpServer {
         &self,
         Parameters(p): Parameters<UpdateActionItemParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond((|| {
-            let current = self.db.get_insight_by_action_item(&p.id)?;
-            if let Some(status) = &p.status {
-                ops::validate_one_of("action item status", status, ops::ACTION_ITEM_STATUSES)?;
-                self.db.update_action_item_status(&p.id, status)?;
-            }
-            if p.assignee.is_some() || p.due_date.is_some() {
-                let pick = |new: &Option<String>, old: Option<String>| match new {
-                    Some(v) => non_empty(Some(v)).map(str::to_string),
-                    None => old,
-                };
-                let assignee = pick(&p.assignee, current.assignee);
-                let due_date = pick(&p.due_date, current.due_date);
-                self.db
-                    .update_action_item(&p.id, assignee.as_deref(), due_date.as_deref())?;
-            }
-            self.db.get_insight_by_action_item(&p.id)
-        })())
+        respond(
+            ops::update_action_item(
+                &self.db,
+                &p.id,
+                p.status.as_deref(),
+                p.assignee.as_deref(),
+                p.due_date.as_deref(),
+            )
+            .map_err(Into::into),
+        )
     }
 
     // --- Recipes ---
@@ -1373,10 +1266,7 @@ impl NootleMcpServer {
             prompt_template: p.prompt_template,
             output_format: p.output_format,
         };
-        respond((|| {
-            ops::validate_recipe(&self.db, &recipe, None)?;
-            self.db.create_recipe(recipe)
-        })())
+        respond(ops::create_recipe(&self.db, recipe).map_err(Into::into))
     }
 
     #[tool(
@@ -1392,45 +1282,14 @@ impl NootleMcpServer {
         &self,
         Parameters(p): Parameters<UpdateRecipeParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond((|| {
-            let r = self.db.get_recipe(&p.id)?;
-            let recipe = crate::db::NewRecipe {
-                name: p.name.unwrap_or(r.name),
-                description: p.description.unwrap_or(r.description),
-                slash_command: p.slash_command.unwrap_or(r.slash_command),
-                prompt_template: p.prompt_template.unwrap_or(r.prompt_template),
-                output_format: p.output_format.unwrap_or(r.output_format),
-            };
-            ops::validate_recipe(&self.db, &recipe, Some(&p.id))?;
-            self.db.update_recipe(
-                &p.id,
-                &recipe.name,
-                &recipe.description,
-                &recipe.slash_command,
-                &recipe.prompt_template,
-                &recipe.output_format,
-            )
-        })())
-    }
-
-    #[tool(
-        title = "Delete recipe",
-        description = "Permanently delete a recipe. Confirm with the user first.",
-        annotations(
-            destructive_hint = true,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn delete_recipe(
-        &self,
-        Parameters(p): Parameters<IdParams>,
-    ) -> Result<CallToolResult, McpError> {
-        respond(
-            self.db
-                .delete_recipe(&p.id)
-                .map(|()| json!({ "deleted": p.id })),
-        )
+        let patch = ops::RecipePatch {
+            name: p.name,
+            description: p.description,
+            slash_command: p.slash_command,
+            prompt_template: p.prompt_template,
+            output_format: p.output_format,
+        };
+        respond(ops::update_recipe(&self.db, &p.id, patch).map_err(Into::into))
     }
 
     // --- LLM features ---
@@ -1441,22 +1300,22 @@ impl NootleMcpServer {
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn list_llm_models(&self) -> Result<CallToolResult, McpError> {
-        let db = self.db.clone();
         respond(
-            blocking(move || {
-                let llm = LlmRegistry::detect(&db);
-                Ok(json!({
+            async {
+                // Detect afresh, in case providers were set up since.
+                let llm = self.detect_llms().await?;
+                Ok::<_, NootleError>(json!({
                     "models": llm.all_models(),
-                    "default": ops::pick_auto_model(&db, &llm),
+                    "default": ops::pick_auto_model(&self.db, &llm),
                 }))
-            })
+            }
             .await,
         )
     }
 
     #[tool(
         title = "Summarize meeting",
-        description = "Summarize a meeting with an LLM using a summary template, and save the summary. Sends the transcript to the LLM provider. Returns the new summaries.",
+        description = "Summarize a meeting with an LLM using a summary template, and save the summary. Returns the new summaries.",
         annotations(destructive_hint = false, open_world_hint = true)
     )]
     async fn summarize_meeting(
@@ -1496,7 +1355,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Extract insights",
-        description = "Extract decisions, action items, and custom insight types from a meeting with an LLM, and save them. With replace, the meeting's existing insights are deleted first. Sends the transcript to the LLM provider. Returns the meeting's insights.",
+        description = "Extract decisions, action items, and custom insight types from a meeting with an LLM, and save them. With replace, the meeting's existing insights are deleted first. Returns the meeting's insights.",
         annotations(destructive_hint = true, open_world_hint = true)
     )]
     async fn extract_insights(
@@ -1505,27 +1364,19 @@ impl NootleMcpServer {
     ) -> Result<CallToolResult, McpError> {
         respond(
             async {
+                self.db.get_meeting(&p.meeting_id)?;
                 let (llm, provider, model) = self.llm(&p.llm).await?;
-                if p.replace {
-                    crate::extraction::re_extract_insights(
+                Ok::<_, NootleError>(
+                    ops::extract_insights(
                         &self.db,
                         &llm,
                         &p.meeting_id,
                         &provider,
                         &model,
+                        p.replace,
                     )
-                    .await?;
-                } else {
-                    crate::extraction::extract_insights(
-                        &self.db,
-                        &llm,
-                        &p.meeting_id,
-                        &provider,
-                        &model,
-                    )
-                    .await?;
-                }
-                self.db.get_insights_for_meeting(&p.meeting_id)
+                    .await?,
+                )
             }
             .await,
         )
@@ -1533,7 +1384,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Ask about a meeting",
-        description = "Answer a question about one meeting from its full transcript, using an LLM. Sends the transcript to the LLM provider. Nothing is saved.",
+        description = "Answer a question about one meeting from its full transcript, using an LLM. Nothing is saved.",
         annotations(read_only_hint = true, open_world_hint = true)
     )]
     async fn ask_meeting(
@@ -1575,7 +1426,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Ask across meetings",
-        description = "Answer a question from the most relevant passages across all meetings (optionally filtered by label or date), citing them. Pass conversation_id to continue a saved conversation, or save to start one in Nootle's Ask view. Needs the search model, downloaded in Nootle's settings, and meetings indexed with embed_meetings. Sends the passages to the LLM provider.",
+        description = "Answer a question from the most relevant passages across meetings indexed with embed_meetings, citing them. Can continue or save a conversation in Nootle's Ask view.",
         annotations(destructive_hint = false, open_world_hint = true)
     )]
     async fn ask_meetings(
@@ -1584,59 +1435,36 @@ impl NootleMcpServer {
     ) -> Result<CallToolResult, McpError> {
         respond(
             async {
+                // Fail fast, before loading the search model.
                 if let Some(id) = &p.conversation_id {
-                    if !self
-                        .db
-                        .list_chat_conversations()?
-                        .iter()
-                        .any(|c| &c.id == id)
-                    {
-                        return Err(invalid(format!("Conversation '{id}' not found")));
-                    }
+                    self.db.get_chat_conversation(id)?;
                 }
                 let (llm, provider, model) = self.llm(&p.llm).await?;
-                let question = p.question.clone();
-                let embedding = self
-                    .with_engine(move |slot| {
-                        Ok(ops::embed_question(loaded_engine(slot)?, &question)?)
-                    })
-                    .await?;
+                let (engine, question) = (self.engine.clone(), p.question.clone());
+                let embedding = blocking(move || {
+                    let mut slot = engine.blocking_lock();
+                    Ok(ops::embed_question(loaded_engine(&mut slot)?, &question)?)
+                })
+                .await?;
                 let filters = ops::AskFilters {
                     label_ids: p.label_ids,
                     date_from: p.date_from,
                     date_to: p.date_to,
                 };
-                let conversation_id = match p.conversation_id {
-                    Some(id) => id,
-                    None if p.save => self.db.create_chat_conversation()?.id,
-                    None => {
-                        let (response, sources) = ops::rag_chat(
-                            &self.db,
-                            &llm,
-                            &embedding,
-                            &p.question,
-                            Vec::new(),
-                            &provider,
-                            &model,
-                            &filters,
-                        )
-                        .await?;
-                        return Ok(json!({ "response": response, "sources": sources }));
-                    }
-                };
-                let mut result = ops::send_chat_message(
-                    &self.db,
-                    &llm,
-                    &embedding,
-                    &conversation_id,
-                    &p.question,
-                    &provider,
-                    &model,
-                    &filters,
+                Ok::<_, NootleError>(
+                    ops::ask(
+                        &self.db,
+                        &llm,
+                        &embedding,
+                        &p.question,
+                        p.conversation_id.as_deref(),
+                        p.save,
+                        &provider,
+                        &model,
+                        &filters,
+                    )
+                    .await?,
                 )
-                .await?;
-                result["conversation_id"] = json!(conversation_id);
-                Ok(result)
             }
             .await,
         )
@@ -1644,7 +1472,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Enrich notes",
-        description = "Merge a meeting's notes with details from its transcript using an LLM, and save the result as the meeting's enriched notes. The user's notes are kept. Sends the transcript and notes to the LLM provider.",
+        description = "Merge a meeting's notes with details from its transcript using an LLM, and save the result as the meeting's enriched notes. The user's notes are kept.",
         annotations(
             destructive_hint = false,
             idempotent_hint = true,
@@ -1668,7 +1496,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Analyze sentiment",
-        description = "Score the sentiment of a meeting in ~30-second windows with an LLM, and save it for the meeting's analytics. Sends the transcript to the LLM provider. Returns the segments.",
+        description = "Score the sentiment of a meeting in ~30-second windows with an LLM, and save it for the meeting's analytics. Returns the segments.",
         annotations(
             destructive_hint = false,
             idempotent_hint = true,
@@ -1681,17 +1509,12 @@ impl NootleMcpServer {
     ) -> Result<CallToolResult, McpError> {
         respond(
             async {
+                self.db.get_meeting(&p.meeting_id)?;
                 let (llm, provider, model) = self.llm(&p.llm).await?;
-                let segments = crate::analytics::analyze_sentiment(
-                    &self.db,
-                    &llm,
-                    &p.meeting_id,
-                    &provider,
-                    &model,
+                Ok::<_, NootleError>(
+                    ops::analyze_sentiment(&self.db, &llm, &p.meeting_id, &provider, &model)
+                        .await?,
                 )
-                .await?;
-                self.db.save_sentiment_segments(&p.meeting_id, &segments)?;
-                Ok::<_, NootleError>(segments)
             }
             .await,
         )
@@ -1699,7 +1522,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Run recipe",
-        description = "Run a recipe (by ID or slash command) on a meeting with an LLM and return its output. Sends the transcript to the LLM provider. Nothing is saved.",
+        description = "Run a recipe (by ID or slash command) on a meeting with an LLM and return its output. Nothing is saved.",
         annotations(read_only_hint = true, open_world_hint = true)
     )]
     async fn run_recipe(
@@ -1738,28 +1561,15 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Get meeting analytics",
-        description = "Get a meeting's speaker analytics (talk time, turns, interruptions, monologues), engagement, and sentiment segments. Speaker analytics and engagement are computed from the current transcript; sentiment is whatever analyze_sentiment last saved.",
+        description = "Get a meeting's speaker analytics (talk time, turns, interruptions, monologues), engagement, and the sentiment analyze_sentiment last saved.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
-    fn get_meeting_analytics(
+    async fn get_meeting_analytics(
         &self,
         Parameters(p): Parameters<MeetingIdParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond((|| {
-            let speakers = crate::analytics::compute_speaker_analytics(&self.db, &p.meeting_id)?;
-            let texts: Vec<String> = self
-                .db
-                .get_transcript(&p.meeting_id)?
-                .into_iter()
-                .map(|s| s.text)
-                .collect();
-            let engagement = crate::analytics::compute_engagement(&p.meeting_id, &speakers, &texts);
-            Ok(json!({
-                "speakers": speakers,
-                "engagement": engagement,
-                "sentiment": self.db.get_sentiment_segments(&p.meeting_id)?,
-            }))
-        })())
+        let db = self.db.clone();
+        respond(blocking(move || Ok(ops::meeting_analytics(&db, &p.meeting_id)?)).await)
     }
 
     #[tool(
@@ -1790,28 +1600,20 @@ impl NootleMcpServer {
         &self,
         Parameters(p): Parameters<EmbedMeetingsParams>,
     ) -> Result<CallToolResult, McpError> {
-        let db = self.db.clone();
+        let (db, engine) = (self.db.clone(), self.engine.clone());
         respond(
-            self.with_engine(move |slot| {
-                let engine = loaded_engine(slot)?;
+            blocking(move || {
                 let ids = match p.meeting_id {
                     Some(id) => vec![db.get_meeting(&id)?.id],
-                    None => db
-                        .list_meetings(None, true)?
-                        .into_iter()
-                        .map(|m| m.id)
-                        .collect(),
+                    None => ops::meetings_to_index(&db)?,
                 };
-                let (mut chunks, mut failed) = (0, Vec::new());
-                for id in ids {
-                    match crate::chunking::embed_meeting(&db, engine, &id) {
-                        Ok(n) => chunks += n,
-                        Err(e) => {
-                            failed.push(json!({ "meeting_id": id, "error": format!("{e:#}") }))
-                        }
-                    }
-                }
-                Ok(json!({ "chunks_added": chunks, "failed": failed }))
+                // Fail once without the search model rather than per meeting.
+                loaded_engine(&mut engine.blocking_lock())?;
+                // Lock per meeting so ask_meetings needn't wait for the batch.
+                Ok(ops::embed_meetings(&ids, |id| {
+                    let mut slot = engine.blocking_lock();
+                    crate::chunking::embed_meeting(&db, loaded_engine(&mut slot)?, id)
+                }))
             })
             .await,
         )
@@ -1821,7 +1623,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "List conversations",
-        description = "List saved Ask conversations, most recently active first, 50 per page.",
+        description = "List saved Ask conversations, most recently active first.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn list_conversations(
@@ -1837,7 +1639,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Get conversation",
-        description = "Get a saved Ask conversation's messages, oldest first, 50 per call; pass messages.next_offset as offset for more.",
+        description = "Get a saved Ask conversation's messages, oldest first.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn get_conversation(
@@ -1845,12 +1647,7 @@ impl NootleMcpServer {
         Parameters(p): Parameters<GetConversationParams>,
     ) -> Result<CallToolResult, McpError> {
         respond((|| {
-            let conversation = self
-                .db
-                .list_chat_conversations()?
-                .into_iter()
-                .find(|c| c.id == p.id)
-                .ok_or_else(|| invalid(format!("Conversation '{}' not found", p.id)))?;
+            let conversation = self.db.get_chat_conversation(&p.id)?;
             let messages = self.db.list_chat_messages(&p.id)?;
             Ok(json!({
                 "conversation": conversation,
@@ -1872,56 +1669,23 @@ impl NootleMcpServer {
         &self,
         Parameters(p): Parameters<RenameConversationParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond((|| {
-            let title = p.title.trim();
-            if title.is_empty() {
-                return Err(invalid("Title can't be empty"));
-            }
-            self.db.update_chat_conversation_title(&p.id, title)?;
-            Ok(json!({ "id": p.id, "title": title }))
-        })())
-    }
-
-    #[tool(
-        title = "Delete conversation",
-        description = "Permanently delete a saved Ask conversation and its messages. Confirm with the user first.",
-        annotations(
-            destructive_hint = true,
-            idempotent_hint = true,
-            open_world_hint = false
-        )
-    )]
-    fn delete_conversation(
-        &self,
-        Parameters(p): Parameters<IdParams>,
-    ) -> Result<CallToolResult, McpError> {
-        respond(
-            self.db
-                .delete_chat_conversation(&p.id)
-                .map(|()| json!({ "deleted": p.id })),
-        )
+        respond(ops::rename_conversation(&self.db, &p.id, &p.title).map_err(Into::into))
     }
 
     // --- Settings ---
 
     #[tool(
         title = "Get settings",
-        description = "Get Nootle's settings: denoise_enabled, detection_enabled (offer to record when a call starts), dictionary_auto_learn, remote_control_enabled (URL control, change it in the app), and summarization_provider (the LLM automatic work uses; unset means the first available). Unset settings are null.",
+        description = "Get Nootle's settings. detection_enabled offers to record when a call starts; summarization_provider is the LLM automatic work uses (unset: the first available).",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn get_settings(&self) -> Result<CallToolResult, McpError> {
-        respond((|| {
-            let mut settings = serde_json::Map::new();
-            for key in ops::EDITABLE_SETTINGS {
-                settings.insert(key.to_string(), json!(self.db.get_setting(key)?));
-            }
-            Ok(settings)
-        })())
+        respond(ops::settings_map(&self.db).map_err(Into::into))
     }
 
     #[tool(
         title = "Set setting",
-        description = "Change one of the settings get_settings lists, except remote_control_enabled. Switches take \"true\" or \"false\"; summarization_provider takes a provider from list_llm_models, or \"\" for automatic.",
+        description = "Change one of the settings get_settings lists, except remote_control_enabled and snapshots_enabled, which only the user changes. Switches take \"true\" or \"false\"; summarization_provider takes a provider from list_llm_models, or \"\" for automatic.",
         annotations(
             destructive_hint = false,
             idempotent_hint = true,
@@ -1933,9 +1697,14 @@ impl NootleMcpServer {
         Parameters(p): Parameters<SetSettingParams>,
     ) -> Result<CallToolResult, McpError> {
         respond((|| {
-            validate_setting(&p.key, &p.value)?;
-            self.db.set_setting(&p.key, &p.value)?;
-            Ok(json!({ p.key: p.value }))
+            if ops::AGENT_LOCKED_SETTINGS.contains(&p.key.as_str()) {
+                return Err(invalid(format!(
+                    "'{}' can only be changed in Nootle's settings",
+                    p.key
+                )));
+            }
+            let value = ops::set_setting(&self.db, &p.key, &p.value)?;
+            Ok(json!({ p.key: value }))
         })())
     }
 }
@@ -1978,7 +1747,7 @@ impl ServerHandler for NootleMcpServer {
                 .map_err(|_| McpError::invalid_params("Invalid cursor", None))?,
             None => 0,
         };
-        let meetings = self.db.list_meetings(None, false).map_err(|e| {
+        let meetings = self.db.list_meetings(None, false, None).map_err(|e| {
             McpError::internal_error(format!("Failed to list meetings: {}", e), None)
         })?;
         let next = offset.saturating_add(PAGE_SIZE);
@@ -2154,8 +1923,8 @@ mod tests {
         assert_eq!(format_ms(3661500), "01:01:01.500");
     }
 
-    #[test]
-    fn test_list_meetings_tool() {
+    #[tokio::test]
+    async fn test_list_meetings_tool() {
         let db = setup_test_db();
         let server = NootleMcpServer::new(db);
 
@@ -2165,7 +1934,7 @@ mod tests {
             include_archived: false,
             offset: 0,
         };
-        let result = server.list_meetings(Parameters(params));
+        let result = server.list_meetings(Parameters(params)).await;
         assert!(result.is_ok());
         let result = result.unwrap();
         // Should contain the test meeting
@@ -2199,7 +1968,7 @@ mod tests {
     }
 
     fn meeting_id(db: &Database) -> String {
-        db.list_meetings(None, true).unwrap()[0].id.clone()
+        db.list_meetings(None, true, None).unwrap()[0].id.clone()
     }
 
     #[test]
@@ -2233,31 +2002,28 @@ mod tests {
         assert!(err);
     }
 
-    #[test]
-    fn test_labels_and_meeting_filter() {
+    #[tokio::test]
+    async fn test_labels_and_meeting_filter() {
         let db = setup_test_db();
         let server = NootleMcpServer::new(db.clone());
         let id = meeting_id(&db);
+        let save =
+            |id: Option<&str>, name: Option<&str>, color: Option<&str>, icon: Option<&str>| {
+                output(server.save_label(Parameters(SaveLabelParams {
+                    id: id.map(Into::into),
+                    name: name.map(Into::into),
+                    color: color.map(Into::into),
+                    icon: icon.map(Into::into),
+                })))
+            };
 
-        let (err, msg) = output(server.create_label(Parameters(CreateLabelParams {
-            name: "Ops".into(),
-            color: "red".into(),
-            icon: None,
-        })));
+        let (err, msg) = save(None, Some("Ops"), Some("red"), None);
         assert!(err, "{msg}");
-        let (_, label) = output(server.create_label(Parameters(CreateLabelParams {
-            name: "Ops".into(),
-            color: "#aa0000".into(),
-            icon: Some("bolt".into()),
-        })));
+        assert!(save(None, Some("Ops"), None, None).0);
+        let (_, label) = save(None, Some("Ops"), Some("#aa0000"), Some("bolt"));
         let label_id = label["id"].as_str().unwrap().to_string();
 
-        let (_, label) = output(server.update_label(Parameters(UpdateLabelParams {
-            id: label_id.clone(),
-            name: Some("Infra".into()),
-            color: None,
-            icon: Some(String::new()),
-        })));
+        let (_, label) = save(Some(&label_id), Some("Infra"), None, Some(""));
         assert_eq!(label["name"], "Infra");
         assert_eq!(label["color"], "#aa0000");
         assert!(label["icon"].is_null());
@@ -2280,39 +2046,54 @@ mod tests {
         assert_eq!(labels[0]["name"], "Infra");
 
         let list = |label_id: &str| {
-            output(server.list_meetings(Parameters(ListMeetingsParams {
+            server.list_meetings(Parameters(ListMeetingsParams {
                 search: None,
                 label_id: Some(label_id.into()),
                 include_archived: false,
                 offset: 0,
-            })))
-            .1
+            }))
         };
-        assert_eq!(list(&label_id)["items"][0]["labels"][0], "Infra");
-        assert_eq!(list("other")["total"], 0);
+        assert_eq!(
+            output(list(&label_id).await).1["items"][0]["labels"][0],
+            "Infra"
+        );
+        assert_eq!(output(list("other").await).1["total"], 0);
+
+        let (_, result) = output(server.delete(Parameters(DeleteParams {
+            kind: DeleteKind::Label,
+            id: label_id,
+        })));
+        assert!(result["deleted"].is_string());
+        assert!(db.get_meeting_labels(&id).unwrap().is_empty());
     }
 
-    #[test]
-    fn test_get_meeting_segment_ids_and_edit() {
+    #[tokio::test]
+    async fn test_get_meeting_segment_ids_and_edit() {
         let db = setup_test_db();
         let server = NootleMcpServer::new(db.clone());
         let id = meeting_id(&db);
         let segment = db.get_transcript(&id).unwrap()[0].clone();
 
-        let (_, meeting) = output(server.get_meeting(Parameters(GetMeetingParams {
-            id: id.clone(),
-            transcript_offset: 0,
-            include_segment_ids: true,
-        })));
+        let (_, meeting) = output(
+            server
+                .get_meeting(Parameters(GetMeetingParams {
+                    id: id.clone(),
+                    transcript_offset: 0,
+                    include_segment_ids: true,
+                }))
+                .await,
+        );
         let line = meeting["transcript"]["items"][0].as_str().unwrap();
         assert!(line.starts_with(&format!("{} [00:00:00.000] Alice:", segment.id)));
         assert!(meeting["labels"].as_array().unwrap().is_empty());
 
         let (err, _) = output(
-            server.edit_transcript_segment(Parameters(EditSegmentParams {
-                segment_id: segment.id.clone(),
-                text: "Hello everyone, welcome to the demo meeting.".into(),
-            })),
+            server
+                .edit_transcript_segment(Parameters(EditSegmentParams {
+                    segment_id: segment.id.clone(),
+                    text: "Hello everyone, welcome to the demo meeting.".into(),
+                }))
+                .await,
         );
         assert!(!err);
         assert!(db.get_transcript(&id).unwrap()[0].text.contains("demo"));
@@ -2383,8 +2164,8 @@ mod tests {
         assert!(settings[crate::remote::ENABLED_SETTING].is_null());
     }
 
-    #[test]
-    fn test_scratch_notes_and_dictionary() {
+    #[tokio::test]
+    async fn test_scratch_notes_and_dictionary() {
         let db = setup_test_db();
         let server = NootleMcpServer::new(db.clone());
         let id = meeting_id(&db);
@@ -2394,7 +2175,8 @@ mod tests {
             timestamp_ms: 1500,
         })));
         assert_eq!(db.get_scratch_notes(&id).unwrap().len(), 1);
-        output(server.delete_scratch_note(Parameters(IdParams {
+        output(server.delete(Parameters(DeleteParams {
+            kind: DeleteKind::ScratchNote,
             id: note["id"].as_str().unwrap().into(),
         })));
         assert!(db.get_scratch_notes(&id).unwrap().is_empty());
@@ -2403,45 +2185,54 @@ mod tests {
             SaveDictionaryEntryParams {
                 id: None,
                 term: "Alyce".into(),
-                misheard: vec!["Alice".into()],
+                misheard: Some(vec!["Alice".into()]),
             },
         )));
+        // Omitted variants are kept.
         let (_, entry) = output(server.save_dictionary_entry(Parameters(
             SaveDictionaryEntryParams {
                 id: Some(entry["id"].as_str().unwrap().into()),
                 term: "Alysse".into(),
-                misheard: vec!["Alice".into()],
+                misheard: None,
             },
         )));
         assert_eq!(entry["term"], "Alysse");
-        let (_, applied) = output(server.apply_dictionary(Parameters(MeetingIdParams {
-            meeting_id: id.clone(),
-        })));
+        assert_eq!(entry["misheard"][0], "Alice");
+        let (_, applied) = output(
+            server
+                .apply_dictionary(Parameters(MeetingIdParams {
+                    meeting_id: id.clone(),
+                }))
+                .await,
+        );
         assert_eq!(applied["changed_segments"], 1);
     }
 
-    #[test]
-    fn test_analytics_and_export() {
+    #[tokio::test]
+    async fn test_analytics_and_export() {
         let db = setup_test_db();
         let server = NootleMcpServer::new(db.clone());
         let id = meeting_id(&db);
-        let (_, analytics) = output(server.get_meeting_analytics(Parameters(MeetingIdParams {
-            meeting_id: id.clone(),
-        })));
-        assert_eq!(analytics["speakers"].as_array().unwrap().len(), 2);
-
-        let (_, export) = output(server.export_meeting(Parameters(ExportMeetingParams {
-            meeting_id: id.clone(),
-            format: "srt".into(),
-        })));
-        assert!(export["content"].as_str().unwrap().contains("Alice"));
-        assert!(
-            output(server.export_meeting(Parameters(ExportMeetingParams {
-                meeting_id: id,
-                format: "pdf".into(),
-            })))
-            .0
+        let (_, analytics) = output(
+            server
+                .get_meeting_analytics(Parameters(MeetingIdParams {
+                    meeting_id: id.clone(),
+                }))
+                .await,
         );
+        assert_eq!(analytics["speakers"].as_array().unwrap().len(), 2);
+        // Computed on first request and saved.
+        assert_eq!(db.get_speaker_analytics(&id).unwrap().len(), 2);
+
+        let export = |format: &str| {
+            server.export_meeting(Parameters(ExportMeetingParams {
+                meeting_id: id.clone(),
+                format: format.into(),
+            }))
+        };
+        let (_, srt) = output(export("srt").await);
+        assert!(srt["content"].as_str().unwrap().contains("Alice"));
+        assert!(output(export("pdf").await).0);
     }
 
     #[tokio::test]

@@ -1317,10 +1317,13 @@ impl Database {
         Ok(meeting)
     }
 
+    /// Meetings newest first, optionally only those whose title contains
+    /// `search` or that carry the label `label_id`.
     pub fn list_meetings(
         &self,
         search: Option<&str>,
         include_archived: bool,
+        label_id: Option<&str>,
     ) -> Result<Vec<Meeting>> {
         let conn = self.lock_conn()?;
 
@@ -1345,6 +1348,14 @@ impl Database {
                 .replace('%', "\\%")
                 .replace('_', "\\_");
             param_values.push(Box::new(format!("%{}%", escaped)));
+        }
+
+        if let Some(label_id) = label_id {
+            conditions.push(format!(
+                "id IN (SELECT meeting_id FROM meeting_labels WHERE label_id = ?{})",
+                param_values.len() + 1
+            ));
+            param_values.push(Box::new(label_id.to_string()));
         }
 
         if !conditions.is_empty() {
@@ -1524,6 +1535,25 @@ impl Database {
         Ok(labels)
     }
 
+    pub fn get_label(&self, id: &str) -> Result<Label> {
+        let conn = self.lock_conn()?;
+        conn.query_row(
+            "SELECT id, name, color, icon, created_at FROM labels WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(Label {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    icon: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            },
+        )
+        .optional()?
+        .ok_or_else(|| NootleError::Other(format!("Label not found: {id}")))
+    }
+
     pub fn update_label(
         &self,
         id: &str,
@@ -1631,6 +1661,37 @@ impl Database {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
+        Ok(results)
+    }
+
+    /// `(meeting_id, label)` pairs for just these meetings.
+    pub fn get_labels_for_meetings(&self, meeting_ids: &[&str]) -> Result<Vec<(String, Label)>> {
+        if meeting_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.lock_conn()?;
+        let placeholders = vec!["?"; meeting_ids.len()].join(", ");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT ml.meeting_id, l.id, l.name, l.color, l.icon, l.created_at
+             FROM meeting_labels ml
+             INNER JOIN labels l ON ml.label_id = l.id
+             WHERE ml.meeting_id IN ({placeholders})
+             ORDER BY l.name ASC"
+        ))?;
+        let results = stmt
+            .query_map(rusqlite::params_from_iter(meeting_ids), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    Label {
+                        id: row.get(1)?,
+                        name: row.get(2)?,
+                        color: row.get(3)?,
+                        icon: row.get(4)?,
+                        created_at: row.get(5)?,
+                    },
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(results)
     }
 
@@ -2060,6 +2121,17 @@ impl Database {
             .query_map([], dictionary_entry_from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(entries)
+    }
+
+    pub fn get_dictionary_entry(&self, id: &str) -> Result<DictionaryEntry> {
+        let conn = self.lock_conn()?;
+        conn.query_row(
+            &format!("SELECT {DICTIONARY_COLUMNS} FROM dictionary_entries WHERE id = ?1"),
+            params![id],
+            dictionary_entry_from_row,
+        )
+        .optional()?
+        .ok_or_else(|| NootleError::Other(format!("Dictionary entry not found: {id}")))
     }
 
     /// Creates an entry, or merges the variants into the existing entry for
@@ -2835,6 +2907,7 @@ impl Database {
 
     pub fn get_all_insights(
         &self,
+        meeting_id: Option<&str>,
         insight_type: Option<&str>,
         status: Option<&str>,
         search: Option<&str>,
@@ -2851,6 +2924,10 @@ impl Database {
         let mut conditions: Vec<String> = Vec::new();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
+        if let Some(m) = meeting_id {
+            conditions.push(format!("i.meeting_id = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(m.to_string()));
+        }
         if let Some(t) = insight_type {
             conditions.push(format!("i.type = ?{}", param_values.len() + 1));
             param_values.push(Box::new(t.to_string()));
@@ -2947,6 +3024,18 @@ impl Database {
                 other => NootleError::Database(other),
             })?;
         Ok(row)
+    }
+
+    /// The action item belonging to an insight, if it has one.
+    pub fn get_action_item_id_for_insight(&self, insight_id: &str) -> Result<Option<String>> {
+        let conn = self.lock_conn()?;
+        Ok(conn
+            .query_row(
+                "SELECT id FROM action_items WHERE insight_id = ?1",
+                params![insight_id],
+                |row| row.get(0),
+            )
+            .optional()?)
     }
 
     pub fn delete_insights_for_meeting(&self, meeting_id: &str) -> Result<()> {
@@ -3241,6 +3330,24 @@ impl Database {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    pub fn get_chat_conversation(&self, id: &str) -> Result<ChatConversation> {
+        let conn = self.lock_conn()?;
+        conn.query_row(
+            "SELECT id, title, created_at, updated_at FROM chat_conversations WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(ChatConversation {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    created_at: row.get(2)?,
+                    updated_at: row.get(3)?,
+                })
+            },
+        )
+        .optional()?
+        .ok_or_else(|| NootleError::Other(format!("Conversation not found: {id}")))
     }
 
     pub fn update_chat_conversation_title(&self, id: &str, title: &str) -> Result<()> {
