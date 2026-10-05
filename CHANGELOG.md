@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.27] - 2026-10-05
+
+### Bug Fixes
+
+- Drop redundant drop(dst) after consuming finalize() in snapshots (#158) ([506243e](https://github.com/michellemayes/nootle/commit/506243e84cb097687bd60570875b18ef5102f8ac))
+
+### Features
+
+- Snapshots — snap shared slides, designs and charts into meeting notes (#157) ([0f47bfa](https://github.com/michellemayes/nootle/commit/0f47bfafeabf428839b459bfa3a1d6cc2cf1360b))
+
 ## [0.1.26] - 2026-10-05
 
 ### Features
