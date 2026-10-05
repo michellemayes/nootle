@@ -22,13 +22,20 @@ import { useSummaries } from "@/hooks/useSummaries";
 import { useInsights } from "@/hooks/useInsights";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
-import { cn, formatMs, formatDate, statusLabel, statusVariant } from "@/lib/utils";
+import { cn, formatMs, formatDate, isTypingTarget, statusLabel, statusVariant } from "@/lib/utils";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
 import { useScratchPad } from "@/hooks/useScratchPad";
 import { useSnapshots } from "@/hooks/useSnapshots";
 import { SnapshotsSection } from "@/components/SnapshotsSection";
+import {
+  AudioPlayerControls,
+  SKIP_SECONDS,
+  skipBy,
+  useActiveSegmentId,
+  useIsPlaying,
+} from "@/components/AudioPlayerControls";
 import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment } from "@/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { Input } from "@/components/ui/input";
@@ -163,65 +170,6 @@ function SegmentText({
       className="min-h-0 flex-1 text-sm leading-relaxed"
       aria-label="Edit transcript line"
     />
-  );
-}
-
-function formatPlayerTime(seconds: number): string {
-  if (!seconds || !isFinite(seconds)) return "00:00";
-  return formatMs(seconds * 1000);
-}
-
-/**
- * Progress bar and clock. Owns the playback position so `timeupdate`
- * (several times a second) re-renders only this, not the meeting page.
- */
-function PlayerProgress({
-  audio,
-  showBar,
-}: {
-  audio: HTMLAudioElement | null;
-  showBar: boolean;
-}) {
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-
-  useEffect(() => {
-    if (!audio) return;
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const onDuration = () => setDuration(audio.duration);
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("loadedmetadata", onDuration);
-    return () => {
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      audio.removeEventListener("loadedmetadata", onDuration);
-    };
-  }, [audio]);
-
-  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!audio || !duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    audio.currentTime = ratio * duration;
-  };
-
-  return (
-    <>
-      {showBar && (
-        <div className="flex-1 cursor-pointer" onClick={seek}>
-          <div className="h-1.5 rounded-full bg-muted">
-            <div
-              className="h-1.5 rounded-full bg-primary transition-[width] duration-150"
-              style={{
-                width: duration > 0 ? `${(currentTime / duration) * 100}%` : "0%",
-              }}
-            />
-          </div>
-        </div>
-      )}
-      <span className="text-xs font-mono text-muted-foreground tabular-nums">
-        {formatPlayerTime(currentTime)} / {formatPlayerTime(duration)}
-      </span>
-    </>
   );
 }
 
@@ -943,7 +891,9 @@ export function MeetingDetail() {
     setAudioElement(node);
   }, []);
   const [failedAudioSrc, setFailedAudioSrc] = useState<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const isPlaying = useIsPlaying(audioElement);
+  const activeSegmentId = useActiveSegmentId(audioElement, segments);
+  const transcriptViewportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (templates.length > 0 && !selectedTemplate) {
@@ -1001,14 +951,9 @@ export function MeetingDetail() {
   useEffect(() => {
     const audio = audioElement;
     if (!audio) return;
-    const onEnded = () => setIsPlaying(false);
     const onError = () => setFailedAudioSrc(audio.src);
-    audio.addEventListener("ended", onEnded);
     audio.addEventListener("error", onError);
-    return () => {
-      audio.removeEventListener("ended", onEnded);
-      audio.removeEventListener("error", onError);
-    };
+    return () => audio.removeEventListener("error", onError);
   }, [audioElement]);
 
   const togglePlayback = useCallback(async () => {
@@ -1016,14 +961,8 @@ export function MeetingDetail() {
     if (!audio) return;
     if (isPlaying) {
       audio.pause();
-      setIsPlaying(false);
     } else {
-      try {
-        await audio.play();
-        setIsPlaying(true);
-      } catch {
-        setIsPlaying(false);
-      }
+      await audio.play().catch(() => {});
     }
   }, [isPlaying, audioElement]);
 
@@ -1031,15 +970,53 @@ export function MeetingDetail() {
     const audio = audioElement;
     if (!audio) return;
     audio.currentTime = ms / 1000;
-    if (!isPlaying) {
-      try {
-        await audio.play();
-        setIsPlaying(true);
-      } catch {
-        setIsPlaying(false);
-      }
-    }
+    if (!isPlaying) await audio.play().catch(() => {});
   }, [isPlaying, audioElement]);
+
+  // Space plays and pauses, ←/→ skip, like any media player. Skipped while
+  // typing, and when a control that handles those keys itself has focus.
+  useEffect(() => {
+    if (!audioElement || audioMissing) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("button, a, [role=slider], [role=tab], [role=menuitem], [role=option]")) return;
+      if (e.key === " ") {
+        e.preventDefault();
+        togglePlayback();
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        skipBy(audioElement, e.key === "ArrowLeft" ? -SKIP_SECONDS : SKIP_SECONDS);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [audioElement, audioMissing, togglePlayback]);
+
+  // Keep the line being played in view, but only while the reader hasn't
+  // scrolled elsewhere: follow when the previous line was still on screen.
+  const lastActiveRef = useRef<string | null>(null);
+  useEffect(() => {
+    const viewport = transcriptViewportRef.current;
+    const previousId = lastActiveRef.current;
+    lastActiveRef.current = activeSegmentId;
+    if (!viewport || !activeSegmentId || !isPlaying) return;
+    const find = (id: string | null) =>
+      id ? viewport.querySelector<HTMLElement>(`[data-segment-id="${CSS.escape(id)}"]`) : null;
+    const next = find(activeSegmentId);
+    const prev = find(previousId);
+    if (!next) return;
+    const view = viewport.getBoundingClientRect();
+    const readerScrolledAway = prev && (() => {
+      const r = prev.getBoundingClientRect();
+      return r.bottom < view.top || r.top > view.bottom;
+    })();
+    const r = next.getBoundingClientRect();
+    const needsScroll = r.top < view.top || r.bottom > view.bottom - 24;
+    if (!readerScrolledAway && needsScroll) {
+      next.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [activeSegmentId, isPlaying]);
 
   const speakerMap = new Map<string, string>();
   segments.forEach((seg) => {
@@ -1306,7 +1283,7 @@ export function MeetingDetail() {
                     </button>
                   </div>
                 )}
-                <ScrollArea className="flex-1">
+                <ScrollArea className="flex-1" viewportRef={transcriptViewportRef}>
                   <div className={`p-5 ${compactTranscript ? "space-y-1" : "space-y-4"}`}>
                     {transcriptLoading ? (
                       <LoadingState
@@ -1321,10 +1298,24 @@ export function MeetingDetail() {
                       segments.map((seg) => {
                         const speakerColor = speakerMap.get(seg.speaker_label) ?? "text-foreground";
                         return (
-                        <div key={seg.id} className={`group flex gap-3 ${compactTranscript ? "items-baseline" : ""}`}>
+                        <div
+                          key={seg.id}
+                          data-segment-id={seg.id}
+                          aria-current={seg.id === activeSegmentId ? "true" : undefined}
+                          className={cn(
+                            "group -mx-2 flex gap-3 rounded-md px-2 transition-colors",
+                            compactTranscript && "items-baseline",
+                            seg.id === activeSegmentId && "bg-primary/10",
+                          )}
+                        >
                           <button
                             onClick={() => seekToMs(seg.start_ms)}
-                            className="shrink-0 pt-0.5 text-xs text-muted-foreground font-mono tabular-nums w-12 text-left hover:text-primary transition-colors"
+                            title="Play from here"
+                            aria-label={`Play from ${formatMs(seg.start_ms)}`}
+                            className={cn(
+                              "shrink-0 pt-0.5 text-xs font-mono tabular-nums w-12 text-left hover:text-primary transition-colors",
+                              seg.id === activeSegmentId ? "text-primary" : "text-muted-foreground",
+                            )}
                           >
                             {formatMs(seg.start_ms)}
                           </button>
@@ -1590,13 +1581,14 @@ export function MeetingDetail() {
       {/* Audio player */}
       <div className="shrink-0 border-t px-5 py-3">
         {audioSrc && <audio ref={audioRef} src={audioSrc} preload="metadata" />}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="icon-sm"
             disabled={!audioSrc || audioMissing}
             onClick={togglePlayback}
             aria-label={isPlaying ? "Pause" : "Play"}
+            title={isPlaying ? "Pause (Space)" : "Play (Space)"}
           >
             {isPlaying ? (
               <Pause className="h-4 w-4" />
@@ -1604,7 +1596,11 @@ export function MeetingDetail() {
               <Play className="h-4 w-4" />
             )}
           </Button>
-          <PlayerProgress audio={audioElement} showBar={!isCompact} />
+          <AudioPlayerControls
+            audio={audioElement}
+            showBar={!isCompact}
+            disabled={!audioSrc || audioMissing}
+          />
         </div>
         {audioMissing && (
           <p className="text-xs text-muted-foreground mt-1">Audio file not found</p>

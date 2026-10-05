@@ -1,5 +1,5 @@
 use super::SAMPLE_RATE as TARGET_RATE;
-use super::{AudioMixer, AudioWriter, MicCapture, SystemAudioCapture};
+use super::{rms, AudioLevels, AudioMixer, AudioWriter, MicCapture, SystemAudioCapture};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -43,6 +43,7 @@ pub fn run_audio_capture(
     audio_tx: tokio::sync::mpsc::Sender<AudioChunk>,
     is_active: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
+    levels: Arc<AudioLevels>,
     audio_path: std::path::PathBuf,
     denoise: Option<&mut crate::denoise::DenoiseEngine>,
 ) -> anyhow::Result<()> {
@@ -90,6 +91,7 @@ pub fn run_audio_capture(
     let result = capture_loop(
         &is_active,
         &is_paused,
+        &levels,
         &mut mic,
         mic_rate,
         &mut sys_audio,
@@ -118,6 +120,7 @@ pub fn run_audio_capture(
 fn capture_loop(
     is_active: &AtomicBool,
     is_paused: &AtomicBool,
+    levels: &AudioLevels,
     mic: &mut MicCapture,
     mic_rate: u32,
     sys_audio: &mut Option<SystemAudioCapture>,
@@ -149,9 +152,15 @@ fn capture_loop(
         // Paused: the reads above keep the device buffers drained, so
         // resuming picks up live audio rather than a backlog.
         if is_paused.load(Ordering::Acquire) {
+            levels.set(0.0, sys_audio.as_ref().map(|_| 0.0));
             std::thread::sleep(std::time::Duration::from_millis(POLL_MS));
             continue;
         }
+
+        levels.set(
+            rms(mic_samples),
+            sys_audio.as_ref().map(|_| rms(sys_samples)),
+        );
 
         // Resample both to 16 kHz
         let mic_16k = resample(mic_samples, mic_rate, TARGET_RATE);

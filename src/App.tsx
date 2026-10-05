@@ -11,6 +11,7 @@ import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { CommandPalette } from "@/components/CommandPalette";
 import { RecordingCelebration } from "@/components/RecordingCelebration";
 import { UpdateBanner } from "@/components/UpdateBanner";
+import { Toaster } from "@/components/Toaster";
 
 // The library is the first screen, so it ships in the main bundle. Every
 // other page loads on demand; the ones usually opened next from the library
@@ -70,6 +71,7 @@ function Layout() {
       <CommandPalette />
       <RecordingCelebration />
       <UpdateBanner />
+      <Toaster />
     </div>
   );
 }

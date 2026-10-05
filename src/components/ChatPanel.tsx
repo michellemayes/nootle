@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
+import { SuggestedPrompts, MEETING_PROMPTS } from "@/components/SuggestedPrompts";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ResizeHandle } from "@/components/ResizeHandle";
@@ -97,9 +98,8 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
     }
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || !selectedProvider || !selectedModel) return;
-    const msg = input;
+  const handleSend = async (msg = input) => {
+    if (!msg.trim() || !selectedProvider || !selectedModel) return;
     setInput("");
     await sendMessage(msg, selectedProvider, selectedModel);
   };
@@ -181,12 +181,15 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
           </div>
 
           {/* Messages */}
-          <ScrollArea className="flex-1">
-            <div ref={scrollRef} className="flex flex-col gap-3 p-4">
+          <ScrollArea className="flex-1" viewportRef={scrollRef}>
+            <div className="flex flex-col gap-3 p-4">
               {allMessages.length === 0 && (
-                <p className="text-center text-sm text-muted-foreground py-8">
-                  Ask a question about this meeting, or type / for a slash command.
-                </p>
+                <SuggestedPrompts
+                  intro="Ask anything about this meeting, or type / for a slash command."
+                  prompts={MEETING_PROMPTS}
+                  onPick={(prompt) => handleSend(prompt)}
+                  disabled={!selectedProvider || !selectedModel || isLoading}
+                />
               )}
               {allMessages.map((msg, i) => (
                 <ChatMessage key={i} role={msg.role} content={msg.content} />
@@ -245,7 +248,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
               placeholder="Ask about this meeting…"
               value={input}
               onChange={setInput}
-              onSend={handleSend}
+              onSend={() => handleSend()}
               onKeyDown={handleKeyDown}
               disabled={isLoading}
             />

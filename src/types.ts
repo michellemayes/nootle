@@ -18,6 +18,10 @@ export interface RecordingStatus {
   paused: boolean;
   /** Recorded time so far, not counting pauses. */
   elapsed_ms: number;
+  /** Latest microphone input level (RMS, 0–1). */
+  mic_level?: number;
+  /** Latest system audio level; null when system audio isn't captured. */
+  system_level?: number | null;
 }
 
 export interface CalendarEvent {

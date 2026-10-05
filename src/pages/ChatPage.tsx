@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SuggestedPrompts, LIBRARY_PROMPTS } from "@/components/SuggestedPrompts";
 import { EmptyState } from "@/components/EmptyState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
@@ -284,10 +285,13 @@ export function ChatPage() {
           <>
             <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
               {dbMessages.length === 0 && !loading && (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-sm text-muted-foreground">
-                    Ask a question across all of your meetings.
-                  </p>
+                <div className="mx-auto flex h-full w-full max-w-md items-center">
+                  <SuggestedPrompts
+                    intro="Ask a question across all of your meetings."
+                    prompts={LIBRARY_PROMPTS}
+                    onPick={(prompt) => handleSend(prompt)}
+                    disabled={!selectedProvider || !selectedModel}
+                  />
                 </div>
               )}
               {dbMessages.map((msg) => {

@@ -39,6 +39,7 @@ import { useLabels } from "@/hooks/useLabels";
 import { MeetingActionMenuItems } from "@/components/MeetingActionMenuItems";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { LabelEditor } from "@/components/LabelEditor";
+import { toast } from "@/components/Toaster";
 import type { Meeting } from "@/types";
 import {
   Search,
@@ -56,6 +57,18 @@ function formatDuration(start: string, end: string | null): string {
   if (!end) return "In progress";
   return formatMinutes(Math.floor((new Date(end).getTime() - new Date(start).getTime()) / 60000));
 }
+
+/** "Done" is the normal end state, so only call out meetings that aren't. */
+const showStatus = (status: string) => status !== "summarized";
+
+/** Cards and rows act as links: Enter opens them, like a click. */
+const openOnEnter =
+  (open: () => void) => (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key === "Enter" && e.target === e.currentTarget) {
+      e.preventDefault();
+      open();
+    }
+  };
 
 const dropdownPrimitives = {
   MenuItem: DropdownMenuItem,
@@ -147,6 +160,12 @@ export function MeetingLibrary() {
     async (meeting: Meeting) => {
       await archiveMeeting(meeting.id);
       refresh();
+      toast(`Archived "${meeting.title}"`, {
+        action: {
+          label: "Undo",
+          onClick: () => unarchiveMeeting(meeting.id).then(refresh),
+        },
+      });
     },
     [refresh],
   );
@@ -155,6 +174,12 @@ export function MeetingLibrary() {
     async (meeting: Meeting) => {
       await unarchiveMeeting(meeting.id);
       refresh();
+      toast(`Restored "${meeting.title}"`, {
+        action: {
+          label: "Undo",
+          onClick: () => archiveMeeting(meeting.id).then(refresh),
+        },
+      });
     },
     [refresh],
   );
@@ -380,8 +405,12 @@ export function MeetingLibrary() {
               <ContextMenuTrigger asChild>
                 <div>
                   <Card
-                    className="group h-full cursor-pointer transition-colors hover:bg-accent/30"
+                    role="link"
+                    tabIndex={0}
+                    aria-label={meeting.title}
+                    className="group h-full cursor-pointer transition-colors hover:bg-accent/30 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                     onClick={() => navigate(`/meeting/${meeting.id}`)}
+                    onKeyDown={openOnEnter(() => navigate(`/meeting/${meeting.id}`))}
                   >
                     <CardContent className="space-y-3">
                       <div className="flex items-start justify-between gap-2">
@@ -389,11 +418,11 @@ export function MeetingLibrary() {
                           {meeting.title}
                         </h3>
                         <div className="flex items-center gap-1 shrink-0">
-                          <Badge
-                            variant={statusVariant(meeting.status)}
-                          >
-                            {statusLabel(meeting.status)}
-                          </Badge>
+                          {showStatus(meeting.status) && (
+                            <Badge variant={statusVariant(meeting.status)}>
+                              {statusLabel(meeting.status)}
+                            </Badge>
+                          )}
                           <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -447,8 +476,12 @@ export function MeetingLibrary() {
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
                 <div
-                  className="group flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors hover:bg-accent/30"
+                  role="link"
+                  tabIndex={0}
+                  aria-label={meeting.title}
+                  className="group flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors hover:bg-accent/30 outline-none focus-visible:bg-accent/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
                   onClick={() => navigate(`/meeting/${meeting.id}`)}
+                  onKeyDown={openOnEnter(() => navigate(`/meeting/${meeting.id}`))}
                 >
                   <h3 className="flex-1 font-medium truncate">
                     {meeting.title}
@@ -469,9 +502,11 @@ export function MeetingLibrary() {
                   <span className="text-xs text-muted-foreground whitespace-nowrap w-12 text-right">
                     {formatDuration(meeting.start_time, meeting.end_time)}
                   </span>
-                  <Badge variant={statusVariant(meeting.status)} className="shrink-0">
-                    {statusLabel(meeting.status)}
-                  </Badge>
+                  {showStatus(meeting.status) && (
+                    <Badge variant={statusVariant(meeting.status)} className="shrink-0">
+                      {statusLabel(meeting.status)}
+                    </Badge>
+                  )}
                   <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>

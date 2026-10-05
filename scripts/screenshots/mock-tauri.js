@@ -30,6 +30,17 @@
           (!args?.status || i.status === args.status || i.status === null),
       );
     }
+    // A live recording's input levels, wobbling like speech for the meter.
+    if (cmd === "recording_status") {
+      const t = Date.now() / 180;
+      return {
+        meeting_id: "live",
+        paused: false,
+        elapsed_ms: 10_000,
+        mic_level: 0.03 + 0.025 * Math.sin(t),
+        system_level: 0.02 + 0.015 * Math.cos(t * 1.3),
+      };
+    }
     if (cmd in fixtures) return fixtures[cmd];
     if (!cmd.startsWith("plugin:")) {
       console.warn(`[mock-tauri] no fixture for "${cmd}" — returning null`);
