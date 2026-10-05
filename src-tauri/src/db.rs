@@ -1905,6 +1905,16 @@ impl Database {
         })
     }
 
+    /// Relabel every transcript line spoken by `from` in a meeting. Renaming
+    /// onto an existing label merges the two speakers. Returns lines changed.
+    pub fn rename_speaker(&self, meeting_id: &str, from: &str, to: &str) -> Result<usize> {
+        let conn = self.lock_conn()?;
+        Ok(conn.execute(
+            "UPDATE transcripts SET speaker_label = ?3 WHERE meeting_id = ?1 AND speaker_label = ?2",
+            params![meeting_id, from, to],
+        )?)
+    }
+
     pub fn get_transcript(&self, meeting_id: &str) -> Result<Vec<TranscriptSegment>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(&format!(

@@ -1,6 +1,6 @@
 use crate::audio::{run_audio_capture, validate_audio_devices, RecordingSession};
 use crate::db::*;
-use crate::diarization::DiarizationEngine;
+use crate::diarization::{DiarizationEngine, SpeakerAttributor};
 use crate::extraction;
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::model_download::{self, DownloadManager};
@@ -260,6 +260,34 @@ pub fn get_transcript(
     db: State<'_, DbState>,
     meeting_id: String,
 ) -> Result<Vec<TranscriptSegment>, String> {
+    db.get_transcript(&meeting_id).map_err(|e| e.to_string())
+}
+
+/// Rename a speaker throughout a meeting ("Speaker 2" → "Priya"), or merge
+/// two speakers by renaming one onto the other. Analytics and search index
+/// are rebuilt so they show the new name.
+#[tauri::command]
+pub async fn rename_speaker(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    embedding_state: State<'_, EmbeddingState>,
+    meeting_id: String,
+    from: String,
+    to: String,
+) -> Result<Vec<TranscriptSegment>, String> {
+    let to = to.trim();
+    if to.is_empty() {
+        return Err("Speaker name can't be empty".into());
+    }
+    db.rename_speaker(&meeting_id, &from, to)
+        .map_err(|e| e.to_string())?;
+
+    compute_analytics(&db, &app, &meeting_id);
+    if let Some(engine) = embedding_state.lock().await.as_mut() {
+        if let Err(e) = crate::chunking::reindex_meeting(&db, engine, &meeting_id) {
+            tracing::warn!("Failed to re-index meeting {meeting_id} after rename: {e}");
+        }
+    }
     db.get_transcript(&meeting_id).map_err(|e| e.to_string())
 }
 
@@ -725,7 +753,7 @@ async fn auto_extract_insights(
 
 /// Background task: consume audio chunks, transcribe, diarize, persist, and emit events.
 async fn run_transcription_pipeline(
-    audio_rx: tokio::sync::mpsc::Receiver<Vec<f32>>,
+    audio_rx: tokio::sync::mpsc::Receiver<crate::audio::AudioChunk>,
     db: Arc<Database>,
     llm_state: LlmState,
     embedding_state: Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>,
@@ -816,26 +844,10 @@ async fn auto_model_is_local(db: &Database, llm_state: &LlmState) -> bool {
     pick_auto_model(db, &registry).is_some_and(|m| m.provider == "ollama")
 }
 
-/// Pick the speaker whose diarized span overlaps a transcript segment most.
-fn speaker_for(
-    seg: &transcription::TranscriptionSegment,
-    speakers: &[crate::diarization::SpeakerSegment],
-) -> String {
-    speakers
-        .iter()
-        .max_by_key(|s| {
-            s.end_ms
-                .min(seg.end_ms)
-                .saturating_sub(s.start_ms.max(seg.start_ms))
-        })
-        .map(|s| s.speaker_id.clone())
-        .unwrap_or_else(|| "Speaker".to_string())
-}
-
 /// Transcribe audio chunks as they arrive until recording stops. Emits only
 /// the new segments for each chunk; returns how many segments were stored.
 fn transcribe_live(
-    mut audio_rx: tokio::sync::mpsc::Receiver<Vec<f32>>,
+    mut audio_rx: tokio::sync::mpsc::Receiver<crate::audio::AudioChunk>,
     db: &Database,
     meeting_id: &str,
     app: &tauri::AppHandle,
@@ -872,19 +884,28 @@ fn transcribe_live(
         );
     }
 
-    let mut diarization_engine = match DiarizationEngine::load() {
+    // A meeting app on the mic means this is a call, where the mic is the
+    // user and system audio everyone else.
+    let diarization_engine = match DiarizationEngine::load() {
         Ok(e) => Some(e),
         Err(err) => {
             tracing::info!("Diarization models not available, skipping: {err}");
             None
         }
     };
+    let call_app = crate::detection::meeting_app_using_mic();
+    if let Some(app) = &call_app {
+        tracing::info!("Recording a {} call", app.display_name);
+    }
+    let mut speakers = SpeakerAttributor::new(diarization_engine, call_app.is_some());
 
     let sample_rate: u64 = 16000;
     let mut offset_samples: u64 = 0;
     let mut segment_count: u64 = 0;
 
-    while let Some(chunk) = audio_rx.blocking_recv() {
+    while let Some(audio) = audio_rx.blocking_recv() {
+        let chunk = audio.mixed;
+        speakers.observe(&audio.system);
         let offset_ms = offset_samples * 1000 / sample_rate;
         offset_samples += chunk.len() as u64;
 
@@ -900,11 +921,8 @@ fn transcribe_live(
             }
         };
 
-        // Diarize the chunk once and share it across its segments.
-        let speakers = diarization_engine
-            .as_mut()
-            .and_then(|diar| diar.diarize(&chunk, offset_ms).ok())
-            .unwrap_or_default();
+        // One speaker per chunk, shared across its segments.
+        let speaker = speakers.label(&audio.mic, &audio.system, &chunk);
         // Reloaded per chunk so words added mid-meeting apply straight away.
         let dictionary =
             crate::dictionary::Rules::new(&db.list_dictionary_entries().unwrap_or_default());
@@ -913,7 +931,7 @@ fn transcribe_live(
         for seg in &segments {
             match db.create_transcript_segment(NewTranscriptSegment {
                 meeting_id: meeting_id.to_string(),
-                speaker_label: speaker_for(seg, &speakers),
+                speaker_label: speaker.clone(),
                 text: dictionary.apply(&seg.text),
                 start_ms: i64::try_from(seg.start_ms).unwrap_or(i64::MAX),
                 end_ms: i64::try_from(seg.end_ms).unwrap_or(i64::MAX),

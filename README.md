@@ -85,13 +85,10 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 
 - **Record everything** — capture microphone and system audio simultaneously
 - **Live transcription** — speech-to-text powered by Parakeet via ONNX Runtime
-- **Speaker identification** — know who said what with automatic diarization
-<<<<<<< HEAD
-- **AI summaries and chat** — every meeting is summarized automatically when it ends, and opens on its summary; ask questions about your meetings using your preferred LLM
-=======
+- **Speaker identification** — know who said what with automatic diarization (download the **Speaker Diarization** model in Settings). On a call (Zoom, Meet, Teams, and the rest), your microphone is labelled **You** and the call's audio is split into **Speaker 1**, **Speaker 2**, and so on. In an in-person meeting, everyone at the mic is told apart the same way. Click a speaker's name in the transcript to rename them everywhere in that meeting. Renaming one speaker to another's name merges the two
+- **Plays well with Zoom's audio device** — if `ZoomAudioDevice` (or a similar virtual device, like Teams Audio or BlackHole) has become your default input, Nootle records from your real microphone instead
 - **Auto-learning dictionary** — double-click any transcript line to fix a misheard name or term. Nootle learns the fix ("noodle" → "Nootle"), corrects the rest of that meeting, applies it to every future recording, and gives your dictionary to the AI as a spelling reference for summaries and chat. Manage words, or turn learning off, in Settings → Dictionary
-- **AI summaries and chat** — ask questions about your meetings using your preferred LLM
->>>>>>> origin/main
+- **AI summaries and chat** — every meeting is summarized automatically when it ends, and opens on its summary; ask questions about your meetings using your preferred LLM
 - **Insight extraction** — decisions, action items, and key moments are extracted automatically once a recording finishes transcribing
 - **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, or your existing Claude / ChatGPT subscription via the Claude Code (`claude -p`) and Codex CLIs
 - **Meeting detection** — turn on **Auto-detect meetings** in Settings and a small pop-up appears in the top-right corner of your screen when a call starts (Zoom, Teams, Webex, Slack, FaceTime, Discord, or a browser call like Google Meet using your mic). It floats over the meeting app even when Nootle's window is closed: click **Record** to start, or dismiss it (it also goes away on its own after 45 seconds)

@@ -158,6 +158,48 @@ fn test_transcript_segments() {
 }
 
 #[test]
+fn test_rename_speaker() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Test".into(),
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    for (speaker, start_ms) in [("Speaker 1", 0), ("Speaker 2", 2000), ("Speaker 1", 4000)] {
+        db.create_transcript_segment(NewTranscriptSegment {
+            meeting_id: meeting.id.clone(),
+            speaker_label: speaker.into(),
+            text: "Hello".into(),
+            start_ms,
+            end_ms: start_ms + 2000,
+            confidence: 0.9,
+        })
+        .unwrap();
+    }
+
+    assert_eq!(
+        db.rename_speaker(&meeting.id, "Speaker 1", "Alice")
+            .unwrap(),
+        2
+    );
+    // Renaming onto an existing name merges speakers split by diarization.
+    assert_eq!(
+        db.rename_speaker(&meeting.id, "Speaker 2", "Alice")
+            .unwrap(),
+        1
+    );
+    let labels: Vec<_> = db
+        .get_transcript(&meeting.id)
+        .unwrap()
+        .into_iter()
+        .map(|s| s.speaker_label)
+        .collect();
+    assert_eq!(labels, ["Alice", "Alice", "Alice"]);
+}
+
+#[test]
 fn test_summaries() {
     let db = Database::new_in_memory().unwrap();
     let meeting = db
