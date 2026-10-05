@@ -13,11 +13,28 @@ const INFO_PLIST_BYTES: &[u8] = include_bytes!("../Info.plist");
 #[link_section = "__TEXT,__info_plist"]
 static EMBEDDED_INFO_PLIST: [u8; INFO_PLIST_BYTES.len()] = *include_bytes!("../Info.plist");
 
+/// MCP clients talk to their servers over a pipe or socket on stdin, while
+/// Finder, the Dock, login items, and a terminal give the app /dev/null or a
+/// TTY. Serving MCP whenever stdin is a pipe means a client that drops or
+/// never passed `--mcp` gets a server instead of a new app window it would
+/// wait on forever.
+fn stdin_is_pipe() -> bool {
+    use std::os::fd::AsFd;
+    use std::os::unix::fs::FileTypeExt;
+
+    std::io::stdin()
+        .as_fd()
+        .try_clone_to_owned()
+        .map(std::fs::File::from)
+        .and_then(|stdin| stdin.metadata())
+        .is_ok_and(|m| m.file_type().is_fifo() || m.file_type().is_socket())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     nootle_app_lib::sandbox_migration::migrate();
 
-    if args.contains(&"--mcp".to_string()) {
+    if args.contains(&"--mcp".to_string()) || stdin_is_pipe() {
         // Run as MCP server (stdio mode, no GUI)
         use rmcp::{transport::stdio, ServiceExt};
 
