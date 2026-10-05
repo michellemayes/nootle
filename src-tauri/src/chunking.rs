@@ -108,7 +108,21 @@ pub fn embed_meeting(
         return Ok(0);
     }
 
-    let raw_chunks = chunk_segments(&segments);
+    let mut raw_chunks = chunk_segments(&segments);
+    // Text read off shared slides and charts is searchable alongside speech.
+    raw_chunks.extend(
+        db.get_snapshots(meeting_id)?
+            .into_iter()
+            .filter(|s| !s.text.trim().is_empty())
+            .map(|s| {
+                (
+                    format!("Shared on screen: {}", s.text),
+                    s.offset_ms,
+                    s.offset_ms,
+                    r#"["Shared screen"]"#.to_string(),
+                )
+            }),
+    );
 
     for (i, (text, start_ms, end_ms, speakers_json)) in raw_chunks.iter().enumerate() {
         let chunk_id = uuid::Uuid::new_v4().to_string();

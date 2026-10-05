@@ -392,6 +392,31 @@ pub struct ScratchNote {
     pub created_at: String,
 }
 
+/// A picture of something shared on screen during a meeting, with the text
+/// read off it so the meeting can be searched and asked about.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Snapshot {
+    pub id: String,
+    pub meeting_id: String,
+    pub image_path: String,
+    pub text: String,
+    /// Recorded time into the meeting when it was taken.
+    pub offset_ms: i64,
+    pub created_at: String,
+}
+
+/// Reads `id, meeting_id, image_path, text, offset_ms, created_at`.
+fn snapshot_from_row(row: &rusqlite::Row) -> rusqlite::Result<Snapshot> {
+    Ok(Snapshot {
+        id: row.get(0)?,
+        meeting_id: row.get(1)?,
+        image_path: row.get(2)?,
+        text: row.get(3)?,
+        offset_ms: row.get(4)?,
+        created_at: row.get(5)?,
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Recipe {
     pub id: String,
@@ -755,6 +780,15 @@ impl Database {
                 meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
                 content TEXT NOT NULL,
                 timestamp_ms INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS snapshots (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                image_path TEXT NOT NULL,
+                text TEXT NOT NULL DEFAULT '',
+                offset_ms INTEGER NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
@@ -1652,6 +1686,57 @@ impl Database {
         let conn = self.lock_conn()?;
         conn.execute("DELETE FROM scratch_notes WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn create_snapshot(
+        &self,
+        meeting_id: &str,
+        image_path: &str,
+        text: &str,
+        offset_ms: i64,
+    ) -> Result<Snapshot> {
+        let conn = self.lock_conn()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO snapshots (id, meeting_id, image_path, text, offset_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, meeting_id, image_path, text, offset_ms, now],
+        )?;
+        Ok(Snapshot {
+            id,
+            meeting_id: meeting_id.to_string(),
+            image_path: image_path.to_string(),
+            text: text.to_string(),
+            offset_ms,
+            created_at: now,
+        })
+    }
+
+    pub fn get_snapshots(&self, meeting_id: &str) -> Result<Vec<Snapshot>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, meeting_id, image_path, text, offset_ms, created_at
+             FROM snapshots WHERE meeting_id = ?1 ORDER BY offset_ms ASC",
+        )?;
+        let snapshots = stmt
+            .query_map(params![meeting_id], snapshot_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(snapshots)
+    }
+
+    /// Removes a snapshot, returning it so its image can be deleted too.
+    pub fn delete_snapshot(&self, id: &str) -> Result<Option<Snapshot>> {
+        let conn = self.lock_conn()?;
+        let snapshot = conn
+            .query_row(
+                "DELETE FROM snapshots WHERE id = ?1
+                 RETURNING id, meeting_id, image_path, text, offset_ms, created_at",
+                params![id],
+                snapshot_from_row,
+            )
+            .optional()?;
+        Ok(snapshot)
     }
 
     fn seed_builtin_recipes(conn: &rusqlite::Connection) -> Result<()> {
@@ -3775,6 +3860,37 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshots_are_listed_in_order_and_deleted_with_their_meeting() {
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(NewMeeting {
+                title: "Review".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        let later = db
+            .create_snapshot(&meeting.id, "/s/2.jpg", "Roadmap", 9_000)
+            .unwrap();
+        db.create_snapshot(&meeting.id, "/s/1.jpg", "Revenue", 3_000)
+            .unwrap();
+        let texts: Vec<_> = db
+            .get_snapshots(&meeting.id)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.text)
+            .collect();
+        assert_eq!(texts, ["Revenue", "Roadmap"]);
+
+        let removed = db.delete_snapshot(&later.id).unwrap().unwrap();
+        assert_eq!(removed.image_path, "/s/2.jpg");
+        assert!(db.delete_snapshot(&later.id).unwrap().is_none());
+
+        db.delete_meeting(&meeting.id).unwrap();
+        assert!(db.get_snapshots(&meeting.id).unwrap().is_empty());
+    }
 
     #[test]
     fn default_template_is_builtin_general() {

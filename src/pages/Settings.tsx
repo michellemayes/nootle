@@ -33,6 +33,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { formatBytes } from "@/lib/utils";
 import { useIntegrations } from "@/hooks/useIntegrations";
 import { INTEGRATION_TYPES } from "@/lib/integrations";
+import { SNAPSHOTS_SETTING } from "@/hooks/useSnapshots";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter", "bedrock", "codex"];
 
@@ -747,6 +748,7 @@ export function SettingsPage() {
   const [denoiseEnabled, setDenoiseEnabled] = useState(true);
   const [detectionEnabled, setDetectionEnabled] = useState(true);
   const [remoteControlEnabled, setRemoteControlEnabled] = useState(false);
+  const [snapshotsEnabled, setSnapshotsEnabled] = useState(false);
 
   useEffect(() => {
     invoke<string | null>("get_app_setting", { key: "denoise_enabled" })
@@ -757,6 +759,9 @@ export function SettingsPage() {
       .catch(() => {});
     invoke<string | null>("get_app_setting", { key: "remote_control_enabled" })
       .then((val) => setRemoteControlEnabled(val === "true"))
+      .catch(() => {});
+    invoke<string | null>("get_app_setting", { key: SNAPSHOTS_SETTING })
+      .then((val) => setSnapshotsEnabled(val === "true"))
       .catch(() => {});
   }, []);
 
@@ -772,6 +777,14 @@ export function SettingsPage() {
     setDetectionEnabled(enabled);
     await invoke("set_app_setting", {
       key: "detection_enabled",
+      value: String(enabled),
+    });
+  };
+
+  const toggleSnapshots = async (enabled: boolean) => {
+    setSnapshotsEnabled(enabled);
+    await invoke("set_app_setting", {
+      key: SNAPSHOTS_SETTING,
       value: String(enabled),
     });
   };
@@ -864,6 +877,19 @@ export function SettingsPage() {
                     checked={detectionEnabled}
                     onCheckedChange={toggleDetection}
                     aria-label="Auto-detect meetings"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Snapshots</p>
+                    <p className="text-sm text-muted-foreground">
+                      When someone shares their screen, snap slides, designs, docs and charts into your notes so you can ask about them later. Only the meeting window is captured, and text is read on your Mac
+                    </p>
+                  </div>
+                  <Switch
+                    checked={snapshotsEnabled}
+                    onCheckedChange={toggleSnapshots}
+                    aria-label="Snapshots"
                   />
                 </div>
                 <div className="flex items-center justify-between">

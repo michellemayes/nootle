@@ -94,6 +94,9 @@ pub fn delete_meeting(db: State<'_, DbState>, id: String) -> Result<(), String> 
     if let Some(path) = audio_path {
         let _ = std::fs::remove_file(&path);
     }
+    if let Ok(dir) = recordings_dir() {
+        let _ = std::fs::remove_dir_all(crate::snapshots::dir_for(&dir, &id));
+    }
 
     Ok(())
 }
@@ -267,6 +270,22 @@ pub fn get_scratch_notes(
 #[tauri::command(async)]
 pub fn delete_scratch_note(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_scratch_note(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn list_snapshots(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<crate::db::Snapshot>, String> {
+    db.get_snapshots(&meeting_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn delete_snapshot(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    if let Some(snapshot) = db.delete_snapshot(&id).map_err(|e| e.to_string())? {
+        let _ = std::fs::remove_file(&snapshot.image_path);
+    }
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -625,6 +644,17 @@ pub async fn start_recording(
             )
             .await;
         });
+    }
+
+    if crate::snapshots::enabled(&db) {
+        session.set_snapshotter(crate::snapshots::Snapshotter::start(
+            db.inner().clone(),
+            app.clone(),
+            meeting.id.clone(),
+            crate::snapshots::dir_for(&recordings_dir, &meeting.id),
+            session.is_paused_flag(),
+            session.recorded_clock(),
+        ));
     }
 
     *session_lock = Some(session);
@@ -1010,6 +1040,11 @@ pub async fn stop_recording(
 
     let meeting_id = session.meeting_id().to_string();
     let audio_path = session.audio_path().to_string_lossy().to_string();
+    // Snapshots finish first so they're all stored before the transcript
+    // (and so post-meeting summaries) is complete.
+    if let Some(snapshotter) = session.take_snapshotter() {
+        let _ = tokio::task::spawn_blocking(move || snapshotter.stop()).await;
+    }
     session.stop();
 
     // Wait for the capture thread to finish writing the WAV file (outside the lock)
@@ -2179,7 +2214,8 @@ pub async fn enrich_meeting_notes(
         .iter()
         .map(|s| format!("{}: {}", s.speaker_label, s.text))
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n")
+        + &crate::snapshots::context_section(&db, &meeting_id);
 
     let system_prompt = format!(
         "You are enriching meeting notes using the full transcript into a single merged document. \

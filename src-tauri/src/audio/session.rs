@@ -13,18 +13,37 @@ struct Clock {
     paused_total: Duration,
 }
 
+impl Clock {
+    fn recorded(&self) -> Duration {
+        let paused = self.paused_total + self.paused_since.map_or(Duration::ZERO, |s| s.elapsed());
+        self.started.elapsed().saturating_sub(paused)
+    }
+}
+
+/// Shared read-only view of a session's recorded time, for work that runs
+/// alongside the recording (e.g. snapshots) and needs to timestamp it.
+#[derive(Clone)]
+pub struct RecordedClock(Arc<Mutex<Clock>>);
+
+impl RecordedClock {
+    pub fn recorded(&self) -> Duration {
+        self.0.lock().unwrap().recorded()
+    }
+}
+
 pub struct RecordingSession {
     meeting_id: String,
     is_active: Arc<AtomicBool>,
     /// While set, the capture thread drains the devices but drops the audio,
     /// so nothing is written or transcribed.
     is_paused: Arc<AtomicBool>,
-    clock: Mutex<Clock>,
+    clock: Arc<Mutex<Clock>>,
     audio_path: PathBuf,
     /// Channel to send audio chunks for transcription
     audio_tx: Option<mpsc::Sender<AudioChunk>>,
     audio_rx: Option<mpsc::Receiver<AudioChunk>>,
     capture_handle: Option<std::thread::JoinHandle<()>>,
+    snapshotter: Option<crate::snapshots::Snapshotter>,
 }
 
 impl RecordingSession {
@@ -41,15 +60,16 @@ impl RecordingSession {
             meeting_id: meeting_id.to_string(),
             is_active: Arc::new(AtomicBool::new(false)),
             is_paused: Arc::new(AtomicBool::new(false)),
-            clock: Mutex::new(Clock {
+            clock: Arc::new(Mutex::new(Clock {
                 started: Instant::now(),
                 paused_since: None,
                 paused_total: Duration::ZERO,
-            }),
+            })),
             audio_path,
             audio_tx: Some(audio_tx),
             audio_rx: Some(audio_rx),
             capture_handle: None,
+            snapshotter: None,
         })
     }
 
@@ -95,10 +115,11 @@ impl RecordingSession {
 
     /// Time actually recorded so far, leaving out paused stretches.
     pub fn recorded(&self) -> Duration {
-        let clock = self.clock.lock().unwrap();
-        let paused =
-            clock.paused_total + clock.paused_since.map_or(Duration::ZERO, |s| s.elapsed());
-        clock.started.elapsed().saturating_sub(paused)
+        self.clock.lock().unwrap().recorded()
+    }
+
+    pub fn recorded_clock(&self) -> RecordedClock {
+        RecordedClock(self.clock.clone())
     }
 
     pub fn stop(&self) {
@@ -120,6 +141,14 @@ impl RecordingSession {
 
     pub fn take_capture_handle(&mut self) -> Option<std::thread::JoinHandle<()>> {
         self.capture_handle.take()
+    }
+
+    pub fn set_snapshotter(&mut self, snapshotter: crate::snapshots::Snapshotter) {
+        self.snapshotter = Some(snapshotter);
+    }
+
+    pub fn take_snapshotter(&mut self) -> Option<crate::snapshots::Snapshotter> {
+        self.snapshotter.take()
     }
 
     pub fn take_audio_tx(&mut self) -> Option<mpsc::Sender<AudioChunk>> {

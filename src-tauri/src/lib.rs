@@ -27,6 +27,7 @@ pub mod permissions;
 pub mod remote;
 pub mod sandbox_migration;
 pub mod shell_env;
+pub mod snapshots;
 pub mod summarization;
 pub mod transcription;
 pub mod vad;
@@ -253,6 +254,8 @@ pub fn run() {
             commands::get_scratch_notes,
             commands::delete_scratch_note,
             commands::get_transcript,
+            commands::list_snapshots,
+            commands::delete_snapshot,
             commands::rename_speaker,
             commands::search_transcripts,
             commands::update_transcript_segment,

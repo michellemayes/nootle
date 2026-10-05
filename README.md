@@ -86,6 +86,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Record everything** — capture microphone and system audio simultaneously
 - **Live transcription** — speech-to-text powered by Parakeet via ONNX Runtime
 - **Speaker identification** — know who said what with automatic diarization (download the **Speaker Diarization** model in Settings). On a call (Zoom, Meet, Teams, and the rest), your microphone is labelled **You** and the call's audio is split into **Speaker 1**, **Speaker 2**, and so on. In an in-person meeting, everyone at the mic is told apart the same way. Click a speaker's name in the transcript to rename them everywhere in that meeting. Renaming one speaker to another's name merges the two
+- **Snapshots** — turn on **Snapshots** in Settings and, when someone shares their screen in a call, Nootle snaps the slides, designs, docs, or charts into your notes, one picture per slide. Only the meeting window is captured (never the rest of your screen), and only while a call is on and the recording isn't paused. Text on each snapshot is read on your Mac, so summaries, chat, and search can answer questions like "what did the revenue chart say?". Snapshots appear at the bottom of the meeting's notes, where you can view or remove them, and a snapshot indicator shows in the recording bar
 - **Pause and resume** — go off the record mid-meeting; nothing is recorded or transcribed while paused, and the timer counts only recorded time
 - **Plays well with Zoom's audio device** — if `ZoomAudioDevice` (or a similar virtual device, like Teams Audio or BlackHole) has become your default input, Nootle records from your real microphone instead
 - **Auto-learning dictionary** — double-click any transcript line to fix a misheard name or term. Nootle learns the fix ("noodle" → "Nootle"), corrects the rest of that meeting, applies it to every future recording, and gives your dictionary to the AI as a spelling reference for summaries and chat. Manage words, or turn learning off, in Settings → Dictionary
@@ -127,7 +128,7 @@ If you're on v0.1.15 or earlier, in-app updates fail with "Couldn't update". Tho
 On first launch, Nootle will ask for:
 
 - **Microphone** — to record your voice
-- **Screen Recording** — to capture system audio from meeting apps via Core Audio
+- **Screen Recording** — to capture system audio from meeting apps via Core Audio, and the meeting window for Snapshots
 - **Calendar** (optional) — to show upcoming meetings and name recordings after the event
 
 ## Development
