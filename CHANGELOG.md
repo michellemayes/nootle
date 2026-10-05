@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- **summaries:** Auto-generate summaries fast and open meetings on the Summaries tab (#153) ([c5fd02d](https://github.com/michellemayes/nootle/commit/c5fd02dcd1f800f3eb022ac4a524f5f4815230b1))
+
+## [0.1.22] - 2026-10-05
+
+### Features
+
+- **transcription:** Add an auto-learning dictionary (#152) ([d79cfa8](https://github.com/michellemayes/nootle/commit/d79cfa827607b1f3870073d59e3fa90537a818bf))
+
 ## [0.1.21] - 2026-10-02
 
 ### Features

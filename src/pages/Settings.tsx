@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useSearchParams } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible } from "@/components/Collapsible";
 import { PageHeader } from "@/components/PageHeader";
 import { McpSetup } from "@/components/McpSetup";
+import { DictionaryManager } from "@/components/DictionaryManager";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
 import { INSIGHT_ICONS } from "@/lib/insightIcons";
@@ -741,6 +743,7 @@ export function SettingsPage() {
   const { providers: llmProviders } = useLLM();
   const { theme, toggleTheme } = useTheme();
   const version = useAppVersion();
+  const [searchParams] = useSearchParams();
   const [denoiseEnabled, setDenoiseEnabled] = useState(true);
   const [detectionEnabled, setDetectionEnabled] = useState(true);
   const [remoteControlEnabled, setRemoteControlEnabled] = useState(false);
@@ -795,13 +798,14 @@ export function SettingsPage() {
         description="Preferences, AI providers, integrations, and local models"
       />
 
-      <Tabs defaultValue="general" className="flex flex-1 flex-col overflow-hidden">
+      <Tabs defaultValue={searchParams.get("tab") ?? "general"} className="flex flex-1 flex-col overflow-hidden">
         <div className="shrink-0 border-b px-6 py-4">
           <TabsList className="h-10">
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="api-keys">API keys</TabsTrigger>
             <TabsTrigger value="integrations">Integrations</TabsTrigger>
             <TabsTrigger value="models">Models</TabsTrigger>
+            <TabsTrigger value="dictionary">Dictionary</TabsTrigger>
             <TabsTrigger value="insight-types">Insight types</TabsTrigger>
             <TabsTrigger value="about">About</TabsTrigger>
           </TabsList>
@@ -939,6 +943,12 @@ export function SettingsPage() {
           </div>
         </TabsContent>
 
+
+        <TabsContent value="dictionary" className="mt-0 flex-1 overflow-auto">
+          <div className="flex flex-col gap-8 p-6 max-w-3xl">
+            <DictionaryManager />
+          </div>
+        </TabsContent>
 
         <TabsContent value="insight-types" className="mt-0 flex-1 overflow-auto">
           <div className="flex flex-col gap-8 p-6 max-w-3xl">

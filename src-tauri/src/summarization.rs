@@ -1,4 +1,5 @@
 use crate::db::{Database, NewSummary, Summary, TranscriptSegment};
+use crate::dictionary;
 use crate::llm::{ChatMessage, LlmRegistry};
 
 fn format_transcript(segments: &[TranscriptSegment]) -> String {
@@ -47,10 +48,12 @@ pub async fn summarize_meeting(
         )
     };
 
+    let glossary = dictionary::glossary(db);
+
     let messages = vec![
         ChatMessage {
             role: "system".into(),
-            content: template.prompt,
+            content: format!("{}{}", template.prompt, glossary),
         },
         ChatMessage {
             role: "user".into(),
@@ -80,7 +83,9 @@ pub async fn summarize_meeting(
 /// Summarizes a finished meeting without user input.
 ///
 /// A template picked for this specific meeting during recording wins; otherwise
-/// every template marked auto-run is applied.
+/// every template marked auto-run is applied. With neither, the first built-in
+/// template (General) runs so every meeting gets a summary. Templates run
+/// concurrently so the summary lands as fast as the slowest single call.
 pub async fn run_auto_templates(
     db: &Database,
     llm: &LlmRegistry,
@@ -96,12 +101,20 @@ pub async fn run_auto_templates(
 
     let templates = match selected {
         Some(template) => vec![template],
-        None => db.get_auto_run_templates()?,
+        None => match db.get_auto_run_templates()? {
+            auto if auto.is_empty() => db.get_default_template()?.into_iter().collect(),
+            auto => auto,
+        },
     };
 
+    let results = futures_util::future::join_all(templates.iter().map(|template| {
+        summarize_meeting(db, llm, meeting_id, &template.id, provider_name, model)
+    }))
+    .await;
+
     let mut summaries = Vec::new();
-    for template in templates {
-        match summarize_meeting(db, llm, meeting_id, &template.id, provider_name, model).await {
+    for (template, result) in templates.iter().zip(results) {
+        match result {
             Ok(summary) => summaries.push(summary),
             Err(e) => tracing::error!("Auto-run template '{}' failed: {}", template.name, e),
         }
@@ -120,6 +133,7 @@ pub async fn chat_with_transcript(
 ) -> anyhow::Result<String> {
     let transcript = db.get_transcript(meeting_id)?;
     let transcript_text = format_transcript(&transcript);
+    let glossary = dictionary::glossary(db);
 
     let mut messages = vec![ChatMessage {
         role: "system".into(),
@@ -127,8 +141,8 @@ pub async fn chat_with_transcript(
             "You are a helpful assistant that answers questions about a meeting transcript. \
              Here is the full transcript:\n\n{}\n\n\
              Answer the user's questions based on this transcript. \
-             Be concise and reference specific parts of the conversation when relevant.",
-            transcript_text
+             Be concise and reference specific parts of the conversation when relevant.{}",
+            transcript_text, glossary
         ),
     }];
 
@@ -177,7 +191,10 @@ pub async fn run_recipe(
             vec![
                 ChatMessage {
                     role: "system".into(),
-                    content: "You are a meeting assistant. Produce the requested output based on the meeting data provided.".into(),
+                    content: format!(
+                        "You are a meeting assistant. Produce the requested output based on the meeting data provided.{}",
+                        dictionary::glossary(db)
+                    ),
                 },
                 ChatMessage {
                     role: "user".into(),

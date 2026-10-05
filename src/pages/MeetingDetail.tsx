@@ -26,16 +26,18 @@ import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
 import { useScratchPad } from "@/hooks/useScratchPad";
-import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label } from "@/types";
+import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { LabelEditor } from "@/components/LabelEditor";
 import {
   AlertTriangle,
   AlignJustify,
   ArrowLeft,
   BarChart3,
+  BookA,
   Check,
   ChevronDown,
   ChevronRight,
@@ -51,6 +53,7 @@ import {
   RotateCw,
   Sparkles,
   StickyNote,
+  X,
   Zap,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -94,6 +97,72 @@ const speakerColors = [
   "text-chart-5",
   "text-chart-6",
 ];
+
+function pluralLines(n: number): string {
+  return `${n} line${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * One transcript line. Double-click to edit; the draft lives here so typing
+ * doesn't re-render the whole meeting page.
+ */
+function SegmentText({
+  seg,
+  speaker,
+  onSave,
+}: {
+  seg: TranscriptSegment;
+  /** The speaker name, rendered before the line (it has its own editor). */
+  speaker: React.ReactNode;
+  onSave: (seg: TranscriptSegment, text: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  // Closing the editor can fire blur as the textarea unmounts; finish once.
+  const closedRef = useRef(false);
+
+  if (draft === null) {
+    return (
+      <p
+        className="min-w-0 flex-1 text-sm text-foreground leading-relaxed cursor-text"
+        onDoubleClick={() => {
+          closedRef.current = false;
+          setDraft(seg.text);
+        }}
+        title="Double-click to fix a word"
+      >
+        {speaker}
+        {seg.text}
+      </p>
+    );
+  }
+
+  const close = (save: boolean) => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    const text = draft.trim();
+    setDraft(null);
+    if (save && text && text !== seg.text) onSave(seg, text);
+  };
+
+  return (
+    <Textarea
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => close(true)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          close(true);
+        } else if (e.key === "Escape") {
+          close(false);
+        }
+      }}
+      className="min-h-0 flex-1 text-sm leading-relaxed"
+      aria-label="Edit transcript line"
+    />
+  );
+}
 
 function formatPlayerTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return "00:00";
@@ -710,8 +779,42 @@ export function MeetingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { meeting, loading: meetingLoading, refresh: refreshMeeting } = useMeeting(id!);
-  const { segments, loading: transcriptLoading, renameSpeaker } = useTranscript(id!);
-  const { summaries, generateSummary } = useSummaries(id!);
+  const { segments, loading: transcriptLoading, refresh: refreshTranscript, renameSpeaker } = useTranscript(id!);
+  const [dictionaryNotice, setDictionaryNotice] = useState<string | null>(null);
+
+  const saveSegmentEdit = async (seg: TranscriptSegment, text: string) => {
+    try {
+      const result = await invoke<SegmentEditResult>("update_transcript_segment", {
+        segmentId: seg.id,
+        text,
+      });
+      if (result.learned.length > 0) {
+        const pairs = result.learned.map((c) => `“${c.from}” → “${c.to}”`).join(", ");
+        const more = result.corrected_segments;
+        setDictionaryNotice(
+          `Learned ${pairs}` + (more > 0 ? ` and fixed ${pluralLines(more)} more` : ""),
+        );
+      }
+      await refreshTranscript();
+    } catch (err) {
+      setDictionaryNotice(`Couldn't save edit: ${err}`);
+    }
+  };
+
+  const applyDictionary = async () => {
+    try {
+      const changed = await invoke<number>("apply_dictionary_to_meeting", { meetingId: id });
+      setDictionaryNotice(
+        changed > 0
+          ? `Dictionary fixed ${pluralLines(changed)}`
+          : "Nothing to fix — transcript already matches your dictionary",
+      );
+      if (changed > 0) await refreshTranscript();
+    } catch (err) {
+      setDictionaryNotice(`Couldn't apply dictionary: ${err}`);
+    }
+  };
+  const { summaries, loading: summariesLoading, generateSummary } = useSummaries(id!);
   const { templates } = useTemplates();
   const { storedProviders: storedApiProviders } = useApiKeys();
   const { labels: allLabels, getMeetingLabels, addMeetingLabel, removeMeetingLabel, createLabel } = useLabels();
@@ -929,6 +1032,30 @@ export function MeetingDetail() {
     }
   };
 
+  // A finished meeting should open with a summary already there. The backend
+  // summarizes on stop; this covers meetings it skipped (older recordings,
+  // a provider added later), once per meeting visit.
+  const autoGeneratedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !id ||
+      autoGeneratedForRef.current === id ||
+      meeting?.status !== "summarized" ||
+      summariesLoading ||
+      summaries.length > 0 ||
+      transcriptLoading ||
+      segments.length === 0 ||
+      generating ||
+      !selectedTemplate ||
+      !selectedProvider ||
+      !selectedModel
+    ) {
+      return;
+    }
+    autoGeneratedForRef.current = id;
+    handleGenerate();
+  }, [id, meeting?.status, summariesLoading, summaries.length, transcriptLoading, segments.length, generating, selectedTemplate, selectedProvider, selectedModel]);
+
   if (meetingLoading) {
     return <LoadingState message={LOADING_COPY.meeting} />;
   }
@@ -1108,6 +1235,16 @@ export function MeetingDetail() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
+                      onClick={applyDictionary}
+                      disabled={segments.length === 0}
+                      title="Apply dictionary"
+                      aria-label="Apply dictionary"
+                    >
+                      <BookA className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
                       onClick={() => setCompactTranscript((v) => !v)}
                       title={compactTranscript ? "Spacious view" : "Compact view"}
                       aria-label={compactTranscript ? "Spacious view" : "Compact view"}
@@ -1116,6 +1253,22 @@ export function MeetingDetail() {
                     </Button>
                   </div>
                 </div>
+                {dictionaryNotice && (
+                  <div className="flex items-center gap-2 border-b bg-muted/50 px-5 py-2 text-xs text-muted-foreground">
+                    <BookA className="h-3.5 w-3.5 shrink-0" />
+                    <span className="min-w-0 flex-1">{dictionaryNotice}</span>
+                    <Link to="/settings?tab=dictionary" className="shrink-0 hover:text-foreground underline-offset-2 hover:underline">
+                      Dictionary
+                    </Link>
+                    <button
+                      onClick={() => setDictionaryNotice(null)}
+                      className="shrink-0 hover:text-foreground"
+                      aria-label="Dismiss"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
                 <ScrollArea className="flex-1">
                   <div className={`p-5 ${compactTranscript ? "space-y-1" : "space-y-4"}`}>
                     {transcriptLoading ? (
@@ -1138,8 +1291,10 @@ export function MeetingDetail() {
                           >
                             {formatMs(seg.start_ms)}
                           </button>
-                          <p className="min-w-0 text-sm text-foreground leading-relaxed">
-                            {speakerEdit?.segmentId === seg.id ? (
+                          <SegmentText
+                            seg={seg}
+                            speaker={
+                              speakerEdit?.segmentId === seg.id ? (
                               <Input
                                 value={speakerEdit.draft}
                                 onChange={(e) => setSpeakerEdit({ ...speakerEdit, draft: e.target.value })}
@@ -1156,14 +1311,16 @@ export function MeetingDetail() {
                               <button
                                 type="button"
                                 onClick={() => setSpeakerEdit({ segmentId: seg.id, draft: seg.speaker_label })}
+                                  onDoubleClick={(e) => e.stopPropagation()}
                                 title={`Rename ${seg.speaker_label} everywhere in this meeting`}
                                 className={`font-semibold ${speakerColor} mr-1.5 rounded-sm hover:underline decoration-dotted underline-offset-2`}
                               >
                                 {seg.speaker_label}:
                               </button>
-                            )}
-                            {seg.text}
-                          </p>
+                            )
+                            }
+                            onSave={saveSegmentEdit}
+                          />
                         </div>
                         );
                       })
@@ -1183,7 +1340,7 @@ export function MeetingDetail() {
           )}
 
         <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
-          <Tabs defaultValue="notes" className="flex flex-1 flex-col overflow-hidden">
+          <Tabs defaultValue="summaries" className="flex flex-1 flex-col overflow-hidden">
             <div className="px-4 border-b flex items-center h-12 gap-2">
               <Button
                 variant="ghost"
@@ -1195,11 +1352,11 @@ export function MeetingDetail() {
                 {transcriptCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
               </Button>
               <TabsList>
-                <TabsTrigger value="notes" title="Notes">
-                  {isCompact ? <FileText className="h-4 w-4" /> : "Notes"}
-                </TabsTrigger>
                 <TabsTrigger value="summaries" title="Summaries">
                   {isCompact ? <Sparkles className="h-4 w-4" /> : "Summaries"}
+                </TabsTrigger>
+                <TabsTrigger value="notes" title="Notes">
+                  {isCompact ? <FileText className="h-4 w-4" /> : "Notes"}
                 </TabsTrigger>
                 <TabsTrigger value="insights" title="Insights">
                   {isCompact ? <Lightbulb className="h-4 w-4" /> : "Insights"}
@@ -1256,9 +1413,13 @@ export function MeetingDetail() {
               <ScrollArea className="flex-1">
                 {summaries.length === 0 ? (
                   <EmptyState
-                    icon={FileText}
+                    icon={generating ? Sparkles : FileText}
                     size="panel"
-                    description="No summaries yet. Pick a template above and generate one."
+                    description={
+                      generating
+                        ? "Generating summary…"
+                        : "No summaries yet. Pick a template above and generate one."
+                    }
                   />
                 ) : (
                   <div className="p-5 space-y-6">

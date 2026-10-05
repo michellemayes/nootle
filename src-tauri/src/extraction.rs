@@ -55,7 +55,7 @@ fn format_transcript(db: &Database, meeting_id: &str) -> anyhow::Result<String> 
     if transcript.is_empty() {
         anyhow::bail!("No transcript found for meeting {}", meeting_id);
     }
-    Ok(transcript
+    let lines = transcript
         .iter()
         .map(|s| {
             let total_seconds = s.start_ms / 1000;
@@ -67,7 +67,8 @@ fn format_transcript(db: &Database, meeting_id: &str) -> anyhow::Result<String> 
             )
         })
         .collect::<Vec<_>>()
-        .join("\n"))
+        .join("\n");
+    Ok(lines + &crate::dictionary::glossary(db))
 }
 
 pub fn strip_code_fences_pub(s: &str) -> &str {

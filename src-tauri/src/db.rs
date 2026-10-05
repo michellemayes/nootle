@@ -1,18 +1,75 @@
+pub use crate::dictionary::DictionaryEntry;
 use crate::error::{NootleError, Result};
 use rusqlite::{ffi::sqlite3_auto_extension, params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sqlite_vec::sqlite3_vec_init;
 use std::sync::{Mutex, MutexGuard};
 
-/// Label names are UNIQUE; turn that constraint failure into a readable error.
-fn duplicate_label_error(e: rusqlite::Error, name: &str) -> NootleError {
+/// Trims and de-duplicates dictionary variants (case-insensitively), dropping
+/// any that already read exactly as the term.
+fn merge_variants(term: &str, existing: &[String], added: &[String]) -> Vec<String> {
+    let mut merged: Vec<String> = Vec::new();
+    for variant in existing.iter().chain(added) {
+        let variant = variant.trim();
+        if variant.is_empty()
+            || variant == term
+            || merged.iter().any(|m| m.eq_ignore_ascii_case(variant))
+        {
+            continue;
+        }
+        merged.push(variant.to_string());
+    }
+    merged
+}
+
+/// Turns a UNIQUE constraint failure into a readable error.
+fn unique_violation(e: rusqlite::Error, message: String) -> NootleError {
     match e {
         rusqlite::Error::SqliteFailure(err, _)
             if err.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE =>
         {
-            NootleError::Other(format!("A label named \"{}\" already exists", name))
+            NootleError::Other(message)
         }
         other => NootleError::Database(other),
+    }
+}
+
+/// Label names are UNIQUE; turn that constraint failure into a readable error.
+fn duplicate_label_error(e: rusqlite::Error, name: &str) -> NootleError {
+    unique_violation(e, format!("A label named \"{}\" already exists", name))
+}
+
+const SEGMENT_COLUMNS: &str = "id, meeting_id, speaker_label, text, start_ms, end_ms, confidence";
+
+fn segment_from_row(row: &rusqlite::Row) -> rusqlite::Result<TranscriptSegment> {
+    Ok(TranscriptSegment {
+        id: row.get(0)?,
+        meeting_id: row.get(1)?,
+        speaker_label: row.get(2)?,
+        text: row.get(3)?,
+        start_ms: row.get(4)?,
+        end_ms: row.get(5)?,
+        confidence: row.get(6)?,
+    })
+}
+
+const DICTIONARY_COLUMNS: &str = "id, term, misheard, source, created_at";
+
+fn dictionary_entry_from_row(row: &rusqlite::Row) -> rusqlite::Result<DictionaryEntry> {
+    let misheard: String = row.get(2)?;
+    Ok(DictionaryEntry {
+        id: row.get(0)?,
+        term: row.get(1)?,
+        misheard: serde_json::from_str(&misheard).unwrap_or_default(),
+        source: row.get(3)?,
+        created_at: row.get(4)?,
+    })
+}
+
+fn non_empty_term(term: &str) -> Result<&str> {
+    match term.trim() {
+        "" => Err(NootleError::Other("Dictionary term cannot be empty".into())),
+        term => Ok(term),
     }
 }
 
@@ -543,6 +600,10 @@ impl Database {
             CREATE TRIGGER IF NOT EXISTS transcripts_ad AFTER DELETE ON transcripts BEGIN
                 INSERT INTO transcripts_fts(transcripts_fts, rowid, text) VALUES('delete', old.rowid, old.text);
             END;
+            CREATE TRIGGER IF NOT EXISTS transcripts_au AFTER UPDATE OF text ON transcripts BEGIN
+                INSERT INTO transcripts_fts(transcripts_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+                INSERT INTO transcripts_fts(rowid, text) VALUES (new.rowid, new.text);
+            END;
             CREATE TRIGGER IF NOT EXISTS summaries_ai AFTER INSERT ON summaries BEGIN
                 INSERT INTO summaries_fts(rowid, content) VALUES (new.rowid, new.content);
             END;
@@ -729,6 +790,15 @@ impl Database {
                 started_at TEXT NOT NULL DEFAULT (datetime('now')),
                 completed_at TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS dictionary_entries (
+                id TEXT PRIMARY KEY,
+                term TEXT NOT NULL UNIQUE,
+                misheard TEXT NOT NULL DEFAULT '[]',
+                source TEXT NOT NULL DEFAULT 'manual',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             ",
         )?;
         Self::seed_default_insight_types(&conn)?;
@@ -1816,26 +1886,179 @@ impl Database {
 
     pub fn get_transcript(&self, meeting_id: &str) -> Result<Vec<TranscriptSegment>> {
         let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, meeting_id, speaker_label, text, start_ms, end_ms, confidence
-             FROM transcripts WHERE meeting_id = ?1 ORDER BY start_ms ASC",
-        )?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {SEGMENT_COLUMNS} FROM transcripts WHERE meeting_id = ?1 ORDER BY start_ms ASC"
+        ))?;
 
         let segments = stmt
-            .query_map(params![meeting_id], |row| {
-                Ok(TranscriptSegment {
-                    id: row.get(0)?,
-                    meeting_id: row.get(1)?,
-                    speaker_label: row.get(2)?,
-                    text: row.get(3)?,
-                    start_ms: row.get(4)?,
-                    end_ms: row.get(5)?,
-                    confidence: row.get(6)?,
-                })
-            })?
+            .query_map(params![meeting_id], segment_from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(segments)
+    }
+
+    pub fn get_transcript_segment(&self, id: &str) -> Result<TranscriptSegment> {
+        let conn = self.lock_conn()?;
+        conn.query_row(
+            &format!("SELECT {SEGMENT_COLUMNS} FROM transcripts WHERE id = ?1"),
+            params![id],
+            segment_from_row,
+        )
+        .optional()?
+        .ok_or_else(|| NootleError::Other(format!("Transcript segment not found: {}", id)))
+    }
+
+    /// Rewrites segment texts of one meeting in a single transaction. Search
+    /// chunks are dropped so the next embedding pass picks up the new text.
+    pub fn replace_transcript_texts(
+        &self,
+        meeting_id: &str,
+        updates: &[(String, String)],
+    ) -> Result<()> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "UPDATE transcripts SET text = ?1 WHERE id = ?2 AND meeting_id = ?3",
+            )?;
+            for (id, text) in updates {
+                stmt.execute(params![text, id, meeting_id])?;
+            }
+        }
+        Self::delete_meeting_chunks_with(&tx, meeting_id)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    // --- Dictionary ---
+
+    pub fn list_dictionary_entries(&self) -> Result<Vec<DictionaryEntry>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {DICTIONARY_COLUMNS} FROM dictionary_entries ORDER BY term COLLATE NOCASE"
+        ))?;
+        let entries = stmt
+            .query_map([], dictionary_entry_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(entries)
+    }
+
+    /// Creates an entry, or merges the variants into the existing entry for
+    /// `term`.
+    pub fn upsert_dictionary_entry(
+        &self,
+        term: &str,
+        misheard: &[String],
+        source: &str,
+    ) -> Result<DictionaryEntry> {
+        let conn = self.lock_conn()?;
+        Self::upsert_dictionary_entry_with(&conn, term, misheard, source)
+    }
+
+    fn upsert_dictionary_entry_with(
+        conn: &Connection,
+        term: &str,
+        misheard: &[String],
+        source: &str,
+    ) -> Result<DictionaryEntry> {
+        let term = non_empty_term(term)?;
+        let existing: Vec<String> = conn
+            .query_row(
+                "SELECT misheard FROM dictionary_entries WHERE term = ?1",
+                params![term],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default();
+        let merged = serde_json::to_string(&merge_variants(term, &existing, misheard))?;
+        let entry = conn.query_row(
+            &format!(
+                "INSERT INTO dictionary_entries (id, term, misheard, source, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(term) DO UPDATE SET misheard = excluded.misheard
+                 RETURNING {DICTIONARY_COLUMNS}"
+            ),
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                term,
+                merged,
+                source,
+                chrono::Utc::now().to_rfc3339()
+            ],
+            dictionary_entry_from_row,
+        )?;
+        Ok(entry)
+    }
+
+    pub fn update_dictionary_entry(&self, id: &str, term: &str, misheard: &[String]) -> Result<()> {
+        let term = non_empty_term(term)?;
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE dictionary_entries SET term = ?1, misheard = ?2 WHERE id = ?3",
+            params![
+                term,
+                serde_json::to_string(&merge_variants(term, &[], misheard))?,
+                id
+            ],
+        )
+        .map_err(|e| unique_violation(e, format!("\"{}\" is already in the dictionary", term)))?;
+        Ok(())
+    }
+
+    pub fn delete_dictionary_entry(&self, id: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute("DELETE FROM dictionary_entries WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Records corrections learned from a transcript edit. The latest edit
+    /// wins: a variant moves to its new term, and a term the user just typed
+    /// stops being treated as a misheard variant elsewhere.
+    pub fn learn_dictionary_corrections(
+        &self,
+        corrections: &[crate::dictionary::LearnedCorrection],
+    ) -> Result<()> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        let entries = {
+            let mut stmt = tx.prepare(&format!(
+                "SELECT {DICTIONARY_COLUMNS} FROM dictionary_entries"
+            ))?;
+            let rows = stmt.query_map([], dictionary_entry_from_row)?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        for entry in entries {
+            let kept: Vec<&String> = entry
+                .misheard
+                .iter()
+                .filter(|m| {
+                    !corrections.iter().any(|c| {
+                        entry.term != c.to
+                            && (m.eq_ignore_ascii_case(&c.from) || m.eq_ignore_ascii_case(&c.to))
+                    })
+                })
+                .collect();
+            if kept.len() != entry.misheard.len() {
+                tx.execute(
+                    "UPDATE dictionary_entries SET misheard = ?1 WHERE id = ?2",
+                    params![serde_json::to_string(&kept)?, entry.id],
+                )?;
+            }
+        }
+        for c in corrections {
+            Self::upsert_dictionary_entry_with(
+                &tx,
+                &c.to,
+                std::slice::from_ref(&c.from),
+                "learned",
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn create_template(&self, new: NewTemplate) -> Result<Template> {
@@ -1959,6 +2182,36 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(templates)
+    }
+
+    /// The template used when nothing else is picked: the built-in "General",
+    /// else the oldest built-in, else any template.
+    pub fn get_default_template(&self) -> Result<Option<Template>> {
+        let conn = self.lock_conn()?;
+        let template = conn
+            .query_row(
+                "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+                 FROM templates
+                 ORDER BY is_builtin DESC, name = 'General' DESC, created_at ASC, rowid ASC
+                 LIMIT 1",
+                [],
+                |row| {
+                    Ok(Template {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        description: row.get(2)?,
+                        sections: row.get(3)?,
+                        auto_apply_rules: row.get(4)?,
+                        prompt: row.get(5)?,
+                        is_builtin: row.get::<_, i32>(6)? != 0,
+                        is_favorite: row.get::<_, i32>(7)? != 0,
+                        is_auto_run: row.get::<_, i32>(8)? != 0,
+                        created_at: row.get(9)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(template)
     }
 
     pub fn delete_template(&self, id: &str) -> Result<()> {
@@ -2386,6 +2639,10 @@ impl Database {
 
     pub fn delete_meeting_chunks(&self, meeting_id: &str) -> Result<()> {
         let conn = self.lock_conn()?;
+        Self::delete_meeting_chunks_with(&conn, meeting_id)
+    }
+
+    fn delete_meeting_chunks_with(conn: &Connection, meeting_id: &str) -> Result<()> {
         // Delete embeddings first (referencing chunks), then chunks
         conn.execute(
             "DELETE FROM chunk_embeddings WHERE chunk_id IN (
@@ -2814,6 +3071,14 @@ impl Database {
             Ok(val) => Ok(Some(val)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Reads a "true"/"false" setting, falling back to `default` when unset.
+    pub fn get_bool_setting(&self, key: &str, default: bool) -> bool {
+        match self.get_setting(key) {
+            Ok(Some(value)) => value != "false",
+            _ => default,
         }
     }
 
@@ -3473,5 +3738,18 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(runs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_template_is_builtin_general() {
+        let db = Database::new_in_memory().unwrap();
+        let template = db.get_default_template().unwrap().unwrap();
+        assert_eq!(template.name, "General");
+        assert!(template.is_builtin);
     }
 }

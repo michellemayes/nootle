@@ -291,6 +291,58 @@ pub async fn rename_speaker(
     db.get_transcript(&meeting_id).map_err(|e| e.to_string())
 }
 
+/// Saves a user's edit to a transcript segment and learns from it.
+#[tauri::command]
+pub async fn update_transcript_segment(
+    db: State<'_, DbState>,
+    segment_id: String,
+    text: String,
+) -> Result<crate::dictionary::SegmentEditResult, String> {
+    crate::dictionary::record_edit(&db, &segment_id, &text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_dictionary_entries(db: State<'_, DbState>) -> Result<Vec<DictionaryEntry>, String> {
+    db.list_dictionary_entries().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_dictionary_entry(
+    db: State<'_, DbState>,
+    term: String,
+    misheard: Vec<String>,
+) -> Result<DictionaryEntry, String> {
+    db.upsert_dictionary_entry(&term, &misheard, "manual")
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_dictionary_entry(
+    db: State<'_, DbState>,
+    id: String,
+    term: String,
+    misheard: Vec<String>,
+) -> Result<(), String> {
+    db.update_dictionary_entry(&id, &term, &misheard)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_dictionary_entry(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_dictionary_entry(&id).map_err(|e| e.to_string())
+}
+
+/// Re-applies the dictionary to an already-recorded meeting.
+#[tauri::command]
+pub async fn apply_dictionary_to_meeting(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<usize, String> {
+    let entries = db.list_dictionary_entries().map_err(|e| e.to_string())?;
+    let rules = crate::dictionary::Rules::new(&entries);
+    crate::dictionary::apply_to_meeting(&db, &meeting_id, &rules, None).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn search_transcripts(
     db: State<'_, DbState>,
@@ -585,6 +637,102 @@ fn compute_analytics(db: &Database, app: &tauri::AppHandle, meeting_id: &str) {
     }
 }
 
+/// Generate a title from transcript content using LLM, unless the user renamed
+/// the meeting while recording.
+async fn auto_title(
+    db: &Database,
+    llm_state: &LlmState,
+    app: &tauri::AppHandle,
+    meeting_id: &str,
+    initial_title: &str,
+) {
+    let renamed = db
+        .get_meeting(meeting_id)
+        .is_ok_and(|m| m.title != initial_title);
+    if renamed {
+        tracing::info!("Keeping user-set title for {meeting_id}");
+        return;
+    }
+    let Ok(segments) = db.get_transcript(meeting_id) else {
+        return;
+    };
+    let full_text: String = segments
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if full_text.trim().is_empty() {
+        return;
+    }
+    // Take up to ~500 chars of transcript for the LLM to summarize
+    let snippet = truncate_at_word_boundary(&full_text, 500, "");
+
+    let llm = llm_state.read().await;
+    let fallback_title = || -> String { truncate_at_word_boundary(&full_text, 60, "...") };
+    let title = if let Some(model) = pick_auto_model(db, &llm) {
+        if let Some(provider) = llm.get_provider(&model.provider) {
+            let prompt = format!(
+                "Generate a short, descriptive title (max 8 words) for this meeting based on the transcript below. \
+                 Return ONLY the title, nothing else. No quotes, no punctuation at the end.\n\n{snippet}"
+            );
+            let messages = vec![crate::llm::ChatMessage {
+                role: "user".into(),
+                content: prompt,
+            }];
+            match provider.chat(messages, &model.id).await {
+                Ok(resp) => {
+                    let t = resp.trim().trim_matches('"').trim().to_string();
+                    if t.is_empty() || t.len() > 100 {
+                        fallback_title()
+                    } else {
+                        t
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("LLM title generation failed, using fallback: {e}");
+                    fallback_title()
+                }
+            }
+        } else {
+            fallback_title()
+        }
+    } else {
+        fallback_title()
+    };
+    drop(llm);
+
+    if let Err(e) = db.update_meeting_title(meeting_id, &title) {
+        tracing::warn!("Failed to auto-generate title: {e}");
+    } else if let Ok(meeting) = db.get_meeting(meeting_id) {
+        let _ = app.emit("meeting-updated", &meeting);
+    }
+}
+
+async fn auto_summarize(
+    db: &Database,
+    llm_state: &LlmState,
+    app: &tauri::AppHandle,
+    meeting_id: &str,
+) {
+    let llm = llm_state.read().await;
+    let Some(model) = pick_auto_model(db, &llm) else {
+        tracing::info!("No LLM providers configured, skipping auto summaries");
+        return;
+    };
+    match summarization::run_auto_templates(db, &llm, meeting_id, &model.provider, &model.id).await
+    {
+        Ok(summaries) if !summaries.is_empty() => {
+            tracing::info!(
+                "Auto-run produced {} summaries for {meeting_id}",
+                summaries.len()
+            );
+            let _ = app.emit("summaries-updated", meeting_id);
+        }
+        Ok(_) => tracing::info!("No summary templates available"),
+        Err(e) => tracing::warn!("Auto-run templates failed: {e}"),
+    }
+}
+
 async fn auto_extract_insights(
     db: &Database,
     llm_state: &LlmState,
@@ -704,13 +852,21 @@ async fn run_transcription_pipeline(
                     } else {
                         speakers.label(&audio.mic, &audio.system, &chunk)
                     };
+                    // Reloaded per chunk so words added mid-meeting apply straight away.
+                    let dictionary = if segments.is_empty() {
+                        crate::dictionary::Rules::new(&[])
+                    } else {
+                        crate::dictionary::Rules::new(
+                            &db.list_dictionary_entries().unwrap_or_default(),
+                        )
+                    };
                     for seg in &segments {
                         tracing::info!("[DIAG] Segment: {:?}", seg.text);
 
                         match db.create_transcript_segment(NewTranscriptSegment {
                             meeting_id: meeting_id.clone(),
                             speaker_label: speaker.clone(),
-                            text: seg.text.clone(),
+                            text: dictionary.apply(&seg.text),
                             start_ms: i64::try_from(seg.start_ms).unwrap_or(i64::MAX),
                             end_ms: i64::try_from(seg.end_ms).unwrap_or(i64::MAX),
                             confidence: 0.9,
@@ -750,92 +906,12 @@ async fn run_transcription_pipeline(
 
     tracing::info!("[DIAG] Audio channel closed after {chunk_count} chunks");
 
-    // Auto-generate title from transcript content using LLM, unless the user
-    // renamed the meeting while recording.
-    let renamed = db
-        .get_meeting(&meeting_id)
-        .is_ok_and(|m| m.title != initial_title);
-    if renamed {
-        tracing::info!("Keeping user-set title for {meeting_id}");
-    } else if let Ok(segments) = db.get_transcript(&meeting_id) {
-        let full_text: String = segments
-            .iter()
-            .map(|s| s.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
-        if !full_text.trim().is_empty() {
-            // Take up to ~500 chars of transcript for the LLM to summarize
-            let snippet = truncate_at_word_boundary(&full_text, 500, "");
-
-            let llm = llm_state.read().await;
-            let fallback_title = || -> String { truncate_at_word_boundary(&full_text, 60, "...") };
-            let title = if let Some(model) = pick_auto_model(&db, &llm) {
-                if let Some(provider) = llm.get_provider(&model.provider) {
-                    let prompt = format!(
-                        "Generate a short, descriptive title (max 8 words) for this meeting based on the transcript below. \
-                         Return ONLY the title, nothing else. No quotes, no punctuation at the end.\n\n{snippet}"
-                    );
-                    let messages = vec![crate::llm::ChatMessage {
-                        role: "user".into(),
-                        content: prompt,
-                    }];
-                    match provider.chat(messages, &model.id).await {
-                        Ok(resp) => {
-                            let t = resp.trim().trim_matches('"').trim().to_string();
-                            if t.is_empty() || t.len() > 100 {
-                                fallback_title()
-                            } else {
-                                t
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("LLM title generation failed, using fallback: {e}");
-                            fallback_title()
-                        }
-                    }
-                } else {
-                    fallback_title()
-                }
-            } else {
-                fallback_title()
-            };
-            drop(llm);
-
-            if let Err(e) = db.update_meeting_title(&meeting_id, &title) {
-                tracing::warn!("Failed to auto-generate title: {e}");
-            } else if let Ok(meeting) = db.get_meeting(&meeting_id) {
-                let _ = app.emit("meeting-updated", &meeting);
-            }
-        }
-    }
-
-    // Run auto-run templates (summaries) if any are configured
-    {
-        let llm = llm_state.read().await;
-        if let Some(model) = pick_auto_model(&db, &llm) {
-            match summarization::run_auto_templates(
-                &db,
-                &llm,
-                &meeting_id,
-                &model.provider,
-                &model.id,
-            )
-            .await
-            {
-                Ok(summaries) if !summaries.is_empty() => {
-                    tracing::info!(
-                        "Auto-run produced {} summaries for {meeting_id}",
-                        summaries.len()
-                    );
-                    let _ = app.emit("summaries-updated", &meeting_id);
-                }
-                Ok(_) => tracing::info!("No auto-run templates configured"),
-                Err(e) => tracing::warn!("Auto-run templates failed: {e}"),
-            }
-        } else {
-            tracing::info!("No LLM providers configured, skipping auto-run prompts");
-        }
-    }
+    // Title and summaries are independent LLM calls, so run them side by side
+    // rather than making the summary wait on the title.
+    tokio::join!(
+        auto_title(&db, &llm_state, &app, &meeting_id, &initial_title),
+        auto_summarize(&db, &llm_state, &app, &meeting_id),
+    );
 
     // Mark meeting as done transcribing only if transcription produced segments
     if segment_count > 0 {
@@ -1442,8 +1518,9 @@ async fn rag_chat(
          includes the meeting title and timestamp. Use ONLY these excerpts to answer.\n\
          When you reference information, cite the source as [Meeting Title, timestamp].\n\n\
          {}\n\
-         Answer the user's question based on these excerpts. Be concise.",
-        context_parts.join("\n")
+         Answer the user's question based on these excerpts. Be concise.{}",
+        context_parts.join("\n"),
+        crate::dictionary::glossary(db)
     );
 
     let mut messages = vec![ChatMessage {
@@ -1694,6 +1771,7 @@ pub async fn set_app_setting(
         "denoise_enabled",
         "detection_enabled",
         crate::remote::ENABLED_SETTING,
+        crate::dictionary::AUTO_LEARN_SETTING,
     ];
     if !ALLOWED_SETTING_KEYS.contains(&key.as_str()) {
         return Err(format!("Invalid setting key: {key}"));
@@ -1887,8 +1965,10 @@ pub async fn enrich_meeting_notes(
          The result should read as one cohesive document — not two separate sections. \
          Maintain the same topic order as the original notes.\n\n\
          TRANSCRIPT:\n{}\n\n\
-         USER'S NOTES:\n{}",
-        transcript_text, raw_notes
+         USER'S NOTES:\n{}{}",
+        transcript_text,
+        raw_notes,
+        crate::dictionary::glossary(&db)
     );
 
     let messages = vec![
