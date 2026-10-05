@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- **ux:** Live audio levels, synced playback, chat starters, undo toasts (#160) ([8778d22](https://github.com/michellemayes/nootle/commit/8778d22d17b003d36df532a915f7f57241431b34))
+
+## [0.1.28] - 2026-10-05
+
+### CI
+
+- **publish:** Run git-cliff directly so feat commits bump the minor (#159) ([9b0d18a](https://github.com/michellemayes/nootle/commit/9b0d18a18c2ec1ca39b40cb2dfba47151c8b16cc))
+
 ## [0.1.27] - 2026-10-05
 
 ### Bug Fixes
