@@ -452,7 +452,7 @@ impl NootleMcpServer {
 
 #[tool_handler]
 impl ServerHandler for NootleMcpServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let capabilities = ServerCapabilities::builder()
             .enable_tools()
             .enable_resources()
@@ -460,7 +460,7 @@ impl ServerHandler for NootleMcpServer {
         let server_info = Implementation::new("nootle-mcp", env!("CARGO_PKG_VERSION"))
             .with_title("Nootle MCP Server")
             .with_description("MCP server for Nootle meeting data and automations");
-        ServerInfo::new(capabilities)
+        ServerConfig::new(capabilities)
             .with_server_info(server_info)
             .with_instructions(
                 "Nootle MCP server. Read meetings and transcripts, and set up automations on the \
@@ -508,18 +508,16 @@ impl ServerHandler for NootleMcpServer {
             })
             .collect();
 
-        Ok(ListResourcesResult {
-            resources,
-            next_cursor,
-            meta: None,
-        })
+        let mut result = ListResourcesResult::with_all_items(resources);
+        result.next_cursor = next_cursor;
+        Ok(result)
     }
 
     async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
         _ctx: rmcp::service::RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
+    ) -> Result<ReadResourceResponse, McpError> {
         let uri = &request.uri;
 
         // Parse nootle://meetings/{id}/transcript
@@ -537,10 +535,10 @@ impl ServerHandler for NootleMcpServer {
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            Ok(ReadResourceResult::new(vec![ResourceContents::text(
-                transcript_text,
-                uri.clone(),
-            )]))
+            Ok(
+                ReadResourceResult::new(vec![ResourceContents::text(transcript_text, uri.clone())])
+                    .into(),
+            )
         } else {
             // The current spec reports unknown resources as invalid params.
             Err(McpError::invalid_params(
@@ -563,11 +561,7 @@ impl ServerHandler for NootleMcpServer {
                     .with_mime_type("text/plain"),
             ];
 
-        Ok(ListResourceTemplatesResult {
-            resource_templates: templates,
-            next_cursor: None,
-            meta: None,
-        })
+        Ok(ListResourceTemplatesResult::with_all_items(templates))
     }
 }
 

@@ -56,7 +56,7 @@ ndarray = "0.16"
 rustfft = "6"
 block2 = "0.6"
 objc2 = "0.6"
-rmcp = { version = "2.2", features = ["server", "transport-io", "client", "auth", "reqwest-native-tls", "transport-streamable-http-client-reqwest"] }
+rmcp = { version = "3.5", features = ["server", "transport-io", "client", "auth", "reqwest-native-tls", "transport-streamable-http-client-reqwest"] }
 schemars = "1.0"
 tauri-plugin-updater = "2"
 tauri-plugin-dialog = "2"
