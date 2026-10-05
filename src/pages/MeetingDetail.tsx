@@ -26,16 +26,18 @@ import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
 import { useScratchPad } from "@/hooks/useScratchPad";
-import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label } from "@/types";
+import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { LabelEditor } from "@/components/LabelEditor";
 import {
   AlertTriangle,
   AlignJustify,
   ArrowLeft,
   BarChart3,
+  BookA,
   Check,
   ChevronDown,
   ChevronRight,
@@ -51,6 +53,7 @@ import {
   RotateCw,
   Sparkles,
   StickyNote,
+  X,
   Zap,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -94,6 +97,71 @@ const speakerColors = [
   "text-chart-5",
   "text-chart-6",
 ];
+
+function pluralLines(n: number): string {
+  return `${n} line${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * One transcript line. Double-click to edit; the draft lives here so typing
+ * doesn't re-render the whole meeting page.
+ */
+function SegmentText({
+  seg,
+  speakerClass,
+  onSave,
+}: {
+  seg: TranscriptSegment;
+  speakerClass: string;
+  onSave: (seg: TranscriptSegment, text: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  // Closing the editor can fire blur as the textarea unmounts; finish once.
+  const closedRef = useRef(false);
+
+  if (draft === null) {
+    return (
+      <p
+        className="min-w-0 flex-1 text-sm text-foreground leading-relaxed cursor-text"
+        onDoubleClick={() => {
+          closedRef.current = false;
+          setDraft(seg.text);
+        }}
+        title="Double-click to fix a word"
+      >
+        <span className={`font-semibold ${speakerClass} mr-1.5`}>{seg.speaker_label}:</span>
+        {seg.text}
+      </p>
+    );
+  }
+
+  const close = (save: boolean) => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    const text = draft.trim();
+    setDraft(null);
+    if (save && text && text !== seg.text) onSave(seg, text);
+  };
+
+  return (
+    <Textarea
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => close(true)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          close(true);
+        } else if (e.key === "Escape") {
+          close(false);
+        }
+      }}
+      className="min-h-0 flex-1 text-sm leading-relaxed"
+      aria-label="Edit transcript line"
+    />
+  );
+}
 
 function formatPlayerTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return "00:00";
@@ -710,7 +778,41 @@ export function MeetingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { meeting, loading: meetingLoading, refresh: refreshMeeting } = useMeeting(id!);
-  const { segments, loading: transcriptLoading } = useTranscript(id!);
+  const { segments, loading: transcriptLoading, refresh: refreshTranscript } = useTranscript(id!);
+  const [dictionaryNotice, setDictionaryNotice] = useState<string | null>(null);
+
+  const saveSegmentEdit = async (seg: TranscriptSegment, text: string) => {
+    try {
+      const result = await invoke<SegmentEditResult>("update_transcript_segment", {
+        segmentId: seg.id,
+        text,
+      });
+      if (result.learned.length > 0) {
+        const pairs = result.learned.map((c) => `“${c.from}” → “${c.to}”`).join(", ");
+        const more = result.corrected_segments;
+        setDictionaryNotice(
+          `Learned ${pairs}` + (more > 0 ? ` and fixed ${pluralLines(more)} more` : ""),
+        );
+      }
+      await refreshTranscript();
+    } catch (err) {
+      setDictionaryNotice(`Couldn't save edit: ${err}`);
+    }
+  };
+
+  const applyDictionary = async () => {
+    try {
+      const changed = await invoke<number>("apply_dictionary_to_meeting", { meetingId: id });
+      setDictionaryNotice(
+        changed > 0
+          ? `Dictionary fixed ${pluralLines(changed)}`
+          : "Nothing to fix — transcript already matches your dictionary",
+      );
+      if (changed > 0) await refreshTranscript();
+    } catch (err) {
+      setDictionaryNotice(`Couldn't apply dictionary: ${err}`);
+    }
+  };
   const { summaries, loading: summariesLoading, generateSummary } = useSummaries(id!);
   const { templates } = useTemplates();
   const { storedProviders: storedApiProviders } = useApiKeys();
@@ -1115,6 +1217,16 @@ export function MeetingDetail() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
+                      onClick={applyDictionary}
+                      disabled={segments.length === 0}
+                      title="Apply dictionary"
+                      aria-label="Apply dictionary"
+                    >
+                      <BookA className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
                       onClick={() => setCompactTranscript((v) => !v)}
                       title={compactTranscript ? "Spacious view" : "Compact view"}
                       aria-label={compactTranscript ? "Spacious view" : "Compact view"}
@@ -1123,6 +1235,22 @@ export function MeetingDetail() {
                     </Button>
                   </div>
                 </div>
+                {dictionaryNotice && (
+                  <div className="flex items-center gap-2 border-b bg-muted/50 px-5 py-2 text-xs text-muted-foreground">
+                    <BookA className="h-3.5 w-3.5 shrink-0" />
+                    <span className="min-w-0 flex-1">{dictionaryNotice}</span>
+                    <Link to="/settings?tab=dictionary" className="shrink-0 hover:text-foreground underline-offset-2 hover:underline">
+                      Dictionary
+                    </Link>
+                    <button
+                      onClick={() => setDictionaryNotice(null)}
+                      className="shrink-0 hover:text-foreground"
+                      aria-label="Dismiss"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
                 <ScrollArea className="flex-1">
                   <div className={`p-5 ${compactTranscript ? "space-y-1" : "space-y-4"}`}>
                     {transcriptLoading ? (
@@ -1143,14 +1271,11 @@ export function MeetingDetail() {
                           >
                             {formatMs(seg.start_ms)}
                           </button>
-                          <p className="min-w-0 text-sm text-foreground leading-relaxed">
-                            <span
-                              className={`font-semibold ${speakerMap.get(seg.speaker_label) ?? "text-foreground"} mr-1.5`}
-                            >
-                              {seg.speaker_label}:
-                            </span>
-                            {seg.text}
-                          </p>
+                          <SegmentText
+                            seg={seg}
+                            speakerClass={speakerMap.get(seg.speaker_label) ?? "text-foreground"}
+                            onSave={saveSegmentEdit}
+                          />
                         </div>
                       ))
                     )}

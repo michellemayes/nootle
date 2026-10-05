@@ -223,3 +223,21 @@ export interface WorkflowRun {
   workflow_name: string | null;
   workflow_icon: string | null;
 }
+
+export interface DictionaryEntry {
+  id: string;
+  term: string;
+  misheard: string[];
+  source: "manual" | "learned";
+  created_at: string;
+}
+
+export interface LearnedCorrection {
+  from: string;
+  to: string;
+}
+
+export interface SegmentEditResult {
+  learned: LearnedCorrection[];
+  corrected_segments: number;
+}

@@ -263,6 +263,58 @@ pub fn get_transcript(
     db.get_transcript(&meeting_id).map_err(|e| e.to_string())
 }
 
+/// Saves a user's edit to a transcript segment and learns from it.
+#[tauri::command]
+pub async fn update_transcript_segment(
+    db: State<'_, DbState>,
+    segment_id: String,
+    text: String,
+) -> Result<crate::dictionary::SegmentEditResult, String> {
+    crate::dictionary::record_edit(&db, &segment_id, &text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_dictionary_entries(db: State<'_, DbState>) -> Result<Vec<DictionaryEntry>, String> {
+    db.list_dictionary_entries().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_dictionary_entry(
+    db: State<'_, DbState>,
+    term: String,
+    misheard: Vec<String>,
+) -> Result<DictionaryEntry, String> {
+    db.upsert_dictionary_entry(&term, &misheard, "manual")
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_dictionary_entry(
+    db: State<'_, DbState>,
+    id: String,
+    term: String,
+    misheard: Vec<String>,
+) -> Result<(), String> {
+    db.update_dictionary_entry(&id, &term, &misheard)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_dictionary_entry(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_dictionary_entry(&id).map_err(|e| e.to_string())
+}
+
+/// Re-applies the dictionary to an already-recorded meeting.
+#[tauri::command]
+pub async fn apply_dictionary_to_meeting(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<usize, String> {
+    let entries = db.list_dictionary_entries().map_err(|e| e.to_string())?;
+    let rules = crate::dictionary::Rules::new(&entries);
+    crate::dictionary::apply_to_meeting(&db, &meeting_id, &rules, None).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn search_transcripts(
     db: State<'_, DbState>,
@@ -759,6 +811,14 @@ async fn run_transcription_pipeline(
                         segments.len()
                     );
                     segment_count += segments.len() as u64;
+                    // Reloaded per chunk so words added mid-meeting apply straight away.
+                    let dictionary = if segments.is_empty() {
+                        crate::dictionary::Rules::new(&[])
+                    } else {
+                        crate::dictionary::Rules::new(
+                            &db.list_dictionary_entries().unwrap_or_default(),
+                        )
+                    };
                     for seg in &segments {
                         tracing::info!("[DIAG] Segment: {:?}", seg.text);
 
@@ -778,7 +838,7 @@ async fn run_transcription_pipeline(
                         match db.create_transcript_segment(NewTranscriptSegment {
                             meeting_id: meeting_id.clone(),
                             speaker_label: speaker,
-                            text: seg.text.clone(),
+                            text: dictionary.apply(&seg.text),
                             start_ms: i64::try_from(seg.start_ms).unwrap_or(i64::MAX),
                             end_ms: i64::try_from(seg.end_ms).unwrap_or(i64::MAX),
                             confidence: 0.9,
@@ -1430,8 +1490,9 @@ async fn rag_chat(
          includes the meeting title and timestamp. Use ONLY these excerpts to answer.\n\
          When you reference information, cite the source as [Meeting Title, timestamp].\n\n\
          {}\n\
-         Answer the user's question based on these excerpts. Be concise.",
-        context_parts.join("\n")
+         Answer the user's question based on these excerpts. Be concise.{}",
+        context_parts.join("\n"),
+        crate::dictionary::glossary(db)
     );
 
     let mut messages = vec![ChatMessage {
@@ -1682,6 +1743,7 @@ pub async fn set_app_setting(
         "denoise_enabled",
         "detection_enabled",
         crate::remote::ENABLED_SETTING,
+        crate::dictionary::AUTO_LEARN_SETTING,
     ];
     if !ALLOWED_SETTING_KEYS.contains(&key.as_str()) {
         return Err(format!("Invalid setting key: {key}"));
@@ -1875,8 +1937,10 @@ pub async fn enrich_meeting_notes(
          The result should read as one cohesive document — not two separate sections. \
          Maintain the same topic order as the original notes.\n\n\
          TRANSCRIPT:\n{}\n\n\
-         USER'S NOTES:\n{}",
-        transcript_text, raw_notes
+         USER'S NOTES:\n{}{}",
+        transcript_text,
+        raw_notes,
+        crate::dictionary::glossary(&db)
     );
 
     let messages = vec![
