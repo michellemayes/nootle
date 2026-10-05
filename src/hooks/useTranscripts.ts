@@ -3,6 +3,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { TranscriptSegment } from "@/types";
 
+/** Append segments not already in `base`, keeping `base` if nothing is new. */
+export function mergeSegments(
+  base: TranscriptSegment[],
+  incoming: TranscriptSegment[],
+): TranscriptSegment[] {
+  const seen = new Set(base.map((seg) => seg.id));
+  const fresh = incoming.filter((seg) => !seen.has(seg.id));
+  return fresh.length ? [...base, ...fresh] : base;
+}
+
 export function useTranscript(meetingId: string) {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,11 +42,7 @@ export function useTranscript(meetingId: string) {
     const unlisten = listen<TranscriptSegment[]>("transcript-update", (event) => {
       const incoming = event.payload.filter((seg) => seg.meeting_id === meetingId);
       if (incoming.length === 0) return;
-      setSegments((prev) => {
-        const seen = new Set(prev.map((seg) => seg.id));
-        const fresh = incoming.filter((seg) => !seen.has(seg.id));
-        return fresh.length ? [...prev, ...fresh] : prev;
-      });
+      setSegments((prev) => mergeSegments(prev, incoming));
     });
     return () => { unlisten.then((fn) => fn()); };
   }, [meetingId]);

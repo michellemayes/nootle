@@ -61,7 +61,6 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-notification = "2"
 url = "2"
 log = "0.4"
-base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 
 [dev-dependencies]

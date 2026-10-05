@@ -34,12 +34,24 @@ export function useMeetings(search?: string, includeArchived?: boolean) {
   }, [refresh]);
 
   // Keep titles and statuses current while post-recording processing runs.
+  // The payload is the updated row, so patch it in; a search can change
+  // which rows match, so only then refetch.
   useEffect(() => {
-    const unlisten = listen<Meeting>("meeting-updated", () => {
-      refresh();
+    const unlisten = listen<Meeting>("meeting-updated", (event) => {
+      const updated = event.payload;
+      if (search) {
+        refresh();
+        return;
+      }
+      setMeetings((prev) => {
+        if (!prev.some((m) => m.id === updated.id)) return prev;
+        const next = prev.map((m) => (m.id === updated.id ? updated : m));
+        meetingsCache.set(cacheKey, next);
+        return next;
+      });
     });
     return () => { unlisten.then((fn) => fn()); };
-  }, [refresh]);
+  }, [refresh, search, cacheKey]);
 
   return { meetings, loading, error, refresh };
 }

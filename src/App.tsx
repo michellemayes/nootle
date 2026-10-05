@@ -13,8 +13,8 @@ import { RecordingCelebration } from "@/components/RecordingCelebration";
 import { UpdateBanner } from "@/components/UpdateBanner";
 
 // The library is the first screen, so it ships in the main bundle. Every
-// other page loads on demand and is prefetched once the app is idle, so
-// startup stays light without making the first visit to a page wait.
+// other page loads on demand; the ones usually opened next from the library
+// are prefetched once the app is idle so their first visit doesn't wait.
 const pageLoaders = {
   recording: () => import("@/pages/RecordingView").then((m) => ({ default: m.RecordingView })),
   meeting: () => import("@/pages/MeetingDetail").then((m) => ({ default: m.MeetingDetail })),
@@ -37,7 +37,10 @@ const Onboarding = lazy(() =>
 
 function usePrefetchPages() {
   useEffect(() => {
-    const prefetch = () => Object.values(pageLoaders).forEach((load) => load());
+    const prefetch = () => {
+      pageLoaders.meeting();
+      pageLoaders.recording();
+    };
     if ("requestIdleCallback" in window) {
       const handle = window.requestIdleCallback(prefetch, { timeout: 2000 });
       return () => window.cancelIdleCallback(handle);

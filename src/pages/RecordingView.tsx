@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
 import { useTemplates } from "@/hooks/useTemplates";
+import { mergeSegments } from "@/hooks/useTranscripts";
 import type { TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -24,15 +25,6 @@ function formatTime(seconds: number): string {
     return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function mergeSegments(
-  base: TranscriptSegment[],
-  incoming: TranscriptSegment[],
-): TranscriptSegment[] {
-  const seen = new Set(base.map((seg) => seg.id));
-  const fresh = incoming.filter((seg) => !seen.has(seg.id));
-  return fresh.length ? [...base, ...fresh] : base;
 }
 
 // Memoized so the once-a-second timer tick doesn't re-render every line.

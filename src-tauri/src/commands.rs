@@ -673,10 +673,9 @@ async fn auto_title(
     };
     drop(llm);
 
-    if let Err(e) = db.update_meeting_title(meeting_id, &title) {
-        tracing::warn!("Failed to auto-generate title: {e}");
-    } else if let Ok(meeting) = db.get_meeting(meeting_id) {
-        let _ = app.emit("meeting-updated", &meeting);
+    match db.update_meeting_title(meeting_id, &title) {
+        Ok(()) => emit_meeting_updated(db, app, meeting_id),
+        Err(e) => tracing::warn!("Failed to auto-generate title: {e}"),
     }
 }
 
@@ -740,18 +739,22 @@ async fn run_transcription_pipeline(
         let db = db.clone();
         let meeting_id = meeting_id.clone();
         let app = app.clone();
-        tokio::task::spawn_blocking(move || transcribe_live(audio_rx, &db, &meeting_id, &app))
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!("Transcription thread panicked: {e}");
-                0
-            })
+        tokio::task::spawn_blocking(move || {
+            let count = transcribe_live(audio_rx, &db, &meeting_id, &app);
+            // Analytics only need the transcript, so they are ready before any LLM work.
+            if count > 0 {
+                compute_analytics(&db, &app, &meeting_id);
+            }
+            count
+        })
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("Transcription thread panicked: {e}");
+            0
+        })
     };
 
-    // Analytics only need the transcript, so they are ready before any LLM work.
-    if segment_count > 0 {
-        compute_analytics(&db, &app, &meeting_id);
-    } else {
+    if segment_count == 0 {
         tracing::info!(
             "No transcript segments produced for {meeting_id}, not marking as summarized"
         );
@@ -782,10 +785,9 @@ async fn run_transcription_pipeline(
             auto_summarize(&db, &llm_state, &app, &meeting_id),
         );
         if segment_count > 0 {
-            if let Err(e) = db.update_meeting_status(&meeting_id, "summarized") {
-                tracing::warn!("Failed to update meeting status to summarized: {e}");
-            } else if let Ok(meeting) = db.get_meeting(&meeting_id) {
-                let _ = app.emit("meeting-updated", &meeting);
+            match db.update_meeting_status(&meeting_id, "summarized") {
+                Ok(()) => emit_meeting_updated(&db, &app, &meeting_id),
+                Err(e) => tracing::warn!("Failed to update meeting status to summarized: {e}"),
             }
         }
     };
@@ -799,6 +801,13 @@ async fn run_transcription_pipeline(
             summarize,
             auto_extract_insights(&db, &llm_state, &app, &meeting_id),
         );
+    }
+}
+
+/// Tell the frontend a meeting row changed; pages apply the payload directly.
+fn emit_meeting_updated(db: &Database, app: &tauri::AppHandle, meeting_id: &str) {
+    if let Ok(meeting) = db.get_meeting(meeting_id) {
+        let _ = app.emit("meeting-updated", &meeting);
     }
 }
 
