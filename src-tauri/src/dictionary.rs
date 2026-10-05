@@ -9,6 +9,7 @@
 //! word by word and short substitutions ("noodle" → "Nootle") become entries.
 
 use crate::db::Database;
+use crate::error::{NootleError, Result};
 use serde::{Deserialize, Serialize};
 
 /// Setting key that turns learning from transcript edits on or off.
@@ -47,50 +48,66 @@ pub struct LearnedCorrection {
     pub to: String,
 }
 
-/// Rewrites every misheard variant in `text` to its entry's term.
-///
-/// Matching is case-insensitive and respects word boundaries. It is a single
-/// left-to-right pass where the longest variant wins, so one rule's output is
-/// never rewritten again by another.
-pub fn apply(entries: &[DictionaryEntry], text: &str) -> String {
-    let mut rules: Vec<(Vec<char>, &str)> = entries
-        .iter()
-        .flat_map(|e| {
+/// Misheard variants compiled for matching, longest first.
+pub struct Rules {
+    variants: Vec<(Vec<char>, String)>,
+}
+
+impl Rules {
+    pub fn new(entries: &[DictionaryEntry]) -> Self {
+        Self::from_pairs(entries.iter().flat_map(|e| {
             e.misheard
                 .iter()
-                .filter(|m| !m.trim().is_empty())
-                .map(move |m| (m.trim().chars().collect(), e.term.as_str()))
-        })
-        .collect();
-    if rules.is_empty() {
-        return text.to_string();
+                .map(move |m| (m.as_str(), e.term.as_str()))
+        }))
     }
-    rules.sort_by_key(|(variant, _)| std::cmp::Reverse(variant.len()));
 
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    let mut i = 0;
-    while i < chars.len() {
-        let at_word_start = i == 0 || !is_word_char(chars[i - 1]);
-        let matched = at_word_start
-            .then(|| {
-                rules
-                    .iter()
-                    .find(|(variant, _)| matches_at(&chars, i, variant))
-            })
-            .flatten();
-        match matched {
-            Some((variant, term)) => {
-                out.push_str(term);
-                i += variant.len();
-            }
-            None => {
-                out.push(chars[i]);
-                i += 1;
+    pub fn from_corrections(corrections: &[LearnedCorrection]) -> Self {
+        Self::from_pairs(corrections.iter().map(|c| (c.from.as_str(), c.to.as_str())))
+    }
+
+    fn from_pairs<'a>(pairs: impl Iterator<Item = (&'a str, &'a str)>) -> Self {
+        let mut variants: Vec<(Vec<char>, String)> = pairs
+            .map(|(variant, term)| (variant.chars().collect(), term.to_string()))
+            .collect();
+        variants.sort_by_key(|(variant, _)| std::cmp::Reverse(variant.len()));
+        Self { variants }
+    }
+
+    /// Rewrites every misheard variant in `text` to its term.
+    ///
+    /// Matching is case-insensitive and respects word boundaries. It is a
+    /// single left-to-right pass where the longest variant wins, so one rule's
+    /// output is never rewritten again by another.
+    pub fn apply(&self, text: &str) -> String {
+        if self.variants.is_empty() {
+            return text.to_string();
+        }
+        let chars: Vec<char> = text.chars().collect();
+        let mut out = String::with_capacity(text.len());
+        let mut i = 0;
+        while i < chars.len() {
+            let at_word_start = i == 0 || !is_word_char(chars[i - 1]);
+            let matched = at_word_start
+                .then(|| {
+                    self.variants
+                        .iter()
+                        .find(|(variant, _)| matches_at(&chars, i, variant))
+                })
+                .flatten();
+            match matched {
+                Some((variant, term)) => {
+                    out.push_str(term);
+                    i += variant.len();
+                }
+                None => {
+                    out.push(chars[i]);
+                    i += 1;
+                }
             }
         }
+        out
     }
-    out
 }
 
 fn is_word_char(c: char) -> bool {
@@ -192,31 +209,70 @@ fn diff_hunks<'a>(a: &[&'a str], b: &[&'a str]) -> Vec<(Vec<&'a str>, Vec<&'a st
     hunks
 }
 
-/// Applies the dictionary to every segment of a meeting except `skip_id`,
-/// returning how many segments changed.
+/// Applies `rules` to every segment of a meeting except `skip_id`, returning
+/// how many segments changed.
 pub fn apply_to_meeting(
     db: &Database,
     meeting_id: &str,
+    rules: &Rules,
     skip_id: Option<&str>,
-) -> crate::error::Result<usize> {
-    let entries = db.list_dictionary_entries()?;
-    let mut changed = 0;
-    for segment in db.get_transcript(meeting_id)? {
-        if Some(segment.id.as_str()) == skip_id {
-            continue;
-        }
-        let corrected = apply(&entries, &segment.text);
-        if corrected != segment.text {
-            db.update_transcript_segment_text(&segment.id, &corrected)?;
-            changed += 1;
-        }
+) -> Result<usize> {
+    let updates: Vec<(String, String)> = db
+        .get_transcript(meeting_id)?
+        .into_iter()
+        .filter(|segment| Some(segment.id.as_str()) != skip_id)
+        .filter_map(|segment| {
+            let corrected = rules.apply(&segment.text);
+            (corrected != segment.text).then_some((segment.id, corrected))
+        })
+        .collect();
+    db.replace_transcript_texts(meeting_id, &updates)?;
+    Ok(updates.len())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SegmentEditResult {
+    pub learned: Vec<LearnedCorrection>,
+    /// Other segments in the meeting rewritten by what was learned.
+    pub corrected_segments: usize,
+}
+
+/// Saves a user's edit to one transcript segment. With auto-learn on, word
+/// substitutions in the edit join the dictionary and are applied to the rest
+/// of the meeting.
+pub fn record_edit(db: &Database, segment_id: &str, text: &str) -> Result<SegmentEditResult> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(NootleError::Other("Transcript text cannot be empty".into()));
     }
-    Ok(changed)
+    let original = db.get_transcript_segment(segment_id)?;
+    db.replace_transcript_texts(
+        &original.meeting_id,
+        &[(segment_id.to_string(), text.to_string())],
+    )?;
+
+    let learned = if db.get_bool_setting(AUTO_LEARN_SETTING, true) {
+        learn_corrections(&original.text, text)
+    } else {
+        Vec::new()
+    };
+    let corrected_segments = if learned.is_empty() {
+        0
+    } else {
+        db.learn_dictionary_corrections(&learned)?;
+        let rules = Rules::from_corrections(&learned);
+        apply_to_meeting(db, &original.meeting_id, &rules, Some(segment_id))?
+    };
+    Ok(SegmentEditResult {
+        learned,
+        corrected_segments,
+    })
 }
 
 /// Formats the dictionary as a spelling reference for LLM prompts, or an empty
 /// string when there is nothing to add.
-pub fn prompt_glossary(entries: &[DictionaryEntry]) -> String {
+pub fn glossary(db: &Database) -> String {
+    let entries = db.list_dictionary_entries().unwrap_or_default();
     if entries.is_empty() {
         return String::new();
     }
@@ -246,7 +302,7 @@ mod tests {
     fn apply_replaces_case_insensitively_on_word_boundaries() {
         let entries = [entry("Nootle", &["noodle"])];
         assert_eq!(
-            apply(&entries, "Noodle records, and noodle. Noodles stay."),
+            Rules::new(&entries).apply("Noodle records, and noodle. Noodles stay."),
             "Nootle records, and Nootle. Noodles stay."
         );
     }
@@ -258,14 +314,17 @@ mod tests {
             entry("cube", &["Kubernetes"]),
         ];
         assert_eq!(
-            apply(&entries, "deploy to cube or net ease"),
+            Rules::new(&entries).apply("deploy to cube or net ease"),
             "deploy to Kubernetes"
         );
     }
 
     #[test]
     fn apply_without_rules_is_identity() {
-        assert_eq!(apply(&[entry("Nootle", &[])], "noodle"), "noodle");
+        assert_eq!(
+            Rules::new(&[entry("Nootle", &[])]).apply("noodle"),
+            "noodle"
+        );
     }
 
     #[test]
@@ -336,22 +395,21 @@ mod tests {
         db.create_transcript_segment(segment("is noodle ready?", 1000))
             .unwrap();
 
-        let learned = learn_corrections(&edited.text, "Nootle ships today");
-        db.learn_dictionary_corrections(&learned).unwrap();
+        let result = record_edit(&db, &edited.id, "Nootle ships today").unwrap();
+        assert_eq!(result.corrected_segments, 1);
         let entries = db.list_dictionary_entries().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].term, "Nootle");
         assert_eq!(entries[0].misheard, vec!["noodle".to_string()]);
         assert_eq!(entries[0].source, "learned");
 
-        assert_eq!(apply_to_meeting(&db, &meeting.id, Some(&edited.id)).unwrap(), 1);
         let texts: Vec<String> = db
             .get_transcript(&meeting.id)
             .unwrap()
             .into_iter()
             .map(|s| s.text)
             .collect();
-        assert_eq!(texts, ["noodle ships today", "is Nootle ready?"]);
+        assert_eq!(texts, ["Nootle ships today", "is Nootle ready?"]);
 
         // Reversing the fix moves the variant instead of creating a cycle.
         db.learn_dictionary_corrections(&learn_corrections("Nootle", "noodle"))
@@ -365,7 +423,9 @@ mod tests {
 
     #[test]
     fn glossary_lists_terms() {
-        assert_eq!(prompt_glossary(&[]), "");
-        assert!(prompt_glossary(&[entry("Nootle", &[])]).ends_with("Nootle"));
+        let db = Database::new_in_memory().unwrap();
+        assert_eq!(glossary(&db), "");
+        db.upsert_dictionary_entry("Nootle", &[], "manual").unwrap();
+        assert!(glossary(&db).ends_with("Nootle"));
     }
 }

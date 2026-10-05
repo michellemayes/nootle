@@ -263,60 +263,14 @@ pub fn get_transcript(
     db.get_transcript(&meeting_id).map_err(|e| e.to_string())
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SegmentEditResult {
-    pub segment: TranscriptSegment,
-    pub learned: Vec<crate::dictionary::LearnedCorrection>,
-    /// Other segments in the meeting rewritten by what was learned.
-    pub corrected_segments: usize,
-}
-
-/// Saves a user's edit to one transcript segment. With auto-learn on, word
-/// substitutions in the edit join the dictionary and are applied to the rest
-/// of the meeting.
+/// Saves a user's edit to a transcript segment and learns from it.
 #[tauri::command]
-pub fn update_transcript_segment(
+pub async fn update_transcript_segment(
     db: State<'_, DbState>,
     segment_id: String,
     text: String,
-) -> Result<SegmentEditResult, String> {
-    let text = text.trim();
-    if text.is_empty() {
-        return Err("Transcript text cannot be empty".into());
-    }
-    let original = db
-        .get_transcript_segment(&segment_id)
-        .map_err(|e| e.to_string())?;
-    db.update_transcript_segment_text(&segment_id, text)
-        .map_err(|e| e.to_string())?;
-
-    let auto_learn = db
-        .get_setting(crate::dictionary::AUTO_LEARN_SETTING)
-        .ok()
-        .flatten()
-        .is_none_or(|v| v != "false");
-    let learned = if auto_learn {
-        crate::dictionary::learn_corrections(&original.text, text)
-    } else {
-        Vec::new()
-    };
-    let corrected_segments = if learned.is_empty() {
-        0
-    } else {
-        db.learn_dictionary_corrections(&learned)
-            .map_err(|e| e.to_string())?;
-        crate::dictionary::apply_to_meeting(&db, &original.meeting_id, Some(&segment_id))
-            .map_err(|e| e.to_string())?
-    };
-
-    Ok(SegmentEditResult {
-        segment: TranscriptSegment {
-            text: text.to_string(),
-            ..original
-        },
-        learned,
-        corrected_segments,
-    })
+) -> Result<crate::dictionary::SegmentEditResult, String> {
+    crate::dictionary::record_edit(&db, &segment_id, &text).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -352,11 +306,13 @@ pub fn delete_dictionary_entry(db: State<'_, DbState>, id: String) -> Result<(),
 
 /// Re-applies the dictionary to an already-recorded meeting.
 #[tauri::command]
-pub fn apply_dictionary_to_meeting(
+pub async fn apply_dictionary_to_meeting(
     db: State<'_, DbState>,
     meeting_id: String,
 ) -> Result<usize, String> {
-    crate::dictionary::apply_to_meeting(&db, &meeting_id, None).map_err(|e| e.to_string())
+    let entries = db.list_dictionary_entries().map_err(|e| e.to_string())?;
+    let rules = crate::dictionary::Rules::new(&entries);
+    crate::dictionary::apply_to_meeting(&db, &meeting_id, &rules, None).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -759,7 +715,14 @@ async fn run_transcription_pipeline(
                         segments.len()
                     );
                     segment_count += segments.len() as u64;
-                    let dictionary = db.list_dictionary_entries().unwrap_or_default();
+                    // Reloaded per chunk so words added mid-meeting apply straight away.
+                    let dictionary = if segments.is_empty() {
+                        crate::dictionary::Rules::new(&[])
+                    } else {
+                        crate::dictionary::Rules::new(
+                            &db.list_dictionary_entries().unwrap_or_default(),
+                        )
+                    };
                     for seg in &segments {
                         tracing::info!("[DIAG] Segment: {:?}", seg.text);
 
@@ -779,7 +742,7 @@ async fn run_transcription_pipeline(
                         match db.create_transcript_segment(NewTranscriptSegment {
                             meeting_id: meeting_id.clone(),
                             speaker_label: speaker,
-                            text: crate::dictionary::apply(&dictionary, &seg.text),
+                            text: dictionary.apply(&seg.text),
                             start_ms: i64::try_from(seg.start_ms).unwrap_or(i64::MAX),
                             end_ms: i64::try_from(seg.end_ms).unwrap_or(i64::MAX),
                             confidence: 0.9,
@@ -1511,8 +1474,9 @@ async fn rag_chat(
          includes the meeting title and timestamp. Use ONLY these excerpts to answer.\n\
          When you reference information, cite the source as [Meeting Title, timestamp].\n\n\
          {}\n\
-         Answer the user's question based on these excerpts. Be concise.",
-        context_parts.join("\n")
+         Answer the user's question based on these excerpts. Be concise.{}",
+        context_parts.join("\n"),
+        crate::dictionary::glossary(db)
     );
 
     let mut messages = vec![ChatMessage {
@@ -1957,8 +1921,10 @@ pub async fn enrich_meeting_notes(
          The result should read as one cohesive document — not two separate sections. \
          Maintain the same topic order as the original notes.\n\n\
          TRANSCRIPT:\n{}\n\n\
-         USER'S NOTES:\n{}",
-        transcript_text, raw_notes
+         USER'S NOTES:\n{}{}",
+        transcript_text,
+        raw_notes,
+        crate::dictionary::glossary(&db)
     );
 
     let messages = vec![

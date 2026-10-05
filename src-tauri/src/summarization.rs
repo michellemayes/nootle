@@ -48,7 +48,7 @@ pub async fn summarize_meeting(
         )
     };
 
-    let glossary = dictionary::prompt_glossary(&db.list_dictionary_entries().unwrap_or_default());
+    let glossary = dictionary::glossary(db);
 
     let messages = vec![
         ChatMessage {
@@ -123,7 +123,7 @@ pub async fn chat_with_transcript(
 ) -> anyhow::Result<String> {
     let transcript = db.get_transcript(meeting_id)?;
     let transcript_text = format_transcript(&transcript);
-    let glossary = dictionary::prompt_glossary(&db.list_dictionary_entries().unwrap_or_default());
+    let glossary = dictionary::glossary(db);
 
     let mut messages = vec![ChatMessage {
         role: "system".into(),
@@ -181,7 +181,10 @@ pub async fn run_recipe(
             vec![
                 ChatMessage {
                     role: "system".into(),
-                    content: "You are a meeting assistant. Produce the requested output based on the meeting data provided.".into(),
+                    content: format!(
+                        "You are a meeting assistant. Produce the requested output based on the meeting data provided.{}",
+                        dictionary::glossary(db)
+                    ),
                 },
                 ChatMessage {
                     role: "user".into(),

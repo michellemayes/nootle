@@ -27,29 +27,19 @@ export function useDictionary() {
     refresh();
   }, [refresh]);
 
-  const addEntry = useCallback(
-    async (term: string, misheard: string[]) => {
-      await invoke("add_dictionary_entry", { term, misheard });
+  const mutate = useCallback(
+    async (command: string, args: Record<string, unknown>) => {
+      await invoke(command, args);
       await refresh();
     },
     [refresh],
   );
 
-  const updateEntry = useCallback(
-    async (id: string, term: string, misheard: string[]) => {
-      await invoke("update_dictionary_entry", { id, term, misheard });
-      await refresh();
-    },
-    [refresh],
-  );
+  const addEntry = (term: string, misheard: string[]) =>
+    mutate("add_dictionary_entry", { term, misheard });
+  const updateEntry = (id: string, term: string, misheard: string[]) =>
+    mutate("update_dictionary_entry", { id, term, misheard });
+  const deleteEntry = (id: string) => mutate("delete_dictionary_entry", { id });
 
-  const deleteEntry = useCallback(
-    async (id: string) => {
-      await invoke("delete_dictionary_entry", { id });
-      await refresh();
-    },
-    [refresh],
-  );
-
-  return { entries, error, refresh, addEntry, updateEntry, deleteEntry };
+  return { entries, error, addEntry, updateEntry, deleteEntry };
 }

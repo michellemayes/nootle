@@ -98,6 +98,71 @@ const speakerColors = [
   "text-chart-6",
 ];
 
+function pluralLines(n: number): string {
+  return `${n} line${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * One transcript line. Double-click to edit; the draft lives here so typing
+ * doesn't re-render the whole meeting page.
+ */
+function SegmentText({
+  seg,
+  speakerClass,
+  onSave,
+}: {
+  seg: TranscriptSegment;
+  speakerClass: string;
+  onSave: (seg: TranscriptSegment, text: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  // Closing the editor can fire blur as the textarea unmounts; finish once.
+  const closedRef = useRef(false);
+
+  if (draft === null) {
+    return (
+      <p
+        className="min-w-0 flex-1 text-sm text-foreground leading-relaxed cursor-text"
+        onDoubleClick={() => {
+          closedRef.current = false;
+          setDraft(seg.text);
+        }}
+        title="Double-click to fix a word"
+      >
+        <span className={`font-semibold ${speakerClass} mr-1.5`}>{seg.speaker_label}:</span>
+        {seg.text}
+      </p>
+    );
+  }
+
+  const close = (save: boolean) => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    const text = draft.trim();
+    setDraft(null);
+    if (save && text && text !== seg.text) onSave(seg, text);
+  };
+
+  return (
+    <Textarea
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => close(true)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          close(true);
+        } else if (e.key === "Escape") {
+          close(false);
+        }
+      }}
+      className="min-h-0 flex-1 text-sm leading-relaxed"
+      aria-label="Edit transcript line"
+    />
+  );
+}
+
 function formatPlayerTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return "00:00";
   return formatMs(seconds * 1000);
@@ -714,14 +779,9 @@ export function MeetingDetail() {
   const navigate = useNavigate();
   const { meeting, loading: meetingLoading, refresh: refreshMeeting } = useMeeting(id!);
   const { segments, loading: transcriptLoading, refresh: refreshTranscript } = useTranscript(id!);
-  const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
-  const [segmentDraft, setSegmentDraft] = useState("");
   const [dictionaryNotice, setDictionaryNotice] = useState<string | null>(null);
 
-  const saveSegmentEdit = async (seg: TranscriptSegment) => {
-    setEditingSegmentId(null);
-    const text = segmentDraft.trim();
-    if (!text || text === seg.text) return;
+  const saveSegmentEdit = async (seg: TranscriptSegment, text: string) => {
     try {
       const result = await invoke<SegmentEditResult>("update_transcript_segment", {
         segmentId: seg.id,
@@ -731,14 +791,13 @@ export function MeetingDetail() {
         const pairs = result.learned.map((c) => `“${c.from}” → “${c.to}”`).join(", ");
         const more = result.corrected_segments;
         setDictionaryNotice(
-          `Learned ${pairs}` +
-            (more > 0 ? ` and fixed ${more} more line${more === 1 ? "" : "s"}` : ""),
+          `Learned ${pairs}` + (more > 0 ? ` and fixed ${pluralLines(more)} more` : ""),
         );
       }
+      await refreshTranscript();
     } catch (err) {
       setDictionaryNotice(`Couldn't save edit: ${err}`);
     }
-    await refreshTranscript();
   };
 
   const applyDictionary = async () => {
@@ -746,7 +805,7 @@ export function MeetingDetail() {
       const changed = await invoke<number>("apply_dictionary_to_meeting", { meetingId: id });
       setDictionaryNotice(
         changed > 0
-          ? `Dictionary fixed ${changed} line${changed === 1 ? "" : "s"}`
+          ? `Dictionary fixed ${pluralLines(changed)}`
           : "Nothing to fix — transcript already matches your dictionary",
       );
       if (changed > 0) await refreshTranscript();
@@ -1188,40 +1247,11 @@ export function MeetingDetail() {
                           >
                             {formatMs(seg.start_ms)}
                           </button>
-                          {editingSegmentId === seg.id ? (
-                            <Textarea
-                              autoFocus
-                              value={segmentDraft}
-                              onChange={(e) => setSegmentDraft(e.target.value)}
-                              onBlur={() => saveSegmentEdit(seg)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" && !e.shiftKey) {
-                                  e.preventDefault();
-                                  e.currentTarget.blur();
-                                } else if (e.key === "Escape") {
-                                  setEditingSegmentId(null);
-                                }
-                              }}
-                              className="min-h-0 flex-1 text-sm leading-relaxed"
-                              aria-label="Edit transcript line"
-                            />
-                          ) : (
-                            <p
-                              className="min-w-0 flex-1 text-sm text-foreground leading-relaxed cursor-text"
-                              onDoubleClick={() => {
-                                setEditingSegmentId(seg.id);
-                                setSegmentDraft(seg.text);
-                              }}
-                              title="Double-click to fix a word"
-                            >
-                              <span
-                                className={`font-semibold ${speakerMap.get(seg.speaker_label) ?? "text-foreground"} mr-1.5`}
-                              >
-                                {seg.speaker_label}:
-                              </span>
-                              {seg.text}
-                            </p>
-                          )}
+                          <SegmentText
+                            seg={seg}
+                            speakerClass={speakerMap.get(seg.speaker_label) ?? "text-foreground"}
+                            onSave={saveSegmentEdit}
+                          />
                         </div>
                       ))
                     )}

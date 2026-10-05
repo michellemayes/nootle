@@ -238,7 +238,6 @@ export interface LearnedCorrection {
 }
 
 export interface SegmentEditResult {
-  segment: TranscriptSegment;
   learned: LearnedCorrection[];
   corrected_segments: number;
 }
