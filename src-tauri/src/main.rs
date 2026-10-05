@@ -27,7 +27,11 @@ fn stdin_is_pipe() -> bool {
 fn main() {
     nootle_app_lib::sandbox_migration::migrate();
 
-    if std::env::args().any(|a| a == "--mcp") || stdin_is_pipe() {
+    let mcp_flag = std::env::args().any(|a| a == "--mcp");
+    if mcp_flag || stdin_is_pipe() {
+        if !mcp_flag {
+            eprintln!("Nootle: stdin is a pipe, serving MCP (pass --mcp to make this explicit)");
+        }
         // Run as MCP server (stdio mode, no GUI)
         use rmcp::{transport::stdio, ServiceExt};
 
