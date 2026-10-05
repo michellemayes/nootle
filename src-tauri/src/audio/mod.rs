@@ -11,6 +11,6 @@ pub mod writer;
 pub use capture::{run_audio_capture, validate_audio_devices, AudioChunk};
 pub use mic::MicCapture;
 pub use mixer::{rms, AudioMixer};
-pub use session::RecordingSession;
+pub use session::{RecordedClock, RecordingSession};
 pub use system_audio::SystemAudioCapture;
 pub use writer::AudioWriter;

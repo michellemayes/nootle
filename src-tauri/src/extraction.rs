@@ -68,7 +68,9 @@ fn format_transcript(db: &Database, meeting_id: &str) -> anyhow::Result<String> 
         })
         .collect::<Vec<_>>()
         .join("\n");
-    Ok(lines + &crate::dictionary::glossary(db))
+    Ok(lines
+        + &crate::snapshots::context_section(db, meeting_id)
+        + &crate::dictionary::glossary(db))
 }
 
 pub fn strip_code_fences_pub(s: &str) -> &str {

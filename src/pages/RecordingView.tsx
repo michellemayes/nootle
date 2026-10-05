@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useTranscript } from "@/hooks/useTranscripts";
+import { useSnapshots, useSnapshotsEnabled } from "@/hooks/useSnapshots";
 import type { TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -15,7 +16,7 @@ import { ScratchPad } from "@/components/ScratchPad";
 import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Kbd } from "@/components/Kbd";
-import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText, Pause, Play } from "lucide-react";
+import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText, Pause, Play, ScanLine } from "lucide-react";
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -84,6 +85,8 @@ export function RecordingView() {
   // transcription runs at all. Imports transcribing in the background send
   // these events too, so both are matched to this recording's meeting.
   const { segments } = useTranscript(currentMeeting?.id ?? "");
+  const snapshotsEnabled = useSnapshotsEnabled();
+  const { snapshots } = useSnapshots(currentMeeting?.id ?? null);
   // Listening from mount: the status can arrive before start_recording returns.
   const [latestStatus, setLatestStatus] = useState<TranscriptionStatus | null>(null);
   useEffect(() => {
@@ -303,6 +306,21 @@ export function RecordingView() {
         <span className="font-mono text-sm tabular-nums text-muted-foreground">
           {formatTime(elapsed)}
         </span>
+
+        {snapshotsEnabled && (
+          <span
+            className="flex items-center gap-1 text-xs text-muted-foreground"
+            title="Snapshots: when someone shares their screen, slides, designs and charts are snapped from the meeting window into your notes"
+          >
+            <ScanLine className="h-3.5 w-3.5 text-primary" />
+            {!isCompact && "Snapshots"}
+            {snapshots.length > 0 && (
+              <Badge variant="secondary" size="sm">
+                {snapshots.length}
+              </Badge>
+            )}
+          </span>
+        )}
 
         <Button
           size="sm"

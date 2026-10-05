@@ -46,6 +46,8 @@ dirs = "6"
 cpal = "0.15"
 ringbuf = "0.4"
 hound = "3.5"
+# Compares snapshot frames to spot when shared content changes.
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 # Decodes imported recordings (mp3, m4a, mp4, mov, wav, flac, ogg, …).
 symphonia = { version = "0.5", features = ["aac", "alac", "isomp4", "mp3", "aiff", "caf"] }
 cidre = { version = "0.14", features = ["av"], optional = true }

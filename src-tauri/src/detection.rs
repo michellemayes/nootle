@@ -28,7 +28,7 @@ pub struct DetectedMeeting {
     pub display_name: String,
 }
 
-fn meeting_app_for_bundle(bundle_id: &str) -> Option<DetectedMeeting> {
+pub fn meeting_app_for_bundle(bundle_id: &str) -> Option<DetectedMeeting> {
     MEETING_APPS
         .iter()
         .find(|(prefix, _)| bundle_id.starts_with(prefix))

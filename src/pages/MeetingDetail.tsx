@@ -27,6 +27,8 @@ import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
 import { useScratchPad } from "@/hooks/useScratchPad";
+import { useSnapshots } from "@/hooks/useSnapshots";
+import { SnapshotsSection } from "@/components/SnapshotsSection";
 import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment } from "@/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { Input } from "@/components/ui/input";
@@ -676,6 +678,10 @@ function NotesPanel({
   const [enrichError, setEnrichError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"original" | "enriched">("enriched");
   const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { snapshots, removeSnapshot } = useSnapshots(meetingId);
+  const snapshotsSection = (
+    <SnapshotsSection snapshots={snapshots} onRemove={removeSnapshot} />
+  );
 
   const handleEnrich = async () => {
     if (!selectedProvider || !selectedModel) return;
@@ -732,10 +738,13 @@ function NotesPanel({
   };
 
   if (!rawNotes) {
-    if (scratchNotes.length > 0) {
+    if (scratchNotes.length > 0 || snapshots.length > 0) {
       return (
         <ScrollArea className="flex-1">
-          <div className="p-5">{renderQuickNotes()}</div>
+          <div className="p-5 space-y-4">
+            {renderQuickNotes()}
+            {snapshotsSection}
+          </div>
         </ScrollArea>
       );
     }
@@ -823,6 +832,7 @@ function NotesPanel({
               </div>
             )}
           </div>
+          {snapshotsSection}
         </div>
       </ScrollArea>
     </div>

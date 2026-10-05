@@ -7,7 +7,7 @@ Welcome to Nootle — your local AI meeting recorder and assistant. This guide w
 Nootle needs three macOS permissions to work properly:
 
 - **Microphone** — captures your voice and other participants via speakers. Grant when prompted or go to System Settings → Privacy & Security → Microphone.
-- **Screen Recording** — required for system audio capture (hearing what others say in virtual meetings). Go to System Settings → Privacy & Security → Screen Recording.
+- **Screen Recording** — required for system audio capture (hearing what others say in virtual meetings), and for Snapshots. Go to System Settings → Privacy & Security → Screen Recording.
 - **Calendar** — optional. Shows your next meetings on the Meetings page and names recordings after the event happening now. Go to System Settings → Privacy & Security → Calendars, or click **Connect calendar** on the Meetings page.
 
 After changing permissions you may need to restart Nootle for them to take effect.
@@ -23,6 +23,16 @@ After changing permissions you may need to restart Nootle for them to take effec
 The recording is saved locally and appears in your **Meetings** library. If you wander off to another page mid-meeting, the sidebar button turns into **Back to recording**.
 
 With calendar access, a recording started while an event is underway (or about to start) takes the event's name. The **Up next** list on the Meetings page shows your next events with a **Record** button, plus **Join** when the event has a Zoom, Meet, Teams, or Webex link.
+
+## Snapshots
+
+Sometimes the thing worth remembering is on screen and never said out loud: a chart, a design, or the number on slide 4. Turn on **Snapshots** in Settings → General and, when someone shares their screen during a recorded call, Nootle snaps what they share into your notes, one picture for each new slide or page.
+
+- Only the meeting app's window is captured, never anything else on your screen. Browser calls count only while the meeting tab is showing.
+- Nothing is snapped while the recording is paused.
+- A **Snapshots** indicator in the recording bar counts them as they're taken.
+- Text on each snapshot is read on your Mac and used by summaries, chat, and search, so you can ask things like "what did the revenue chart say?".
+- Snapshots appear at the bottom of the meeting's **Notes** tab. Click one to see it full size, or remove any you don't want.
 
 ## Importing a Recording
 

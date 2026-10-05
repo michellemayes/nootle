@@ -183,6 +183,17 @@ export interface ScratchNote {
   created_at: string;
 }
 
+/** A picture of content shared on screen during a meeting. */
+export interface Snapshot {
+  id: string;
+  meeting_id: string;
+  image_path: string;
+  /** Text read off the image. */
+  text: string;
+  offset_ms: number;
+  created_at: string;
+}
+
 export interface Recipe {
   id: string;
   name: string;

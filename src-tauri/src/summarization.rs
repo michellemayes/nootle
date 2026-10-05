@@ -33,7 +33,8 @@ pub async fn summarize_meeting(
 
     let template = db.get_template(template_id)?;
 
-    let transcript_text = format_transcript(&transcript);
+    let transcript_text =
+        format_transcript(&transcript) + &crate::snapshots::context_section(db, meeting_id);
 
     let scratch_notes = db.get_scratch_notes(meeting_id).unwrap_or_default();
     let notes_section = if scratch_notes.is_empty() {
@@ -133,7 +134,8 @@ pub async fn chat_with_transcript(
     model: &str,
 ) -> anyhow::Result<String> {
     let transcript = db.get_transcript(meeting_id)?;
-    let transcript_text = format_transcript(&transcript);
+    let transcript_text =
+        format_transcript(&transcript) + &crate::snapshots::context_section(db, meeting_id);
     let glossary = dictionary::glossary(db);
 
     let mut messages = vec![ChatMessage {
@@ -171,7 +173,8 @@ pub async fn run_recipe(
     let recipe = db.get_recipe(recipe_id)?;
     let meeting = db.get_meeting(meeting_id)?;
     let transcript = db.get_transcript(meeting_id)?;
-    let transcript_text = format_transcript(&transcript);
+    let transcript_text =
+        format_transcript(&transcript) + &crate::snapshots::context_section(db, meeting_id);
 
     let mut prompt = recipe.prompt_template.clone();
     prompt = prompt.replace("{{transcript}}", &transcript_text);
