@@ -41,7 +41,7 @@ fn meeting_app_for_bundle(bundle_id: &str) -> Option<DetectedMeeting> {
 /// A meeting app currently capturing the microphone, if any. Merely having
 /// Chrome or Slack open says nothing about a meeting; holding the mic does.
 #[cfg(all(target_os = "macos", feature = "system-audio"))]
-fn meeting_app_using_mic() -> Option<DetectedMeeting> {
+pub fn meeting_app_using_mic() -> Option<DetectedMeeting> {
     use cidre::core_audio as ca;
 
     let own_pid = std::process::id() as i32;
@@ -53,7 +53,7 @@ fn meeting_app_using_mic() -> Option<DetectedMeeting> {
 }
 
 #[cfg(not(all(target_os = "macos", feature = "system-audio")))]
-fn meeting_app_using_mic() -> Option<DetectedMeeting> {
+pub fn meeting_app_using_mic() -> Option<DetectedMeeting> {
     // Keeps the bundle-ID table compiled (and tested) on every platform.
     let _ = meeting_app_for_bundle;
     None

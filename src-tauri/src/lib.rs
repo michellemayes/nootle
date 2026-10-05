@@ -249,6 +249,7 @@ pub fn run() {
             commands::get_scratch_notes,
             commands::delete_scratch_note,
             commands::get_transcript,
+            commands::rename_speaker,
             commands::search_transcripts,
             commands::create_recipe,
             commands::list_recipes,

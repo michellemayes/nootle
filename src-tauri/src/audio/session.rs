@@ -1,3 +1,4 @@
+use super::AudioChunk;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -8,8 +9,8 @@ pub struct RecordingSession {
     is_active: Arc<AtomicBool>,
     audio_path: PathBuf,
     /// Channel to send audio chunks for transcription
-    audio_tx: Option<mpsc::Sender<Vec<f32>>>,
-    audio_rx: Option<mpsc::Receiver<Vec<f32>>>,
+    audio_tx: Option<mpsc::Sender<AudioChunk>>,
+    audio_rx: Option<mpsc::Receiver<AudioChunk>>,
     capture_handle: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -21,7 +22,7 @@ impl RecordingSession {
     ) -> anyhow::Result<Self> {
         std::fs::create_dir_all(recordings_dir)?;
         let audio_path = recordings_dir.join(format!("{meeting_id}.wav"));
-        let (audio_tx, audio_rx) = mpsc::channel::<Vec<f32>>(100);
+        let (audio_tx, audio_rx) = mpsc::channel::<AudioChunk>(100);
 
         Ok(Self {
             meeting_id: meeting_id.to_string(),
@@ -47,7 +48,7 @@ impl RecordingSession {
 
     /// Take the audio receiver (for the transcription pipeline).
     /// Can only be called once.
-    pub fn take_audio_rx(&mut self) -> Option<mpsc::Receiver<Vec<f32>>> {
+    pub fn take_audio_rx(&mut self) -> Option<mpsc::Receiver<AudioChunk>> {
         self.audio_rx.take()
     }
 
@@ -72,7 +73,7 @@ impl RecordingSession {
         self.capture_handle.take()
     }
 
-    pub fn take_audio_tx(&mut self) -> Option<mpsc::Sender<Vec<f32>>> {
+    pub fn take_audio_tx(&mut self) -> Option<mpsc::Sender<AudioChunk>> {
         self.audio_tx.take()
     }
 }

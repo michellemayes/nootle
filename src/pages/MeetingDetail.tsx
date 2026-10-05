@@ -710,7 +710,7 @@ export function MeetingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { meeting, loading: meetingLoading, refresh: refreshMeeting } = useMeeting(id!);
-  const { segments, loading: transcriptLoading } = useTranscript(id!);
+  const { segments, loading: transcriptLoading, renameSpeaker } = useTranscript(id!);
   const { summaries, generateSummary } = useSummaries(id!);
   const { templates } = useTemplates();
   const { storedProviders: storedApiProviders } = useApiKeys();
@@ -728,6 +728,8 @@ export function MeetingDetail() {
   const [chatOpen, setChatOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  // The transcript line whose speaker name is being edited.
+  const [speakerEdit, setSpeakerEdit] = useState<{ segmentId: string; draft: string } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState("");
@@ -819,6 +821,21 @@ export function MeetingDetail() {
     await refreshMeeting();
     setEditingTitle(false);
   }, [meeting, titleDraft, refreshMeeting]);
+
+  const handleSpeakerRename = useCallback(async () => {
+    if (!speakerEdit) return;
+    const { segmentId, draft } = speakerEdit;
+    setSpeakerEdit(null);
+    const from = segments.find((s) => s.id === segmentId)?.speaker_label;
+    if (from === undefined) return;
+    const to = draft.trim();
+    if (!to || to === from) return;
+    try {
+      await renameSpeaker(from, to);
+    } catch (err) {
+      console.error("Failed to rename speaker:", err);
+    }
+  }, [speakerEdit, segments, renameSpeaker]);
 
   // Load audio data
   useEffect(() => {
@@ -1111,7 +1128,9 @@ export function MeetingDetail() {
                         No transcript for this meeting.
                       </p>
                     ) : (
-                      segments.map((seg) => (
+                      segments.map((seg) => {
+                        const speakerColor = speakerMap.get(seg.speaker_label) ?? "text-foreground";
+                        return (
                         <div key={seg.id} className={`group flex gap-3 ${compactTranscript ? "items-baseline" : ""}`}>
                           <button
                             onClick={() => seekToMs(seg.start_ms)}
@@ -1120,15 +1139,34 @@ export function MeetingDetail() {
                             {formatMs(seg.start_ms)}
                           </button>
                           <p className="min-w-0 text-sm text-foreground leading-relaxed">
-                            <span
-                              className={`font-semibold ${speakerMap.get(seg.speaker_label) ?? "text-foreground"} mr-1.5`}
-                            >
-                              {seg.speaker_label}:
-                            </span>
+                            {speakerEdit?.segmentId === seg.id ? (
+                              <Input
+                                value={speakerEdit.draft}
+                                onChange={(e) => setSpeakerEdit({ ...speakerEdit, draft: e.target.value })}
+                                onBlur={handleSpeakerRename}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleSpeakerRename();
+                                  if (e.key === "Escape") setSpeakerEdit(null);
+                                }}
+                                aria-label={`Rename ${seg.speaker_label}`}
+                                className={`inline-flex font-semibold ${speakerColor} mr-1.5 h-6 w-32 px-1 py-0 text-sm`}
+                                autoFocus
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setSpeakerEdit({ segmentId: seg.id, draft: seg.speaker_label })}
+                                title={`Rename ${seg.speaker_label} everywhere in this meeting`}
+                                className={`font-semibold ${speakerColor} mr-1.5 rounded-sm hover:underline decoration-dotted underline-offset-2`}
+                              >
+                                {seg.speaker_label}:
+                              </button>
+                            )}
                             {seg.text}
                           </p>
                         </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </ScrollArea>

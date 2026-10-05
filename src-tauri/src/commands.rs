@@ -1,6 +1,6 @@
 use crate::audio::{run_audio_capture, validate_audio_devices, RecordingSession};
 use crate::db::*;
-use crate::diarization::DiarizationEngine;
+use crate::diarization::{DiarizationEngine, SpeakerAttributor};
 use crate::extraction;
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::model_download::{self, DownloadManager};
@@ -260,6 +260,34 @@ pub fn get_transcript(
     db: State<'_, DbState>,
     meeting_id: String,
 ) -> Result<Vec<TranscriptSegment>, String> {
+    db.get_transcript(&meeting_id).map_err(|e| e.to_string())
+}
+
+/// Rename a speaker throughout a meeting ("Speaker 2" → "Priya"), or merge
+/// two speakers by renaming one onto the other. Analytics and search index
+/// are rebuilt so they show the new name.
+#[tauri::command]
+pub async fn rename_speaker(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    embedding_state: State<'_, EmbeddingState>,
+    meeting_id: String,
+    from: String,
+    to: String,
+) -> Result<Vec<TranscriptSegment>, String> {
+    let to = to.trim();
+    if to.is_empty() {
+        return Err("Speaker name can't be empty".into());
+    }
+    db.rename_speaker(&meeting_id, &from, to)
+        .map_err(|e| e.to_string())?;
+
+    compute_analytics(&db, &app, &meeting_id);
+    if let Some(engine) = embedding_state.lock().await.as_mut() {
+        if let Err(e) = crate::chunking::reindex_meeting(&db, engine, &meeting_id) {
+            tracing::warn!("Failed to re-index meeting {meeting_id} after rename: {e}");
+        }
+    }
     db.get_transcript(&meeting_id).map_err(|e| e.to_string())
 }
 
@@ -578,7 +606,7 @@ async fn auto_extract_insights(
 
 /// Background task: consume audio chunks, transcribe, diarize, persist, and emit events.
 async fn run_transcription_pipeline(
-    mut audio_rx: tokio::sync::mpsc::Receiver<Vec<f32>>,
+    mut audio_rx: tokio::sync::mpsc::Receiver<crate::audio::AudioChunk>,
     db: Arc<Database>,
     llm_state: LlmState,
     embedding_state: Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>,
@@ -623,14 +651,20 @@ async fn run_transcription_pipeline(
         );
     }
 
-    // Try to load diarization engine
-    let mut diarization_engine = match DiarizationEngine::load() {
+    // Try to load diarization engine. A meeting app on the mic means this is
+    // a call, where the mic is the user and system audio everyone else.
+    let diarization_engine = match DiarizationEngine::load() {
         Ok(e) => Some(e),
         Err(err) => {
             tracing::info!("Diarization models not available, skipping: {err}");
             None
         }
     };
+    let call_app = crate::detection::meeting_app_using_mic();
+    if let Some(app) = &call_app {
+        tracing::info!("Recording a {} call", app.display_name);
+    }
+    let mut speakers = SpeakerAttributor::new(diarization_engine, call_app.is_some());
 
     let mut offset_samples: u64 = 0;
     let sample_rate: u64 = 16000;
@@ -640,16 +674,18 @@ async fn run_transcription_pipeline(
     tracing::info!(
         "[DIAG] Entering audio chunk loop, engine={}, diarization={}",
         transcription_engine.is_some(),
-        diarization_engine.is_some()
+        speakers.has_diarization()
     );
 
-    while let Some(chunk) = audio_rx.recv().await {
+    while let Some(audio) = audio_rx.recv().await {
+        let chunk = audio.mixed;
+        speakers.observe(&audio.system);
         let offset_ms = offset_samples * 1000 / sample_rate;
         let chunk_len = chunk.len() as u64;
         chunk_count += 1;
 
         // Log every chunk received
-        let rms = (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt();
+        let rms = crate::audio::rms(&chunk);
         tracing::info!(
             "[DIAG] Chunk #{chunk_count}: {chunk_len} samples, offset={offset_ms}ms, RMS={rms:.6}"
         );
@@ -663,25 +699,17 @@ async fn run_transcription_pipeline(
                         segments.len()
                     );
                     segment_count += segments.len() as u64;
+                    let speaker = if segments.is_empty() {
+                        String::new()
+                    } else {
+                        speakers.label(&audio.mic, &audio.system, &chunk)
+                    };
                     for seg in &segments {
                         tracing::info!("[DIAG] Segment: {:?}", seg.text);
 
-                        // Run diarization to get speaker label
-                        let speaker = if let Some(ref mut diar) = diarization_engine {
-                            match diar.diarize(&chunk, offset_ms) {
-                                Ok(diar_segs) => diar_segs
-                                    .first()
-                                    .map(|s| s.speaker_id.clone())
-                                    .unwrap_or_else(|| "Speaker".to_string()),
-                                Err(_) => "Speaker".to_string(),
-                            }
-                        } else {
-                            "Speaker".to_string()
-                        };
-
                         match db.create_transcript_segment(NewTranscriptSegment {
                             meeting_id: meeting_id.clone(),
-                            speaker_label: speaker,
+                            speaker_label: speaker.clone(),
                             text: seg.text.clone(),
                             start_ms: i64::try_from(seg.start_ms).unwrap_or(i64::MAX),
                             end_ms: i64::try_from(seg.end_ms).unwrap_or(i64::MAX),
