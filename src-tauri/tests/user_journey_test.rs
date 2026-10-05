@@ -223,11 +223,11 @@ fn journey_meeting_library_browse_search_filter() {
     db.add_meeting_label(&m2, &eng_label.id).unwrap(); // meeting can have multiple labels
 
     // Browse all meetings
-    let all = db.list_meetings(None, false).unwrap();
+    let all = db.list_meetings(None, false, None).unwrap();
     assert_eq!(all.len(), 3);
 
     // Search by title
-    let results = db.list_meetings(Some("Design"), false).unwrap();
+    let results = db.list_meetings(Some("Design"), false, None).unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].title, "Design Review");
 
@@ -241,11 +241,11 @@ fn journey_meeting_library_browse_search_filter() {
 
     // Archive a meeting — should hide from default listing
     db.update_meeting_status(&m3, "archived").unwrap();
-    let visible = db.list_meetings(None, false).unwrap();
+    let visible = db.list_meetings(None, false, None).unwrap();
     assert_eq!(visible.len(), 2);
 
     // But visible when explicitly including archived
-    let with_archived = db.list_meetings(None, true).unwrap();
+    let with_archived = db.list_meetings(None, true, None).unwrap();
     assert_eq!(with_archived.len(), 3);
 
     // Search within transcripts (searches all meetings regardless of archive status)
@@ -364,12 +364,12 @@ fn journey_insights_extraction_to_action_tracking() {
 
     // User views all open action items across meetings (Insights Dashboard)
     let open_items = db
-        .get_all_insights(Some("action_item"), Some("open"), None)
+        .get_all_insights(None, Some("action_item"), Some("open"), None)
         .unwrap();
     assert_eq!(open_items.len(), 0); // we just marked it done
 
     let done_items = db
-        .get_all_insights(Some("action_item"), Some("done"), None)
+        .get_all_insights(None, Some("action_item"), Some("done"), None)
         .unwrap();
     assert_eq!(done_items.len(), 1);
     assert_eq!(done_items[0].meeting_title, Some("Product Sync".into()));
@@ -418,13 +418,13 @@ fn journey_insights_across_multiple_meetings() {
 
     // Insights Dashboard: view all action items
     let all = db
-        .get_all_insights(Some("action_item"), None, None)
+        .get_all_insights(None, Some("action_item"), None, None)
         .unwrap();
     assert_eq!(all.len(), 2);
 
     // Search within insights
     let search = db
-        .get_all_insights(None, None, Some("CI notifications"))
+        .get_all_insights(None, None, None, Some("CI notifications"))
         .unwrap();
     assert_eq!(search.len(), 1);
     assert_eq!(search[0].meeting_title, Some("Retro".into()));
@@ -1145,7 +1145,7 @@ fn journey_stale_recording_cleanup() {
     // Note: cleanup_stale_recordings uses a time-based check, so a just-created
     // meeting may not be considered stale yet. We verify the function runs
     // without error and the good meeting survives.
-    let meetings = db.list_meetings(None, false).unwrap();
+    let meetings = db.list_meetings(None, false, None).unwrap();
     assert!(meetings.iter().any(|m| m.title == "Good Meeting"));
     // The stale one may or may not be cleaned depending on timing threshold
     let _ = cleaned;
@@ -1156,13 +1156,16 @@ fn journey_empty_states() {
     let db = fresh_db();
 
     // All listing operations return empty gracefully
-    assert_eq!(db.list_meetings(None, false).unwrap().len(), 0);
+    assert_eq!(db.list_meetings(None, false, None).unwrap().len(), 0);
     assert_eq!(db.list_labels().unwrap().len(), 0);
     assert_eq!(db.list_chat_conversations().unwrap().len(), 0);
     assert_eq!(db.list_integrations().unwrap().len(), 0);
     assert_eq!(db.list_workflows().unwrap().len(), 0);
     assert_eq!(db.list_api_key_providers().unwrap().len(), 0);
-    assert_eq!(db.get_all_insights(None, None, None).unwrap().len(), 0);
+    assert_eq!(
+        db.get_all_insights(None, None, None, None).unwrap().len(),
+        0
+    );
 
     // Templates and recipes have built-in seeds
     assert!(!db.list_templates().unwrap().is_empty());
@@ -1466,12 +1469,12 @@ fn journey_complete_user_session() {
 
     // ---- Verify final state ----
     let all_open = db
-        .get_all_insights(Some("action_item"), Some("open"), None)
+        .get_all_insights(None, Some("action_item"), Some("open"), None)
         .unwrap();
     assert_eq!(all_open.len(), 0);
 
     let all_done = db
-        .get_all_insights(Some("action_item"), Some("done"), None)
+        .get_all_insights(None, Some("action_item"), Some("done"), None)
         .unwrap();
     assert_eq!(all_done.len(), 2);
 
