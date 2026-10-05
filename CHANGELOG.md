@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.26] - 2026-10-05
+
+### Features
+
+- File import, export, calendar up-next, and pause/resume (#155) ([c91ae6f](https://github.com/michellemayes/nootle/commit/c91ae6ff845abcdea6ffef64a1d6b716aa9843be))
+
 ## [0.1.25] - 2026-10-05
 
 ### Features
