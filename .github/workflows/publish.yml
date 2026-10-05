@@ -58,22 +58,21 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
-      # Next version comes from the conventional commits since the latest v*
-      # tag; the rules live in cliff.toml's [bump] section.
-      - name: Compute bumped version
-        id: bump
-        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
-        with:
-          args: --bumped-version
+      # git-cliff runs directly rather than through git-cliff-action: the
+      # action's output capture uses GNU stat, which fails on macOS runners
+      # and leaves its outputs empty (every release fell back to a patch bump
+      # with blank notes).
+      - name: Install git-cliff
+        run: pipx install git-cliff
 
-      # Written into the manifests for this build only, so no version-bump
-      # commit is needed.
+      # Next version comes from the conventional commits since the latest v*
+      # tag; the rules live in cliff.toml's [bump] section. Written into the
+      # manifests for this build only, so no version-bump commit is needed.
       - name: Compute release version
         id: version
-        env:
-          BUMPED: ${{ steps.bump.outputs.content }}
         run: |
           LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          BUMPED=$(git-cliff --bumped-version)
           BUMPED="${BUMPED//[[:space:]]/}"
           if [ -z "$BUMPED" ] || [ "$BUMPED" = "$LATEST" ]; then
             # Nothing git-cliff counts as releasable (e.g. only chores): patch bump.
@@ -98,11 +97,14 @@ jobs:
       # by cliff.toml. Used as the GitHub release body.
       - name: Generate release notes
         id: release-notes
-        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4
-        with:
-          args: --unreleased --tag ${{ steps.version.outputs.tag }} --strip header
         env:
-          OUTPUT: RELEASE_NOTES.md
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          {
+            echo "content<<RELEASE_NOTES_EOF"
+            git-cliff --unreleased --tag "$TAG" --strip header
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
         with:
