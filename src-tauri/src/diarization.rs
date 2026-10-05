@@ -261,8 +261,9 @@ fn speaker_label(index: usize) -> String {
 
 /// Argmax each frame's powerset logits into per-speaker activity.
 fn decode_powerset(logits: &[f32]) -> Vec<[bool; 3]> {
-    logits
-        .chunks_exact(POWERSET.len())
+    let (frames, _) = logits.as_chunks::<{ POWERSET.len() }>();
+    frames
+        .iter()
         .map(|frame| {
             let best = frame
                 .iter()
