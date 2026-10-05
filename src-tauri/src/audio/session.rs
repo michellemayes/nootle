@@ -1,6 +1,6 @@
 use super::AudioChunk;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -31,6 +31,40 @@ impl RecordedClock {
     }
 }
 
+/// Live input levels (RMS of the latest poll), written by the capture thread
+/// and read by the UI's level meter so people can see audio is coming in.
+pub struct AudioLevels {
+    mic: AtomicU32,
+    /// NaN while system audio isn't captured, so the UI can tell "silent"
+    /// from "not captured".
+    system: AtomicU32,
+}
+
+impl Default for AudioLevels {
+    fn default() -> Self {
+        Self {
+            mic: AtomicU32::new(0f32.to_bits()),
+            system: AtomicU32::new(f32::NAN.to_bits()),
+        }
+    }
+}
+
+impl AudioLevels {
+    pub fn set(&self, mic: f32, system: Option<f32>) {
+        self.mic.store(mic.to_bits(), Ordering::Relaxed);
+        let system = system.unwrap_or(f32::NAN);
+        self.system.store(system.to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn mic(&self) -> f32 {
+        f32::from_bits(self.mic.load(Ordering::Relaxed))
+    }
+
+    pub fn system(&self) -> Option<f32> {
+        Some(f32::from_bits(self.system.load(Ordering::Relaxed))).filter(|v| !v.is_nan())
+    }
+}
+
 pub struct RecordingSession {
     meeting_id: String,
     is_active: Arc<AtomicBool>,
@@ -38,6 +72,7 @@ pub struct RecordingSession {
     /// so nothing is written or transcribed.
     is_paused: Arc<AtomicBool>,
     clock: Arc<Mutex<Clock>>,
+    levels: Arc<AudioLevels>,
     audio_path: PathBuf,
     /// Channel to send audio chunks for transcription
     audio_tx: Option<mpsc::Sender<AudioChunk>>,
@@ -65,6 +100,7 @@ impl RecordingSession {
                 paused_since: None,
                 paused_total: Duration::ZERO,
             })),
+            levels: Arc::default(),
             audio_path,
             audio_tx: Some(audio_tx),
             audio_rx: Some(audio_rx),
@@ -135,6 +171,11 @@ impl RecordingSession {
         self.is_paused.clone()
     }
 
+    /// Shared with the capture thread, which keeps it up to date.
+    pub fn levels(&self) -> Arc<AudioLevels> {
+        self.levels.clone()
+    }
+
     pub fn set_capture_handle(&mut self, handle: std::thread::JoinHandle<()>) {
         self.capture_handle = Some(handle);
     }
@@ -172,5 +213,15 @@ mod tests {
         session.set_paused(false);
         assert!(!session.is_paused());
         assert!(session.recorded() < Duration::from_millis(50));
+    }
+
+    #[test]
+    fn levels_report_missing_system_audio_as_none() {
+        let levels = AudioLevels::default();
+        assert_eq!(levels.system(), None);
+        levels.set(0.25, Some(0.5));
+        assert_eq!((levels.mic(), levels.system()), (0.25, Some(0.5)));
+        levels.set(0.1, None);
+        assert_eq!((levels.mic(), levels.system()), (0.1, None));
     }
 }

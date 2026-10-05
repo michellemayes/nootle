@@ -16,7 +16,9 @@ import { ScratchPad } from "@/components/ScratchPad";
 import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Kbd } from "@/components/Kbd";
-import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText, Pause, Play, ScanLine } from "lucide-react";
+import { AudioLevelMeter } from "@/components/AudioLevelMeter";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
+import { Square, ArrowLeft, ArrowDown, ChevronDown, ChevronRight, FileText, MicOff, Pause, Play, ScanLine } from "lucide-react";
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -28,6 +30,8 @@ function formatTime(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+const TRANSCRIPT_OPEN_KEY = "recordingTranscriptOpen";
+
 // Memoized so the once-a-second timer tick doesn't re-render every line.
 const LiveSegments = memo(function LiveSegments({
   segments,
@@ -35,7 +39,7 @@ const LiveSegments = memo(function LiveSegments({
   segments: TranscriptSegment[];
 }) {
   return segments.map((seg) => (
-    <div key={seg.id} className="text-xs">
+    <div key={seg.id} className="text-sm leading-relaxed">
       <span className="font-medium text-primary">{seg.speaker_label}:</span>{" "}
       <span className="text-foreground">{seg.text}</span>
     </div>
@@ -77,7 +81,10 @@ export function RecordingView() {
   const [hasStarted, setHasStarted] = useState(false);
   const [notes, setNotes] = useState("");
   const [stopping, setStopping] = useState(false);
-  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(
+    () => localStorage.getItem(TRANSCRIPT_OPEN_KEY) === "true",
+  );
+  const [silent, setSilent] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
@@ -188,10 +195,12 @@ export function RecordingView() {
   }, [saveDetails]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [segments]);
+    localStorage.setItem(TRANSCRIPT_OPEN_KEY, String(transcriptOpen));
+  }, [transcriptOpen]);
+
+  // Follow new lines while the reader is at the bottom; scrolling up to
+  // re-read pauses it and offers a way back.
+  const { following, sentinelRef, jumpToBottom } = useStickToBottom(scrollRef, segments);
 
   const handleStop = useCallback(async () => {
     if (stopping) return;
@@ -307,6 +316,12 @@ export function RecordingView() {
           {formatTime(elapsed)}
         </span>
 
+        <AudioLevelMeter
+          active={isRecording && !stopping}
+          paused={isPaused}
+          onSilenceChange={setSilent}
+        />
+
         {snapshotsEnabled && (
           <span
             className="flex items-center gap-1 text-xs text-muted-foreground"
@@ -346,6 +361,19 @@ export function RecordingView() {
         </Button>
       </div>
 
+      {silent && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-6 py-2 text-xs text-foreground"
+        >
+          <MicOff className="h-3.5 w-3.5 shrink-0 text-warning" />
+          <span>
+            Nootle hasn't heard anything for a while. Check that your microphone isn't muted and
+            that the right input is selected in macOS Sound settings.
+          </span>
+        </div>
+      )}
+
       {/* Notes — full width, takes remaining space */}
       <div className="flex-1 flex flex-col min-h-0">
         <textarea
@@ -363,7 +391,8 @@ export function RecordingView() {
       {/* Collapsible live transcript */}
       <div className="border-t">
         <button
-          onClick={() => setTranscriptOpen((v) => !v)}
+          onClick={() => setTranscriptOpen((open) => !open)}
+          aria-expanded={transcriptOpen}
           className="flex w-full items-center gap-2 px-6 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
         >
           {transcriptOpen ? (
@@ -380,8 +409,12 @@ export function RecordingView() {
         </button>
         <Collapsible open={transcriptOpen}>
           {transcriptOpen && (
-            <ScrollArea className="h-[200px] border-t">
-                <div ref={scrollRef} className="px-6 py-3 space-y-1.5">
+            <div className="relative">
+            <ScrollArea
+              className="h-[240px] border-t"
+              viewportRef={scrollRef}
+            >
+                <div role="log" aria-live="polite" aria-label="Live transcript" className="px-6 py-3 space-y-1.5">
                   {segments.length === 0 && transcriptionStatus?.available === false && (
                     <div className="text-xs text-muted-foreground italic">
                       <p>{transcriptionStatus.reason}</p>
@@ -404,8 +437,20 @@ export function RecordingView() {
                     </p>
                   )}
                   <LiveSegments segments={segments} />
+                  <div ref={sentinelRef} />
                 </div>
               </ScrollArea>
+              {!following && (
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  onClick={jumpToBottom}
+                  className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-md"
+                >
+                  <ArrowDown /> Jump to live
+                </Button>
+              )}
+            </div>
           )}
         </Collapsible>
       </div>

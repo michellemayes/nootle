@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
 import { Select } from "@/components/ui/select";
+import { SuggestedPrompts, LIBRARY_PROMPTS } from "@/components/SuggestedPrompts";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useGlobalChat } from "@/hooks/useGlobalChat";
@@ -46,21 +48,16 @@ export function GlobalChatPanel() {
   const [selectedDatePreset, setSelectedDatePreset] = useState(3); // "All time"
   const [embedding, setEmbedding] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { sentinelRef } = useStickToBottom(scrollRef, messages);
 
   // Dragging state – use right/bottom offsets so framer-motion's transform doesn't conflict
   const [offset, setOffset] = useState({ right: 24, bottom: 24 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0, right: 0, bottom: 0 });
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
 
-  const handleSend = async () => {
-    if (!input.trim() || !selectedProvider || !selectedModel) return;
-    const msg = input;
+  const handleSend = async (msg = input) => {
+    if (!msg.trim() || !selectedProvider || !selectedModel) return;
     setInput("");
     await sendMessage(msg, selectedProvider, selectedModel);
   };
@@ -249,11 +246,8 @@ export function GlobalChatPanel() {
             </div>
 
             {/* Messages */}
-            <ScrollArea className="flex-1">
-              <div
-                ref={scrollRef}
-                className="flex flex-col gap-3 p-4"
-              >
+            <ScrollArea className="flex-1" viewportRef={scrollRef}>
+              <div className="flex flex-col gap-3 p-4">
                 {modelNotReady && (
                   <p className="rounded-lg bg-muted p-4 text-center text-sm text-muted-foreground">
                     Download the search model in Settings → Models to search
@@ -262,9 +256,12 @@ export function GlobalChatPanel() {
                 )}
 
                 {messages.length === 0 && !modelNotReady && (
-                  <p className="text-center text-sm text-muted-foreground py-8">
-                    Ask a question across all of your meetings.
-                  </p>
+                  <SuggestedPrompts
+                    intro="Ask a question across all of your meetings."
+                    prompts={LIBRARY_PROMPTS}
+                    onPick={(prompt) => handleSend(prompt)}
+                    disabled={loading}
+                  />
                 )}
 
                 {messages.map((msg, i) => (
@@ -298,6 +295,7 @@ export function GlobalChatPanel() {
                     {error}
                   </p>
                 )}
+                <div ref={sentinelRef} />
               </div>
             </ScrollArea>
 
@@ -309,7 +307,7 @@ export function GlobalChatPanel() {
               placeholder="Ask about your meetings…"
               value={input}
               onChange={setInput}
-              onSend={handleSend}
+              onSend={() => handleSend()}
               disabled={loading || !!modelNotReady}
             />
 

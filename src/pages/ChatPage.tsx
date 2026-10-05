@@ -4,7 +4,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SuggestedPrompts, LIBRARY_PROMPTS } from "@/components/SuggestedPrompts";
 import { EmptyState } from "@/components/EmptyState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
@@ -38,6 +40,7 @@ export function ChatPage() {
   const [dateToValue, setDateToValue] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { sentinelRef } = useStickToBottom(scrollRef, dbMessages);
 
   // Resize state for conversation list
   const [sidebarWidth, setSidebarWidth] = useState(256);
@@ -50,11 +53,6 @@ export function ChatPage() {
     }
   }, [conversations, activeId]);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [dbMessages]);
 
   const getDateFrom = () => dateFromValue ? new Date(dateFromValue).toISOString() : null;
   const getDateTo = () => dateToValue ? new Date(dateToValue + "T23:59:59").toISOString() : null;
@@ -284,10 +282,13 @@ export function ChatPage() {
           <>
             <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
               {dbMessages.length === 0 && !loading && (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-sm text-muted-foreground">
-                    Ask a question across all of your meetings.
-                  </p>
+                <div className="mx-auto flex h-full w-full max-w-md">
+                  <SuggestedPrompts
+                    intro="Ask a question across all of your meetings."
+                    prompts={LIBRARY_PROMPTS}
+                    onPick={(prompt) => handleSend(prompt)}
+                    disabled={!selectedProvider || !selectedModel}
+                  />
                 </div>
               )}
               {dbMessages.map((msg) => {
@@ -317,6 +318,7 @@ export function ChatPage() {
               {sendError && (
                 <p className="text-xs text-destructive text-center">{sendError}</p>
               )}
+              <div ref={sentinelRef} />
             </div>
 
             {/* Input bar */}

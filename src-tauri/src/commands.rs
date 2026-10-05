@@ -590,6 +590,7 @@ pub async fn start_recording(
     {
         let is_active = session.is_active_flag();
         let is_paused = session.is_paused_flag();
+        let levels = session.levels();
         let audio_path = session.audio_path().to_path_buf();
 
         let handle = std::thread::spawn(move || {
@@ -614,6 +615,7 @@ pub async fn start_recording(
                 audio_tx,
                 is_active,
                 is_paused,
+                levels,
                 audio_path,
                 denoise_engine.as_mut(),
             ) {
@@ -1094,13 +1096,20 @@ pub struct RecordingStatus {
     pub paused: bool,
     /// Recorded time so far, not counting pauses.
     pub elapsed_ms: u64,
+    /// Latest microphone input level (RMS, 0–1), for the live level meter.
+    pub mic_level: f32,
+    /// Latest system audio level, or `None` when it isn't being captured.
+    pub system_level: Option<f32>,
 }
 
 fn recording_status_of(session: &RecordingSession) -> RecordingStatus {
+    let levels = session.levels();
     RecordingStatus {
         meeting_id: session.meeting_id().to_string(),
         paused: session.is_paused(),
         elapsed_ms: session.recorded().as_millis() as u64,
+        mic_level: levels.mic(),
+        system_level: levels.system(),
     }
 }
 
