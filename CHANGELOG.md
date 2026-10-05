@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.25] - 2026-10-05
+
+### Features
+
+- **diarization:** Working speaker identification for Zoom and other calls (#154) ([a6aa02e](https://github.com/michellemayes/nootle/commit/a6aa02e9027b959bd34fa783560c020e0a56dafd))
+
 ## [0.1.24] - 2026-10-05
 
 ### Performance
