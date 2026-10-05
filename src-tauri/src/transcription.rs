@@ -72,7 +72,7 @@ pub struct TranscriptionEngine {
 
 /// Build an ONNX session, preferring CoreML (when `try_coreml`) but falling
 /// back to CPU so a CoreML failure only costs acceleration, not transcription.
-fn build_session(path: &Path, label: &str, try_coreml: bool) -> anyhow::Result<Session> {
+pub(crate) fn build_session(path: &Path, label: &str, try_coreml: bool) -> anyhow::Result<Session> {
     if try_coreml {
         let coreml = Session::builder()
             .and_then(|b| {

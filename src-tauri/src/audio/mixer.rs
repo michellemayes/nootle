@@ -22,7 +22,7 @@ impl AudioMixer {
     /// Mix system and mic samples. Both buffers should be the same length.
     /// Returns mixed output.
     pub fn mix(&self, system: &[f32], mic: &[f32]) -> Vec<f32> {
-        let mic_rms = Self::rms(mic);
+        let mic_rms = rms(mic);
         let duck = if mic_rms > self.duck_threshold {
             self.duck_ratio
         } else {
@@ -38,14 +38,15 @@ impl AudioMixer {
             })
             .collect()
     }
+}
 
-    fn rms(samples: &[f32]) -> f32 {
-        if samples.is_empty() {
-            return 0.0;
-        }
-        let sum: f32 = samples.iter().map(|s| s * s).sum();
-        (sum / samples.len() as f32).sqrt()
+/// Root-mean-square level of `samples` (0 when empty).
+pub fn rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
     }
+    let sum: f32 = samples.iter().map(|s| s * s).sum();
+    (sum / samples.len() as f32).sqrt()
 }
 
 #[cfg(test)]

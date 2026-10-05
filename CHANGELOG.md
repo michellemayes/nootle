@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.24] - 2026-10-05
+
+### Performance
+
+- Make the app and post-meeting processing snappier (#156) ([024b717](https://github.com/michellemayes/nootle/commit/024b71797ccd9faddf11ce8a8dc9deb53baf5a71))
+
 ## [0.1.23] - 2026-10-05
 
 ### Features

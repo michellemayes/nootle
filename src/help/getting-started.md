@@ -51,7 +51,6 @@ Open any meeting from the library to see:
 - **Transcript** — the full text with speaker labels and timestamps. Click any segment to jump to that point.
 - **Summary** — click **Generate Summary** to create an AI-powered summary using your configured LLM provider. You can customize the summary style under **Prompts**.
 - **Chat** — ask follow-up questions about the meeting. For example: "What action items were discussed?" or "Summarize what Alice said about the budget."
-- **Speaker names** — click the people icon above the transcript to rename "Speaker 1" to a real name. The name applies across the whole meeting, including analytics, chat, exports, and summaries you generate afterwards. Give two speakers the same name to merge them.
 - **Export** — click **Export** at the top of the meeting to save it as Markdown (summaries, action items, notes, and transcript), a plain-text transcript, or SRT / WebVTT subtitles.
 
 ## Insights

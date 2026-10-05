@@ -10,6 +10,28 @@ pub fn validate_audio_devices() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// ~2 s of 16 kHz audio for the transcription pipeline. The mic and system
+/// streams ride along with the mix so speakers can be told apart by source.
+pub struct AudioChunk {
+    /// What gets transcribed (and written to the WAV): mic + system, denoised.
+    pub mixed: Vec<f32>,
+    pub mic: Vec<f32>,
+    /// Empty when system audio isn't being captured.
+    pub system: Vec<f32>,
+}
+
+impl AudioChunk {
+    /// Split off the first `n` samples of every stream.
+    fn take_front(&mut self, n: usize) -> AudioChunk {
+        let take = |v: &mut Vec<f32>| v.drain(..n.min(v.len())).collect();
+        AudioChunk {
+            mixed: take(&mut self.mixed),
+            mic: take(&mut self.mic),
+            system: take(&mut self.system),
+        }
+    }
+}
+
 /// Runs on a dedicated std::thread. Reads audio from hardware, resamples to
 /// 16 kHz, mixes mic + system audio, writes a WAV file, and feeds chunks to
 /// the transcription pipeline via `audio_tx`.
@@ -18,7 +40,7 @@ pub fn validate_audio_devices() -> anyhow::Result<()> {
 /// concurrently written to. Currently `RecordingSession` creates the path but
 /// does not open the file — only this function writes to it.
 pub fn run_audio_capture(
-    audio_tx: tokio::sync::mpsc::Sender<Vec<f32>>,
+    audio_tx: tokio::sync::mpsc::Sender<AudioChunk>,
     is_active: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
     audio_path: std::path::PathBuf,
@@ -59,7 +81,11 @@ pub fn run_audio_capture(
     let mut mic_buf = vec![0.0f32; mic_buf_len];
     let mut sys_buf = vec![0.0f32; sys_buf_len];
 
-    let mut accumulator: Vec<f32> = Vec::with_capacity(SEND_SAMPLES);
+    let mut accumulator = AudioChunk {
+        mixed: Vec::with_capacity(SEND_SAMPLES),
+        mic: Vec::with_capacity(SEND_SAMPLES),
+        system: Vec::new(),
+    };
 
     let result = capture_loop(
         &is_active,
@@ -100,8 +126,8 @@ fn capture_loop(
     writer: &mut AudioWriter,
     mic_buf: &mut [f32],
     sys_buf: &mut [f32],
-    accumulator: &mut Vec<f32>,
-    audio_tx: &tokio::sync::mpsc::Sender<Vec<f32>>,
+    accumulator: &mut AudioChunk,
+    audio_tx: &tokio::sync::mpsc::Sender<AudioChunk>,
     mut denoise: Option<&mut crate::denoise::DenoiseEngine>,
 ) -> anyhow::Result<()> {
     const POLL_MS: u64 = 50;
@@ -135,16 +161,17 @@ fn capture_loop(
             vec![]
         };
 
-        // Mix (or pass through mic-only)
-        let mut mixed = if sys_16k.is_empty() {
-            mic_16k
-        } else {
+        // Mix (or pass through mic-only), keeping both sources aligned.
+        let (mic_16k, sys_16k, mut mixed) = if sys_audio.is_some() {
             let len = mic_16k.len().max(sys_16k.len());
-            let mut mic_padded = mic_16k;
-            let mut sys_padded = sys_16k;
+            let (mut mic_padded, mut sys_padded) = (mic_16k, sys_16k);
             mic_padded.resize(len, 0.0);
             sys_padded.resize(len, 0.0);
-            mixer.mix(&sys_padded, &mic_padded)
+            let mixed = mixer.mix(&sys_padded, &mic_padded);
+            (mic_padded, sys_padded, mixed)
+        } else {
+            let mixed = mic_16k.clone();
+            (mic_16k, sys_16k, mixed)
         };
 
         if !mixed.is_empty() {
@@ -154,12 +181,14 @@ fn capture_loop(
                 }
             }
             writer.write_samples(&mixed)?;
-            accumulator.extend_from_slice(&mixed);
+            accumulator.mixed.extend_from_slice(&mixed);
+            accumulator.mic.extend_from_slice(&mic_16k);
+            accumulator.system.extend_from_slice(&sys_16k);
         }
 
         // Send consistent-sized chunks to transcription pipeline
-        while accumulator.len() >= SEND_SAMPLES {
-            let chunk: Vec<f32> = accumulator.drain(..SEND_SAMPLES).collect();
+        while accumulator.mixed.len() >= SEND_SAMPLES {
+            let chunk = accumulator.take_front(SEND_SAMPLES);
             if audio_tx.blocking_send(chunk).is_err() {
                 return Ok(()); // receiver dropped
             }
@@ -169,8 +198,8 @@ fn capture_loop(
     }
 
     // Flush remaining samples
-    if !accumulator.is_empty() {
-        let chunk = std::mem::take(accumulator);
+    if !accumulator.mixed.is_empty() {
+        let chunk = accumulator.take_front(accumulator.mixed.len());
         let _ = audio_tx.blocking_send(chunk);
     }
 

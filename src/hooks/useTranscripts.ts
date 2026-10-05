@@ -48,7 +48,21 @@ export function useTranscript(meetingId: string) {
     return () => { unlisten.then((fn) => fn()); };
   }, [meetingId]);
 
-  return { segments, loading, error, refresh };
+
+  /** Rename (or, onto an existing name, merge) a speaker across the meeting. */
+  const renameSpeaker = useCallback(
+    async (from: string, to: string) => {
+      const result = await invoke<TranscriptSegment[]>("rename_speaker", {
+        meetingId,
+        from,
+        to,
+      });
+      setSegments(result);
+    },
+    [meetingId],
+  );
+
+  return { segments, loading, error, refresh, renameSpeaker };
 }
 
 export interface TranscriptSearchResult {

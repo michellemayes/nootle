@@ -84,6 +84,16 @@ pub fn chunk_segments(
     chunks
 }
 
+/// Rebuild a meeting's search index after its transcript changed.
+pub fn reindex_meeting(
+    db: &Database,
+    engine: &mut EmbeddingEngine,
+    meeting_id: &str,
+) -> anyhow::Result<usize> {
+    db.delete_meeting_chunks(meeting_id)?;
+    embed_meeting(db, engine, meeting_id)
+}
+
 pub fn embed_meeting(
     db: &Database,
     engine: &mut EmbeddingEngine,

@@ -85,9 +85,9 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 
 - **Record everything** — capture microphone and system audio simultaneously
 - **Live transcription** — speech-to-text powered by Parakeet via ONNX Runtime
-- **Speaker identification** — know who said what with automatic diarization
+- **Speaker identification** — know who said what with automatic diarization (download the **Speaker Diarization** model in Settings). On a call (Zoom, Meet, Teams, and the rest), your microphone is labelled **You** and the call's audio is split into **Speaker 1**, **Speaker 2**, and so on. In an in-person meeting, everyone at the mic is told apart the same way. Click a speaker's name in the transcript to rename them everywhere in that meeting. Renaming one speaker to another's name merges the two
 - **Pause and resume** — go off the record mid-meeting; nothing is recorded or transcribed while paused, and the timer counts only recorded time
-- **Speaker names** — rename "Speaker 1" to a real name from the transcript's people icon. The name carries through analytics, chat, exports, and new summaries, and giving two speakers the same name merges them
+- **Plays well with Zoom's audio device** — if `ZoomAudioDevice` (or a similar virtual device, like Teams Audio or BlackHole) has become your default input, Nootle records from your real microphone instead
 - **Auto-learning dictionary** — double-click any transcript line to fix a misheard name or term. Nootle learns the fix ("noodle" → "Nootle"), corrects the rest of that meeting, applies it to every future recording, and gives your dictionary to the AI as a spelling reference for summaries and chat. Manage words, or turn learning off, in Settings → Dictionary
 - **Import recordings** — transcribe an audio or video file you already have (voice memos, Zoom cloud recordings, MP3, M4A, WAV, FLAC, MP4, MOV, and more). It goes through the same local pipeline as a live recording: transcript, speakers, title, summary, and insights
 - **Export** — save any meeting as Markdown (summaries, action items, notes, and transcript), a plain-text transcript, or SRT / WebVTT subtitles

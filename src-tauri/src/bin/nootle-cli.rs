@@ -497,6 +497,10 @@ fn run_command(
                 }
             }
             MeetingsAction::RenameSpeaker { id, from, to } => {
+                let to = to.trim();
+                if to.is_empty() {
+                    print_error("Speaker name can't be empty");
+                }
                 let changed = db.rename_speaker(id, from, to)?;
                 print_json(&serde_json::json!({ "renamed_segments": changed }), pretty);
             }
