@@ -1,19 +1,10 @@
-import { useState } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { LLMSelectionProvider } from "@/contexts/LLMSelectionContext";
 import { Sidebar } from "@/components/Sidebar";
-import { Onboarding } from "@/components/Onboarding";
 import { MeetingLibrary } from "@/pages/MeetingLibrary";
-import { RecordingView } from "@/pages/RecordingView";
-import { MeetingDetail } from "@/pages/MeetingDetail";
-import { TemplatesPage } from "@/pages/Templates";
-
-import { SettingsPage } from "@/pages/Settings";
-import { HelpPage } from "@/pages/Help";
 import { GlobalChatPanel } from "@/components/GlobalChatPanel";
-import { InsightsDashboard } from "@/pages/InsightsDashboard";
-import { ChatPage } from "@/pages/ChatPage";
 import { useOpenRecordingEvent } from "@/hooks/useOpenRecordingEvent";
 import { CompactModeProvider } from "@/contexts/CompactModeContext";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
@@ -21,16 +12,59 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { RecordingCelebration } from "@/components/RecordingCelebration";
 import { UpdateBanner } from "@/components/UpdateBanner";
 
-function Layout({ children }: { children: React.ReactNode }) {
+// The library is the first screen, so it ships in the main bundle. Every
+// other page loads on demand; the ones usually opened next from the library
+// are prefetched once the app is idle so their first visit doesn't wait.
+const pageLoaders = {
+  recording: () => import("@/pages/RecordingView").then((m) => ({ default: m.RecordingView })),
+  meeting: () => import("@/pages/MeetingDetail").then((m) => ({ default: m.MeetingDetail })),
+  insights: () => import("@/pages/InsightsDashboard").then((m) => ({ default: m.InsightsDashboard })),
+  chat: () => import("@/pages/ChatPage").then((m) => ({ default: m.ChatPage })),
+  templates: () => import("@/pages/Templates").then((m) => ({ default: m.TemplatesPage })),
+  settings: () => import("@/pages/Settings").then((m) => ({ default: m.SettingsPage })),
+  help: () => import("@/pages/Help").then((m) => ({ default: m.HelpPage })),
+};
+const RecordingView = lazy(pageLoaders.recording);
+const MeetingDetail = lazy(pageLoaders.meeting);
+const InsightsDashboard = lazy(pageLoaders.insights);
+const ChatPage = lazy(pageLoaders.chat);
+const TemplatesPage = lazy(pageLoaders.templates);
+const SettingsPage = lazy(pageLoaders.settings);
+const HelpPage = lazy(pageLoaders.help);
+const Onboarding = lazy(() =>
+  import("@/components/Onboarding").then((m) => ({ default: m.Onboarding })),
+);
+
+function usePrefetchPages() {
+  useEffect(() => {
+    const prefetch = () => {
+      pageLoaders.meeting();
+      pageLoaders.recording();
+    };
+    if ("requestIdleCallback" in window) {
+      const handle = window.requestIdleCallback(prefetch, { timeout: 2000 });
+      return () => window.cancelIdleCallback(handle);
+    }
+    const timer = setTimeout(prefetch, 500);
+    return () => clearTimeout(timer);
+  }, []);
+}
+
+// One shared layout route, so the sidebar, chat panel and palette stay
+// mounted across navigation instead of remounting (and refetching) per page.
+function Layout() {
   useOpenRecordingEvent();
   useGlobalShortcuts();
+  usePrefetchPages();
 
   return (
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar />
       <main className="relative flex flex-1 flex-col overflow-hidden pt-8">
         <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-10 h-8" />
-        {children}
+        <Suspense fallback={null}>
+          <Outlet />
+        </Suspense>
       </main>
       <GlobalChatPanel />
       <CommandPalette />
@@ -48,7 +82,9 @@ function App() {
   if (!onboarded) {
     return (
       <ThemeProvider>
-        <Onboarding onComplete={() => setOnboarded(true)} />
+        <Suspense fallback={null}>
+          <Onboarding onComplete={() => setOnboarded(true)} />
+        </Suspense>
       </ThemeProvider>
     );
   }
@@ -59,70 +95,16 @@ function App() {
       <LLMSelectionProvider>
       <BrowserRouter>
         <Routes>
-          <Route
-            path="/"
-            element={
-              <Layout>
-                <MeetingLibrary />
-              </Layout>
-            }
-          />
-          <Route
-            path="/insights"
-            element={
-              <Layout>
-                <InsightsDashboard />
-              </Layout>
-            }
-          />
-          <Route
-            path="/chat"
-            element={
-              <Layout>
-                <ChatPage />
-              </Layout>
-            }
-          />
-          <Route
-            path="/recording"
-            element={
-              <Layout>
-                <RecordingView />
-              </Layout>
-            }
-          />
-          <Route
-            path="/meeting/:id"
-            element={
-              <Layout>
-                <MeetingDetail />
-              </Layout>
-            }
-          />
-          <Route
-            path="/templates"
-            element={
-              <Layout>
-                <TemplatesPage />
-              </Layout>
-            }
-          />
-<Route
-            path="/settings"
-            element={
-              <Layout>
-                <SettingsPage />
-              </Layout>
-            }
-          />
-          <Route
-            path="/help"
-            element={
-              <Layout>
-                <HelpPage />
-              </Layout>
-            }
-          />
+          <Route element={<Layout />}>
+            <Route path="/" element={<MeetingLibrary />} />
+            <Route path="/insights" element={<InsightsDashboard />} />
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/recording" element={<RecordingView />} />
+            <Route path="/meeting/:id" element={<MeetingDetail />} />
+            <Route path="/templates" element={<TemplatesPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/help" element={<HelpPage />} />
+          </Route>
         </Routes>
       </BrowserRouter>
       </LLMSelectionProvider>

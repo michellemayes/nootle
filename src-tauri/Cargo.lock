@@ -2761,7 +2761,6 @@ version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
  "block2",
  "chrono",
  "cidre",

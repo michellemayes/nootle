@@ -1,6 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { TranscriptSegment } from "@/types";
+
+/** Append segments not already in `base`, keeping `base` if nothing is new. */
+export function mergeSegments(
+  base: TranscriptSegment[],
+  incoming: TranscriptSegment[],
+): TranscriptSegment[] {
+  const seen = new Set(base.map((seg) => seg.id));
+  const fresh = incoming.filter((seg) => !seen.has(seg.id));
+  return fresh.length ? [...base, ...fresh] : base;
+}
 
 export function useTranscript(meetingId: string) {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
@@ -9,7 +20,6 @@ export function useTranscript(meetingId: string) {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<TranscriptSegment[]>("get_transcript", {
         meetingId,
@@ -23,8 +33,20 @@ export function useTranscript(meetingId: string) {
   }, [meetingId]);
 
   useEffect(() => {
+    setLoading(true);
     refresh();
   }, [refresh]);
+
+  // Segments still being transcribed after a recording stops stream in live.
+  useEffect(() => {
+    const unlisten = listen<TranscriptSegment[]>("transcript-update", (event) => {
+      const incoming = event.payload.filter((seg) => seg.meeting_id === meetingId);
+      if (incoming.length === 0) return;
+      setSegments((prev) => mergeSegments(prev, incoming));
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [meetingId]);
+
 
   /** Rename (or, onto an existing name, merge) a speaker across the meeting. */
   const renameSpeaker = useCallback(

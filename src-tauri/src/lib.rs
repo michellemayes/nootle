@@ -86,18 +86,18 @@ pub fn run() {
 
     let download_manager: DownloadManagerState = Arc::new(TokioMutex::new(DownloadManager::new()));
 
-    let embedding_engine = if crate::embedding::EmbeddingEngine::is_available() {
-        match crate::embedding::EmbeddingEngine::load() {
-            Ok(e) => Some(e),
-            Err(err) => {
-                tracing::warn!("Failed to load embedding engine: {err}");
-                None
+    // Loading the embedding model (CoreML compile included) can take seconds,
+    // so it happens in the background instead of delaying the window.
+    let embedding_state: EmbeddingState = Arc::new(TokioMutex::new(None));
+    if crate::embedding::EmbeddingEngine::is_available() {
+        let embedding_state = embedding_state.clone();
+        std::thread::spawn(move || match crate::embedding::EmbeddingEngine::load() {
+            Ok(engine) => {
+                embedding_state.blocking_lock().get_or_insert(engine);
             }
-        }
-    } else {
-        None
-    };
-    let embedding_state: EmbeddingState = Arc::new(TokioMutex::new(embedding_engine));
+            Err(err) => tracing::warn!("Failed to load embedding engine: {err}"),
+        });
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -272,7 +272,6 @@ pub fn run() {
             commands::stop_recording,
             commands::is_recording,
             commands::current_recording,
-            commands::get_audio_data,
             commands::store_api_key,
             commands::has_api_key,
             commands::delete_api_key,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { memo, useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
 import { useTemplates } from "@/hooks/useTemplates";
+import { mergeSegments } from "@/hooks/useTranscripts";
 import type { TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -25,6 +26,20 @@ function formatTime(seconds: number): string {
   }
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
+
+// Memoized so the once-a-second timer tick doesn't re-render every line.
+const LiveSegments = memo(function LiveSegments({
+  segments,
+}: {
+  segments: TranscriptSegment[];
+}) {
+  return segments.map((seg) => (
+    <div key={seg.id} className="text-xs">
+      <span className="font-medium text-primary">{seg.speaker_label}:</span>{" "}
+      <span className="text-foreground">{seg.text}</span>
+    </div>
+  ));
+});
 
 interface TranscriptionStatus {
   available: boolean;
@@ -50,12 +65,12 @@ export function RecordingView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
 
-  // Listen for transcript updates
+  // The backend sends only the segments from each new audio chunk.
   useEffect(() => {
     const unlisten = listen<TranscriptSegment[]>(
       "transcript-update",
       (event) => {
-        setSegments(event.payload);
+        setSegments((prev) => mergeSegments(prev, event.payload));
       },
     );
     return () => {
@@ -93,6 +108,10 @@ export function RecordingView() {
         if (live) {
           setTitle(live.title);
           setSelectedTemplateId(live.template_id ?? "");
+          // Updates only carry new segments, so load what came before.
+          invoke<TranscriptSegment[]>("get_transcript", { meetingId: live.id })
+            .then((existing) => setSegments((prev) => mergeSegments(existing, prev)))
+            .catch(() => {});
           return;
         }
         await startRecording(
@@ -343,15 +362,7 @@ export function RecordingView() {
                       Listening. The transcript appears here as people speak.
                     </p>
                   )}
-                  {segments.length > 0 &&
-                    segments.map((seg) => (
-                      <div key={seg.id} className="text-xs">
-                        <span className="font-medium text-primary">
-                          {seg.speaker_label}:
-                        </span>{" "}
-                        <span className="text-foreground">{seg.text}</span>
-                      </div>
-                    ))}
+                  <LiveSegments segments={segments} />
                 </div>
               </ScrollArea>
           )}

@@ -27,8 +27,7 @@ import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
 import { useScratchPad } from "@/hooks/useScratchPad";
 import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment } from "@/types";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { LabelEditor } from "@/components/LabelEditor";
@@ -167,6 +166,60 @@ function SegmentText({
 function formatPlayerTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return "00:00";
   return formatMs(seconds * 1000);
+}
+
+/**
+ * Progress bar and clock. Owns the playback position so `timeupdate`
+ * (several times a second) re-renders only this, not the meeting page.
+ */
+function PlayerProgress({
+  audio,
+  showBar,
+}: {
+  audio: HTMLAudioElement | null;
+  showBar: boolean;
+}) {
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    if (!audio) return;
+    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onDuration = () => setDuration(audio.duration);
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("loadedmetadata", onDuration);
+    return () => {
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("loadedmetadata", onDuration);
+    };
+  }, [audio]);
+
+  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!audio || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    audio.currentTime = ratio * duration;
+  };
+
+  return (
+    <>
+      {showBar && (
+        <div className="flex-1 cursor-pointer" onClick={seek}>
+          <div className="h-1.5 rounded-full bg-muted">
+            <div
+              className="h-1.5 rounded-full bg-primary transition-[width] duration-150"
+              style={{
+                width: duration > 0 ? `${(currentTime / duration) * 100}%` : "0%",
+              }}
+            />
+          </div>
+        </div>
+      )}
+      <span className="text-xs font-mono text-muted-foreground tabular-nums">
+        {formatPlayerTime(currentTime)} / {formatPlayerTime(duration)}
+      </span>
+    </>
+  );
 }
 
 function ActionItemRow({
@@ -878,11 +931,8 @@ export function MeetingDetail() {
   const audioRef = useCallback((node: HTMLAudioElement | null) => {
     setAudioElement(node);
   }, []);
-  const [audioSrc, setAudioSrc] = useState<string | null>(null);
-  const [audioLoading, setAudioLoading] = useState(false);
+  const [failedAudioSrc, setFailedAudioSrc] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
 
   useEffect(() => {
     if (templates.length > 0 && !selectedTemplate) {
@@ -906,14 +956,6 @@ export function MeetingDetail() {
     const updated = await getMeetingLabels(meetingId);
     setMeetingLabels(updated);
   }, [removeMeetingLabel, getMeetingLabels]);
-
-  // Listen for auto-generated title updates from the backend
-  useEffect(() => {
-    const unlisten = listen("meeting-updated", () => {
-      refreshMeeting();
-    });
-    return () => { unlisten.then((fn) => fn()); };
-  }, [refreshMeeting]);
 
   const handleTitleSave = useCallback(async () => {
     if (!meeting || !titleDraft.trim() || titleDraft.trim() === meeting.title) {
@@ -940,34 +982,21 @@ export function MeetingDetail() {
     }
   }, [speakerEdit, segments, renameSpeaker]);
 
-  // Load audio data
-  useEffect(() => {
-    if (!id || !meeting?.audio_path) return;
-    setAudioLoading(true);
-    invoke<string | null>("get_audio_data", { meetingId: id })
-      .then((base64) => {
-        if (base64) {
-          setAudioSrc(`data:audio/wav;base64,${base64}`);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setAudioLoading(false));
-  }, [id, meeting?.audio_path]);
+  // Stream the recording straight from disk; the webview fetches ranges on
+  // demand instead of the whole WAV crossing IPC as base64.
+  const audioSrc = meeting?.audio_path ? convertFileSrc(meeting.audio_path) : null;
+  const audioMissing = audioSrc !== null && failedAudioSrc === audioSrc;
 
-  // Audio time update
   useEffect(() => {
     const audio = audioElement;
     if (!audio) return;
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const onDuration = () => setDuration(audio.duration);
     const onEnded = () => setIsPlaying(false);
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("loadedmetadata", onDuration);
+    const onError = () => setFailedAudioSrc(audio.src);
     audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", onError);
     return () => {
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      audio.removeEventListener("loadedmetadata", onDuration);
       audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", onError);
     };
   }, [audioElement]);
 
@@ -986,14 +1015,6 @@ export function MeetingDetail() {
       }
     }
   }, [isPlaying, audioElement]);
-
-  const seekAudio = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const audio = audioElement;
-    if (!audio || !duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    audio.currentTime = ratio * duration;
-  }, [duration, audioElement]);
 
   const seekToMs = useCallback(async (ms: number) => {
     const audio = audioElement;
@@ -1036,6 +1057,10 @@ export function MeetingDetail() {
   // summarizes on stop; this covers meetings it skipped (older recordings,
   // a provider added later), once per meeting visit.
   const autoGeneratedForRef = useRef<string | null>(null);
+  // While the backend is still processing, its own summary arrives with the
+  // status change, so mark this visit handled rather than race it.
+  const processing = meeting?.status === "transcribing";
+  if (processing && id) autoGeneratedForRef.current = id;
   useEffect(() => {
     if (
       !id ||
@@ -1413,10 +1438,10 @@ export function MeetingDetail() {
               <ScrollArea className="flex-1">
                 {summaries.length === 0 ? (
                   <EmptyState
-                    icon={generating ? Sparkles : FileText}
+                    icon={generating || processing ? Sparkles : FileText}
                     size="panel"
                     description={
-                      generating
+                      generating || processing
                         ? "Generating summary…"
                         : "No summaries yet. Pick a template above and generate one."
                     }
@@ -1557,7 +1582,7 @@ export function MeetingDetail() {
           <Button
             variant="ghost"
             size="icon-sm"
-            disabled={!audioSrc || audioLoading}
+            disabled={!audioSrc || audioMissing}
             onClick={togglePlayback}
             aria-label={isPlaying ? "Pause" : "Play"}
           >
@@ -1567,26 +1592,9 @@ export function MeetingDetail() {
               <Play className="h-4 w-4" />
             )}
           </Button>
-          {!isCompact && (
-          <div
-            className="flex-1 cursor-pointer"
-            onClick={audioSrc ? seekAudio : undefined}
-          >
-            <div className="h-1.5 rounded-full bg-muted">
-              <div
-                className="h-1.5 rounded-full bg-primary transition-[width] duration-150"
-                style={{
-                  width: duration > 0 ? `${(currentTime / duration) * 100}%` : "0%",
-                }}
-              />
-            </div>
-          </div>
-          )}
-          <span className="text-xs font-mono text-muted-foreground tabular-nums">
-            {formatPlayerTime(currentTime)} / {formatPlayerTime(duration)}
-          </span>
+          <PlayerProgress audio={audioElement} showBar={!isCompact} />
         </div>
-        {!audioSrc && !audioLoading && meeting?.audio_path && (
+        {audioMissing && (
           <p className="text-xs text-muted-foreground mt-1">Audio file not found</p>
         )}
       </div>

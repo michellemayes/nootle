@@ -13,7 +13,6 @@ export function useLabels() {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<Label[]>("list_labels");
       setLabels(result);
