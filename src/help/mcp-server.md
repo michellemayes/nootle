@@ -27,9 +27,11 @@ MCP (Model Context Protocol) is an open standard that lets AI assistants connect
 
 ### Meetings
 
-- **list_meetings** — list recorded meetings, optionally filtered by title (`search`)
-- **get_meeting** — a meeting's details, full transcript, and summaries (`id`)
+- **list_meetings** — list recorded meetings, newest first, optionally filtered by title (`search`)
+- **get_meeting** — a meeting's details, notes, summaries, and transcript (`id`)
 - **search_transcripts** — full-text search across every transcript (`query`)
+
+Results come in pages so they fit in Claude's context: 50 meetings or search matches, or 300 transcript lines, at a time. Claude fetches the next page when it needs more.
 
 Example: Ask Claude *"Find every time someone mentioned the Q3 roadmap across all my meetings."*
 

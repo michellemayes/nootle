@@ -17,18 +17,27 @@ pub struct ListMeetingsParams {
     /// Optional search query to filter meetings by title
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search: Option<String>,
+    /// Meetings to skip, from a previous page's `next_offset`
+    #[serde(default)]
+    pub offset: usize,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GetMeetingParams {
     /// The meeting ID to retrieve
     pub id: String,
+    /// Transcript lines to skip, from a previous call's `transcript.next_offset`
+    #[serde(default)]
+    pub transcript_offset: usize,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SearchTranscriptsParams {
     /// Full-text search query to match against transcript segments
     pub query: String,
+    /// Matches to skip, from a previous page's `next_offset`
+    #[serde(default)]
+    pub offset: usize,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -109,12 +118,40 @@ fn respond<T: serde::Serialize>(
 ) -> Result<CallToolResult, McpError> {
     Ok(match result {
         Ok(value) => {
-            let json = serde_json::to_string_pretty(&value)
+            // Compact, since every byte counts against the client's output limit.
+            let json = serde_json::to_string(&value)
                 .map_err(|e| McpError::internal_error(format!("Serialization error: {e}"), None))?;
             CallToolResult::success(vec![ContentBlock::text(json)])
         }
         Err(e) => CallToolResult::error(vec![ContentBlock::text(e.to_string())]),
     })
+}
+
+/// Items per page for list and search tools, which keeps a long meeting history
+/// under Claude Code's MCP output limit (25k tokens by default).
+const PAGE_SIZE: usize = 50;
+/// Transcript lines per `get_meeting` call, roughly 10k tokens.
+const TRANSCRIPT_PAGE_SIZE: usize = 300;
+
+/// The page of `items` starting at `offset`, with the total and, when more
+/// remain, the offset of the next page.
+fn page<T: serde::Serialize>(items: Vec<T>, offset: usize, size: usize) -> serde_json::Value {
+    let total = items.len();
+    let next = offset.saturating_add(size);
+    json!({
+        "items": items.into_iter().skip(offset).take(size).collect::<Vec<_>>(),
+        "total": total,
+        "next_offset": (next < total).then_some(next),
+    })
+}
+
+fn transcript_line(s: &crate::db::TranscriptSegment) -> String {
+    format!(
+        "[{}] {}: {}",
+        format_ms(s.start_ms),
+        s.speaker_label,
+        s.text
+    )
 }
 
 #[derive(Clone)]
@@ -128,59 +165,89 @@ impl NootleMcpServer {
         Self { db }
     }
 
-    /// List meetings with optional search filter
     #[tool(
-        description = "List meetings with optional search filter. Returns meeting metadata (id, title, start_time, status, etc).",
-        annotations(read_only_hint = true)
+        title = "List meetings",
+        description = "List meetings, newest first, optionally filtered by title. Returns id, title, start/end time, and status, 50 per page; pass next_offset as offset for the next page.",
+        annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn list_meetings(
         &self,
         Parameters(params): Parameters<ListMeetingsParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond(self.db.list_meetings(params.search.as_deref(), false))
+        respond(
+            self.db
+                .list_meetings(params.search.as_deref(), false)
+                .map(|meetings| {
+                    let meetings: Vec<_> = meetings
+                        .into_iter()
+                        .map(|m| {
+                            json!({
+                                "id": m.id,
+                                "title": m.title,
+                                "start_time": m.start_time,
+                                "end_time": m.end_time,
+                                "status": m.status,
+                            })
+                        })
+                        .collect();
+                    page(meetings, params.offset, PAGE_SIZE)
+                }),
+        )
     }
 
-    /// Get full meeting details including transcript and summaries
     #[tool(
-        description = "Get full meeting details including transcript segments and summaries. Requires a meeting ID.",
-        annotations(read_only_hint = true)
+        title = "Get meeting",
+        description = "Get a meeting's details, notes, summaries, and transcript. The transcript comes as \"[HH:MM:SS.mmm] Speaker: text\" lines, 300 per call; pass transcript.next_offset as transcript_offset for the rest.",
+        annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn get_meeting(
         &self,
         Parameters(params): Parameters<GetMeetingParams>,
     ) -> Result<CallToolResult, McpError> {
         respond((|| {
+            let lines: Vec<String> = self
+                .db
+                .get_transcript(&params.id)?
+                .iter()
+                .map(transcript_line)
+                .collect();
             Ok(json!({
                 "meeting": self.db.get_meeting(&params.id)?,
-                "transcript": self.db.get_transcript(&params.id)?,
                 "summaries": self.db.get_summaries_for_meeting(&params.id)?,
+                "transcript": page(lines, params.transcript_offset, TRANSCRIPT_PAGE_SIZE),
             }))
         })())
     }
 
-    /// Full-text search across all transcripts
     #[tool(
-        description = "Full-text search across all meeting transcripts. Returns matching transcript segments with meeting context.",
-        annotations(read_only_hint = true)
+        title = "Search transcripts",
+        description = "Full-text phrase search across all meeting transcripts. Returns matching segments with their meeting's id and title, best match first, 50 per page; pass next_offset as offset for the next page.",
+        annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn search_transcripts(
         &self,
         Parameters(params): Parameters<SearchTranscriptsParams>,
     ) -> Result<CallToolResult, McpError> {
-        respond(self.db.search_transcripts(&params.query))
+        respond(
+            self.db
+                .search_transcripts(&params.query)
+                .map(|results| page(results, params.offset, PAGE_SIZE)),
+        )
     }
 
     #[tool(
+        title = "Get automation catalog",
         description = "Describe what can be automated: each integration type with its credential fields and actions, each action's config fields, the {{placeholders}} text fields accept, and the icons insight types can use. Read this before creating integrations or workflows.",
-        annotations(read_only_hint = true)
+        annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn get_automation_catalog(&self) -> Result<CallToolResult, McpError> {
         respond(Ok(automation::catalog()))
     }
 
     #[tool(
+        title = "List automations",
         description = "List the user's automations: connected integrations (credentials never included), workflows, summary templates, and insight types.",
-        annotations(read_only_hint = true)
+        annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn list_automations(&self) -> Result<CallToolResult, McpError> {
         respond((|| {
@@ -194,8 +261,9 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "Connect integration",
         description = "Connect an integration (Slack, Notion, GitHub, ...) so workflows can send to it. Credentials are stored locally and never returned.",
-        annotations(destructive_hint = false)
+        annotations(destructive_hint = false, open_world_hint = false)
     )]
     fn create_integration(
         &self,
@@ -210,8 +278,13 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "Update integration",
         description = "Rename an integration or replace its credentials.",
-        annotations(destructive_hint = false, idempotent_hint = true)
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn update_integration(
         &self,
@@ -226,8 +299,9 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "Create workflow",
         description = "Create a workflow that sends a meeting's summary or action items to a connected integration. The user runs it from a meeting's Run menu, or you can run it with run_workflow.",
-        annotations(destructive_hint = false)
+        annotations(destructive_hint = false, open_world_hint = false)
     )]
     fn create_workflow(
         &self,
@@ -237,8 +311,13 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "Update workflow",
         description = "Update a workflow: rename, change its config or integration, or enable/disable it.",
-        annotations(destructive_hint = false, idempotent_hint = true)
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn update_workflow(
         &self,
@@ -248,6 +327,7 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "Run workflow",
         description = "Run a workflow against a meeting now. This sends data to the external service (posts to Slack, opens issues, ...). Returns the run with status completed or failed and its output or error.",
         annotations(destructive_hint = false, open_world_hint = true)
     )]
@@ -280,8 +360,9 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "List workflow runs",
         description = "List past workflow runs for a meeting, newest first.",
-        annotations(read_only_hint = true)
+        annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn list_workflow_runs(
         &self,
@@ -291,8 +372,9 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "Create summary template",
         description = "Create a summary template. With auto_run, every new meeting is summarized with it automatically.",
-        annotations(destructive_hint = false)
+        annotations(destructive_hint = false, open_world_hint = false)
     )]
     fn create_template(
         &self,
@@ -302,8 +384,13 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "Update summary template",
         description = "Update a summary template, including turning auto-run on or off.",
-        annotations(destructive_hint = false, idempotent_hint = true)
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn update_template(
         &self,
@@ -313,8 +400,9 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "Create insight type",
         description = "Create a custom insight type that Nootle extracts from every transcript alongside decisions and action items.",
-        annotations(destructive_hint = false)
+        annotations(destructive_hint = false, open_world_hint = false)
     )]
     fn create_insight_type(
         &self,
@@ -324,8 +412,13 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "Update insight type",
         description = "Update a custom insight type's name, prompt, icon, or action fields.",
-        annotations(destructive_hint = false, idempotent_hint = true)
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn update_insight_type(
         &self,
@@ -335,8 +428,13 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "Delete automation",
         description = "Permanently delete an integration (and its workflows), workflow, template, or insight type. Built-in templates and insight types can't be deleted. Confirm with the user first.",
-        annotations(destructive_hint = true, idempotent_hint = true)
+        annotations(
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn delete_automation(
         &self,
@@ -363,28 +461,39 @@ impl ServerHandler for NootleMcpServer {
             .with_title("Nootle MCP Server")
             .with_description("MCP server for Nootle meeting data and automations");
         ServerInfo::new(capabilities)
-            .with_protocol_version(ProtocolVersion::V_2024_11_05)
             .with_server_info(server_info)
             .with_instructions(
                 "Nootle MCP server. Read meetings and transcripts, and set up automations on the \
                  user's behalf: integrations, workflows that send meeting output to them, \
                  summary templates, and custom insight types. Call get_automation_catalog \
-                 before creating integrations or workflows.",
+                 before creating integrations or workflows. Lists, searches, and \
+                 transcripts are paged: when a result has a next_offset, pass it back \
+                 to get more.",
             )
     }
 
     async fn list_resources(
         &self,
-        _request: Option<PaginatedRequestParams>,
+        request: Option<PaginatedRequestParams>,
         _ctx: rmcp::service::RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
-        // List all meetings and create a resource entry for each transcript
+        // The cursor is the offset of the page, newest meetings first.
+        let offset: usize = match request.and_then(|r| r.cursor) {
+            Some(cursor) => cursor
+                .parse()
+                .map_err(|_| McpError::invalid_params("Invalid cursor", None))?,
+            None => 0,
+        };
         let meetings = self.db.list_meetings(None, false).map_err(|e| {
             McpError::internal_error(format!("Failed to list meetings: {}", e), None)
         })?;
+        let next = offset.saturating_add(PAGE_SIZE);
+        let next_cursor = (next < meetings.len()).then(|| next.to_string());
 
         let resources: Vec<Resource> = meetings
             .iter()
+            .skip(offset)
+            .take(PAGE_SIZE)
             .map(|m| {
                 Resource::new(
                     format!("nootle://meetings/{}/transcript", m.id),
@@ -401,7 +510,7 @@ impl ServerHandler for NootleMcpServer {
 
         Ok(ListResourcesResult {
             resources,
-            next_cursor: None,
+            next_cursor,
             meta: None,
         })
     }
@@ -422,16 +531,9 @@ impl ServerHandler for NootleMcpServer {
                 McpError::internal_error(format!("Failed to get transcript: {}", e), None)
             })?;
 
-            let transcript_text: String = segments
+            let transcript_text = segments
                 .iter()
-                .map(|s| {
-                    format!(
-                        "[{}] {}: {}",
-                        format_ms(s.start_ms),
-                        s.speaker_label,
-                        s.text
-                    )
-                })
+                .map(transcript_line)
                 .collect::<Vec<_>>()
                 .join("\n");
 
@@ -440,8 +542,9 @@ impl ServerHandler for NootleMcpServer {
                 uri.clone(),
             )]))
         } else {
-            Err(McpError::resource_not_found(
-                "resource_not_found",
+            // The current spec reports unknown resources as invalid params.
+            Err(McpError::invalid_params(
+                "Resource not found",
                 Some(json!({ "uri": uri })),
             ))
         }
@@ -530,6 +633,18 @@ mod tests {
     }
 
     #[test]
+    fn test_page() {
+        let first = page((0..120).collect(), 0, PAGE_SIZE);
+        assert_eq!(first["items"].as_array().unwrap().len(), 50);
+        assert_eq!(first["total"], 120);
+        assert_eq!(first["next_offset"], 50);
+
+        let last = page((0..120).collect(), 100, PAGE_SIZE);
+        assert_eq!(last["items"][0], 100);
+        assert!(last["next_offset"].is_null());
+    }
+
+    #[test]
     fn test_format_ms() {
         assert_eq!(format_ms(0), "00:00:00.000");
         assert_eq!(format_ms(1500), "00:00:01.500");
@@ -542,7 +657,10 @@ mod tests {
         let db = setup_test_db();
         let server = NootleMcpServer::new(db);
 
-        let params = ListMeetingsParams { search: None };
+        let params = ListMeetingsParams {
+            search: None,
+            offset: 0,
+        };
         let result = server.list_meetings(Parameters(params));
         assert!(result.is_ok());
         let result = result.unwrap();
@@ -558,6 +676,7 @@ mod tests {
 
         let params = SearchTranscriptsParams {
             query: "project updates".to_string(),
+            offset: 0,
         };
         let result = server.search_transcripts(Parameters(params));
         assert!(result.is_ok());
