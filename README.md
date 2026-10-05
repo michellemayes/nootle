@@ -153,6 +153,8 @@ GitHub can reuse a signed-in GitHub CLI (`gh auth token`). Slack and Asana conne
 
 `nootle-cli` is a standalone command-line tool for querying your meeting data and managing automations. It reads and writes the Nootle database directly — the app doesn't need to be running.
 
+`nootle-cli` ships inside Nootle.app at `/Applications/Nootle.app/Contents/MacOS/nootle-cli`; symlink it onto your PATH, or build it from source:
+
 ```bash
 # Build and install
 cargo install --path src-tauri --bin nootle-cli
@@ -211,13 +213,13 @@ claude skill add --global --file "$(dirname $(which nootle-cli))/../skills/nootl
 
 ## MCP Server
 
-Run the app binary with `--mcp` to use Nootle as an MCP server (Settings → About shows the exact command for your install):
+`nootle-cli mcp` serves Nootle over MCP. The CLI ships inside Nootle.app, so there's nothing extra to install (Settings → About shows the exact command for your install):
 
 ```bash
-claude mcp add nootle -- /Applications/Nootle.app/Contents/MacOS/nootle --mcp
+claude mcp add --scope user nootle -- /Applications/Nootle.app/Contents/MacOS/nootle-cli mcp
 ```
 
-Nootle also serves MCP whenever an MCP client launches it over stdio, even without `--mcp`.
+The server supports MCP 2026-07-28 and the older handshake-based versions. Older setups that run the app with `--mcp` keep working, and the app serves MCP instead of opening whenever an MCP client launches it over stdio.
 
 Besides reading meetings and transcripts, the server has tools to list, create, update, run, and delete workflows, integrations, summary templates, and insight types, so you can ask an agent things like *"Set up a workflow that posts meeting recaps to #eng"* and it does the setup for you.
 

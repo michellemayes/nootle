@@ -565,6 +565,20 @@ impl ServerHandler for NootleMcpServer {
     }
 }
 
+/// Serves MCP over stdin/stdout until the client disconnects. Nothing else
+/// may write to stdout meanwhile, so log to stderr.
+pub fn serve_stdio(db: Database) -> Result<(), Box<dyn std::error::Error>> {
+    use rmcp::ServiceExt;
+
+    tokio::runtime::Runtime::new()?.block_on(async {
+        let service = NootleMcpServer::new(Arc::new(db))
+            .serve(rmcp::transport::stdio())
+            .await?;
+        service.waiting().await?;
+        Ok(())
+    })
+}
+
 /// Format milliseconds as HH:MM:SS.mmm
 fn format_ms(ms: i64) -> String {
     let total_seconds = ms / 1000;

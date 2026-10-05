@@ -90,7 +90,10 @@ impl LlmProvider for ClaudeAgentProvider {
             .arg("--output-format")
             .arg("text")
             .arg("--disallowed-tools")
-            .arg(DISALLOWED_TOOLS);
+            .arg(DISALLOWED_TOOLS)
+            // Load none of the user's MCP servers: a prompt needs no tools, and
+            // Nootle's own server, launched from here, could start this again.
+            .arg("--strict-mcp-config");
 
         if let Some(sys) = system {
             cmd.arg("--system-prompt").arg(sys);

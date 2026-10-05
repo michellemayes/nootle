@@ -3,10 +3,18 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { CopyButton } from "@/components/CopyButton";
 
-const DEFAULT_EXE_PATH = "/Applications/Nootle.app/Contents/MacOS/nootle";
+interface McpCommand {
+  command: string;
+  args: string[];
+}
 
-// The executable path can't change while the app runs, so fetch it once.
-let exePathPromise: Promise<string | null> | undefined;
+const DEFAULT_COMMAND: McpCommand = {
+  command: "/Applications/Nootle.app/Contents/MacOS/nootle-cli",
+  args: ["mcp"],
+};
+
+// The command can't change while the app runs, so fetch it once.
+let commandPromise: Promise<McpCommand | null> | undefined;
 
 function CodeSnippet({ code }: { code: string }) {
   return (
@@ -21,25 +29,22 @@ function CodeSnippet({ code }: { code: string }) {
 
 /**
  * MCP client config and the Claude Code install command, filled in with this
- * install's executable path. Shown in Settings → About and Help → MCP server.
+ * install's paths. Shown in Settings → About and Help → MCP server.
  */
 export function McpSetup() {
-  const [exePath, setExePath] = useState(DEFAULT_EXE_PATH);
+  const [mcp, setMcp] = useState(DEFAULT_COMMAND);
 
   useEffect(() => {
-    exePathPromise ??= invoke<string | null>("get_exe_path").catch(() => null);
-    exePathPromise.then((path) => path && setExePath(path));
+    commandPromise ??= invoke<McpCommand>("get_mcp_command").catch(() => null);
+    commandPromise.then((cmd) => cmd && setMcp(cmd));
   }, []);
 
-  const mcpConfig = `{
-  "mcpServers": {
-    "nootle": {
-      "command": "${exePath}",
-      "args": ["--mcp"]
-    }
-  }
-}`;
-  const claudeCommand = `claude mcp add nootle -- ${exePath} --mcp`;
+  const mcpConfig = JSON.stringify(
+    { mcpServers: { nootle: { command: mcp.command, args: mcp.args } } },
+    null,
+    2,
+  );
+  const claudeCommand = `claude mcp add --scope user nootle -- "${mcp.command}" ${mcp.args.join(" ")}`;
 
   return (
     <div className="space-y-4">

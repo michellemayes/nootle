@@ -2005,11 +2005,28 @@ pub fn update_action_item(
         .map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+pub struct McpCommand {
+    command: String,
+    args: Vec<&'static str>,
+}
+
+/// The command MCP clients should run: the bundled `nootle-cli mcp`, which
+/// can't open the app, or `nootle --mcp` when the CLI isn't next to the app
+/// (e.g. under `tauri dev`, which builds only the app).
 #[tauri::command(async)]
-pub fn get_exe_path() -> Result<String, String> {
-    std::env::current_exe()
-        .map(|p| p.to_string_lossy().into_owned())
-        .map_err(|e| e.to_string())
+pub fn get_mcp_command() -> Result<McpCommand, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let cli = exe.with_file_name("nootle-cli");
+    let (path, args) = if cli.exists() {
+        (cli, vec!["mcp"])
+    } else {
+        (exe, vec!["--mcp"])
+    };
+    Ok(McpCommand {
+        command: path.to_string_lossy().into_owned(),
+        args,
+    })
 }
 
 #[tauri::command]

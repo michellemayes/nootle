@@ -74,6 +74,8 @@ enum Commands {
         #[command(subcommand)]
         action: EmbeddingsAction,
     },
+    /// Serve Nootle's MCP server over stdio, for Claude Code and other MCP clients
+    Mcp,
     /// List chat conversations and messages
     Chat {
         #[command(subcommand)]
@@ -453,6 +455,13 @@ fn main() {
         Err(e) => print_error(&format!("Failed to open database at {db_path}: {e}")),
     };
 
+    if let Commands::Mcp = cli.command {
+        if let Err(e) = nootle_app_lib::mcp::serve_stdio(db) {
+            print_error(&e.to_string());
+        }
+        return;
+    }
+
     let result = run_command(&db, &cli.command, cli.pretty);
     if let Err(e) = result {
         print_error(&e.to_string());
@@ -769,6 +778,7 @@ fn run_command(
                 );
             }
         },
+        Commands::Mcp => unreachable!("served from main"),
         Commands::Chat { action } => match action {
             ChatAction::Conversations => {
                 let convos = db.list_chat_conversations()?;

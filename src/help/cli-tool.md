@@ -4,6 +4,12 @@ Nootle includes a command-line tool (`nootle-cli`) for querying your meeting dat
 
 ## Install
 
+`nootle-cli` ships inside Nootle.app. Put it on your PATH with:
+
+```bash
+sudo ln -sf /Applications/Nootle.app/Contents/MacOS/nootle-cli /usr/local/bin/nootle-cli
+```
+
 If you built from source:
 
 ```bash
@@ -115,7 +121,7 @@ Once installed, ask Claude things like:
 
 ## CLI vs MCP Server
 
-| | CLI (`nootle-cli`) | MCP Server (`nootle --mcp`) |
+| | CLI (`nootle-cli`) | MCP Server (`nootle-cli mcp`) |
 |---|---|---|
 | **Use case** | Terminal queries, scripts, piping | AI assistant integration |
 | **Data access** | All data (meetings, insights, chat, etc.) | Meetings, transcripts, search |
