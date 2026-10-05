@@ -557,6 +557,102 @@ fn compute_analytics(db: &Database, app: &tauri::AppHandle, meeting_id: &str) {
     }
 }
 
+/// Generate a title from transcript content using LLM, unless the user renamed
+/// the meeting while recording.
+async fn auto_title(
+    db: &Database,
+    llm_state: &LlmState,
+    app: &tauri::AppHandle,
+    meeting_id: &str,
+    initial_title: &str,
+) {
+    let renamed = db
+        .get_meeting(meeting_id)
+        .is_ok_and(|m| m.title != initial_title);
+    if renamed {
+        tracing::info!("Keeping user-set title for {meeting_id}");
+        return;
+    }
+    let Ok(segments) = db.get_transcript(meeting_id) else {
+        return;
+    };
+    let full_text: String = segments
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if full_text.trim().is_empty() {
+        return;
+    }
+    // Take up to ~500 chars of transcript for the LLM to summarize
+    let snippet = truncate_at_word_boundary(&full_text, 500, "");
+
+    let llm = llm_state.read().await;
+    let fallback_title = || -> String { truncate_at_word_boundary(&full_text, 60, "...") };
+    let title = if let Some(model) = pick_auto_model(db, &llm) {
+        if let Some(provider) = llm.get_provider(&model.provider) {
+            let prompt = format!(
+                "Generate a short, descriptive title (max 8 words) for this meeting based on the transcript below. \
+                 Return ONLY the title, nothing else. No quotes, no punctuation at the end.\n\n{snippet}"
+            );
+            let messages = vec![crate::llm::ChatMessage {
+                role: "user".into(),
+                content: prompt,
+            }];
+            match provider.chat(messages, &model.id).await {
+                Ok(resp) => {
+                    let t = resp.trim().trim_matches('"').trim().to_string();
+                    if t.is_empty() || t.len() > 100 {
+                        fallback_title()
+                    } else {
+                        t
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("LLM title generation failed, using fallback: {e}");
+                    fallback_title()
+                }
+            }
+        } else {
+            fallback_title()
+        }
+    } else {
+        fallback_title()
+    };
+    drop(llm);
+
+    if let Err(e) = db.update_meeting_title(meeting_id, &title) {
+        tracing::warn!("Failed to auto-generate title: {e}");
+    } else if let Ok(meeting) = db.get_meeting(meeting_id) {
+        let _ = app.emit("meeting-updated", &meeting);
+    }
+}
+
+async fn auto_summarize(
+    db: &Database,
+    llm_state: &LlmState,
+    app: &tauri::AppHandle,
+    meeting_id: &str,
+) {
+    let llm = llm_state.read().await;
+    let Some(model) = pick_auto_model(db, &llm) else {
+        tracing::info!("No LLM providers configured, skipping auto summaries");
+        return;
+    };
+    match summarization::run_auto_templates(db, &llm, meeting_id, &model.provider, &model.id).await
+    {
+        Ok(summaries) if !summaries.is_empty() => {
+            tracing::info!(
+                "Auto-run produced {} summaries for {meeting_id}",
+                summaries.len()
+            );
+            let _ = app.emit("summaries-updated", meeting_id);
+        }
+        Ok(_) => tracing::info!("No summary templates available"),
+        Err(e) => tracing::warn!("Auto-run templates failed: {e}"),
+    }
+}
+
 async fn auto_extract_insights(
     db: &Database,
     llm_state: &LlmState,
@@ -722,92 +818,12 @@ async fn run_transcription_pipeline(
 
     tracing::info!("[DIAG] Audio channel closed after {chunk_count} chunks");
 
-    // Auto-generate title from transcript content using LLM, unless the user
-    // renamed the meeting while recording.
-    let renamed = db
-        .get_meeting(&meeting_id)
-        .is_ok_and(|m| m.title != initial_title);
-    if renamed {
-        tracing::info!("Keeping user-set title for {meeting_id}");
-    } else if let Ok(segments) = db.get_transcript(&meeting_id) {
-        let full_text: String = segments
-            .iter()
-            .map(|s| s.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
-        if !full_text.trim().is_empty() {
-            // Take up to ~500 chars of transcript for the LLM to summarize
-            let snippet = truncate_at_word_boundary(&full_text, 500, "");
-
-            let llm = llm_state.read().await;
-            let fallback_title = || -> String { truncate_at_word_boundary(&full_text, 60, "...") };
-            let title = if let Some(model) = pick_auto_model(&db, &llm) {
-                if let Some(provider) = llm.get_provider(&model.provider) {
-                    let prompt = format!(
-                        "Generate a short, descriptive title (max 8 words) for this meeting based on the transcript below. \
-                         Return ONLY the title, nothing else. No quotes, no punctuation at the end.\n\n{snippet}"
-                    );
-                    let messages = vec![crate::llm::ChatMessage {
-                        role: "user".into(),
-                        content: prompt,
-                    }];
-                    match provider.chat(messages, &model.id).await {
-                        Ok(resp) => {
-                            let t = resp.trim().trim_matches('"').trim().to_string();
-                            if t.is_empty() || t.len() > 100 {
-                                fallback_title()
-                            } else {
-                                t
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("LLM title generation failed, using fallback: {e}");
-                            fallback_title()
-                        }
-                    }
-                } else {
-                    fallback_title()
-                }
-            } else {
-                fallback_title()
-            };
-            drop(llm);
-
-            if let Err(e) = db.update_meeting_title(&meeting_id, &title) {
-                tracing::warn!("Failed to auto-generate title: {e}");
-            } else if let Ok(meeting) = db.get_meeting(&meeting_id) {
-                let _ = app.emit("meeting-updated", &meeting);
-            }
-        }
-    }
-
-    // Run auto-run templates (summaries) if any are configured
-    {
-        let llm = llm_state.read().await;
-        if let Some(model) = pick_auto_model(&db, &llm) {
-            match summarization::run_auto_templates(
-                &db,
-                &llm,
-                &meeting_id,
-                &model.provider,
-                &model.id,
-            )
-            .await
-            {
-                Ok(summaries) if !summaries.is_empty() => {
-                    tracing::info!(
-                        "Auto-run produced {} summaries for {meeting_id}",
-                        summaries.len()
-                    );
-                    let _ = app.emit("summaries-updated", &meeting_id);
-                }
-                Ok(_) => tracing::info!("No auto-run templates configured"),
-                Err(e) => tracing::warn!("Auto-run templates failed: {e}"),
-            }
-        } else {
-            tracing::info!("No LLM providers configured, skipping auto-run prompts");
-        }
-    }
+    // Title and summaries are independent LLM calls, so run them side by side
+    // rather than making the summary wait on the title.
+    tokio::join!(
+        auto_title(&db, &llm_state, &app, &meeting_id, &initial_title),
+        auto_summarize(&db, &llm_state, &app, &meeting_id),
+    );
 
     // Mark meeting as done transcribing only if transcription produced segments
     if segment_count > 0 {
