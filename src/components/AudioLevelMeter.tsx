@@ -61,16 +61,11 @@ export function AudioLevelMeter({
   const [mic, setMic] = useState(0);
   const [system, setSystem] = useState<number | null>(null);
   const silentSinceRef = useRef<number | null>(null);
-  const silentRef = useRef(false);
   const onSilenceRef = useRef(onSilenceChange);
   onSilenceRef.current = onSilenceChange;
 
   useEffect(() => {
-    const setSilent = (silent: boolean) => {
-      if (silentRef.current === silent) return;
-      silentRef.current = silent;
-      onSilenceRef.current?.(silent);
-    };
+    const setSilent = (silent: boolean) => onSilenceRef.current?.(silent);
     if (!active || paused) {
       setMic(0);
       setSystem((s) => (s === null ? null : 0));
@@ -79,11 +74,15 @@ export function AudioLevelMeter({
       return;
     }
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    // Each poll waits for the last, so calls never pile up behind a busy backend.
     const poll = async () => {
       const status = await invoke<RecordingStatus | null>("recording_status").catch(() => null);
-      if (cancelled || !status) return;
-      const micRms = status.mic_level ?? 0;
-      const sysRms = status.system_level ?? null;
+      if (cancelled) return;
+      timer = setTimeout(poll, POLL_MS);
+      if (!status) return;
+      const micRms = status.mic_level;
+      const sysRms = status.system_level;
       // Fast attack, slower release, so the bars don't flicker.
       setMic((prev) => Math.max(toMeter(micRms), prev * 0.6));
       setSystem((prev) => (sysRms === null ? null : Math.max(toMeter(sysRms), (prev ?? 0) * 0.6)));
@@ -99,10 +98,9 @@ export function AudioLevelMeter({
       }
     };
     poll();
-    const timer = setInterval(poll, POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      clearTimeout(timer);
     };
   }, [active, paused]);
 

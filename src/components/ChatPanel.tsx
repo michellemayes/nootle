@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
 import { SuggestedPrompts, MEETING_PROMPTS } from "@/components/SuggestedPrompts";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ResizeHandle } from "@/components/ResizeHandle";
@@ -35,11 +36,6 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
   // Resize state
   const [width, setWidth] = useState(320);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, recipeMessages]);
 
   // Reset transient chat UI state when switching to a different meeting.
   useEffect(() => {
@@ -67,6 +63,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
   }, [input, filteredRecipes.length]);
 
   const allMessages = [...messages, ...recipeMessages];
+  const { sentinelRef } = useStickToBottom(scrollRef, allMessages.length);
 
   const handleRunRecipe = async (recipeId: string, recipeName: string) => {
     if (!selectedProvider || !selectedModel) return;
@@ -198,6 +195,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
               {error && (
                 <p className="text-xs text-destructive text-center">{error}</p>
               )}
+              <div ref={sentinelRef} />
             </div>
           </ScrollArea>
 

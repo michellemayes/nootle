@@ -90,3 +90,15 @@ export function isTypingTarget(target: EventTarget | null): boolean {
     el.tagName === "SELECT"
   );
 }
+
+/**
+ * True when focus is on a control that handles keys itself (a field, button,
+ * link, or ARIA widget), so page-level single-key shortcuts like Space should
+ * leave the keypress alone. Tab panels are focusable containers, not
+ * controls, so clicking into one doesn't count.
+ */
+export function isInteractiveTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || el === document.body) return false;
+  return isTypingTarget(el) || el.closest("button, a[href], [role]:not([role=tabpanel])") !== null;
+}

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
 import { Select } from "@/components/ui/select";
 import { SuggestedPrompts, LIBRARY_PROMPTS } from "@/components/SuggestedPrompts";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useGlobalChat } from "@/hooks/useGlobalChat";
@@ -47,17 +48,13 @@ export function GlobalChatPanel() {
   const [selectedDatePreset, setSelectedDatePreset] = useState(3); // "All time"
   const [embedding, setEmbedding] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { sentinelRef } = useStickToBottom(scrollRef, messages);
 
   // Dragging state – use right/bottom offsets so framer-motion's transform doesn't conflict
   const [offset, setOffset] = useState({ right: 24, bottom: 24 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0, right: 0, bottom: 0 });
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
 
   const handleSend = async (msg = input) => {
     if (!msg.trim() || !selectedProvider || !selectedModel) return;
@@ -298,6 +295,7 @@ export function GlobalChatPanel() {
                     {error}
                   </p>
                 )}
+                <div ref={sentinelRef} />
               </div>
             </ScrollArea>
 

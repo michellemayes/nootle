@@ -32,44 +32,82 @@ export function useIsPlaying(audio: HTMLAudioElement | null) {
   return playing;
 }
 
+/** Index of the last segment starting at or before `ms` (-1 if none). */
+function segmentIndexAt(segments: TranscriptSegment[], ms: number): number {
+  let lo = 0;
+  let hi = segments.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (segments[mid].start_ms <= ms) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return found;
+}
+
 /**
- * The transcript segment under the playhead. State only changes when the
- * segment does, so `timeupdate` doesn't re-render the page several times a
- * second. Null until playback has started.
+ * Marks the transcript row under the playhead with `data-active` (rows carry
+ * `data-segment-id`) and keeps it in view, unless the reader has scrolled
+ * away from it. Done on the DOM rather than in React state so playback
+ * doesn't re-render the whole transcript every time the line changes.
  */
-export function useActiveSegmentId(
+export function useFollowPlayback(
   audio: HTMLAudioElement | null,
   segments: TranscriptSegment[],
-): string | null {
-  const [activeId, setActiveId] = useState<string | null>(null);
+  viewport: HTMLElement | null,
+) {
   useEffect(() => {
-    if (!audio || segments.length === 0) return;
-    const update = () => {
-      if (audio.currentTime === 0 && audio.paused) return setActiveId(null);
-      const ms = audio.currentTime * 1000;
-      // Last segment that started at or before the playhead.
-      let lo = 0;
-      let hi = segments.length - 1;
-      let found = -1;
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        if (segments[mid].start_ms <= ms) {
-          found = mid;
-          lo = mid + 1;
-        } else {
-          hi = mid - 1;
-        }
-      }
-      setActiveId(found >= 0 ? segments[found].id : null);
+    if (!audio || !viewport || segments.length === 0) return;
+    let activeEl: HTMLElement | null = null;
+
+    const isOutside = (el: HTMLElement, margin = 0) => {
+      const view = viewport.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      return r.top < view.top || r.bottom > view.bottom - margin;
     };
+    const mark = (el: HTMLElement | null, on: boolean) => {
+      if (!el) return;
+      if (on) {
+        el.dataset.active = "true";
+        el.setAttribute("aria-current", "true");
+      } else {
+        delete el.dataset.active;
+        el.removeAttribute("aria-current");
+      }
+    };
+
+    const update = () => {
+      const index = audio.currentTime === 0 && audio.paused
+        ? -1
+        : segmentIndexAt(segments, audio.currentTime * 1000);
+      const id = index >= 0 ? segments[index].id : null;
+      if (activeEl?.isConnected && activeEl.dataset.segmentId === id) return;
+      const next = id
+        ? viewport.querySelector<HTMLElement>(`[data-segment-id="${CSS.escape(id)}"]`)
+        : null;
+      // Follow only if the reader was still looking at the previous line.
+      const follow = !audio.paused && next && (!activeEl?.isConnected || !isOutside(activeEl));
+      mark(activeEl, false);
+      mark(next, true);
+      activeEl = next;
+      if (follow && isOutside(next, 24)) {
+        next.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    };
+
+    update();
     audio.addEventListener("timeupdate", update);
     audio.addEventListener("seeked", update);
     return () => {
       audio.removeEventListener("timeupdate", update);
       audio.removeEventListener("seeked", update);
+      mark(activeEl, false);
     };
-  }, [audio, segments]);
-  return activeId;
+  }, [audio, segments, viewport]);
 }
 
 /**
@@ -112,6 +150,8 @@ export function AudioPlayerControls({
     audio.currentTime = Math.max(0, Math.min(1, ratio)) * duration;
   };
 
+  const progress = duration > 0 ? `${(currentTime / duration) * 100}%` : "0%";
+
   const cycleSpeed = () => setSpeed((s) => SPEEDS[(SPEEDS.indexOf(s) + 1) % SPEEDS.length]);
 
   return (
@@ -151,10 +191,8 @@ export function AudioPlayerControls({
             seekToRatio((e.clientX - rect.left) / rect.width);
           }}
           onKeyDown={(e) => {
-            // Handled here so the page-level ←/→ shortcut doesn't also fire.
             if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
               e.preventDefault();
-              e.stopPropagation();
               skipBy(audio, e.key === "ArrowLeft" ? -5 : 5);
             } else if (e.key === "Home" || e.key === "End") {
               e.preventDefault();
@@ -165,11 +203,11 @@ export function AudioPlayerControls({
           <div className="relative h-1.5 rounded-full bg-muted">
             <div
               className="h-1.5 rounded-full bg-primary transition-[width] duration-150"
-              style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : "0%" }}
+              style={{ width: progress }}
             />
             <div
               className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary opacity-0 shadow transition-opacity group-hover/seek:opacity-100 group-focus-visible/seek:opacity-100"
-              style={{ left: duration > 0 ? `${(currentTime / duration) * 100}%` : "0%" }}
+              style={{ left: progress }}
             />
           </div>
         </div>

@@ -33,22 +33,27 @@ impl RecordedClock {
 
 /// Live input levels (RMS of the latest poll), written by the capture thread
 /// and read by the UI's level meter so people can see audio is coming in.
-#[derive(Default)]
 pub struct AudioLevels {
     mic: AtomicU32,
-    /// `None` until system audio is captured, so the UI can tell "silent"
+    /// NaN while system audio isn't captured, so the UI can tell "silent"
     /// from "not captured".
     system: AtomicU32,
-    has_system: AtomicBool,
+}
+
+impl Default for AudioLevels {
+    fn default() -> Self {
+        Self {
+            mic: AtomicU32::new(0f32.to_bits()),
+            system: AtomicU32::new(f32::NAN.to_bits()),
+        }
+    }
 }
 
 impl AudioLevels {
     pub fn set(&self, mic: f32, system: Option<f32>) {
         self.mic.store(mic.to_bits(), Ordering::Relaxed);
-        if let Some(system) = system {
-            self.system.store(system.to_bits(), Ordering::Relaxed);
-        }
-        self.has_system.store(system.is_some(), Ordering::Relaxed);
+        let system = system.unwrap_or(f32::NAN);
+        self.system.store(system.to_bits(), Ordering::Relaxed);
     }
 
     pub fn mic(&self) -> f32 {
@@ -56,11 +61,7 @@ impl AudioLevels {
     }
 
     pub fn system(&self) -> Option<f32> {
-        if self.has_system.load(Ordering::Relaxed) {
-            Some(f32::from_bits(self.system.load(Ordering::Relaxed)))
-        } else {
-            None
-        }
+        Some(f32::from_bits(self.system.load(Ordering::Relaxed))).filter(|v| !v.is_nan())
     }
 }
 

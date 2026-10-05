@@ -1,4 +1,5 @@
-import { Sparkles } from "lucide-react";
+import { MessageSquare, Sparkles } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 
 /** Starter questions, so an empty chat never starts from a blank box. */
 export const MEETING_PROMPTS = [
@@ -27,22 +28,26 @@ export function SuggestedPrompts({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 py-6">
-      <p className="text-center text-sm text-muted-foreground">{intro}</p>
-      <div className="flex w-full flex-col gap-1.5">
-        {prompts.map((prompt) => (
-          <button
-            key={prompt}
-            type="button"
-            disabled={disabled}
-            onClick={() => onPick(prompt)}
-            className="flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
-          >
-            <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
-            {prompt}
-          </button>
-        ))}
-      </div>
-    </div>
+    <EmptyState
+      size="panel"
+      icon={MessageSquare}
+      description={intro}
+      action={
+        <div className="flex w-full flex-col gap-1.5">
+          {prompts.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              disabled={disabled}
+              onClick={() => onPick(prompt)}
+              className="flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+            >
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
+              {prompt}
+            </button>
+          ))}
+        </div>
+      }
+    />
   );
 }

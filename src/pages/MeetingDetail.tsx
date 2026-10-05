@@ -22,7 +22,7 @@ import { useSummaries } from "@/hooks/useSummaries";
 import { useInsights } from "@/hooks/useInsights";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
-import { cn, formatMs, formatDate, isTypingTarget, statusLabel, statusVariant } from "@/lib/utils";
+import { cn, formatMs, formatDate, isInteractiveTarget, statusLabel, statusVariant } from "@/lib/utils";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
@@ -33,7 +33,7 @@ import {
   AudioPlayerControls,
   SKIP_SECONDS,
   skipBy,
-  useActiveSegmentId,
+  useFollowPlayback,
   useIsPlaying,
 } from "@/components/AudioPlayerControls";
 import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment } from "@/types";
@@ -892,8 +892,8 @@ export function MeetingDetail() {
   }, []);
   const [failedAudioSrc, setFailedAudioSrc] = useState<string | null>(null);
   const isPlaying = useIsPlaying(audioElement);
-  const activeSegmentId = useActiveSegmentId(audioElement, segments);
-  const transcriptViewportRef = useRef<HTMLDivElement>(null);
+  const [transcriptViewport, setTranscriptViewport] = useState<HTMLDivElement | null>(null);
+  useFollowPlayback(audioElement, segments, transcriptViewport);
 
   useEffect(() => {
     if (templates.length > 0 && !selectedTemplate) {
@@ -973,14 +973,12 @@ export function MeetingDetail() {
     if (!isPlaying) await audio.play().catch(() => {});
   }, [isPlaying, audioElement]);
 
-  // Space plays and pauses, ←/→ skip, like any media player. Skipped while
-  // typing, and when a control that handles those keys itself has focus.
+  // Space plays and pauses, ←/→ skip, like any media player, unless a
+  // control that handles those keys itself has focus.
   useEffect(() => {
     if (!audioElement || audioMissing) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return;
-      const target = e.target as HTMLElement | null;
-      if (target?.closest("button, a, [role=slider], [role=tab], [role=menuitem], [role=option]")) return;
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isInteractiveTarget(e.target)) return;
       if (e.key === " ") {
         e.preventDefault();
         togglePlayback();
@@ -993,30 +991,6 @@ export function MeetingDetail() {
     return () => window.removeEventListener("keydown", handler);
   }, [audioElement, audioMissing, togglePlayback]);
 
-  // Keep the line being played in view, but only while the reader hasn't
-  // scrolled elsewhere: follow when the previous line was still on screen.
-  const lastActiveRef = useRef<string | null>(null);
-  useEffect(() => {
-    const viewport = transcriptViewportRef.current;
-    const previousId = lastActiveRef.current;
-    lastActiveRef.current = activeSegmentId;
-    if (!viewport || !activeSegmentId || !isPlaying) return;
-    const find = (id: string | null) =>
-      id ? viewport.querySelector<HTMLElement>(`[data-segment-id="${CSS.escape(id)}"]`) : null;
-    const next = find(activeSegmentId);
-    const prev = find(previousId);
-    if (!next) return;
-    const view = viewport.getBoundingClientRect();
-    const readerScrolledAway = prev && (() => {
-      const r = prev.getBoundingClientRect();
-      return r.bottom < view.top || r.top > view.bottom;
-    })();
-    const r = next.getBoundingClientRect();
-    const needsScroll = r.top < view.top || r.bottom > view.bottom - 24;
-    if (!readerScrolledAway && needsScroll) {
-      next.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
-  }, [activeSegmentId, isPlaying]);
 
   const speakerMap = new Map<string, string>();
   segments.forEach((seg) => {
@@ -1283,7 +1257,7 @@ export function MeetingDetail() {
                     </button>
                   </div>
                 )}
-                <ScrollArea className="flex-1" viewportRef={transcriptViewportRef}>
+                <ScrollArea className="flex-1" viewportRef={setTranscriptViewport}>
                   <div className={`p-5 ${compactTranscript ? "space-y-1" : "space-y-4"}`}>
                     {transcriptLoading ? (
                       <LoadingState
@@ -1301,21 +1275,16 @@ export function MeetingDetail() {
                         <div
                           key={seg.id}
                           data-segment-id={seg.id}
-                          aria-current={seg.id === activeSegmentId ? "true" : undefined}
                           className={cn(
-                            "group -mx-2 flex gap-3 rounded-md px-2 transition-colors",
+                            "group -mx-2 flex gap-3 rounded-md px-2 transition-colors data-[active=true]:bg-primary/10",
                             compactTranscript && "items-baseline",
-                            seg.id === activeSegmentId && "bg-primary/10",
                           )}
                         >
                           <button
                             onClick={() => seekToMs(seg.start_ms)}
                             title="Play from here"
                             aria-label={`Play from ${formatMs(seg.start_ms)}`}
-                            className={cn(
-                              "shrink-0 pt-0.5 text-xs font-mono tabular-nums w-12 text-left hover:text-primary transition-colors",
-                              seg.id === activeSegmentId ? "text-primary" : "text-muted-foreground",
-                            )}
+                            className="shrink-0 pt-0.5 text-xs text-muted-foreground font-mono tabular-nums w-12 text-left hover:text-primary group-data-[active=true]:text-primary transition-colors"
                           >
                             {formatMs(seg.start_ms)}
                           </button>

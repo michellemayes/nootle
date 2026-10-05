@@ -17,6 +17,7 @@ import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Kbd } from "@/components/Kbd";
 import { AudioLevelMeter } from "@/components/AudioLevelMeter";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { Square, ArrowLeft, ArrowDown, ChevronDown, ChevronRight, FileText, MicOff, Pause, Play, ScanLine } from "lucide-react";
 
 function formatTime(seconds: number): string {
@@ -30,8 +31,6 @@ function formatTime(seconds: number): string {
 }
 
 const TRANSCRIPT_OPEN_KEY = "recordingTranscriptOpen";
-/** Within this many px of the bottom counts as following the live edge. */
-const FOLLOW_THRESHOLD_PX = 40;
 
 // Memoized so the once-a-second timer tick doesn't re-render every line.
 const LiveSegments = memo(function LiveSegments({
@@ -85,9 +84,6 @@ export function RecordingView() {
   const [transcriptOpen, setTranscriptOpen] = useState(
     () => localStorage.getItem(TRANSCRIPT_OPEN_KEY) === "true",
   );
-  // Follow new lines only while the reader is at the bottom; scrolling up to
-  // re-read pauses it and offers a way back.
-  const [following, setFollowing] = useState(true);
   const [silent, setSilent] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -198,31 +194,13 @@ export function RecordingView() {
     saveDetails();
   }, [saveDetails]);
 
-  const toggleTranscript = useCallback(() => {
-    setTranscriptOpen((open) => {
-      localStorage.setItem(TRANSCRIPT_OPEN_KEY, String(!open));
-      return !open;
-    });
-    setFollowing(true);
-  }, []);
-
-  const jumpToLive = useCallback(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    setFollowing(true);
-  }, []);
-
-  const handleTranscriptScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setFollowing(el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_THRESHOLD_PX);
-  }, []);
-
   useEffect(() => {
-    if (following && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [segments, following, transcriptOpen]);
+    localStorage.setItem(TRANSCRIPT_OPEN_KEY, String(transcriptOpen));
+  }, [transcriptOpen]);
+
+  // Follow new lines while the reader is at the bottom; scrolling up to
+  // re-read pauses it and offers a way back.
+  const { following, sentinelRef, jumpToBottom } = useStickToBottom(scrollRef, segments);
 
   const handleStop = useCallback(async () => {
     if (stopping) return;
@@ -413,7 +391,7 @@ export function RecordingView() {
       {/* Collapsible live transcript */}
       <div className="border-t">
         <button
-          onClick={toggleTranscript}
+          onClick={() => setTranscriptOpen((open) => !open)}
           aria-expanded={transcriptOpen}
           className="flex w-full items-center gap-2 px-6 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
         >
@@ -435,7 +413,6 @@ export function RecordingView() {
             <ScrollArea
               className="h-[240px] border-t"
               viewportRef={scrollRef}
-              onScrollCapture={handleTranscriptScroll}
             >
                 <div role="log" aria-live="polite" aria-label="Live transcript" className="px-6 py-3 space-y-1.5">
                   {segments.length === 0 && transcriptionStatus?.available === false && (
@@ -460,13 +437,14 @@ export function RecordingView() {
                     </p>
                   )}
                   <LiveSegments segments={segments} />
+                  <div ref={sentinelRef} />
                 </div>
               </ScrollArea>
               {!following && (
                 <Button
                   size="xs"
                   variant="secondary"
-                  onClick={jumpToLive}
+                  onClick={jumpToBottom}
                   className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-md"
                 >
                   <ArrowDown /> Jump to live

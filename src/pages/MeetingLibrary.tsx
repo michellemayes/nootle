@@ -61,15 +61,6 @@ function formatDuration(start: string, end: string | null): string {
 /** "Done" is the normal end state, so only call out meetings that aren't. */
 const showStatus = (status: string) => status !== "summarized";
 
-/** Cards and rows act as links: Enter opens them, like a click. */
-const openOnEnter =
-  (open: () => void) => (e: React.KeyboardEvent<HTMLElement>) => {
-    if (e.key === "Enter" && e.target === e.currentTarget) {
-      e.preventDefault();
-      open();
-    }
-  };
-
 const dropdownPrimitives = {
   MenuItem: DropdownMenuItem,
   MenuSeparator: DropdownMenuSeparator,
@@ -156,33 +147,35 @@ export function MeetingLibrary() {
     localStorage.setItem("meetingViewMode", mode);
   }, []);
 
-  const handleArchive = useCallback(
-    async (meeting: Meeting) => {
-      await archiveMeeting(meeting.id);
+  // Reversible, so it happens straight away with an Undo rather than a
+  // confirm dialog.
+  const setArchived = useCallback(
+    async (meeting: Meeting, archived: boolean) => {
+      await (archived ? archiveMeeting : unarchiveMeeting)(meeting.id);
       refresh();
-      toast(`Archived "${meeting.title}"`, {
-        action: {
-          label: "Undo",
-          onClick: () => unarchiveMeeting(meeting.id).then(refresh),
-        },
+      toast(`${archived ? "Archived" : "Restored"} "${meeting.title}"`, {
+        action: { label: "Undo", onClick: () => setArchived(meeting, !archived) },
       });
     },
     [refresh],
   );
 
-  const handleUnarchive = useCallback(
-    async (meeting: Meeting) => {
-      await unarchiveMeeting(meeting.id);
-      refresh();
-      toast(`Restored "${meeting.title}"`, {
-        action: {
-          label: "Undo",
-          onClick: () => archiveMeeting(meeting.id).then(refresh),
-        },
-      });
-    },
-    [refresh],
-  );
+  /** Cards and rows act as links: focusable, and Enter opens them like a click. */
+  const linkProps = (meeting: Meeting) => {
+    const open = () => navigate(`/meeting/${meeting.id}`);
+    return {
+      role: "link",
+      tabIndex: 0,
+      "aria-label": meeting.title,
+      onClick: open,
+      onKeyDown: (e: React.KeyboardEvent<HTMLElement>) => {
+        if (e.key === "Enter" && e.target === e.currentTarget) {
+          e.preventDefault();
+          open();
+        }
+      },
+    };
+  };
 
   // Transcribe a recording made elsewhere. The meeting opens right away and
   // fills in as transcription runs.
@@ -226,13 +219,13 @@ export function MeetingLibrary() {
     ) => (
       <MeetingActionMenuItems
         meeting={meeting}
-        onArchive={() => handleArchive(meeting)}
-        onUnarchive={() => handleUnarchive(meeting)}
+        onArchive={() => setArchived(meeting, true)}
+        onUnarchive={() => setArchived(meeting, false)}
         onDelete={() => setDeleteTarget(meeting)}
         {...primitives}
       />
     ),
-    [handleArchive, handleUnarchive],
+    [setArchived],
   );
 
   return (
@@ -405,12 +398,8 @@ export function MeetingLibrary() {
               <ContextMenuTrigger asChild>
                 <div>
                   <Card
-                    role="link"
-                    tabIndex={0}
-                    aria-label={meeting.title}
+                    {...linkProps(meeting)}
                     className="group h-full cursor-pointer transition-colors hover:bg-accent/30 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                    onClick={() => navigate(`/meeting/${meeting.id}`)}
-                    onKeyDown={openOnEnter(() => navigate(`/meeting/${meeting.id}`))}
                   >
                     <CardContent className="space-y-3">
                       <div className="flex items-start justify-between gap-2">
@@ -476,12 +465,8 @@ export function MeetingLibrary() {
             <ContextMenu key={meeting.id}>
               <ContextMenuTrigger asChild>
                 <div
-                  role="link"
-                  tabIndex={0}
-                  aria-label={meeting.title}
+                  {...linkProps(meeting)}
                   className="group flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors hover:bg-accent/30 outline-none focus-visible:bg-accent/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
-                  onClick={() => navigate(`/meeting/${meeting.id}`)}
-                  onKeyDown={openOnEnter(() => navigate(`/meeting/${meeting.id}`))}
                 >
                   <h3 className="flex-1 font-medium truncate">
                     {meeting.title}
