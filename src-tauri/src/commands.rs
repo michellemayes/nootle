@@ -263,6 +263,102 @@ pub fn get_transcript(
     db.get_transcript(&meeting_id).map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SegmentEditResult {
+    pub segment: TranscriptSegment,
+    pub learned: Vec<crate::dictionary::LearnedCorrection>,
+    /// Other segments in the meeting rewritten by what was learned.
+    pub corrected_segments: usize,
+}
+
+/// Saves a user's edit to one transcript segment. With auto-learn on, word
+/// substitutions in the edit join the dictionary and are applied to the rest
+/// of the meeting.
+#[tauri::command]
+pub fn update_transcript_segment(
+    db: State<'_, DbState>,
+    segment_id: String,
+    text: String,
+) -> Result<SegmentEditResult, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Transcript text cannot be empty".into());
+    }
+    let original = db
+        .get_transcript_segment(&segment_id)
+        .map_err(|e| e.to_string())?;
+    db.update_transcript_segment_text(&segment_id, text)
+        .map_err(|e| e.to_string())?;
+
+    let auto_learn = db
+        .get_setting(crate::dictionary::AUTO_LEARN_SETTING)
+        .ok()
+        .flatten()
+        .is_none_or(|v| v != "false");
+    let learned = if auto_learn {
+        crate::dictionary::learn_corrections(&original.text, text)
+    } else {
+        Vec::new()
+    };
+    let corrected_segments = if learned.is_empty() {
+        0
+    } else {
+        db.learn_dictionary_corrections(&learned)
+            .map_err(|e| e.to_string())?;
+        crate::dictionary::apply_to_meeting(&db, &original.meeting_id, Some(&segment_id))
+            .map_err(|e| e.to_string())?
+    };
+
+    Ok(SegmentEditResult {
+        segment: TranscriptSegment {
+            text: text.to_string(),
+            ..original
+        },
+        learned,
+        corrected_segments,
+    })
+}
+
+#[tauri::command]
+pub fn list_dictionary_entries(db: State<'_, DbState>) -> Result<Vec<DictionaryEntry>, String> {
+    db.list_dictionary_entries().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_dictionary_entry(
+    db: State<'_, DbState>,
+    term: String,
+    misheard: Vec<String>,
+) -> Result<DictionaryEntry, String> {
+    db.upsert_dictionary_entry(&term, &misheard, "manual")
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_dictionary_entry(
+    db: State<'_, DbState>,
+    id: String,
+    term: String,
+    misheard: Vec<String>,
+) -> Result<(), String> {
+    db.update_dictionary_entry(&id, &term, &misheard)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_dictionary_entry(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_dictionary_entry(&id).map_err(|e| e.to_string())
+}
+
+/// Re-applies the dictionary to an already-recorded meeting.
+#[tauri::command]
+pub fn apply_dictionary_to_meeting(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<usize, String> {
+    crate::dictionary::apply_to_meeting(&db, &meeting_id, None).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn search_transcripts(
     db: State<'_, DbState>,
@@ -663,6 +759,7 @@ async fn run_transcription_pipeline(
                         segments.len()
                     );
                     segment_count += segments.len() as u64;
+                    let dictionary = db.list_dictionary_entries().unwrap_or_default();
                     for seg in &segments {
                         tracing::info!("[DIAG] Segment: {:?}", seg.text);
 
@@ -682,7 +779,7 @@ async fn run_transcription_pipeline(
                         match db.create_transcript_segment(NewTranscriptSegment {
                             meeting_id: meeting_id.clone(),
                             speaker_label: speaker,
-                            text: seg.text.clone(),
+                            text: crate::dictionary::apply(&dictionary, &seg.text),
                             start_ms: i64::try_from(seg.start_ms).unwrap_or(i64::MAX),
                             end_ms: i64::try_from(seg.end_ms).unwrap_or(i64::MAX),
                             confidence: 0.9,
@@ -1666,6 +1763,7 @@ pub async fn set_app_setting(
         "denoise_enabled",
         "detection_enabled",
         crate::remote::ENABLED_SETTING,
+        crate::dictionary::AUTO_LEARN_SETTING,
     ];
     if !ALLOWED_SETTING_KEYS.contains(&key.as_str()) {
         return Err(format!("Invalid setting key: {key}"));

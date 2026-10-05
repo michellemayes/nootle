@@ -86,6 +86,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Record everything** — capture microphone and system audio simultaneously
 - **Live transcription** — speech-to-text powered by Parakeet via ONNX Runtime
 - **Speaker identification** — know who said what with automatic diarization
+- **Auto-learning dictionary** — double-click any transcript line to fix a misheard name or term. Nootle learns the fix ("noodle" → "Nootle"), corrects the rest of that meeting, applies it to every future recording, and gives your dictionary to the AI as a spelling reference for summaries and chat. Manage words, or turn learning off, in Settings → Dictionary
 - **AI summaries and chat** — ask questions about your meetings using your preferred LLM
 - **Insight extraction** — decisions, action items, and key moments are extracted automatically once a recording finishes transcribing
 - **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, or your existing Claude / ChatGPT subscription via the Claude Code (`claude -p`) and Codex CLIs

@@ -1,8 +1,26 @@
+pub use crate::dictionary::DictionaryEntry;
 use crate::error::{NootleError, Result};
 use rusqlite::{ffi::sqlite3_auto_extension, params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sqlite_vec::sqlite3_vec_init;
 use std::sync::{Mutex, MutexGuard};
+
+/// Trims and de-duplicates dictionary variants (case-insensitively), dropping
+/// any that already read exactly as the term.
+fn merge_variants(term: &str, existing: &[String], added: &[String]) -> Vec<String> {
+    let mut merged: Vec<String> = Vec::new();
+    for variant in existing.iter().chain(added) {
+        let variant = variant.trim();
+        if variant.is_empty()
+            || variant == term
+            || merged.iter().any(|m| m.eq_ignore_ascii_case(variant))
+        {
+            continue;
+        }
+        merged.push(variant.to_string());
+    }
+    merged
+}
 
 /// Label names are UNIQUE; turn that constraint failure into a readable error.
 fn duplicate_label_error(e: rusqlite::Error, name: &str) -> NootleError {
@@ -729,6 +747,19 @@ impl Database {
                 started_at TEXT NOT NULL DEFAULT (datetime('now')),
                 completed_at TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS dictionary_entries (
+                id TEXT PRIMARY KEY,
+                term TEXT NOT NULL UNIQUE,
+                misheard TEXT NOT NULL DEFAULT '[]',
+                source TEXT NOT NULL DEFAULT 'manual',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TRIGGER IF NOT EXISTS transcripts_au AFTER UPDATE OF text ON transcripts BEGIN
+                INSERT INTO transcripts_fts(transcripts_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+                INSERT INTO transcripts_fts(rowid, text) VALUES (new.rowid, new.text);
+            END;
             ",
         )?;
         Self::seed_default_insight_types(&conn)?;
@@ -1826,6 +1857,193 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(segments)
+    }
+
+    pub fn get_transcript_segment(&self, id: &str) -> Result<TranscriptSegment> {
+        let conn = self.lock_conn()?;
+        conn.query_row(
+            "SELECT id, meeting_id, speaker_label, text, start_ms, end_ms, confidence
+             FROM transcripts WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(TranscriptSegment {
+                    id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    speaker_label: row.get(2)?,
+                    text: row.get(3)?,
+                    start_ms: row.get(4)?,
+                    end_ms: row.get(5)?,
+                    confidence: row.get(6)?,
+                })
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                NootleError::Other(format!("Transcript segment not found: {}", id))
+            }
+            other => NootleError::Database(other),
+        })
+    }
+
+    pub fn update_transcript_segment_text(&self, id: &str, text: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE transcripts SET text = ?1 WHERE id = ?2",
+            params![text, id],
+        )?;
+        Ok(())
+    }
+
+    // --- Dictionary ---
+
+    pub fn list_dictionary_entries(&self) -> Result<Vec<DictionaryEntry>> {
+        let conn = self.lock_conn()?;
+        Self::query_dictionary_entries(&conn)
+    }
+
+    fn query_dictionary_entries(conn: &Connection) -> Result<Vec<DictionaryEntry>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, term, misheard, source, created_at
+             FROM dictionary_entries ORDER BY term COLLATE NOCASE",
+        )?;
+        let entries = stmt
+            .query_map([], |row| {
+                let misheard: String = row.get(2)?;
+                Ok(DictionaryEntry {
+                    id: row.get(0)?,
+                    term: row.get(1)?,
+                    misheard: serde_json::from_str(&misheard).unwrap_or_default(),
+                    source: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(entries)
+    }
+
+    /// Creates an entry, or merges the variants into the existing entry for
+    /// `term`.
+    pub fn upsert_dictionary_entry(
+        &self,
+        term: &str,
+        misheard: &[String],
+        source: &str,
+    ) -> Result<DictionaryEntry> {
+        let term = term.trim();
+        if term.is_empty() {
+            return Err(NootleError::Other("Dictionary term cannot be empty".into()));
+        }
+        let conn = self.lock_conn()?;
+        let existing = Self::query_dictionary_entries(&conn)?
+            .into_iter()
+            .find(|e| e.term == term);
+        let entry = match existing {
+            Some(mut entry) => {
+                entry.misheard = merge_variants(&entry.term, &entry.misheard, misheard);
+                conn.execute(
+                    "UPDATE dictionary_entries SET misheard = ?1 WHERE id = ?2",
+                    params![serde_json::to_string(&entry.misheard)?, entry.id],
+                )?;
+                entry
+            }
+            None => {
+                let entry = DictionaryEntry {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    term: term.to_string(),
+                    misheard: merge_variants(term, &[], misheard),
+                    source: source.to_string(),
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                };
+                conn.execute(
+                    "INSERT INTO dictionary_entries (id, term, misheard, source, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        entry.id,
+                        entry.term,
+                        serde_json::to_string(&entry.misheard)?,
+                        entry.source,
+                        entry.created_at
+                    ],
+                )?;
+                entry
+            }
+        };
+        Ok(entry)
+    }
+
+    pub fn update_dictionary_entry(
+        &self,
+        id: &str,
+        term: &str,
+        misheard: &[String],
+    ) -> Result<()> {
+        let term = term.trim();
+        if term.is_empty() {
+            return Err(NootleError::Other("Dictionary term cannot be empty".into()));
+        }
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE dictionary_entries SET term = ?1, misheard = ?2 WHERE id = ?3",
+            params![
+                term,
+                serde_json::to_string(&merge_variants(term, &[], misheard))?,
+                id
+            ],
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::SqliteFailure(err, _)
+                if err.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE =>
+            {
+                NootleError::Other(format!("\"{}\" is already in the dictionary", term))
+            }
+            other => NootleError::Database(other),
+        })?;
+        Ok(())
+    }
+
+    pub fn delete_dictionary_entry(&self, id: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute("DELETE FROM dictionary_entries WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Records corrections learned from a transcript edit. The latest edit
+    /// wins: a variant moves to its new term, and a term the user just typed
+    /// stops being treated as a misheard variant elsewhere.
+    pub fn learn_dictionary_corrections(
+        &self,
+        corrections: &[crate::dictionary::LearnedCorrection],
+    ) -> Result<()> {
+        if corrections.is_empty() {
+            return Ok(());
+        }
+        {
+            let conn = self.lock_conn()?;
+            for entry in Self::query_dictionary_entries(&conn)? {
+                let kept: Vec<String> = entry
+                    .misheard
+                    .iter()
+                    .filter(|m| {
+                        !corrections.iter().any(|c| {
+                            entry.term != c.to
+                                && (m.eq_ignore_ascii_case(&c.from)
+                                    || m.eq_ignore_ascii_case(&c.to))
+                        })
+                    })
+                    .cloned()
+                    .collect();
+                if kept.len() != entry.misheard.len() {
+                    conn.execute(
+                        "UPDATE dictionary_entries SET misheard = ?1 WHERE id = ?2",
+                        params![serde_json::to_string(&kept)?, entry.id],
+                    )?;
+                }
+            }
+        }
+        for c in corrections {
+            self.upsert_dictionary_entry(&c.to, std::slice::from_ref(&c.from), "learned")?;
+        }
+        Ok(())
     }
 
     pub fn create_template(&self, new: NewTemplate) -> Result<Template> {
