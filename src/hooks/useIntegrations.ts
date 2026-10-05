@@ -4,13 +4,12 @@ import type { Integration } from "@/types";
 
 export function useIntegrations() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [githubCliAvailable, setGithubCliAvailable] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       const result = await invoke<Integration[]>("list_integrations");
       setIntegrations(result);
       setError(null);

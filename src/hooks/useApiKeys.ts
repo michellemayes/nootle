@@ -8,7 +8,6 @@ export function useApiKeys() {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<string[]>("list_stored_providers");
       setStoredProviders(result);

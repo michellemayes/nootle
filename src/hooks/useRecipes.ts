@@ -9,7 +9,6 @@ export function useRecipes() {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<Recipe[]>("list_recipes");
       setRecipes(result);

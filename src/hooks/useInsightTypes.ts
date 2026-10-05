@@ -9,7 +9,6 @@ export function useInsightTypes() {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<InsightType[]>("list_insight_types");
       setTypes(result);

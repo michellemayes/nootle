@@ -52,7 +52,7 @@ fn validate_provider(provider: &str) -> Result<(), String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_meetings(
     db: State<'_, DbState>,
     search: Option<String>,
@@ -62,12 +62,12 @@ pub fn list_meetings(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_meeting(db: State<'_, DbState>, id: String) -> Result<Meeting, String> {
     db.get_meeting(&id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_meeting(db: State<'_, DbState>, id: String) -> Result<(), String> {
     // Get meeting to find audio path before deleting
     let audio_path = db.get_meeting(&id).ok().and_then(|m| m.audio_path.clone());
@@ -84,7 +84,7 @@ pub fn delete_meeting(db: State<'_, DbState>, id: String) -> Result<(), String> 
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_meeting_status(
     db: State<'_, DbState>,
     id: String,
@@ -98,7 +98,7 @@ pub fn update_meeting_status(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_meeting_title(
     db: State<'_, DbState>,
     id: String,
@@ -110,7 +110,7 @@ pub fn update_meeting_title(
 
 /// Changes which summary template a meeting will be summarized with. Pass
 /// `None` to clear it and fall back to the auto-run templates.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_meeting_template(
     db: State<'_, DbState>,
     id: String,
@@ -149,7 +149,7 @@ async fn linear_client(db: &Database) -> Result<crate::linear::Linear, String> {
     crate::linear::Linear::for_integration(db, &integration).await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_label(
     db: State<'_, DbState>,
     name: String,
@@ -161,12 +161,12 @@ pub fn create_label(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_labels(db: State<'_, DbState>) -> Result<Vec<Label>, String> {
     db.list_labels().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_label(
     db: State<'_, DbState>,
     id: String,
@@ -179,12 +179,12 @@ pub fn update_label(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_label(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_label(&id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_meeting_label(
     db: State<'_, DbState>,
     meeting_id: String,
@@ -194,7 +194,7 @@ pub fn add_meeting_label(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn remove_meeting_label(
     db: State<'_, DbState>,
     meeting_id: String,
@@ -204,7 +204,7 @@ pub fn remove_meeting_label(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_meeting_labels(
     db: State<'_, DbState>,
     meeting_id: String,
@@ -219,7 +219,7 @@ pub struct MeetingLabelEntry {
     pub label: Label,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_all_meeting_labels(db: State<'_, DbState>) -> Result<Vec<MeetingLabelEntry>, String> {
     db.get_all_meeting_labels()
         .map(|entries| {
@@ -231,7 +231,7 @@ pub fn get_all_meeting_labels(db: State<'_, DbState>) -> Result<Vec<MeetingLabel
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_scratch_note(
     db: State<'_, DbState>,
     meeting_id: String,
@@ -242,7 +242,7 @@ pub fn add_scratch_note(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_scratch_notes(
     db: State<'_, DbState>,
     meeting_id: String,
@@ -250,12 +250,12 @@ pub fn get_scratch_notes(
     db.get_scratch_notes(&meeting_id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_scratch_note(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_scratch_note(&id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_transcript(
     db: State<'_, DbState>,
     meeting_id: String,
@@ -273,12 +273,12 @@ pub async fn update_transcript_segment(
     crate::dictionary::record_edit(&db, &segment_id, &text).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_dictionary_entries(db: State<'_, DbState>) -> Result<Vec<DictionaryEntry>, String> {
     db.list_dictionary_entries().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_dictionary_entry(
     db: State<'_, DbState>,
     term: String,
@@ -288,7 +288,7 @@ pub fn add_dictionary_entry(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_dictionary_entry(
     db: State<'_, DbState>,
     id: String,
@@ -299,7 +299,7 @@ pub fn update_dictionary_entry(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_dictionary_entry(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_dictionary_entry(&id).map_err(|e| e.to_string())
 }
@@ -315,7 +315,7 @@ pub async fn apply_dictionary_to_meeting(
     crate::dictionary::apply_to_meeting(&db, &meeting_id, &rules, None).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn search_transcripts(
     db: State<'_, DbState>,
     query: String,
@@ -323,7 +323,7 @@ pub fn search_transcripts(
     db.search_transcripts(&query).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_recipe(
     db: State<'_, DbState>,
     name: String,
@@ -342,12 +342,12 @@ pub fn create_recipe(
     .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_recipes(db: State<'_, DbState>) -> Result<Vec<Recipe>, String> {
     db.list_recipes().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_recipe(
     db: State<'_, DbState>,
     id: String,
@@ -368,7 +368,7 @@ pub fn update_recipe(
     .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_recipe(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_recipe(&id).map_err(|e| e.to_string())
 }
@@ -388,7 +388,7 @@ pub async fn run_recipe(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_template(
     db: State<'_, DbState>,
@@ -412,22 +412,22 @@ pub fn create_template(
     .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_templates(db: State<'_, DbState>) -> Result<Vec<Template>, String> {
     db.list_templates().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_template(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_template(&id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_template(db: State<'_, DbState>, params: UpdateTemplate) -> Result<Template, String> {
     db.update_template(&params).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_summaries(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<Summary>, String> {
     db.get_summaries_for_meeting(&meeting_id)
         .map_err(|e| e.to_string())
@@ -673,10 +673,9 @@ async fn auto_title(
     };
     drop(llm);
 
-    if let Err(e) = db.update_meeting_title(meeting_id, &title) {
-        tracing::warn!("Failed to auto-generate title: {e}");
-    } else if let Ok(meeting) = db.get_meeting(meeting_id) {
-        let _ = app.emit("meeting-updated", &meeting);
+    match db.update_meeting_title(meeting_id, &title) {
+        Ok(()) => emit_meeting_updated(db, app, meeting_id),
+        Err(e) => tracing::warn!("Failed to auto-generate title: {e}"),
     }
 }
 
@@ -726,7 +725,7 @@ async fn auto_extract_insights(
 
 /// Background task: consume audio chunks, transcribe, diarize, persist, and emit events.
 async fn run_transcription_pipeline(
-    mut audio_rx: tokio::sync::mpsc::Receiver<Vec<f32>>,
+    audio_rx: tokio::sync::mpsc::Receiver<Vec<f32>>,
     db: Arc<Database>,
     llm_state: LlmState,
     embedding_state: Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>,
@@ -734,15 +733,117 @@ async fn run_transcription_pipeline(
     initial_title: String,
     app: tauri::AppHandle,
 ) {
-    // Try to load transcription engine
-    tracing::info!("[DIAG] Transcription pipeline started, loading engine...");
-    let mut transcription_engine = match TranscriptionEngine::load() {
-        Ok(e) => {
-            tracing::info!("[DIAG] Transcription engine loaded successfully");
-            Some(e)
+    // Model loading and inference are CPU-bound, so they run on a blocking
+    // thread rather than stalling the async runtime that serves the UI.
+    let segment_count = {
+        let db = db.clone();
+        let meeting_id = meeting_id.clone();
+        let app = app.clone();
+        tokio::task::spawn_blocking(move || {
+            let count = transcribe_live(audio_rx, &db, &meeting_id, &app);
+            // Analytics only need the transcript, so they are ready before any LLM work.
+            if count > 0 {
+                compute_analytics(&db, &app, &meeting_id);
+            }
+            count
+        })
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("Transcription thread panicked: {e}");
+            0
+        })
+    };
+
+    if segment_count == 0 {
+        tracing::info!(
+            "No transcript segments produced for {meeting_id}, not marking as summarized"
+        );
+    }
+
+    // Embedding is local CPU work and independent of the LLM calls below.
+    {
+        let db = db.clone();
+        let meeting_id = meeting_id.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut engine_lock = embedding_state.blocking_lock();
+            if let Some(ref mut engine) = *engine_lock {
+                match crate::chunking::embed_meeting(&db, engine, &meeting_id) {
+                    Ok(count) => tracing::info!("Embedded {count} chunks for meeting {meeting_id}"),
+                    Err(e) => tracing::warn!("Failed to embed meeting {meeting_id}: {e}"),
+                }
+            }
+        });
+    }
+
+    // Title, summaries and insights are independent LLM calls, so they run
+    // side by side and the summary lands as soon as its own call returns.
+    // A local Ollama model serves one request at a time, so there insights
+    // wait for the summary instead of competing with it.
+    let summarize = async {
+        tokio::join!(
+            auto_title(&db, &llm_state, &app, &meeting_id, &initial_title),
+            auto_summarize(&db, &llm_state, &app, &meeting_id),
+        );
+        if segment_count > 0 {
+            match db.update_meeting_status(&meeting_id, "summarized") {
+                Ok(()) => emit_meeting_updated(&db, &app, &meeting_id),
+                Err(e) => tracing::warn!("Failed to update meeting status to summarized: {e}"),
+            }
         }
+    };
+    if segment_count == 0 {
+        summarize.await;
+    } else if auto_model_is_local(&db, &llm_state).await {
+        summarize.await;
+        auto_extract_insights(&db, &llm_state, &app, &meeting_id).await;
+    } else {
+        tokio::join!(
+            summarize,
+            auto_extract_insights(&db, &llm_state, &app, &meeting_id),
+        );
+    }
+}
+
+/// Tell the frontend a meeting row changed; pages apply the payload directly.
+fn emit_meeting_updated(db: &Database, app: &tauri::AppHandle, meeting_id: &str) {
+    if let Ok(meeting) = db.get_meeting(meeting_id) {
+        let _ = app.emit("meeting-updated", &meeting);
+    }
+}
+
+async fn auto_model_is_local(db: &Database, llm_state: &LlmState) -> bool {
+    let registry = llm_state.read().await;
+    pick_auto_model(db, &registry).is_some_and(|m| m.provider == "ollama")
+}
+
+/// Pick the speaker whose diarized span overlaps a transcript segment most.
+fn speaker_for(
+    seg: &transcription::TranscriptionSegment,
+    speakers: &[crate::diarization::SpeakerSegment],
+) -> String {
+    speakers
+        .iter()
+        .max_by_key(|s| {
+            s.end_ms
+                .min(seg.end_ms)
+                .saturating_sub(s.start_ms.max(seg.start_ms))
+        })
+        .map(|s| s.speaker_id.clone())
+        .unwrap_or_else(|| "Speaker".to_string())
+}
+
+/// Transcribe audio chunks as they arrive until recording stops. Emits only
+/// the new segments for each chunk; returns how many segments were stored.
+fn transcribe_live(
+    mut audio_rx: tokio::sync::mpsc::Receiver<Vec<f32>>,
+    db: &Database,
+    meeting_id: &str,
+    app: &tauri::AppHandle,
+) -> u64 {
+    let mut transcription_engine = match TranscriptionEngine::load() {
+        Ok(e) => Some(e),
         Err(err) => {
-            tracing::error!("[DIAG] Transcription engine FAILED to load: {err:#}");
+            tracing::error!("Transcription engine failed to load: {err:#}");
             None
         }
     };
@@ -771,7 +872,6 @@ async fn run_transcription_pipeline(
         );
     }
 
-    // Try to load diarization engine
     let mut diarization_engine = match DiarizationEngine::load() {
         Ok(e) => Some(e),
         Err(err) => {
@@ -780,138 +880,57 @@ async fn run_transcription_pipeline(
         }
     };
 
-    let mut offset_samples: u64 = 0;
     let sample_rate: u64 = 16000;
-
-    let mut chunk_count: u64 = 0;
+    let mut offset_samples: u64 = 0;
     let mut segment_count: u64 = 0;
-    tracing::info!(
-        "[DIAG] Entering audio chunk loop, engine={}, diarization={}",
-        transcription_engine.is_some(),
-        diarization_engine.is_some()
-    );
 
-    while let Some(chunk) = audio_rx.recv().await {
+    while let Some(chunk) = audio_rx.blocking_recv() {
         let offset_ms = offset_samples * 1000 / sample_rate;
-        let chunk_len = chunk.len() as u64;
-        chunk_count += 1;
+        offset_samples += chunk.len() as u64;
 
-        // Log every chunk received
-        let rms = (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt();
-        tracing::info!(
-            "[DIAG] Chunk #{chunk_count}: {chunk_len} samples, offset={offset_ms}ms, RMS={rms:.6}"
-        );
-
-        // Run transcription
-        if let Some(ref mut engine) = transcription_engine {
-            match engine.transcribe(&chunk, offset_ms) {
-                Ok(segments) => {
-                    tracing::info!(
-                        "[DIAG] Chunk #{chunk_count}: transcribe() returned {} segments",
-                        segments.len()
-                    );
-                    segment_count += segments.len() as u64;
-                    // Reloaded per chunk so words added mid-meeting apply straight away.
-                    let dictionary = if segments.is_empty() {
-                        crate::dictionary::Rules::new(&[])
-                    } else {
-                        crate::dictionary::Rules::new(
-                            &db.list_dictionary_entries().unwrap_or_default(),
-                        )
-                    };
-                    for seg in &segments {
-                        tracing::info!("[DIAG] Segment: {:?}", seg.text);
-
-                        // Run diarization to get speaker label
-                        let speaker = if let Some(ref mut diar) = diarization_engine {
-                            match diar.diarize(&chunk, offset_ms) {
-                                Ok(diar_segs) => diar_segs
-                                    .first()
-                                    .map(|s| s.speaker_id.clone())
-                                    .unwrap_or_else(|| "Speaker".to_string()),
-                                Err(_) => "Speaker".to_string(),
-                            }
-                        } else {
-                            "Speaker".to_string()
-                        };
-
-                        match db.create_transcript_segment(NewTranscriptSegment {
-                            meeting_id: meeting_id.clone(),
-                            speaker_label: speaker,
-                            text: dictionary.apply(&seg.text),
-                            start_ms: i64::try_from(seg.start_ms).unwrap_or(i64::MAX),
-                            end_ms: i64::try_from(seg.end_ms).unwrap_or(i64::MAX),
-                            confidence: 0.9,
-                        }) {
-                            Ok(_) => tracing::info!("[DIAG] DB insert succeeded"),
-                            Err(e) => tracing::error!("[DIAG] DB insert FAILED: {e}"),
-                        }
-                    }
-
-                    // Emit updated transcript to frontend
-                    match db.get_transcript(&meeting_id) {
-                        Ok(all_segments) => {
-                            tracing::info!(
-                                "[DIAG] Emitting transcript-update with {} segments",
-                                all_segments.len()
-                            );
-                            match app.emit("transcript-update", &all_segments) {
-                                Ok(_) => tracing::info!("[DIAG] Emit succeeded"),
-                                Err(e) => tracing::error!("[DIAG] Emit FAILED: {e}"),
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("[DIAG] get_transcript FAILED: {e}");
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("[DIAG] Chunk #{chunk_count}: transcribe() FAILED: {e:#}");
-                }
+        let Some(ref mut engine) = transcription_engine else {
+            continue;
+        };
+        let segments = match engine.transcribe(&chunk, offset_ms) {
+            Ok(segments) if !segments.is_empty() => segments,
+            Ok(_) => continue,
+            Err(e) => {
+                tracing::error!("transcribe() failed at {offset_ms}ms: {e:#}");
+                continue;
             }
-        } else if chunk_count == 1 {
-            tracing::warn!("[DIAG] No transcription engine — chunks will not be transcribed");
+        };
+
+        // Diarize the chunk once and share it across its segments.
+        let speakers = diarization_engine
+            .as_mut()
+            .and_then(|diar| diar.diarize(&chunk, offset_ms).ok())
+            .unwrap_or_default();
+        // Reloaded per chunk so words added mid-meeting apply straight away.
+        let dictionary =
+            crate::dictionary::Rules::new(&db.list_dictionary_entries().unwrap_or_default());
+
+        let mut stored = Vec::with_capacity(segments.len());
+        for seg in &segments {
+            match db.create_transcript_segment(NewTranscriptSegment {
+                meeting_id: meeting_id.to_string(),
+                speaker_label: speaker_for(seg, &speakers),
+                text: dictionary.apply(&seg.text),
+                start_ms: i64::try_from(seg.start_ms).unwrap_or(i64::MAX),
+                end_ms: i64::try_from(seg.end_ms).unwrap_or(i64::MAX),
+                confidence: 0.9,
+            }) {
+                Ok(s) => stored.push(s),
+                Err(e) => tracing::error!("Failed to store transcript segment: {e}"),
+            }
         }
-
-        offset_samples += chunk_len;
-    }
-
-    tracing::info!("[DIAG] Audio channel closed after {chunk_count} chunks");
-
-    // Title and summaries are independent LLM calls, so run them side by side
-    // rather than making the summary wait on the title.
-    tokio::join!(
-        auto_title(&db, &llm_state, &app, &meeting_id, &initial_title),
-        auto_summarize(&db, &llm_state, &app, &meeting_id),
-    );
-
-    // Mark meeting as done transcribing only if transcription produced segments
-    if segment_count > 0 {
-        if let Err(e) = db.update_meeting_status(&meeting_id, "summarized") {
-            tracing::warn!("Failed to update meeting status to summarized: {e}");
-        }
-        // Analytics need the full transcript, so they run only now.
-        compute_analytics(&db, &app, &meeting_id);
-    } else {
-        tracing::info!(
-            "No transcript segments produced for {meeting_id}, not marking as summarized"
-        );
-    }
-
-    // After transcription completes, embed the meeting
-    let mut engine_lock = embedding_state.lock().await;
-    if let Some(ref mut engine) = *engine_lock {
-        match crate::chunking::embed_meeting(&db, engine, &meeting_id) {
-            Ok(count) => tracing::info!("Embedded {count} chunks for meeting {meeting_id}"),
-            Err(e) => tracing::warn!("Failed to embed meeting {meeting_id}: {e}"),
+        segment_count += stored.len() as u64;
+        if !stored.is_empty() {
+            let _ = app.emit("transcript-update", &stored);
         }
     }
-    drop(engine_lock);
 
-    // Insights also need the full transcript; this is the slowest step, so last.
-    if segment_count > 0 {
-        auto_extract_insights(&db, &llm_state, &app, &meeting_id).await;
-    }
+    tracing::info!("Audio channel closed after {segment_count} segments");
+    segment_count
 }
 
 #[tauri::command]
@@ -971,37 +990,6 @@ pub async fn current_recording(
     }
 }
 
-/// Read an audio file and return it as base64-encoded WAV data.
-#[tauri::command]
-pub async fn get_audio_data(
-    db: State<'_, DbState>,
-    meeting_id: String,
-) -> Result<Option<String>, String> {
-    let meeting = db.get_meeting(&meeting_id).map_err(|e| e.to_string())?;
-    let audio_path = match meeting.audio_path {
-        Some(p) if !p.is_empty() => p,
-        _ => return Ok(None),
-    };
-    let path = std::path::Path::new(&audio_path);
-    if !path.exists() {
-        return Ok(None);
-    }
-    // Validate that the audio path is within the expected recordings directory
-    let recordings_dir = dirs::data_dir()
-        .ok_or_else(|| "Could not determine data directory".to_string())?
-        .join("Nootle")
-        .join("recordings");
-    let canonical = std::fs::canonicalize(path).map_err(|_| "Invalid audio path".to_string())?;
-    if !canonical.starts_with(&recordings_dir) {
-        return Err("Audio path outside recordings directory".to_string());
-    }
-    let data = std::fs::read(&canonical).map_err(|e| format!("Failed to read audio file: {e}"))?;
-    use base64::Engine;
-    Ok(Some(
-        base64::engine::general_purpose::STANDARD.encode(&data),
-    ))
-}
-
 #[tauri::command]
 pub async fn store_api_key(
     db: State<'_, DbState>,
@@ -1030,7 +1018,7 @@ pub async fn store_api_key(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn has_api_key(db: State<'_, DbState>, provider: String) -> Result<bool, String> {
     validate_provider(&provider)?;
     if provider == "linear" {
@@ -1066,7 +1054,7 @@ pub async fn delete_api_key(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_stored_providers(db: State<'_, DbState>) -> Result<Vec<String>, String> {
     let mut providers = db.list_api_key_providers().map_err(|e| e.to_string())?;
     // Check if Linear API key is stored in the database
@@ -1151,7 +1139,7 @@ pub async fn request_calendar_permission() -> Result<bool, String> {
     Ok(crate::permissions::request_calendar().await)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
     let defaults = vec![
         ("Meeting Summary", "Summarize this meeting transcript. Include: key decisions, action items with owners, and main discussion points. Be concise.", true, true),
@@ -1356,7 +1344,7 @@ pub async fn create_ticket_from_action_item(
     }))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_linear_tickets(
     db: State<'_, DbState>,
     meeting_id: String,
@@ -1365,12 +1353,12 @@ pub fn get_linear_tickets(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_linear_setting(db: State<'_, DbState>, key: String) -> Result<Option<String>, String> {
     db.get_linear_setting(&key).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_linear_setting(
     db: State<'_, DbState>,
     key: String,
@@ -1574,12 +1562,12 @@ pub async fn get_embedding_status(
     }))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_insight_types(db: State<'_, DbState>) -> Result<Vec<crate::db::InsightType>, String> {
     db.list_insight_types().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_insight_type(
     db: State<'_, DbState>,
     name: String,
@@ -1600,7 +1588,7 @@ pub fn create_insight_type(
     .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_insight_type(
     db: State<'_, DbState>,
     id: String,
@@ -1621,12 +1609,12 @@ pub fn update_insight_type(
     .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_insight_type(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_insight_type(&id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_insights(
     db: State<'_, DbState>,
     meeting_id: String,
@@ -1635,7 +1623,7 @@ pub fn get_insights(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_all_insights(
     db: State<'_, DbState>,
     insight_type: Option<String>,
@@ -1693,7 +1681,7 @@ pub async fn re_extract_meeting_insights(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_action_item_status(
     db: State<'_, DbState>,
     id: String,
@@ -1707,7 +1695,7 @@ pub fn update_action_item_status(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_action_item(
     db: State<'_, DbState>,
     id: String,
@@ -1718,7 +1706,7 @@ pub fn update_action_item(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_exe_path() -> Result<String, String> {
     std::env::current_exe()
         .map(|p| p.to_string_lossy().into_owned())
@@ -1751,22 +1739,22 @@ pub async fn set_app_setting(
     db.set_setting(&key, &value).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_chat_conversation(db: State<'_, DbState>) -> Result<ChatConversation, String> {
     db.create_chat_conversation().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_chat_conversations(db: State<'_, DbState>) -> Result<Vec<ChatConversation>, String> {
     db.list_chat_conversations().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_chat_conversation(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_chat_conversation(&id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_chat_messages(
     db: State<'_, DbState>,
     conversation_id: String,
@@ -1876,7 +1864,7 @@ pub async fn send_chat_message(
     }))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_chat_conversation_title(
     db: State<'_, DbState>,
     id: String,
@@ -1886,7 +1874,7 @@ pub fn update_chat_conversation_title(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_meeting_notes(
     db: State<'_, DbState>,
     id: String,
@@ -1896,7 +1884,7 @@ pub fn save_meeting_notes(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_enriched_notes(
     db: State<'_, DbState>,
     id: String,
@@ -2042,7 +2030,7 @@ pub async fn get_meeting_analytics(
     }))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_integration(
     db: State<'_, DbState>,
     integration_type: String,
@@ -2053,12 +2041,12 @@ pub fn create_integration(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_integrations(db: State<'_, DbState>) -> Result<Vec<crate::db::Integration>, String> {
     db.list_integrations_safe().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_integration(
     db: State<'_, DbState>,
     id: String,
@@ -2069,7 +2057,7 @@ pub fn update_integration(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_integration(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_integration(&id).map_err(|e| e.to_string())
 }
@@ -2087,7 +2075,7 @@ pub async fn connect_integration_sign_in(
     crate::connectors::connect(&app, &db, &sign_in, &provider).await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cancel_integration_sign_in(sign_in: State<'_, crate::connectors::SignInState>) {
     sign_in.cancel();
 }
@@ -2112,7 +2100,7 @@ pub async fn connect_github_cli(db: State<'_, DbState>) -> Result<crate::db::Int
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_workflow(
     db: State<'_, DbState>,
     name: String,
@@ -2133,13 +2121,13 @@ pub fn create_workflow(
     .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_workflows(db: State<'_, DbState>) -> Result<Vec<crate::db::Workflow>, String> {
     db.list_workflows().map_err(|e| e.to_string())
 }
 
 #[allow(clippy::too_many_arguments)]
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_workflow(
     db: State<'_, DbState>,
     id: String,
@@ -2164,12 +2152,12 @@ pub fn update_workflow(
     .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_workflow(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.delete_workflow(&id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_workflow_runs(
     db: State<'_, DbState>,
     meeting_id: String,

@@ -9,7 +9,6 @@ export function useChatConversations() {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<ChatConversation[]>("list_chat_conversations");
       setConversations(result);

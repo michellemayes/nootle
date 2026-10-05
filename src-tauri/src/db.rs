@@ -488,6 +488,16 @@ impl Database {
     pub fn new(path: &str) -> Result<Self> {
         Self::ensure_vec_extension();
         let conn = Connection::open(path)?;
+        // WAL lets readers (the CLI, MCP server) run alongside the app's
+        // writes, and NORMAL sync skips an fsync per commit, which matters
+        // when live transcription inserts a segment every few seconds.
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
+             PRAGMA busy_timeout=5000;
+             PRAGMA temp_store=MEMORY;
+             PRAGMA cache_size=-16000;",
+        )?;
         let db = Self {
             conn: Mutex::new(conn),
         };
@@ -1102,6 +1112,27 @@ impl Database {
             conn.execute_batch("PRAGMA foreign_keys=ON;")?;
             rebuild_result?;
         }
+
+        // Nearly every per-meeting read filters on meeting_id; without these
+        // each one scans every row of every meeting.
+        conn.execute_batch(
+            "
+            CREATE INDEX IF NOT EXISTS idx_meetings_start_time ON meetings(start_time);
+            CREATE INDEX IF NOT EXISTS idx_meeting_labels_label ON meeting_labels(label_id);
+            CREATE INDEX IF NOT EXISTS idx_transcripts_meeting ON transcripts(meeting_id, start_ms);
+            CREATE INDEX IF NOT EXISTS idx_summaries_meeting ON summaries(meeting_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_linear_tickets_meeting ON linear_tickets(meeting_id);
+            CREATE INDEX IF NOT EXISTS idx_transcript_chunks_meeting ON transcript_chunks(meeting_id);
+            CREATE INDEX IF NOT EXISTS idx_insights_meeting ON insights(meeting_id);
+            CREATE INDEX IF NOT EXISTS idx_extraction_runs_meeting ON extraction_runs(meeting_id);
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(conversation_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_meeting_analytics_meeting ON meeting_analytics(meeting_id);
+            CREATE INDEX IF NOT EXISTS idx_sentiment_segments_meeting ON sentiment_segments(meeting_id, start_ms);
+            CREATE INDEX IF NOT EXISTS idx_scratch_notes_meeting ON scratch_notes(meeting_id, timestamp_ms);
+            CREATE INDEX IF NOT EXISTS idx_workflow_runs_meeting ON workflow_runs(meeting_id, started_at);
+            CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow ON workflow_runs(workflow_id);
+            ",
+        )?;
 
         Ok(())
     }

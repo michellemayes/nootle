@@ -10,7 +10,6 @@ export function useLLM() {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const [modelsResult, providersResult] = await Promise.all([
         invoke<ModelInfo[]>("list_llm_models"),
