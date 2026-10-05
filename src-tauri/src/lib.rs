@@ -20,6 +20,7 @@ pub mod import;
 pub mod linear;
 pub mod llm;
 pub mod mcp;
+pub mod ops;
 pub mod meeting_popup;
 pub mod model_download;
 pub mod model_registry;
