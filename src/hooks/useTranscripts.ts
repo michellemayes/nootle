@@ -1,7 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { TranscriptSegment, TranscriptUpdate } from "@/types";
+import type { TranscriptSegment } from "@/types";
+
+/** Append segments not already in `base`, keeping `base` if nothing is new. */
+export function mergeSegments(
+  base: TranscriptSegment[],
+  incoming: TranscriptSegment[],
+): TranscriptSegment[] {
+  const seen = new Set(base.map((seg) => seg.id));
+  const fresh = incoming.filter((seg) => !seen.has(seg.id));
+  return fresh.length ? [...base, ...fresh] : base;
+}
 
 export function useTranscript(meetingId: string) {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
@@ -10,7 +20,6 @@ export function useTranscript(meetingId: string) {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<TranscriptSegment[]>("get_transcript", {
         meetingId,
@@ -24,17 +33,19 @@ export function useTranscript(meetingId: string) {
   }, [meetingId]);
 
   useEffect(() => {
+    setLoading(true);
     refresh();
   }, [refresh]);
 
-  // A meeting still transcribing (an imported file, say) fills in live.
+  // Segments still being transcribed stream in live: a recording that just
+  // stopped, or an imported file.
   useEffect(() => {
-    const unlisten = listen<TranscriptUpdate>("transcript-update", (event) => {
-      if (event.payload.meeting_id === meetingId) setSegments(event.payload.segments);
+    const unlisten = listen<TranscriptSegment[]>("transcript-update", (event) => {
+      const incoming = event.payload.filter((seg) => seg.meeting_id === meetingId);
+      if (incoming.length === 0) return;
+      setSegments((prev) => mergeSegments(prev, incoming));
     });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+    return () => { unlisten.then((fn) => fn()); };
   }, [meetingId]);
 
   return { segments, loading, error, refresh };

@@ -69,7 +69,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.15 }}
             className="mx-auto max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border bg-card p-8 shadow-lg"
           >
             {/* Progress dots */}
@@ -186,7 +186,12 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
   useEffect(() => {
     checkStatus();
     const interval = setInterval(checkStatus, 2000);
-    return () => clearInterval(interval);
+    // Coming back from System Settings is when a grant usually lands.
+    window.addEventListener("focus", checkStatus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", checkStatus);
+    };
   }, [checkStatus]);
 
   // Calendar access only powers meeting detection, so it doesn't block setup.

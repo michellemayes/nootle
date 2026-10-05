@@ -10,7 +10,6 @@ export function useSummaries(meetingId: string) {
 
   const refresh = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const result = await invoke<Summary[]>("get_summaries", { meetingId });
       setSummaries(result);
@@ -22,6 +21,7 @@ export function useSummaries(meetingId: string) {
   }, [meetingId]);
 
   useEffect(() => {
+    setLoading(true);
     refresh();
   }, [refresh]);
 

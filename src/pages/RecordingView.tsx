@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { memo, useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useTranscript } from "@/hooks/useTranscripts";
+import type { TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ScratchPad } from "@/components/ScratchPad";
@@ -25,6 +26,20 @@ function formatTime(seconds: number): string {
   }
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
+
+// Memoized so the once-a-second timer tick doesn't re-render every line.
+const LiveSegments = memo(function LiveSegments({
+  segments,
+}: {
+  segments: TranscriptSegment[];
+}) {
+  return segments.map((seg) => (
+    <div key={seg.id} className="text-xs">
+      <span className="font-medium text-primary">{seg.speaker_label}:</span>{" "}
+      <span className="text-foreground">{seg.text}</span>
+    </div>
+  ));
+});
 
 interface TranscriptionStatus {
   meeting_id: string;
@@ -65,8 +80,9 @@ export function RecordingView() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
-  // Live transcript, plus whether transcription runs at all. Imports
-  // transcribing in the background send these events too.
+  // Live transcript (loads what's already there when resuming), plus whether
+  // transcription runs at all. Imports transcribing in the background send
+  // these events too, so both are matched to this recording's meeting.
   const { segments } = useTranscript(currentMeeting?.id ?? "");
   // Listening from mount: the status can arrive before start_recording returns.
   const [latestStatus, setLatestStatus] = useState<TranscriptionStatus | null>(null);
@@ -369,15 +385,7 @@ export function RecordingView() {
                         : "Listening. The transcript appears here as people speak."}
                     </p>
                   )}
-                  {segments.length > 0 &&
-                    segments.map((seg) => (
-                      <div key={seg.id} className="text-xs">
-                        <span className="font-medium text-primary">
-                          {seg.speaker_label}:
-                        </span>{" "}
-                        <span className="text-foreground">{seg.text}</span>
-                      </div>
-                    ))}
+                  <LiveSegments segments={segments} />
                 </div>
               </ScrollArea>
           )}
