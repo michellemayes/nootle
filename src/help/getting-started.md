@@ -8,7 +8,7 @@ Nootle needs three macOS permissions to work properly:
 
 - **Microphone** — captures your voice and other participants via speakers. Grant when prompted or go to System Settings → Privacy & Security → Microphone.
 - **Screen Recording** — required for system audio capture (hearing what others say in virtual meetings). Go to System Settings → Privacy & Security → Screen Recording.
-- **Calendar** — optional, lets Nootle detect upcoming meetings and auto-label recordings. Go to System Settings → Privacy & Security → Calendars.
+- **Calendar** — optional. Shows your next meetings on the Meetings page and names recordings after the event happening now. Go to System Settings → Privacy & Security → Calendars, or click **Connect calendar** on the Meetings page.
 
 After changing permissions you may need to restart Nootle for them to take effect.
 
@@ -17,9 +17,16 @@ After changing permissions you may need to restart Nootle for them to take effec
 1. Click **New recording** in the sidebar, or press **⌘N** from anywhere.
 2. Nootle begins capturing your microphone and (if permitted) system audio.
 3. A live transcript appears as you speak — you'll see text populate in real time with speaker labels.
-4. When the meeting ends, click **Stop** or press **⌘↵**.
+4. Need to step out or go off the record? Click **Pause**. Nothing is recorded or transcribed until you click **Resume**, and the timer only counts recorded time.
+5. When the meeting ends, click **Stop** or press **⌘↵**.
 
 The recording is saved locally and appears in your **Meetings** library. If you wander off to another page mid-meeting, the sidebar button turns into **Back to recording**.
+
+With calendar access, a recording started while an event is underway (or about to start) takes the event's name. The **Up next** list on the Meetings page shows your next events with a **Record** button, plus **Join** when the event has a Zoom, Meet, Teams, or Webex link.
+
+## Importing a Recording
+
+Already have a recording, like a voice memo, a Zoom cloud recording, or a video? Click **Import** on the Meetings page and pick the file. Nootle reads MP3, M4A, AAC, WAV, AIFF, CAF, FLAC, and Ogg audio, and MP4, MOV, and MKV video (when the audio track is AAC, MP3, ALAC, FLAC, Vorbis, or PCM). The meeting opens right away and the transcript fills in as it's transcribed, then the title, summary, and insights follow, just like a live recording. Everything stays on your Mac.
 
 ## Keyboard Shortcuts
 
@@ -44,6 +51,7 @@ Open any meeting from the library to see:
 - **Transcript** — the full text with speaker labels and timestamps. Click any segment to jump to that point.
 - **Summary** — click **Generate Summary** to create an AI-powered summary using your configured LLM provider. You can customize the summary style under **Prompts**.
 - **Chat** — ask follow-up questions about the meeting. For example: "What action items were discussed?" or "Summarize what Alice said about the budget."
+- **Export** — click **Export** at the top of the meeting to save it as Markdown (summaries, action items, notes, and transcript), a plain-text transcript, or SRT / WebVTT subtitles.
 
 ## Insights
 

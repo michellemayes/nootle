@@ -37,7 +37,8 @@ export function useTranscript(meetingId: string) {
     refresh();
   }, [refresh]);
 
-  // Segments still being transcribed after a recording stops stream in live.
+  // Segments still being transcribed stream in live: a recording that just
+  // stopped, or an imported file.
   useEffect(() => {
     const unlisten = listen<TranscriptSegment[]>("transcript-update", (event) => {
       const incoming = event.payload.filter((seg) => seg.meeting_id === meetingId);

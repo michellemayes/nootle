@@ -102,6 +102,26 @@ enum MeetingsAction {
         /// Meeting ID
         id: String,
     },
+    /// Export a meeting as Markdown, a plain-text transcript, or subtitles
+    Export {
+        /// Meeting ID
+        id: String,
+        /// md (summaries, action items, notes, transcript), txt, srt, or vtt
+        #[arg(long, default_value = "md")]
+        format: String,
+        /// Write to this file instead of stdout
+        #[arg(long, short)]
+        output: Option<std::path::PathBuf>,
+    },
+    /// Rename a speaker throughout a meeting's transcript
+    RenameSpeaker {
+        /// Meeting ID
+        id: String,
+        /// Current label, e.g. "Speaker 2"
+        from: String,
+        /// New name
+        to: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -467,6 +487,22 @@ fn run_command(
                 } else {
                     print_json(&segments, false);
                 }
+            }
+            MeetingsAction::Export { id, format, output } => {
+                use nootle_app_lib::export::{export_meeting, ExportFormat};
+                let content = export_meeting(db, id, ExportFormat::parse(format)?)?;
+                match output {
+                    Some(path) => std::fs::write(path, content)?,
+                    None => print!("{content}"),
+                }
+            }
+            MeetingsAction::RenameSpeaker { id, from, to } => {
+                let to = to.trim();
+                if to.is_empty() {
+                    print_error("Speaker name can't be empty");
+                }
+                let changed = db.rename_speaker(id, from, to)?;
+                print_json(&serde_json::json!({ "renamed_segments": changed }), pretty);
             }
         },
         Commands::Search { query } => {

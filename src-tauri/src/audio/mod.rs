@@ -1,3 +1,6 @@
+/// Rate everything is recorded, stored, and transcribed at.
+pub const SAMPLE_RATE: u32 = 16_000;
+
 pub mod capture;
 pub mod mic;
 pub mod mixer;

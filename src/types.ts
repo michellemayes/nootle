@@ -13,6 +13,29 @@ export interface Meeting {
   updated_at: string;
 }
 
+export interface RecordingStatus {
+  meeting_id: string;
+  paused: boolean;
+  /** Recorded time so far, not counting pauses. */
+  elapsed_ms: number;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  calendar: string | null;
+  location: string | null;
+  meeting_url: string | null;
+  attendee_count: number;
+}
+
+export interface UpcomingEvents {
+  status: "granted" | "denied" | "undetermined";
+  events: CalendarEvent[];
+}
+
 export interface TranscriptSegment {
   id: string;
   meeting_id: string;

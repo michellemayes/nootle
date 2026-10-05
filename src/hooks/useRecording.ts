@@ -1,19 +1,20 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import type { Meeting } from "@/types";
+import type { Meeting, RecordingStatus } from "@/types";
 
 const checkIsRecording = () => invoke<boolean>("is_recording").catch(() => false);
 
 export function useRecording() {
   const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [currentMeeting, setCurrentMeeting] = useState<Meeting | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!isRecording) return;
+    if (!isRecording || isPaused) return;
     timerRef.current = setInterval(() => {
       setElapsed((prev) => prev + 1);
     }, 1000);
@@ -23,7 +24,7 @@ export function useRecording() {
         timerRef.current = null;
       }
     };
-  }, [isRecording]);
+  }, [isRecording, isPaused]);
 
   const startRecording = useCallback(
     async (title: string, calendarEventId?: string, templateId?: string) => {
@@ -52,12 +53,23 @@ export function useRecording() {
   const resumeRecording = useCallback(async () => {
     const live = await invoke<Meeting | null>("current_recording");
     if (!live) return null;
+    const status = await invoke<RecordingStatus | null>("recording_status").catch(() => null);
     setCurrentMeeting(live);
     setElapsed(
-      Math.max(0, Math.floor((Date.now() - new Date(live.start_time).getTime()) / 1000)),
+      status
+        ? Math.floor(status.elapsed_ms / 1000)
+        : Math.max(0, Math.floor((Date.now() - new Date(live.start_time).getTime()) / 1000)),
     );
+    setIsPaused(status?.paused ?? false);
     setIsRecording(true);
     return live;
+  }, []);
+
+  // Paused stretches are left out of the audio and the transcript.
+  const setPaused = useCallback(async (paused: boolean) => {
+    const status = await invoke<RecordingStatus>("set_recording_paused", { paused });
+    setIsPaused(status.paused);
+    setElapsed(Math.floor(status.elapsed_ms / 1000));
   }, []);
 
   const stopRecording = useCallback(async () => {
@@ -67,17 +79,20 @@ export function useRecording() {
       return meeting;
     } finally {
       setIsRecording(false);
+      setIsPaused(false);
       setElapsed(0);
     }
   }, []);
 
   return {
     isRecording,
+    isPaused,
     currentMeeting,
     elapsed,
     error,
     startRecording,
     resumeRecording,
+    setPaused,
     stopRecording,
   };
 }

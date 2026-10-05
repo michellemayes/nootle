@@ -22,6 +22,20 @@ fn truncate_at_word_boundary(text: &str, max_chars: usize, suffix: &str) -> Stri
     }
 }
 
+/// Where recordings and imported audio live.
+fn recordings_dir() -> Result<std::path::PathBuf, String> {
+    Ok(dirs::data_dir()
+        .ok_or_else(|| "Could not determine data directory".to_string())?
+        .join("Nootle")
+        .join("recordings"))
+}
+
+/// Title for a recording started without one and with no calendar event to
+/// name it after; a timestamp is easier to find later than "Untitled".
+pub(crate) fn fallback_title() -> String {
+    format!("Meeting {}", chrono::Local::now().format("%Y-%m-%d %H:%M"))
+}
+
 pub type DbState = Arc<Database>;
 pub type RecordingState = Arc<TokioMutex<Option<RecordingSession>>>;
 pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
@@ -496,6 +510,23 @@ pub async fn start_recording(
         }
     }
 
+    // A recording started without a title takes the name of the calendar
+    // event happening now, like the meeting it's capturing.
+    // Only a placeholder title is replaced by one generated from the transcript.
+    let (title, calendar_event_id, placeholder) =
+        if title.trim().is_empty() && calendar_event_id.is_none() {
+            match tokio::task::spawn_blocking(crate::calendar::current_event)
+                .await
+                .ok()
+                .flatten()
+            {
+                Some(event) => (event.title, Some(event.id), false),
+                None => (fallback_title(), None, true),
+            }
+        } else {
+            (title, calendar_event_id, false)
+        };
+
     let meeting = db
         .create_meeting(NewMeeting {
             title,
@@ -505,10 +536,7 @@ pub async fn start_recording(
         .map_err(|e| e.to_string())?;
 
     // Create recording session — rollback meeting if this fails
-    let recordings_dir = dirs::data_dir()
-        .ok_or_else(|| "Could not determine data directory".to_string())?
-        .join("Nootle")
-        .join("recordings");
+    let recordings_dir = recordings_dir()?;
     let mut session = match RecordingSession::new(&recordings_dir, &meeting.id, 16000) {
         Ok(s) => s,
         Err(e) => {
@@ -542,6 +570,7 @@ pub async fn start_recording(
     // Spawn audio capture loop on a dedicated thread
     {
         let is_active = session.is_active_flag();
+        let is_paused = session.is_paused_flag();
         let audio_path = session.audio_path().to_path_buf();
 
         let handle = std::thread::spawn(move || {
@@ -562,9 +591,13 @@ pub async fn start_recording(
                     None
                 };
 
-            if let Err(e) =
-                run_audio_capture(audio_tx, is_active, audio_path, denoise_engine.as_mut())
-            {
+            if let Err(e) = run_audio_capture(
+                audio_tx,
+                is_active,
+                is_paused,
+                audio_path,
+                denoise_engine.as_mut(),
+            ) {
                 tracing::error!("Audio capture failed: {e}");
             }
         });
@@ -577,7 +610,7 @@ pub async fn start_recording(
         let llm_clone = llm.inner().clone();
         let embedding_clone = embedding_state.inner().clone();
         let meeting_id = meeting.id.clone();
-        let initial_title = meeting.title.clone();
+        let placeholder_title = placeholder.then(|| meeting.title.clone());
         let app_handle = app.clone();
 
         tokio::spawn(async move {
@@ -587,7 +620,7 @@ pub async fn start_recording(
                 llm_clone,
                 embedding_clone,
                 meeting_id,
-                initial_title,
+                placeholder_title,
                 app_handle,
             )
             .await;
@@ -644,12 +677,17 @@ async fn auto_title(
     llm_state: &LlmState,
     app: &tauri::AppHandle,
     meeting_id: &str,
-    initial_title: &str,
+    placeholder_title: Option<&str>,
 ) {
-    let renamed = db
+    // Keep any real title: one the caller or calendar gave, or one the user
+    // typed over the placeholder while recording.
+    let Some(placeholder) = placeholder_title else {
+        return;
+    };
+    if db
         .get_meeting(meeting_id)
-        .is_ok_and(|m| m.title != initial_title);
-    if renamed {
+        .is_ok_and(|m| m.title != placeholder)
+    {
         tracing::info!("Keeping user-set title for {meeting_id}");
         return;
     }
@@ -758,7 +796,7 @@ async fn run_transcription_pipeline(
     llm_state: LlmState,
     embedding_state: Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>,
     meeting_id: String,
-    initial_title: String,
+    placeholder_title: Option<String>,
     app: tauri::AppHandle,
 ) {
     // Model loading and inference are CPU-bound, so they run on a blocking
@@ -809,7 +847,13 @@ async fn run_transcription_pipeline(
     // wait for the summary instead of competing with it.
     let summarize = async {
         tokio::join!(
-            auto_title(&db, &llm_state, &app, &meeting_id, &initial_title),
+            auto_title(
+                &db,
+                &llm_state,
+                &app,
+                &meeting_id,
+                placeholder_title.as_deref()
+            ),
             auto_summarize(&db, &llm_state, &app, &meeting_id),
         );
         if segment_count > 0 {
@@ -864,7 +908,7 @@ fn transcribe_live(
     if transcription_engine.is_some() {
         let _ = app.emit(
             "transcription-status",
-            serde_json::json!({ "available": true }),
+            serde_json::json!({ "meeting_id": meeting_id, "available": true }),
         );
     } else {
         let reason = match TranscriptionEngine::check_status() {
@@ -878,6 +922,7 @@ fn transcribe_live(
         let _ = app.emit(
             "transcription-status",
             serde_json::json!({
+                "meeting_id": meeting_id,
                 "available": false,
                 "reason": reason,
             }),
@@ -1006,6 +1051,207 @@ pub async fn current_recording(
             .map_err(|e| e.to_string()),
         None => Ok(None),
     }
+}
+
+#[derive(serde::Serialize)]
+pub struct RecordingStatus {
+    pub meeting_id: String,
+    pub paused: bool,
+    /// Recorded time so far, not counting pauses.
+    pub elapsed_ms: u64,
+}
+
+fn recording_status_of(session: &RecordingSession) -> RecordingStatus {
+    RecordingStatus {
+        meeting_id: session.meeting_id().to_string(),
+        paused: session.is_paused(),
+        elapsed_ms: session.recorded().as_millis() as u64,
+    }
+}
+
+#[tauri::command]
+pub async fn recording_status(
+    recording: State<'_, RecordingState>,
+) -> Result<Option<RecordingStatus>, String> {
+    Ok(recording.lock().await.as_ref().map(recording_status_of))
+}
+
+/// Pause or resume the live recording. While paused nothing is written to
+/// the audio file or transcribed.
+#[tauri::command]
+pub async fn set_recording_paused(
+    recording: State<'_, RecordingState>,
+    paused: bool,
+) -> Result<RecordingStatus, String> {
+    let session = recording.lock().await;
+    let session = session
+        .as_ref()
+        .ok_or_else(|| "Not recording".to_string())?;
+    session.set_paused(paused);
+    Ok(recording_status_of(session))
+}
+
+/// File extensions `import_recording` can read, for the file picker.
+#[tauri::command]
+pub fn import_extensions() -> Vec<&'static str> {
+    crate::import::SUPPORTED_EXTENSIONS.to_vec()
+}
+
+/// Transcribe an existing audio or video file as a new meeting. Returns as
+/// soon as the meeting exists; decoding, transcription, and the usual
+/// title / summary / insights run in the background.
+#[tauri::command]
+pub async fn import_recording(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    embedding_state: State<'_, EmbeddingState>,
+    path: String,
+) -> Result<Meeting, String> {
+    use crate::audio::{AudioChunk, SAMPLE_RATE};
+    const CHUNK_SAMPLES: usize = SAMPLE_RATE as usize * 2;
+    // A file has no separate mic and system tracks, so the whole mix is
+    // diarized, as for an in-person meeting.
+    let file_chunk = |mixed: Vec<f32>| AudioChunk {
+        mixed,
+        mic: Vec::new(),
+        system: Vec::new(),
+    };
+
+    let source_path = std::path::PathBuf::from(&path);
+    // Probing can seek through a large video; keep it off the async workers.
+    let source = {
+        let source_path = source_path.clone();
+        tokio::task::spawn_blocking(move || crate::import::ImportSource::open(&source_path))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?
+    };
+    let title = source_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().trim().to_string())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(fallback_title);
+
+    let recordings_dir = recordings_dir()?;
+    std::fs::create_dir_all(&recordings_dir).map_err(|e| e.to_string())?;
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title,
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .map_err(|e| e.to_string())?;
+    db.update_meeting_status(&meeting.id, "transcribing")
+        .map_err(|e| e.to_string())?;
+    let audio_path = recordings_dir.join(format!("{}.wav", meeting.id));
+    let (audio_tx, audio_rx) = tokio::sync::mpsc::channel::<AudioChunk>(100);
+
+    // Decode on a plain thread, writing the WAV the player uses and feeding
+    // the transcription pipeline the same 2-second chunks a live recording does.
+    {
+        let db = db.inner().clone();
+        let app = app.clone();
+        let meeting_id = meeting.id.clone();
+        let start_time = meeting.start_time.clone();
+        std::thread::spawn(move || {
+            let decoded = (|| -> anyhow::Result<u64> {
+                let mut writer = crate::audio::AudioWriter::new(&audio_path, SAMPLE_RATE)?;
+                let mut pending: Vec<f32> = Vec::with_capacity(CHUNK_SAMPLES);
+                let total = source.decode(|samples| {
+                    writer.write_samples(samples)?;
+                    pending.extend_from_slice(samples);
+                    while pending.len() >= CHUNK_SAMPLES {
+                        let chunk = pending.drain(..CHUNK_SAMPLES).collect();
+                        audio_tx
+                            .blocking_send(file_chunk(chunk))
+                            .map_err(|_| anyhow::anyhow!("Transcription stopped early"))?;
+                    }
+                    Ok(())
+                })?;
+                writer.finalize()?;
+                if !pending.is_empty() {
+                    let _ = audio_tx.blocking_send(file_chunk(pending));
+                }
+                Ok(total)
+            })();
+            match decoded {
+                Ok(samples) => {
+                    let end_time = chrono::DateTime::parse_from_rfc3339(&start_time)
+                        .map(|start| {
+                            (start
+                                + chrono::Duration::milliseconds(
+                                    (samples * 1000 / SAMPLE_RATE as u64) as i64,
+                                ))
+                            .to_rfc3339()
+                        })
+                        .unwrap_or_else(|_| chrono::Utc::now().to_rfc3339());
+                    let audio_path = audio_path.to_string_lossy();
+                    if let Err(e) = db.finalize_meeting(
+                        &meeting_id,
+                        &end_time,
+                        Some(&audio_path),
+                        "transcribing",
+                    ) {
+                        tracing::warn!("Failed to finalize imported meeting: {e}");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Import of {meeting_id} failed: {e:#}");
+                    let _ = db.delete_meeting(&meeting_id);
+                    let _ = std::fs::remove_file(&audio_path);
+                    let _ = app.emit("meeting-updated", serde_json::json!({ "id": meeting_id }));
+                    crate::notify(&app, "Import failed", &e.to_string());
+                }
+            }
+            // Closing the channel tells the pipeline the audio is complete.
+            drop(audio_tx);
+        });
+    }
+
+    tokio::spawn(run_transcription_pipeline(
+        audio_rx,
+        db.inner().clone(),
+        llm.inner().clone(),
+        embedding_state.inner().clone(),
+        meeting.id.clone(),
+        // A file name is a placeholder; a generated title reads better.
+        Some(meeting.title.clone()),
+        app,
+    ));
+
+    db.get_meeting(&meeting.id).map_err(|e| e.to_string())
+}
+
+/// Write a meeting to `path` as Markdown (`md`), a plain transcript (`txt`),
+/// or subtitles (`srt`, `vtt`).
+#[tauri::command]
+pub async fn export_meeting(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    format: String,
+    path: String,
+) -> Result<(), String> {
+    let format = crate::export::ExportFormat::parse(&format).map_err(|e| e.to_string())?;
+    let db = db.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        let content =
+            crate::export::export_meeting(&db, &meeting_id, format).map_err(|e| e.to_string())?;
+        std::fs::write(&path, content).map_err(|e| format!("Couldn't write {path}: {e}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Calendar events in the next `hours` (default 12), for the home screen.
+#[tauri::command]
+pub async fn list_upcoming_events(
+    hours: Option<i64>,
+) -> Result<crate::calendar::UpcomingEvents, String> {
+    let hours = hours.unwrap_or(12).clamp(1, 24 * 7);
+    tokio::task::spawn_blocking(move || crate::calendar::upcoming(hours))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2204,4 +2450,16 @@ pub async fn run_workflow(
     )
     .await
     .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fallback_title_is_identifiable() {
+        let title = fallback_title();
+        assert!(title.starts_with("Meeting "));
+        assert!(title.len() > "Meeting ".len());
+    }
 }

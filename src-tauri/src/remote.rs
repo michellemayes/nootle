@@ -59,12 +59,6 @@ impl Outcome {
     }
 }
 
-/// Used when the caller supplies no title; a timestamp is easier to find
-/// later than "Untitled".
-fn fallback_title() -> String {
-    format!("Meeting {}", chrono::Local::now().format("%Y-%m-%d %H:%M"))
-}
-
 pub(crate) fn query_value(url: &Url, key: &str) -> Option<String> {
     url.query_pairs()
         .find(|(k, _)| k == key)
@@ -94,19 +88,27 @@ pub(crate) async fn do_start(app: &AppHandle, title: Option<String>) -> Outcome 
     if is_recording(app).await {
         return Outcome::ok("Already recording");
     }
-    let title = title.unwrap_or_else(fallback_title);
+    // Without a title, start_recording names it after the calendar event
+    // happening now, or failing that, the time.
     let result = commands::start_recording(
         app.clone(),
         app.state::<DbState>(),
         app.state::<LlmState>(),
         app.state::<RecordingState>(),
         app.state::<EmbeddingState>(),
-        title.clone(),
+        title.unwrap_or_default(),
         None,
         None,
     )
     .await;
-    Outcome::from_meeting(result, format!("Recording '{title}'"))
+    match result {
+        Ok(meeting) => Outcome {
+            ok: true,
+            message: format!("Recording '{}'", meeting.title),
+            meeting_id: Some(meeting.id),
+        },
+        Err(e) => Outcome::err(e),
+    }
 }
 
 async fn do_stop(app: &AppHandle) -> Outcome {
@@ -243,12 +245,5 @@ mod tests {
     #[test]
     fn missing_title_is_absent() {
         assert_eq!(query_value(&parse("nootle://record/start"), "title"), None);
-    }
-
-    #[test]
-    fn fallback_title_is_identifiable() {
-        let title = fallback_title();
-        assert!(title.starts_with("Meeting "));
-        assert!(title.len() > "Meeting ".len());
     }
 }

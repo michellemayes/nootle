@@ -69,6 +69,8 @@ Credentials are never printed. If Nootle is open, reopen the page to see changes
 | `meetings list` | List meetings (supports `--search`, `--archived`) |
 | `meetings get <id>` | Get a meeting by ID |
 | `meetings transcript <id>` | Get the transcript for a meeting |
+| `meetings export <id> --format md\|txt\|srt\|vtt [--output FILE]` | Export a meeting as Markdown, plain text, or subtitles |
+| `meetings rename-speaker <id> <from> <to>` | Rename a speaker throughout a meeting |
 | `search <query>` | Full-text search across all transcripts |
 | `insights list` | List insights (supports `--type`, `--status`, `--search`) |
 | `insights get <meeting-id>` | Get insights for a meeting |

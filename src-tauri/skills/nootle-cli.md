@@ -31,6 +31,13 @@ nootle-cli meetings get <meeting-id>
 
 # Get transcript
 nootle-cli meetings transcript <meeting-id>
+
+# Export as Markdown (summaries, action items, notes, transcript), txt, srt, or vtt
+nootle-cli meetings export <meeting-id> --format md
+nootle-cli meetings export <meeting-id> --format srt --output call.srt
+
+# Put a name to a diarized speaker
+nootle-cli meetings rename-speaker <meeting-id> "Speaker 2" "Priya"
 ```
 
 ### Search
