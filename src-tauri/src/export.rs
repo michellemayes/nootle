@@ -3,6 +3,7 @@
 
 use crate::db::{Database, InsightWithActionItem, Meeting, Summary, TranscriptSegment};
 use crate::error::{NootleError, Result};
+use crate::summarization::{format_ms, format_transcript};
 use std::fmt::Write;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,7 +35,7 @@ impl ExportFormat {
 pub fn export_meeting(db: &Database, meeting_id: &str, format: ExportFormat) -> Result<String> {
     let segments = db.get_transcript(meeting_id)?;
     Ok(match format {
-        ExportFormat::Text => to_text(&segments),
+        ExportFormat::Text => format_transcript(&segments) + "\n",
         ExportFormat::Srt => to_srt(&segments),
         ExportFormat::Vtt => to_vtt(&segments),
         ExportFormat::Markdown => {
@@ -56,21 +57,6 @@ pub fn export_meeting(db: &Database, meeting_id: &str, format: ExportFormat) -> 
             to_markdown(&meeting, &summaries, &insights, &segments)
         }
     })
-}
-
-/// `[mm:ss] Speaker: text`, one line per segment.
-pub fn to_text(segments: &[TranscriptSegment]) -> String {
-    let mut out = String::new();
-    for s in segments {
-        let _ = writeln!(
-            out,
-            "[{}] {}: {}",
-            clock(s.start_ms),
-            s.speaker_label,
-            s.text.trim()
-        );
-    }
-    out
 }
 
 pub fn to_srt(segments: &[TranscriptSegment]) -> String {
@@ -165,7 +151,7 @@ pub fn to_markdown(
             let _ = writeln!(
                 out,
                 "**[{}] {}:** {}\n",
-                clock(s.start_ms),
+                format_ms(s.start_ms),
                 s.speaker_label,
                 s.text.trim()
             );
@@ -200,21 +186,15 @@ fn cue_bounds(s: &TranscriptSegment) -> (i64, i64) {
 
 /// `HH:MM:SS<sep>mmm`, the cue timestamp both SRT (`,`) and VTT (`.`) use.
 fn cue_time(ms: i64, sep: char) -> String {
-    let (h, m, s) = hms(ms);
-    format!("{h:02}:{m:02}:{s:02}{sep}{:03}", ms.max(0) % 1000)
-}
-
-/// `mm:ss`, or `h:mm:ss` once a meeting passes the hour.
-fn clock(ms: i64) -> String {
-    match hms(ms) {
-        (0, m, s) => format!("{m:02}:{s:02}"),
-        (h, m, s) => format!("{h}:{m:02}:{s:02}"),
-    }
-}
-
-fn hms(ms: i64) -> (i64, i64, i64) {
-    let secs = ms.max(0) / 1000;
-    (secs / 3600, (secs % 3600) / 60, secs % 60)
+    let ms = ms.max(0);
+    let secs = ms / 1000;
+    format!(
+        "{:02}:{:02}:{:02}{sep}{:03}",
+        secs / 3600,
+        (secs % 3600) / 60,
+        secs % 60,
+        ms % 1000
+    )
 }
 
 #[cfg(test)]
@@ -249,11 +229,9 @@ mod tests {
     }
 
     #[test]
-    fn text_has_timestamps_and_speakers() {
-        assert_eq!(
-            to_text(&segments()),
-            "[00:00] Alex: Morning all.\n[1:01:01] Sam: Let's ship it.\n"
-        );
+    fn timestamps_gain_hours_past_the_hour() {
+        assert_eq!(format_ms(61_000), "01:01");
+        assert_eq!(format_ms(3_661_250), "1:01:01");
     }
 
     #[test]

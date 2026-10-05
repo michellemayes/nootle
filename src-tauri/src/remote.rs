@@ -101,11 +101,14 @@ pub(crate) async fn do_start(app: &AppHandle, title: Option<String>) -> Outcome 
         None,
     )
     .await;
-    let message = match &result {
-        Ok(meeting) => format!("Recording '{}'", meeting.title),
-        Err(_) => String::new(),
-    };
-    Outcome::from_meeting(result, message)
+    match result {
+        Ok(meeting) => Outcome {
+            ok: true,
+            message: format!("Recording '{}'", meeting.title),
+            meeting_id: Some(meeting.id),
+        },
+        Err(e) => Outcome::err(e),
+    }
 }
 
 async fn do_stop(app: &AppHandle) -> Outcome {

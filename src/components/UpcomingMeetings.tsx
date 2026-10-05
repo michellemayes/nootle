@@ -10,6 +10,8 @@ import type { CalendarEvent, UpcomingEvents } from "@/types";
 
 const DISMISS_KEY = "calendarPromptDismissed";
 const REFRESH_MS = 5 * 60 * 1000;
+/** Coming back to the window refreshes, but not more than once a minute. */
+const FOCUS_REFRESH_MS = 60 * 1000;
 const SHOWN = 3;
 
 const time = (iso: string) =>
@@ -41,12 +43,20 @@ export function UpcomingMeetings() {
   }, []);
 
   useEffect(() => {
+    let last = Date.now();
+    const refresh = () => {
+      last = Date.now();
+      load();
+    };
+    const onFocus = () => {
+      if (Date.now() - last > FOCUS_REFRESH_MS) refresh();
+    };
     load();
-    const timer = setInterval(load, REFRESH_MS);
-    window.addEventListener("focus", load);
+    const timer = setInterval(refresh, REFRESH_MS);
+    window.addEventListener("focus", onFocus);
     return () => {
       clearInterval(timer);
-      window.removeEventListener("focus", load);
+      window.removeEventListener("focus", onFocus);
     };
   }, [load]);
 

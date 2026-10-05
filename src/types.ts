@@ -36,6 +36,12 @@ export interface UpcomingEvents {
   events: CalendarEvent[];
 }
 
+/** Payload of the `transcript-update` event: a meeting's whole transcript so far. */
+export interface TranscriptUpdate {
+  meeting_id: string;
+  segments: TranscriptSegment[];
+}
+
 export interface TranscriptSegment {
   id: string;
   meeting_id: string;

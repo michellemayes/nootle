@@ -3232,6 +3232,15 @@ impl Database {
         Ok(())
     }
 
+    pub fn has_speaker_analytics(&self, meeting_id: &str) -> Result<bool> {
+        let conn = self.lock_conn()?;
+        Ok(conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM meeting_analytics WHERE meeting_id = ?1)",
+            params![meeting_id],
+            |row| row.get(0),
+        )?)
+    }
+
     pub fn get_speaker_analytics(&self, meeting_id: &str) -> Result<Vec<SpeakerAnalytics>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(

@@ -40,20 +40,18 @@ export function ExportMenu({ meeting }: { meeting: Meeting }) {
     setTimeout(() => setResult(null), 3000);
   };
 
+  const [Icon, label, iconClass] = !result
+    ? [Download, "Export", ""]
+    : result.ok
+      ? [Check, "Exported", "text-success-foreground"]
+      : [AlertTriangle, "Export failed", "text-destructive"];
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="text-xs gap-1.5" title={result?.message}>
-          {result ? (
-            result.ok ? (
-              <Check className="h-3 w-3 text-success-foreground" />
-            ) : (
-              <AlertTriangle className="h-3 w-3 text-destructive" />
-            )
-          ) : (
-            <Download className="h-3 w-3" />
-          )}
-          {result ? (result.ok ? "Exported" : "Export failed") : "Export"}
+          <Icon className={`h-3 w-3 ${iconClass}`} />
+          {label}
           <ChevronDown className="h-3 w-3 opacity-60" />
         </Button>
       </DropdownMenuTrigger>

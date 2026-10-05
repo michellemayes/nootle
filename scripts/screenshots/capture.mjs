@@ -60,8 +60,8 @@ const SHOTS = [
     ready: "text=Live transcript",
     async prepare(page) {
       await page.evaluate((segments) => {
-        window.__NOOTLE_EMIT__("transcription-status", { available: true });
-        window.__NOOTLE_EMIT__("transcript-update", segments);
+        window.__NOOTLE_EMIT__("transcription-status", { meeting_id: "m-live", available: true });
+        window.__NOOTLE_EMIT__("transcript-update", { meeting_id: "m-live", segments });
       }, LIVE_TRANSCRIPT);
       // The title comes from start_recording's meeting, as it would from
       // the calendar event underway.

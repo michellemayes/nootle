@@ -2,7 +2,8 @@ use crate::db::{Database, NewSummary, Summary, TranscriptSegment};
 use crate::dictionary;
 use crate::llm::{ChatMessage, LlmRegistry};
 
-fn format_transcript(segments: &[TranscriptSegment]) -> String {
+/// `[mm:ss] Speaker: text`, one line per segment.
+pub fn format_transcript(segments: &[TranscriptSegment]) -> String {
     segments
         .iter()
         .map(|s| {
@@ -206,9 +207,13 @@ pub async fn run_recipe(
         .await
 }
 
+/// `mm:ss`, or `h:mm:ss` once a meeting passes the hour.
 pub fn format_ms(ms: i64) -> String {
-    let total_seconds = ms / 1000;
-    let minutes = total_seconds / 60;
-    let seconds = total_seconds % 60;
-    format!("{:02}:{:02}", minutes, seconds)
+    let secs = ms.max(0) / 1000;
+    let (h, m, s) = (secs / 3600, (secs % 3600) / 60, secs % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m:02}:{s:02}")
+    }
 }

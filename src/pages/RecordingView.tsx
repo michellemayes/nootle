@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
 import { useTemplates } from "@/hooks/useTemplates";
-import type { TranscriptSegment } from "@/types";
+import { useTranscript } from "@/hooks/useTranscripts";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ScratchPad } from "@/components/ScratchPad";
@@ -27,6 +27,7 @@ function formatTime(seconds: number): string {
 }
 
 interface TranscriptionStatus {
+  meeting_id: string;
   available: boolean;
   reason?: string;
 }
@@ -58,47 +59,27 @@ export function RecordingView() {
   const [title, setTitle] = useState(intent.title ?? "");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
-  const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [notes, setNotes] = useState("");
   const [stopping, setStopping] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
-  const [transcriptionStatus, setTranscriptionStatus] =
-    useState<TranscriptionStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
-  const meetingIdRef = useRef<string | null>(null);
-  meetingIdRef.current = currentMeeting?.id ?? null;
-
-  // Listen for transcript updates. An imported file transcribing in the
-  // background sends these too, so keep only this recording's.
+  // Live transcript, plus whether transcription runs at all. Imports
+  // transcribing in the background send these events too.
+  const { segments } = useTranscript(currentMeeting?.id ?? "");
+  // Listening from mount: the status can arrive before start_recording returns.
+  const [latestStatus, setLatestStatus] = useState<TranscriptionStatus | null>(null);
   useEffect(() => {
-    const unlisten = listen<TranscriptSegment[]>(
-      "transcript-update",
-      (event) => {
-        const forMeeting = event.payload[0]?.meeting_id;
-        if (forMeeting && forMeeting === meetingIdRef.current) {
-          setSegments(event.payload);
-        }
-      },
+    const unlisten = listen<TranscriptionStatus>("transcription-status", (event) =>
+      setLatestStatus(event.payload),
     );
     return () => {
       unlisten.then((fn) => fn());
     };
   }, []);
-
-  // Listen for transcription status
-  useEffect(() => {
-    const unlisten = listen<TranscriptionStatus>(
-      "transcription-status",
-      (event) => {
-        setTranscriptionStatus(event.payload);
-      },
-    );
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
+  const transcriptionStatus =
+    latestStatus && latestStatus.meeting_id === currentMeeting?.id ? latestStatus : null;
 
   const latestTitleRef = useRef(title);
   latestTitleRef.current = title;
@@ -107,8 +88,7 @@ export function RecordingView() {
   const latestTemplateRef = useRef(selectedTemplateId);
   latestTemplateRef.current = selectedTemplateId;
 
-  // Start recording on mount — after event listeners are registered above
-  // so we don't miss the transcription-status event from the backend
+  // Start recording on mount
   useEffect(() => {
     if (!hasStarted) {
       setHasStarted(true);

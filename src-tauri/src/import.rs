@@ -12,7 +12,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-pub const TARGET_RATE: u32 = 16_000;
+use crate::audio::SAMPLE_RATE as TARGET_RATE;
 
 /// Extensions offered in the file picker. Video files work when their audio
 /// track is AAC, ALAC, MP3, FLAC, Vorbis or PCM.

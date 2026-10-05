@@ -1,3 +1,4 @@
+use super::SAMPLE_RATE as TARGET_RATE;
 use super::{AudioMixer, AudioWriter, MicCapture, SystemAudioCapture};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -23,7 +24,6 @@ pub fn run_audio_capture(
     audio_path: std::path::PathBuf,
     denoise: Option<&mut crate::denoise::DenoiseEngine>,
 ) -> anyhow::Result<()> {
-    const TARGET_RATE: u32 = 16_000;
     const POLL_MS: u64 = 50;
     // Send a chunk to the transcription pipeline every ~2 seconds.
     const SEND_SAMPLES: usize = TARGET_RATE as usize * 2;
@@ -104,7 +104,6 @@ fn capture_loop(
     audio_tx: &tokio::sync::mpsc::Sender<Vec<f32>>,
     mut denoise: Option<&mut crate::denoise::DenoiseEngine>,
 ) -> anyhow::Result<()> {
-    const TARGET_RATE: u32 = 16_000;
     const POLL_MS: u64 = 50;
     const SEND_SAMPLES: usize = TARGET_RATE as usize * 2;
 
