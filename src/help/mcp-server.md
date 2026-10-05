@@ -77,5 +77,5 @@ Once connected, try asking Claude:
 
 - **Claude doesn't see Nootle:** Make sure the path in your config points to the actual Nootle binary. If you installed to a non-standard location, update the `command` path.
 - **"Server not responding":** Ensure Nootle is installed (the binary must exist on disk). The MCP server runs as a separate process — it doesn't require the Nootle GUI to be open.
-- **The Nootle app opens when Claude Code starts:** Update Nootle. Older versions opened the full app if `--mcp` didn't reach it, and Claude Code then hung waiting for a server that never answered. Nootle now serves MCP whenever an MCP client launches it, with or without `--mcp`.
+- **The Nootle app opens instead of serving MCP:** update Nootle. Current versions serve MCP whenever a client launches them.
 - **No meetings returned:** You need to have recorded at least one meeting in Nootle first.

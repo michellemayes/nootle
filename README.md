@@ -217,7 +217,7 @@ Run the app binary with `--mcp` to use Nootle as an MCP server (Settings → Abo
 claude mcp add nootle -- /Applications/Nootle.app/Contents/MacOS/nootle --mcp
 ```
 
-Nootle also serves MCP, rather than opening the app, whenever an MCP client launches it over stdio, so a client that drops the `--mcp` flag still gets a working server.
+Nootle also serves MCP whenever an MCP client launches it over stdio, even without `--mcp`.
 
 Besides reading meetings and transcripts, the server has tools to list, create, update, run, and delete workflows, integrations, summary templates, and insight types, so you can ask an agent things like *"Set up a workflow that posts meeting recaps to #eng"* and it does the setup for you.
 
