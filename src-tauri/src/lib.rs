@@ -8,6 +8,7 @@ pub mod db;
 pub mod denoise;
 pub mod detection;
 pub mod diarization;
+pub mod dictionary;
 pub mod embedding;
 pub mod error;
 pub mod extraction;
@@ -250,6 +251,12 @@ pub fn run() {
             commands::delete_scratch_note,
             commands::get_transcript,
             commands::search_transcripts,
+            commands::update_transcript_segment,
+            commands::list_dictionary_entries,
+            commands::add_dictionary_entry,
+            commands::update_dictionary_entry,
+            commands::delete_dictionary_entry,
+            commands::apply_dictionary_to_meeting,
             commands::create_recipe,
             commands::list_recipes,
             commands::update_recipe,

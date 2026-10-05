@@ -1,4 +1,5 @@
 use crate::db::{Database, NewSummary, Summary, TranscriptSegment};
+use crate::dictionary;
 use crate::llm::{ChatMessage, LlmRegistry};
 
 fn format_transcript(segments: &[TranscriptSegment]) -> String {
@@ -47,10 +48,12 @@ pub async fn summarize_meeting(
         )
     };
 
+    let glossary = dictionary::glossary(db);
+
     let messages = vec![
         ChatMessage {
             role: "system".into(),
-            content: template.prompt,
+            content: format!("{}{}", template.prompt, glossary),
         },
         ChatMessage {
             role: "user".into(),
@@ -120,6 +123,7 @@ pub async fn chat_with_transcript(
 ) -> anyhow::Result<String> {
     let transcript = db.get_transcript(meeting_id)?;
     let transcript_text = format_transcript(&transcript);
+    let glossary = dictionary::glossary(db);
 
     let mut messages = vec![ChatMessage {
         role: "system".into(),
@@ -127,8 +131,8 @@ pub async fn chat_with_transcript(
             "You are a helpful assistant that answers questions about a meeting transcript. \
              Here is the full transcript:\n\n{}\n\n\
              Answer the user's questions based on this transcript. \
-             Be concise and reference specific parts of the conversation when relevant.",
-            transcript_text
+             Be concise and reference specific parts of the conversation when relevant.{}",
+            transcript_text, glossary
         ),
     }];
 
@@ -177,7 +181,10 @@ pub async fn run_recipe(
             vec![
                 ChatMessage {
                     role: "system".into(),
-                    content: "You are a meeting assistant. Produce the requested output based on the meeting data provided.".into(),
+                    content: format!(
+                        "You are a meeting assistant. Produce the requested output based on the meeting data provided.{}",
+                        dictionary::glossary(db)
+                    ),
                 },
                 ChatMessage {
                     role: "user".into(),
