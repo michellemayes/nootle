@@ -471,7 +471,6 @@ mod platform {
             cg::ImageDst::with_data(&mut data, jpeg.as_cf(), 1).context("create JPEG encoder")?;
         dst.add_image(image, None);
         anyhow::ensure!(dst.finalize(), "encode JPEG");
-        drop(dst);
         Ok(data.as_slice().to_vec())
     }
 
