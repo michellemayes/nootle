@@ -2174,6 +2174,36 @@ impl Database {
         Ok(templates)
     }
 
+    /// The template used when nothing else is picked: the built-in "General",
+    /// else the oldest built-in, else any template.
+    pub fn get_default_template(&self) -> Result<Option<Template>> {
+        let conn = self.lock_conn()?;
+        let template = conn
+            .query_row(
+                "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+                 FROM templates
+                 ORDER BY is_builtin DESC, name = 'General' DESC, created_at ASC, rowid ASC
+                 LIMIT 1",
+                [],
+                |row| {
+                    Ok(Template {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        description: row.get(2)?,
+                        sections: row.get(3)?,
+                        auto_apply_rules: row.get(4)?,
+                        prompt: row.get(5)?,
+                        is_builtin: row.get::<_, i32>(6)? != 0,
+                        is_favorite: row.get::<_, i32>(7)? != 0,
+                        is_auto_run: row.get::<_, i32>(8)? != 0,
+                        created_at: row.get(9)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(template)
+    }
+
     pub fn delete_template(&self, id: &str) -> Result<()> {
         let conn = self.lock_conn()?;
         let is_builtin: bool = conn
@@ -3698,5 +3728,18 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(runs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_template_is_builtin_general() {
+        let db = Database::new_in_memory().unwrap();
+        let template = db.get_default_template().unwrap().unwrap();
+        assert_eq!(template.name, "General");
+        assert!(template.is_builtin);
     }
 }

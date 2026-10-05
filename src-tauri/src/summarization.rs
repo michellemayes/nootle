@@ -83,7 +83,9 @@ pub async fn summarize_meeting(
 /// Summarizes a finished meeting without user input.
 ///
 /// A template picked for this specific meeting during recording wins; otherwise
-/// every template marked auto-run is applied.
+/// every template marked auto-run is applied. With neither, the first built-in
+/// template (General) runs so every meeting gets a summary. Templates run
+/// concurrently so the summary lands as fast as the slowest single call.
 pub async fn run_auto_templates(
     db: &Database,
     llm: &LlmRegistry,
@@ -99,12 +101,20 @@ pub async fn run_auto_templates(
 
     let templates = match selected {
         Some(template) => vec![template],
-        None => db.get_auto_run_templates()?,
+        None => match db.get_auto_run_templates()? {
+            auto if auto.is_empty() => db.get_default_template()?.into_iter().collect(),
+            auto => auto,
+        },
     };
 
+    let results = futures_util::future::join_all(templates.iter().map(|template| {
+        summarize_meeting(db, llm, meeting_id, &template.id, provider_name, model)
+    }))
+    .await;
+
     let mut summaries = Vec::new();
-    for template in templates {
-        match summarize_meeting(db, llm, meeting_id, &template.id, provider_name, model).await {
+    for (template, result) in templates.iter().zip(results) {
+        match result {
             Ok(summary) => summaries.push(summary),
             Err(e) => tracing::error!("Auto-run template '{}' failed: {}", template.name, e),
         }
