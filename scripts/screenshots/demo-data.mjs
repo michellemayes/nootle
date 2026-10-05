@@ -718,8 +718,36 @@ export const FIXTURES = {
   list_linear_projects: [],
   get_linear_setting: null,
 
+  list_upcoming_events: {
+    status: "granted",
+    events: [
+      {
+        id: "ev-sync",
+        title: "Weekly Product Sync",
+        start: day(28, 19, 30),
+        end: day(28, 20, 0),
+        calendar: "Work",
+        location: null,
+        meeting_url: "https://meet.google.com/abc-defg-hij",
+        attendee_count: 6,
+      },
+      {
+        id: "ev-1on1",
+        title: "1:1 with Jordan",
+        start: day(28, 21, 0),
+        end: day(28, 21, 30),
+        calendar: "Work",
+        location: null,
+        meeting_url: "https://zoom.us/j/123456789",
+        attendee_count: 2,
+      },
+    ],
+  },
+  import_extensions: ["mp3", "m4a", "wav", "mp4", "mov"],
+
   is_recording: false,
   current_recording: null,
+  recording_status: null,
   start_recording: meeting(
     "m-live",
     "Design Review — Onboarding Flow",

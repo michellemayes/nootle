@@ -46,6 +46,8 @@ dirs = "6"
 cpal = "0.15"
 ringbuf = "0.4"
 hound = "3.5"
+# Decodes imported recordings (mp3, m4a, mp4, mov, wav, flac, ogg, …).
+symphonia = { version = "0.5", features = ["aac", "alac", "isomp4", "mp3", "aiff", "caf"] }
 cidre = { version = "0.14", features = ["av"], optional = true }
 ort = { version = "2.0.0-rc.11", features = ["coreml", "ndarray"] }
 ndarray = "0.16"

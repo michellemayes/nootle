@@ -63,8 +63,9 @@ const SHOTS = [
         window.__NOOTLE_EMIT__("transcription-status", { available: true });
         window.__NOOTLE_EMIT__("transcript-update", segments);
       }, LIVE_TRANSCRIPT);
-      await page.getByRole("button", { name: "Untitled Recording" }).click();
-      await page.locator("input:focus").fill("Design Review — Onboarding Flow");
+      // The title comes from start_recording's meeting, as it would from
+      // the calendar event underway.
+      await page.getByRole("button", { name: "Design Review — Onboarding Flow" }).waitFor();
       await page.getByLabel("Summary template").selectOption({ label: "Standard Summary" });
       await page.getByPlaceholder("Take notes during the meeting…").fill(
         "Permissions screen is the big leak — 31% drop\n" +

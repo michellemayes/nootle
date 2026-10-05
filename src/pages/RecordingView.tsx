@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -14,7 +14,7 @@ import { ScratchPad } from "@/components/ScratchPad";
 import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Kbd } from "@/components/Kbd";
-import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText } from "lucide-react";
+import { Square, ArrowLeft, ChevronDown, ChevronRight, FileText, Pause, Play } from "lucide-react";
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -31,13 +31,31 @@ interface TranscriptionStatus {
   reason?: string;
 }
 
+/** Passed as router state to start a recording for a calendar event. */
+export interface RecordingIntent {
+  title?: string;
+  calendarEventId?: string;
+}
+
 export function RecordingView() {
   const navigate = useNavigate();
-  const { isRecording, currentMeeting, elapsed, error, startRecording, resumeRecording, stopRecording } =
-    useRecording();
+  const intent = (useLocation().state ?? {}) as RecordingIntent;
+  const {
+    isRecording,
+    isPaused,
+    currentMeeting,
+    elapsed,
+    error,
+    startRecording,
+    resumeRecording,
+    setPaused,
+    stopRecording,
+  } = useRecording();
   const { templates } = useTemplates();
   const { isCompact } = useCompactMode();
-  const [title, setTitle] = useState("Untitled Recording");
+  // Left blank, the backend names the recording after the calendar event
+  // happening now, or the time.
+  const [title, setTitle] = useState(intent.title ?? "");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
@@ -49,13 +67,19 @@ export function RecordingView() {
     useState<TranscriptionStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
+  const meetingIdRef = useRef<string | null>(null);
+  meetingIdRef.current = currentMeeting?.id ?? null;
 
-  // Listen for transcript updates
+  // Listen for transcript updates. An imported file transcribing in the
+  // background sends these too, so keep only this recording's.
   useEffect(() => {
     const unlisten = listen<TranscriptSegment[]>(
       "transcript-update",
       (event) => {
-        setSegments(event.payload);
+        const forMeeting = event.payload[0]?.meeting_id;
+        if (forMeeting && forMeeting === meetingIdRef.current) {
+          setSegments(event.payload);
+        }
       },
     );
     return () => {
@@ -95,16 +119,17 @@ export function RecordingView() {
           setSelectedTemplateId(live.template_id ?? "");
           return;
         }
-        await startRecording(
-          latestTitleRef.current,
-          undefined,
+        const meeting = await startRecording(
+          latestTitleRef.current.trim(),
+          intent.calendarEventId,
           latestTemplateRef.current || undefined,
         );
+        if (!latestTitleRef.current.trim()) setTitle(meeting.title);
       })().catch(() => {
         // Error is captured in useRecording's error state
       });
     }
-  }, [hasStarted, startRecording, resumeRecording]);
+  }, [hasStarted, startRecording, resumeRecording, intent.calendarEventId]);
 
   // Title and template edits are saved to the live meeting right away so
   // they survive leaving the page mid-recording. `savedRef` mirrors what the
@@ -221,13 +246,21 @@ export function RecordingView() {
       {/* Header bar: recording indicator, title, timer, waveform, stop */}
       <div className="flex items-center gap-4 border-b px-6 py-3">
         <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-destructive" />
-          <span className="text-xs font-medium text-muted-foreground">REC</span>
+          <span
+            className={
+              isPaused
+                ? "h-2.5 w-2.5 rounded-full bg-muted-foreground"
+                : "h-2.5 w-2.5 animate-pulse rounded-full bg-destructive"
+            }
+          />
+          <span className="text-xs font-medium text-muted-foreground">
+            {isPaused ? "PAUSED" : "REC"}
+          </span>
         </div>
 
         {isCompact ? (
           <span className="text-sm font-semibold truncate max-w-[120px]">
-            {title}
+            {title || "New recording"}
           </span>
         ) : (
           <>
@@ -247,7 +280,7 @@ export function RecordingView() {
                 className="text-sm font-semibold hover:text-muted-foreground transition-colors truncate max-w-xs"
                 onClick={() => setIsEditingTitle(true)}
               >
-                {title}
+                {title || "New recording"}
               </button>
             )}
 
@@ -277,8 +310,19 @@ export function RecordingView() {
 
         <Button
           size="sm"
-          variant="destructive"
+          variant="outline"
           className="ml-auto"
+          onClick={() => setPaused(!isPaused).catch(() => {})}
+          disabled={!isRecording || stopping}
+          title={isPaused ? "Resume recording" : "Pause recording. Nothing is recorded or transcribed until you resume"}
+        >
+          {isPaused ? <Play /> : <Pause />}
+          {!isCompact && (isPaused ? "Resume" : "Pause")}
+        </Button>
+
+        <Button
+          size="sm"
+          variant="destructive"
           onClick={handleStop}
           disabled={stopping}
           title="Stop and save (⌘↵)"
@@ -340,7 +384,9 @@ export function RecordingView() {
                   )}
                   {segments.length === 0 && transcriptionStatus?.available !== false && (
                     <p className="text-xs text-muted-foreground italic">
-                      Listening. The transcript appears here as people speak.
+                      {isPaused
+                        ? "Paused. Resume to keep transcribing."
+                        : "Listening. The transcript appears here as people speak."}
                     </p>
                   )}
                   {segments.length > 0 &&

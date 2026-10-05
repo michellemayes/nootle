@@ -19,6 +19,7 @@ pub fn validate_audio_devices() -> anyhow::Result<()> {
 pub fn run_audio_capture(
     audio_tx: tokio::sync::mpsc::Sender<Vec<f32>>,
     is_active: Arc<AtomicBool>,
+    is_paused: Arc<AtomicBool>,
     audio_path: std::path::PathBuf,
     denoise: Option<&mut crate::denoise::DenoiseEngine>,
 ) -> anyhow::Result<()> {
@@ -62,6 +63,7 @@ pub fn run_audio_capture(
 
     let result = capture_loop(
         &is_active,
+        &is_paused,
         &mut mic,
         mic_rate,
         &mut sys_audio,
@@ -89,6 +91,7 @@ pub fn run_audio_capture(
 #[allow(clippy::too_many_arguments)]
 fn capture_loop(
     is_active: &AtomicBool,
+    is_paused: &AtomicBool,
     mic: &mut MicCapture,
     mic_rate: u32,
     sys_audio: &mut Option<SystemAudioCapture>,
@@ -117,6 +120,13 @@ fn capture_loop(
         } else {
             &[]
         };
+
+        // Paused: the reads above keep the device buffers drained, so
+        // resuming picks up live audio rather than a backlog.
+        if is_paused.load(Ordering::Acquire) {
+            std::thread::sleep(std::time::Duration::from_millis(POLL_MS));
+            continue;
+        }
 
         // Resample both to 16 kHz
         let mic_16k = resample(mic_samples, mic_rate, TARGET_RATE);

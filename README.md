@@ -86,14 +86,15 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Record everything** — capture microphone and system audio simultaneously
 - **Live transcription** — speech-to-text powered by Parakeet via ONNX Runtime
 - **Speaker identification** — know who said what with automatic diarization
-<<<<<<< HEAD
-- **AI summaries and chat** — every meeting is summarized automatically when it ends, and opens on its summary; ask questions about your meetings using your preferred LLM
-=======
+- **Pause and resume** — go off the record mid-meeting; nothing is recorded or transcribed while paused, and the timer counts only recorded time
+- **Speaker names** — rename "Speaker 1" to a real name from the transcript's people icon. The name carries through analytics, chat, exports, and new summaries, and giving two speakers the same name merges them
 - **Auto-learning dictionary** — double-click any transcript line to fix a misheard name or term. Nootle learns the fix ("noodle" → "Nootle"), corrects the rest of that meeting, applies it to every future recording, and gives your dictionary to the AI as a spelling reference for summaries and chat. Manage words, or turn learning off, in Settings → Dictionary
-- **AI summaries and chat** — ask questions about your meetings using your preferred LLM
->>>>>>> origin/main
+- **Import recordings** — transcribe an audio or video file you already have (voice memos, Zoom cloud recordings, MP3, M4A, WAV, FLAC, MP4, MOV, and more). It goes through the same local pipeline as a live recording: transcript, speakers, title, summary, and insights
+- **Export** — save any meeting as Markdown (summaries, action items, notes, and transcript), a plain-text transcript, or SRT / WebVTT subtitles
+- **AI summaries and chat** — every meeting is summarized automatically when it ends, and opens on its summary; ask questions about your meetings using your preferred LLM
 - **Insight extraction** — decisions, action items, and key moments are extracted automatically once a recording finishes transcribing
 - **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, or your existing Claude / ChatGPT subscription via the Claude Code (`claude -p`) and Codex CLIs
+- **Calendar** — with calendar access, the Meetings page shows what's up next with one-click **Record** and **Join** (Zoom, Meet, Teams, Webex, and more), and a recording started during an event is named after it
 - **Meeting detection** — turn on **Auto-detect meetings** in Settings and a small pop-up appears in the top-right corner of your screen when a call starts (Zoom, Teams, Webex, Slack, FaceTime, Discord, or a browser call like Google Meet using your mic). It floats over the meeting app even when Nootle's window is closed: click **Record** to start, or dismiss it (it also goes away on its own after 45 seconds)
 - **Runs in the background** — closing the window (⌘W) keeps Nootle running, so recordings and meeting detection continue; click the Dock icon to bring it back, ⌘Q to quit
 - **URL scheme** — start and stop recordings from other apps or scripts via `nootle://` links (opt-in)
@@ -127,7 +128,7 @@ On first launch, Nootle will ask for:
 
 - **Microphone** — to record your voice
 - **Screen Recording** — to capture system audio from meeting apps via Core Audio
-- **Calendar** — to auto-detect upcoming meetings
+- **Calendar** (optional) — to show upcoming meetings and name recordings after the event
 
 ## Development
 
@@ -163,6 +164,12 @@ nootle-cli search "quarterly review"
 
 # List open action items
 nootle-cli actions list --status open
+
+# Export a meeting as Markdown, txt, srt, or vtt
+nootle-cli meetings export <meeting-id> --format srt --output call.srt
+
+# Name a speaker
+nootle-cli meetings rename-speaker <meeting-id> "Speaker 2" "Priya"
 ```
 
 Output is JSON by default. Add `--pretty` for human-readable formatting. See `nootle-cli --help` for all commands.

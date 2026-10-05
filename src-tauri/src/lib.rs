@@ -1,6 +1,7 @@
 pub mod analytics;
 pub mod audio;
 pub mod automation;
+pub mod calendar;
 pub mod chunking;
 pub mod commands;
 pub mod connectors;
@@ -11,9 +12,11 @@ pub mod diarization;
 pub mod dictionary;
 pub mod embedding;
 pub mod error;
+pub mod export;
 pub mod extraction;
 pub mod github_cli;
 pub mod http;
+pub mod import;
 pub mod linear;
 pub mod llm;
 pub mod mcp;
@@ -271,6 +274,13 @@ pub fn run() {
             commands::stop_recording,
             commands::is_recording,
             commands::current_recording,
+            commands::recording_status,
+            commands::set_recording_paused,
+            commands::import_extensions,
+            commands::import_recording,
+            commands::rename_speaker,
+            commands::export_meeting,
+            commands::list_upcoming_events,
             commands::get_audio_data,
             commands::store_api_key,
             commands::has_api_key,

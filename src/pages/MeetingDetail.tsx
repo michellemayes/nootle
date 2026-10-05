@@ -15,6 +15,8 @@ import { Collapsible } from "@/components/Collapsible";
 import { Markdown } from "@/components/Markdown";
 import { NotesEditor } from "@/components/NotesEditor";
 import { AnalyticsPanel } from "@/components/AnalyticsPanel";
+import { ExportMenu } from "@/components/ExportMenu";
+import { SpeakerNames } from "@/components/SpeakerNames";
 import { useMeeting, updateMeetingTitle } from "@/hooks/useMeetings";
 import { useTranscript } from "@/hooks/useTranscripts";
 import { useSummaries } from "@/hooks/useSummaries";
@@ -1191,6 +1193,7 @@ export function MeetingDetail() {
               </Popover>
             );
           })()}
+          <ExportMenu meeting={meeting} />
           {!chatOpen && (
             <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
               <MessageSquare className="h-4 w-4" /> Ask Nootle
@@ -1213,6 +1216,12 @@ export function MeetingDetail() {
                   <div className="flex items-center gap-1">
                     <CopyButton
                       text={segments.map((s) => `${s.speaker_label}: ${s.text}`).join("\n")}
+                    />
+                    <SpeakerNames
+                      meetingId={meeting.id}
+                      segments={segments}
+                      speakerClass={(speaker) => speakerMap.get(speaker) ?? "text-foreground"}
+                      onRenamed={refreshTranscript}
                     />
                     <Button
                       variant="ghost"

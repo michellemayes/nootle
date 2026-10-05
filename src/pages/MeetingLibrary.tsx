@@ -5,6 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { statusLabel, statusVariant, labelTextColor, isTypingTarget } from "@/lib/utils";
 import { formatMinutes, groupByDay, relativeWhen } from "@/lib/momentum";
 import { MomentumStrip } from "@/components/MomentumStrip";
+import { UpcomingMeetings } from "@/components/UpcomingMeetings";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Kbd } from "@/components/Kbd";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { PageHeader } from "@/components/PageHeader";
@@ -45,6 +48,8 @@ import {
   List,
   Archive,
   Circle,
+  Upload,
+  X,
 } from "lucide-react";
 
 function formatDuration(start: string, end: string | null): string {
@@ -73,6 +78,8 @@ export function MeetingLibrary() {
   const [showArchived, setShowArchived] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Meeting | null>(null);
   const [activeLabelIds, setActiveLabelIds] = useState<Set<string>>(new Set());
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // "/" jumps to search from anywhere on the page; Esc clears and leaves it.
@@ -152,6 +159,28 @@ export function MeetingLibrary() {
     [refresh],
   );
 
+  // Transcribe a recording made elsewhere. The meeting opens right away and
+  // fills in as transcription runs.
+  const handleImport = useCallback(async () => {
+    setImportError(null);
+    const extensions = await invoke<string[]>("import_extensions");
+    const path = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Audio or video", extensions }],
+    });
+    if (typeof path !== "string") return;
+    setImporting(true);
+    try {
+      const meeting = await invoke<Meeting>("import_recording", { path });
+      navigate(`/meeting/${meeting.id}`);
+    } catch (err) {
+      setImportError(String(err));
+    } finally {
+      setImporting(false);
+    }
+  }, [navigate]);
+
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     await deleteMeeting(deleteTarget.id);
@@ -186,9 +215,29 @@ export function MeetingLibrary() {
       <PageHeader
         title="Meetings"
         description="Recorded meetings, transcripts, and summaries"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleImport}
+            disabled={importing}
+            title="Transcribe an audio or video file"
+          >
+            <Upload /> {importing ? "Importing…" : "Import"}
+          </Button>
+        }
       />
 
       <div className="flex flex-1 flex-col gap-5 overflow-auto p-6">
+      {importError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/5 px-4 py-2 text-sm text-destructive">
+          <span className="min-w-0 flex-1">Couldn't import: {importError}</span>
+          <button onClick={() => setImportError(null)} aria-label="Dismiss" className="shrink-0">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+      {!hasFilters && !showArchived && <UpcomingMeetings />}
       {!loading && !hasFilters && !showArchived && (
         <MomentumStrip meetings={meetings} />
       )}
@@ -299,14 +348,19 @@ export function MeetingLibrary() {
           description={
             hasFilters
               ? "Try a different search or clear your filters."
-              : "Start a recording and it will show up here."
+              : "Start a recording, or import an audio or video file, and it will show up here."
           }
           action={
             !hasFilters && (
-              <Button size="sm" onClick={() => navigate("/recording")}>
-                <Circle /> New recording
-                <Kbd onSolid className="ml-1">⌘N</Kbd>
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => navigate("/recording")}>
+                  <Circle /> New recording
+                  <Kbd onSolid className="ml-1">⌘N</Kbd>
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleImport} disabled={importing}>
+                  <Upload /> Import a file
+                </Button>
+              </div>
             )
           }
         />

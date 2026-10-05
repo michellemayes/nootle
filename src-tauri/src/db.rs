@@ -1923,6 +1923,31 @@ impl Database {
         Ok(())
     }
 
+    /// Renames a speaker throughout one meeting's transcript ("Speaker 2" →
+    /// "Priya"). Renaming to a name already in use merges the two. Search
+    /// chunks are dropped so the next embedding pass sees the new name.
+    /// Returns how many segments changed.
+    pub fn rename_speaker(&self, meeting_id: &str, from: &str, to: &str) -> Result<usize> {
+        let to = to.trim();
+        if to.is_empty() {
+            return Err(NootleError::Other("Speaker name cannot be empty".into()));
+        }
+        if to == from {
+            return Ok(0);
+        }
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        let changed = tx.execute(
+            "UPDATE transcripts SET speaker_label = ?1 WHERE meeting_id = ?2 AND speaker_label = ?3",
+            params![to, meeting_id, from],
+        )?;
+        if changed > 0 {
+            Self::delete_meeting_chunks_with(&tx, meeting_id)?;
+        }
+        tx.commit()?;
+        Ok(changed)
+    }
+
     // --- Dictionary ---
 
     pub fn list_dictionary_entries(&self) -> Result<Vec<DictionaryEntry>> {
@@ -3741,5 +3766,56 @@ mod tests {
         let template = db.get_default_template().unwrap().unwrap();
         assert_eq!(template.name, "General");
         assert!(template.is_builtin);
+    }
+
+    #[test]
+    fn rename_speaker_renames_and_merges() {
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(NewMeeting {
+                title: "Sync".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        for (i, speaker) in ["Speaker 1", "Speaker 2", "Speaker 1", "Speaker 3"]
+            .iter()
+            .enumerate()
+        {
+            db.create_transcript_segment(NewTranscriptSegment {
+                meeting_id: meeting.id.clone(),
+                speaker_label: speaker.to_string(),
+                text: format!("line {i}"),
+                start_ms: i as i64 * 1000,
+                end_ms: i as i64 * 1000 + 900,
+                confidence: 0.9,
+            })
+            .unwrap();
+        }
+        let labels = |db: &Database| -> Vec<String> {
+            db.get_transcript(&meeting.id)
+                .unwrap()
+                .into_iter()
+                .map(|s| s.speaker_label)
+                .collect()
+        };
+
+        assert_eq!(
+            db.rename_speaker(&meeting.id, "Speaker 1", " Priya ")
+                .unwrap(),
+            2
+        );
+        assert_eq!(labels(&db), ["Priya", "Speaker 2", "Priya", "Speaker 3"]);
+
+        // Same person picked up as two speakers: rename one onto the other.
+        assert_eq!(
+            db.rename_speaker(&meeting.id, "Speaker 3", "Priya")
+                .unwrap(),
+            1
+        );
+        assert_eq!(labels(&db), ["Priya", "Speaker 2", "Priya", "Priya"]);
+
+        assert!(db.rename_speaker(&meeting.id, "Speaker 2", "  ").is_err());
+        assert_eq!(db.rename_speaker(&meeting.id, "Nobody", "Sam").unwrap(), 0);
     }
 }
