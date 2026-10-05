@@ -15,6 +15,7 @@ use crate::detection::DetectedMeeting;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::Emitter;
@@ -26,9 +27,15 @@ pub const SETTING_KEY: &str = "snapshots_enabled";
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
 /// Keeps a runaway meeting from filling the disk.
 const MAX_PER_MEETING: usize = 300;
+/// Longest edge, in pixels, of the small frame captured each poll to spot
+/// changes; the full-size capture only happens once one looks worth reading.
+const THUMB_EDGE: f64 = 96.0;
+/// Longest edge of a saved snapshot: sharp enough to read slide text, small
+/// enough to keep each image to a few hundred KB.
+const SNAPSHOT_EDGE: f64 = 2560.0;
 
 pub fn enabled(db: &Database) -> bool {
-    db.get_setting(SETTING_KEY).ok().flatten().as_deref() == Some("true")
+    db.get_bool_setting(SETTING_KEY, false)
 }
 
 /// Where a meeting's snapshot images live.
@@ -52,15 +59,6 @@ pub struct WindowInfo {
     pub layer: isize,
 }
 
-const BROWSERS: &[&str] = &[
-    "Google Chrome",
-    "Brave",
-    "Arc",
-    "Microsoft Edge",
-    "Firefox",
-    "Safari",
-];
-
 /// Browser window titles (the active tab) that mean a web meeting is showing.
 const WEB_MEETING_TITLES: &[&str] = &[
     "google meet",
@@ -76,7 +74,7 @@ const WEB_MEETING_TITLES: &[&str] = &[
 /// or window, so ordinary browsing or chat is never captured.
 fn is_meeting_title(app: &str, title: &str) -> bool {
     let title = title.to_lowercase();
-    if BROWSERS.contains(&app) {
+    if crate::detection::is_browser(app) {
         // Google Meet tabs are titled "Meet - abc-defg-hij".
         return title.starts_with("meet ") || WEB_MEETING_TITLES.iter().any(|t| title.contains(t));
     }
@@ -252,7 +250,8 @@ fn format_context(snapshots: &[Snapshot]) -> String {
 /// Background capture for one recording. Stopping waits for the thread so
 /// every snapshot is stored before post-meeting processing reads them.
 pub struct Snapshotter {
-    stop: Arc<AtomicBool>,
+    /// Dropping it wakes and ends the thread.
+    stop: mpsc::Sender<()>,
     handle: std::thread::JoinHandle<()>,
 }
 
@@ -265,7 +264,7 @@ impl Snapshotter {
         is_paused: Arc<AtomicBool>,
         clock: RecordedClock,
     ) -> Self {
-        let stop = Arc::new(AtomicBool::new(false));
+        let (stop, stopped) = mpsc::channel();
         let run = Run {
             db,
             app,
@@ -273,14 +272,14 @@ impl Snapshotter {
             dir,
             is_paused,
             clock,
-            stop: stop.clone(),
+            stopped,
         };
         let handle = std::thread::spawn(move || run.run());
         Self { stop, handle }
     }
 
     pub fn stop(self) {
-        self.stop.store(true, Ordering::Release);
+        drop(self.stop);
         if self.handle.join().is_err() {
             tracing::error!("Snapshot thread panicked");
         }
@@ -294,7 +293,7 @@ struct Run {
     dir: PathBuf,
     is_paused: Arc<AtomicBool>,
     clock: RecordedClock,
-    stop: Arc<AtomicBool>,
+    stopped: mpsc::Receiver<()>,
 }
 
 impl Run {
@@ -315,38 +314,20 @@ impl Run {
         let mut last_words = HashSet::new();
         let mut taken = 0;
 
-        while self.wait(POLL_INTERVAL) && taken < MAX_PER_MEETING {
-            if self.is_paused.load(Ordering::Acquire) {
-                gate.reset();
-                continue;
-            }
-            // Only while a meeting app is on a call, and only its window.
-            let Some(call) = crate::detection::meeting_app_using_mic() else {
+        while self.wait() && taken < MAX_PER_MEETING {
+            let Some(thumb) = self.capture(&mut capturer, THUMB_EDGE) else {
                 gate.reset();
                 continue;
             };
-            let frame = match capturer.capture_meeting_window(&call) {
-                Ok(Some(frame)) => frame,
-                Ok(None) => {
-                    gate.reset();
-                    continue;
-                }
-                Err(e) => {
-                    tracing::debug!("Snapshot capture failed: {e:#}");
-                    continue;
-                }
+            let Ok(sig) = Signature::from_image(&thumb) else {
+                continue;
             };
-            match Signature::from_image(&frame) {
-                Ok(sig) => {
-                    if !gate.observe(sig) {
-                        continue;
-                    }
-                }
-                Err(e) => {
-                    tracing::debug!("Unreadable snapshot frame: {e}");
-                    continue;
-                }
+            if !gate.observe(sig) {
+                continue;
             }
+            let Some(frame) = self.capture(&mut capturer, SNAPSHOT_EDGE) else {
+                continue;
+            };
             match self.examine(&frame, &mut last_words) {
                 Ok(true) => taken += 1,
                 Ok(false) => {}
@@ -357,17 +338,26 @@ impl Run {
     }
 
     /// Sleep until the next poll. False once the recording has stopped.
-    fn wait(&self, total: Duration) -> bool {
-        const STEP: Duration = Duration::from_millis(100);
-        let mut waited = Duration::ZERO;
-        while waited < total {
-            if self.stop.load(Ordering::Acquire) {
-                return false;
-            }
-            std::thread::sleep(STEP);
-            waited += STEP;
+    fn wait(&self) -> bool {
+        matches!(
+            self.stopped.recv_timeout(POLL_INTERVAL),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        )
+    }
+
+    /// The meeting window as a JPEG, while recording (not paused) a call
+    /// whose window is showing. Only ever the meeting app's window.
+    fn capture(&self, capturer: &mut platform::Capturer, max_edge: f64) -> Option<Vec<u8>> {
+        if self.is_paused.load(Ordering::Acquire) {
+            return None;
         }
-        !self.stop.load(Ordering::Acquire)
+        let call = crate::detection::meeting_app_using_mic()?;
+        capturer
+            .capture_meeting_window(&call, max_edge)
+            .unwrap_or_else(|e| {
+                tracing::debug!("Snapshot capture failed: {e:#}");
+                None
+            })
     }
 
     /// Read the frame's text and keep it if it's newly shared content.
@@ -407,10 +397,6 @@ mod platform {
     use cidre::{cf, cg, ns, sc, ut, vn};
     use std::path::Path;
 
-    /// Longest edge of a saved snapshot, in pixels: sharp enough to read
-    /// slide text, small enough to keep each image to a few hundred KB.
-    const MAX_EDGE: f64 = 2560.0;
-
     pub struct Capturer {
         // ScreenCaptureKit is async; this thread drives it.
         rt: tokio::runtime::Runtime,
@@ -424,16 +410,18 @@ mod platform {
             Ok(Self { rt })
         }
 
-        /// The meeting window as a JPEG, or None when it isn't on screen.
+        /// The meeting window as a JPEG no larger than `max_edge` pixels,
+        /// or None when it isn't on screen.
         pub fn capture_meeting_window(
             &mut self,
             call: &DetectedMeeting,
+            max_edge: f64,
         ) -> anyhow::Result<Option<Vec<u8>>> {
-            self.rt.block_on(capture(call))
+            self.rt.block_on(capture(call, max_edge))
         }
     }
 
-    async fn capture(call: &DetectedMeeting) -> anyhow::Result<Option<Vec<u8>>> {
+    async fn capture(call: &DetectedMeeting, max_edge: f64) -> anyhow::Result<Option<Vec<u8>>> {
         let content = sc::ShareableContent::current()
             .await
             .map_err(|e| anyhow!("list windows (check Screen Recording permission): {e:?}"))?;
@@ -463,7 +451,7 @@ mod platform {
 
         // Points to pixels at Retina density, capped.
         let (w, h) = (infos[index].width * 2.0, infos[index].height * 2.0);
-        let scale = (MAX_EDGE / w.max(h)).min(1.0);
+        let scale = (max_edge / w.max(h)).min(1.0);
         let mut cfg = sc::StreamCfg::new();
         cfg.set_width((w * scale) as usize);
         cfg.set_height((h * scale) as usize);
@@ -530,6 +518,7 @@ mod platform {
         pub fn capture_meeting_window(
             &mut self,
             _call: &DetectedMeeting,
+            _max_edge: f64,
         ) -> anyhow::Result<Option<Vec<u8>>> {
             Ok(None)
         }

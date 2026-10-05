@@ -3,23 +3,24 @@ use std::time::{Duration, Instant};
 
 /// Bundle-ID prefixes of apps people take meetings in. Prefixes also cover
 /// helper processes (e.g. `com.google.Chrome.helper`), which is where
-/// browsers actually open the microphone.
-const MEETING_APPS: &[(&str, &str)] = &[
-    ("us.zoom.xos", "Zoom"),
-    ("com.microsoft.teams", "Microsoft Teams"),
-    ("com.google.Chrome", "Google Chrome"),
-    ("com.brave.Browser", "Brave"),
-    ("company.thebrowser.Browser", "Arc"),
-    ("com.microsoft.edgemac", "Microsoft Edge"),
-    ("org.mozilla.firefox", "Firefox"),
-    ("com.apple.Safari", "Safari"),
+/// browsers actually open the microphone. Entries are
+/// (bundle-ID prefix, display name, is a web browser).
+const MEETING_APPS: &[(&str, &str, bool)] = &[
+    ("us.zoom.xos", "Zoom", false),
+    ("com.microsoft.teams", "Microsoft Teams", false),
+    ("com.google.Chrome", "Google Chrome", true),
+    ("com.brave.Browser", "Brave", true),
+    ("company.thebrowser.Browser", "Arc", true),
+    ("com.microsoft.edgemac", "Microsoft Edge", true),
+    ("org.mozilla.firefox", "Firefox", true),
+    ("com.apple.Safari", "Safari", true),
     // Safari captures the mic from WebKit's shared GPU process.
-    ("com.apple.WebKit.GPU", "Safari"),
-    ("Cisco-Systems.Spark", "Webex"),
-    ("com.webex.meetingmanager", "Webex"),
-    ("com.tinyspeck.slackmacgap", "Slack"),
-    ("com.apple.FaceTime", "FaceTime"),
-    ("com.hnc.Discord", "Discord"),
+    ("com.apple.WebKit.GPU", "Safari", true),
+    ("Cisco-Systems.Spark", "Webex", false),
+    ("com.webex.meetingmanager", "Webex", false),
+    ("com.tinyspeck.slackmacgap", "Slack", false),
+    ("com.apple.FaceTime", "FaceTime", false),
+    ("com.hnc.Discord", "Discord", false),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -31,11 +32,19 @@ pub struct DetectedMeeting {
 pub fn meeting_app_for_bundle(bundle_id: &str) -> Option<DetectedMeeting> {
     MEETING_APPS
         .iter()
-        .find(|(prefix, _)| bundle_id.starts_with(prefix))
-        .map(|&(prefix, display_name)| DetectedMeeting {
+        .find(|(prefix, _, _)| bundle_id.starts_with(prefix))
+        .map(|&(prefix, display_name, _)| DetectedMeeting {
             app_name: prefix.to_string(),
             display_name: display_name.to_string(),
         })
+}
+
+/// Whether a meeting app (by display name) is a web browser, where any page
+/// could be showing rather than the call.
+pub fn is_browser(display_name: &str) -> bool {
+    MEETING_APPS
+        .iter()
+        .any(|&(_, name, browser)| browser && name == display_name)
 }
 
 /// A meeting app currently capturing the microphone, if any. Merely having
