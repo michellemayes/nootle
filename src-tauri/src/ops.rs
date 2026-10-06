@@ -1045,6 +1045,13 @@ mod tests {
             .is_empty());
         let pairs = db.get_labels_for_meetings(&[id.as_str()]).unwrap();
         assert_eq!(pairs[0].1.name, "Customer");
+
+        db.delete_label(&label.id).unwrap();
+        assert!(db.list_labels().unwrap().is_empty());
+        assert!(db
+            .list_meetings(None, true, Some(&label.id))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

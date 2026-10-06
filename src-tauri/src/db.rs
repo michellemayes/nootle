@@ -1597,8 +1597,16 @@ impl Database {
     }
 
     pub fn delete_label(&self, id: &str) -> Result<()> {
-        let conn = self.lock_conn()?;
-        conn.execute("DELETE FROM labels WHERE id = ?1", params![id])?;
+        let mut conn = self.lock_conn()?;
+        // Foreign keys aren't enforced on every connection, so don't rely on
+        // ON DELETE CASCADE to clear assignments.
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM meeting_labels WHERE label_id = ?1",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM labels WHERE id = ?1", params![id])?;
+        tx.commit()?;
         Ok(())
     }
 

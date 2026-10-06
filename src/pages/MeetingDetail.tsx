@@ -898,7 +898,7 @@ export function MeetingDetail() {
   const { summaries, loading: summariesLoading, generateSummary } = useSummaries(id!);
   const { templates } = useTemplates();
   const { storedProviders: storedApiProviders } = useApiKeys();
-  const { labels: allLabels, getMeetingLabels, addMeetingLabel, removeMeetingLabel, createLabel } = useLabels();
+  const { labels: allLabels, getMeetingLabels, addMeetingLabel, removeMeetingLabel, createLabel, updateLabel, deleteLabel } = useLabels();
   const { notes: scratchNotes } = useScratchPad(id ?? null);
   const [meetingLabels, setMeetingLabels] = useState<Label[]>([]);
   const hasLinear = storedApiProviders.includes("linear");
@@ -986,6 +986,16 @@ export function MeetingDetail() {
     const updated = await getMeetingLabels(meetingId);
     setMeetingLabels(updated);
   }, [removeMeetingLabel, getMeetingLabels]);
+
+  const handleUpdateLabel = useCallback(async (labelId: string, name: string, color: string, icon: string | null) => {
+    await updateLabel(labelId, name, color, icon);
+    if (id) setMeetingLabels(await getMeetingLabels(id));
+  }, [id, updateLabel, getMeetingLabels]);
+
+  const handleDeleteLabel = useCallback(async (labelId: string) => {
+    await deleteLabel(labelId);
+    setMeetingLabels((prev) => prev.filter((l) => l.id !== labelId));
+  }, [deleteLabel]);
 
   const handleTitleSave = useCallback(async () => {
     if (!meeting || !titleDraft.trim() || titleDraft.trim() === meeting.title) {
@@ -1246,6 +1256,8 @@ export function MeetingDetail() {
               onAddLabel={handleAddMeetingLabel}
               onRemoveLabel={handleRemoveMeetingLabel}
               onCreateLabel={(name, color) => createLabel(name, color, null)}
+              onUpdateLabel={handleUpdateLabel}
+              onDeleteLabel={handleDeleteLabel}
             />
             </div>
             )}
