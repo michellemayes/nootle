@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **labels:** Add rename, recolor, and delete to the label picker (#167) ([35d52f0](https://github.com/michellemayes/nootle/commit/35d52f04d309838d6b1711be26af84a7b018a6a2))
+
+## [0.5.2] - 2026-10-06
+
+### Bug Fixes
+
+- Recognize a downloaded search model in Ask across meetings (#168) ([c1a4d06](https://github.com/michellemayes/nootle/commit/c1a4d0642871abbd21ff11a87a9a584285d46ad9))
+
 ## [0.5.1] - 2026-10-06
 
 ### Bug Fixes
