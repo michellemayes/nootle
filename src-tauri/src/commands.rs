@@ -1159,7 +1159,7 @@ pub async fn import_recording(
                     tracing::error!("Import of {meeting_id} failed: {e:#}");
                     let _ = db.delete_meeting(&meeting_id);
                     let _ = std::fs::remove_file(&audio_path);
-                    let _ = app.emit("meeting-updated", serde_json::json!({ "id": meeting_id }));
+                    let _ = app.emit("meeting-deleted", &meeting_id);
                     crate::notify(&app, "Import failed", &e.to_string());
                 }
             }

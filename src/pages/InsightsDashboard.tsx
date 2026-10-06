@@ -33,20 +33,15 @@ function ActionItemTicketButton({
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const { defaultTeamId, defaultProjectId } = useLinearSettings();
   const [open, setOpen] = useState(false);
-  const [teamId, setTeamId] = useState(defaultTeamId ?? "");
-  const [projectId, setProjectId] = useState(defaultProjectId ?? "");
+  // Only the user's picks live in state; until then follow the defaults,
+  // which load after the first render.
+  const [teamOverride, setTeamId] = useState<string | null>(null);
+  const [projectOverride, setProjectId] = useState<string | null>(null);
+  const teamId = teamOverride ?? defaultTeamId ?? "";
+  const projectId = projectOverride ?? defaultProjectId ?? "";
   const { projects } = useLinearProjects(teamId || null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // The defaults load after the first render, so adopt them once they arrive.
-  useEffect(() => {
-    if (defaultTeamId && !teamId) setTeamId(defaultTeamId);
-  }, [defaultTeamId, teamId]);
-
-  useEffect(() => {
-    if (defaultProjectId && !projectId) setProjectId(defaultProjectId);
-  }, [defaultProjectId, projectId]);
 
   if (!storedProviders.includes("linear")) return null;
 

@@ -310,44 +310,23 @@ fn xhtml_text(text: &str) -> String {
         .replace('\n', "<br/>")
 }
 
-/// Wraps mapped speaker names in wiki links in a single pass, longest name
-/// first and only on whole words, so "Speaker 1" never rewrites the prefix
-/// of "Speaker 10".
+/// Wraps mapped speaker names in wiki links. Reuses the dictionary's
+/// single-pass, longest-first, whole-word matcher, so "Speaker 1" never
+/// rewrites the prefix of "Speaker 10".
 fn link_speakers(text: &str, speaker_map: &HashMap<String, String>) -> String {
-    let mut names: Vec<(&String, &String)> =
-        speaker_map.iter().filter(|(k, _)| !k.is_empty()).collect();
-    names.sort_by_key(|(raw, _)| std::cmp::Reverse(raw.len()));
-
-    let is_word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
-    let mut out = String::with_capacity(text.len());
-    let mut i = 0;
-    while i < text.len() {
-        let rest = &text[i..];
-        let prev = text[..i].chars().next_back();
-        let hit = if is_word(prev) {
-            None
-        } else {
-            names.iter().find(|(raw, _)| {
-                rest.starts_with(raw.as_str()) && !is_word(rest[raw.len()..].chars().next())
-            })
-        };
-        match hit {
-            Some((raw, mapped)) => {
-                out.push_str(&format!("[[{mapped}]]"));
-                i += raw.len();
-            }
-            None => {
-                let c = rest.chars().next().unwrap_or_default();
-                out.push(c);
-                i += c.len_utf8();
-            }
-        }
-    }
-    out
+    let links: Vec<crate::dictionary::LearnedCorrection> = speaker_map
+        .iter()
+        .filter(|(raw, _)| !raw.is_empty())
+        .map(|(raw, mapped)| crate::dictionary::LearnedCorrection {
+            from: raw.clone(),
+            to: format!("[[{mapped}]]"),
+        })
+        .collect();
+    crate::dictionary::Rules::from_corrections(&links).apply(text)
 }
 
-fn render_template(template: &str, context: &WorkflowContext) -> String {
-    let action_items_text = context
+fn action_items_text(context: &WorkflowContext) -> String {
+    context
         .action_items
         .iter()
         .map(|ai| {
@@ -361,8 +340,18 @@ fn render_template(template: &str, context: &WorkflowContext) -> String {
             line
         })
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n")
+}
 
+fn template_summary_text(context: &WorkflowContext) -> &str {
+    context
+        .template_summary
+        .as_deref()
+        .or(context.summary.as_deref())
+        .unwrap_or("No summary available")
+}
+
+fn render_template(template: &str, context: &WorkflowContext) -> String {
     template
         .replace("{{title}}", &context.meeting_title)
         .replace("{{date}}", &context.meeting_date)
@@ -370,15 +359,8 @@ fn render_template(template: &str, context: &WorkflowContext) -> String {
             "{{summary}}",
             context.summary.as_deref().unwrap_or("No summary available"),
         )
-        .replace(
-            "{{template_summary}}",
-            context
-                .template_summary
-                .as_deref()
-                .or(context.summary.as_deref())
-                .unwrap_or("No summary available"),
-        )
-        .replace("{{action_items}}", &action_items_text)
+        .replace("{{template_summary}}", template_summary_text(context))
+        .replace("{{action_items}}", &action_items_text(context))
 }
 
 fn render_default_summary_body(context: &WorkflowContext) -> String {
@@ -673,8 +655,8 @@ async fn execute_confluence(
     // Storage format is XHTML: raw "&" or "<" in a summary is a 400.
     let content = format!(
         "<h2>Summary</h2><p>{}</p><h2>Action Items</h2><p>{}</p>",
-        xhtml_text(&render_template("{{template_summary}}", context)),
-        xhtml_text(&render_template("{{action_items}}", context)),
+        xhtml_text(template_summary_text(context)),
+        xhtml_text(&action_items_text(context)),
     );
 
     let resp = api

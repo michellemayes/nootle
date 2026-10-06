@@ -644,3 +644,42 @@ fn test_similar_chunks_date_to_includes_whole_day() {
         .unwrap();
     assert_eq!(hits.len(), 1, "a meeting on the end date must match");
 }
+
+#[test]
+fn test_rename_speaker_drops_stale_search_chunks() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "1:1".to_string(),
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    db.create_transcript_segment(NewTranscriptSegment {
+        meeting_id: meeting.id.clone(),
+        speaker_label: "Speaker 1".to_string(),
+        text: "Hello".to_string(),
+        start_ms: 0,
+        end_ms: 1000,
+        confidence: 0.9,
+    })
+    .unwrap();
+    let chunk = TranscriptChunk {
+        id: "c1".to_string(),
+        meeting_id: meeting.id.clone(),
+        chunk_index: 0,
+        text: "Speaker 1: Hello".to_string(),
+        start_ms: 0,
+        end_ms: 1000,
+        speaker_labels: r#"["Speaker 1"]"#.to_string(),
+    };
+    db.insert_embedded_chunks(&[(chunk, vec![0.1f32; 384])])
+        .unwrap();
+    assert!(db.has_meeting_chunks(&meeting.id).unwrap());
+
+    assert_eq!(
+        db.rename_speaker(&meeting.id, "Speaker 1", "Ana").unwrap(),
+        1
+    );
+    assert!(!db.has_meeting_chunks(&meeting.id).unwrap());
+}

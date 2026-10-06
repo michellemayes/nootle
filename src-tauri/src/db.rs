@@ -2053,12 +2053,20 @@ impl Database {
 
     /// Relabel every transcript line spoken by `from` in a meeting. Renaming
     /// onto an existing label merges the two speakers. Returns lines changed.
+    /// Renames a speaker in one meeting. Search chunks quote speaker names,
+    /// so they are dropped for the next embedding pass to rebuild.
     pub fn rename_speaker(&self, meeting_id: &str, from: &str, to: &str) -> Result<usize> {
-        let conn = self.lock_conn()?;
-        Ok(conn.execute(
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        let changed = tx.execute(
             "UPDATE transcripts SET speaker_label = ?3 WHERE meeting_id = ?1 AND speaker_label = ?2",
             params![meeting_id, from, to],
-        )?)
+        )?;
+        if changed > 0 {
+            Self::delete_meeting_chunks_with(&tx, meeting_id)?;
+        }
+        tx.commit()?;
+        Ok(changed)
     }
 
     pub fn get_transcript(&self, meeting_id: &str) -> Result<Vec<TranscriptSegment>> {
@@ -2709,6 +2717,36 @@ impl Database {
                 chunk.speaker_labels
             ],
         )?;
+        Ok(())
+    }
+
+    /// Writes a meeting's chunks and their embeddings in one transaction, so
+    /// a failure part-way can't leave a half-built index that looks done.
+    pub fn insert_embedded_chunks(&self, chunks: &[(TranscriptChunk, Vec<f32>)]) -> Result<()> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        {
+            let mut insert_chunk = tx.prepare_cached(
+                "INSERT INTO transcript_chunks (id, meeting_id, chunk_index, text, start_ms, end_ms, speaker_labels)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )?;
+            let mut insert_embedding = tx.prepare_cached(
+                "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (?1, ?2)",
+            )?;
+            for (chunk, embedding) in chunks {
+                insert_chunk.execute(params![
+                    chunk.id,
+                    chunk.meeting_id,
+                    chunk.chunk_index,
+                    chunk.text,
+                    chunk.start_ms,
+                    chunk.end_ms,
+                    chunk.speaker_labels
+                ])?;
+                insert_embedding.execute(params![chunk.id, f32_slice_to_bytes(embedding)])?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 

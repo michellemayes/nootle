@@ -1002,8 +1002,8 @@ impl NootleMcpServer {
             blocking(move || {
                 let rename =
                     |engine| ops::rename_speaker(&db, engine, &p.meeting_id, &p.from, &p.to);
-                // Rebuild the search index only if the meeting is in it, and
-                // leave it as it was without the search model.
+                // Load the search model only to rebuild an index the meeting
+                // already had; without it the next indexing pass rebuilds it.
                 let changed = if db.has_meeting_chunks(&p.meeting_id)? {
                     rename(loaded_engine(&mut engine.blocking_lock()).ok())?
                 } else {
