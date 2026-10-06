@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -179,7 +179,7 @@ function DashboardActionItem({
             {isDone ? "Done" : "Open"}
           </Badge>
           {item.assignee && <span>{item.assignee}</span>}
-          {item.due_date && <span>{item.due_date}</span>}
+          {item.due_date && <DueDate date={item.due_date} done={isDone} />}
           {item.meeting_title && (
             <span className="max-w-[200px] truncate">{item.meeting_title}</span>
           )}
@@ -192,6 +192,33 @@ function DashboardActionItem({
     </div>
   );
 }
+
+/** YYYY-MM-DD in local time, comparable as a string. */
+function localIsoDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** A due date that calls out overdue and due-today items while they're open. */
+function DueDate({ date, done }: { date: string; done: boolean }) {
+  const today = localIsoDate(new Date());
+  const label = new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+  if (!done && date < today) {
+    return <Badge variant="destructive" size="sm">Overdue · {label}</Badge>;
+  }
+  if (!done && date === today) {
+    return <Badge variant="warning" size="sm">Due today</Badge>;
+  }
+  return <span>Due {label}</span>;
+}
+
+const UNASSIGNED = "__unassigned__";
+
+/** How assignees are compared: case and surrounding space don't matter. */
+const assigneeKey = (item: InsightWithActionItem) => item.assignee?.trim().toLowerCase() ?? "";
 
 function InsightItem({
   item,
@@ -310,6 +337,7 @@ export function InsightsDashboard() {
   const navigate = useNavigate();
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [assigneeFilter, setAssigneeFilter] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
   const [searchDebounced, setSearchDebounced] = useState<string | undefined>(undefined);
   const { teams, fetchTeams } = useLinearTeams();
@@ -341,14 +369,37 @@ export function InsightsDashboard() {
     navigate(`/meeting/${meetingId}`);
   };
 
+  // Everyone action items are assigned to, for the "who" filter.
+  const assignees = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const t of insightTypes) {
+      if (!t.has_action_fields) continue;
+      for (const item of groupedByType[t.slug] ?? []) {
+        const key = assigneeKey(item);
+        if (key && !names.has(key)) names.set(key, item.assignee!.trim());
+      }
+    }
+    return [...names.values()].sort((a, b) => a.localeCompare(b));
+  }, [insightTypes, groupedByType]);
+
+  // Filtering by assignee only applies to types that have assignees.
   const visibleTypes = insightTypes.filter(
-    (t) => typeFilter === undefined || typeFilter === t.slug,
+    (t) =>
+      (typeFilter === undefined || typeFilter === t.slug) &&
+      (assigneeFilter === undefined || t.has_action_fields),
   );
-  const totalItems = visibleTypes.reduce(
-    (sum, t) => sum + (groupedByType[t.slug]?.length ?? 0),
-    0,
-  );
-  const hasFilters = !!typeFilter || !!statusFilter || !!searchDebounced;
+  const itemsByType = useMemo(() => {
+    if (assigneeFilter === undefined) return groupedByType;
+    const want = assigneeFilter === UNASSIGNED ? "" : assigneeFilter.toLowerCase();
+    return Object.fromEntries(
+      Object.entries(groupedByType).map(([slug, items]) => [
+        slug,
+        items.filter((i) => assigneeKey(i) === want),
+      ]),
+    );
+  }, [groupedByType, assigneeFilter]);
+  const totalItems = visibleTypes.reduce((sum, t) => sum + (itemsByType[t.slug]?.length ?? 0), 0);
+  const hasFilters = !!typeFilter || !!statusFilter || !!searchDebounced || !!assigneeFilter;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -386,6 +437,19 @@ export function InsightsDashboard() {
           <option value="open">Open</option>
           <option value="done">Done</option>
         </Select>
+        {assignees.length > 0 && (
+          <Select
+            value={assigneeFilter ?? ""}
+            onChange={(e) => setAssigneeFilter(e.target.value || undefined)}
+            aria-label="Filter by assignee"
+          >
+            <option value="">Anyone</option>
+            {assignees.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+            <option value={UNASSIGNED}>Unassigned</option>
+          </Select>
+        )}
       </div>
 
       {loading ? (
@@ -407,7 +471,7 @@ export function InsightsDashboard() {
               <TypeSection
                 key={t.slug}
                 insightType={t}
-                items={groupedByType[t.slug] ?? []}
+                items={itemsByType[t.slug] ?? []}
                 teams={teams}
                 toggleActionItem={toggleActionItem}
                 onNavigate={handleNavigate}

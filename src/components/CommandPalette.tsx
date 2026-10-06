@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
-import { Circle, CornerDownLeft, FileText, Moon, Search, Sparkles, Sun } from "lucide-react";
+import { Circle, CornerDownLeft, FileText, Keyboard, Moon, Search, Sparkles, Sun } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { toggleShortcutsHelp } from "@/components/ShortcutsHelp";
 import { cn } from "@/lib/utils";
 import { navItems } from "@/lib/navigation";
 import { relativeWhen } from "@/lib/momentum";
@@ -99,6 +100,14 @@ export function CommandPalette() {
         label: theme === "light" ? "Switch to dark mode" : "Switch to light mode",
         icon: theme === "light" ? Moon : Sun,
         run: go(toggleTheme),
+      },
+      {
+        id: "shortcuts",
+        group: "Actions",
+        label: "Keyboard shortcuts",
+        icon: Keyboard,
+        shortcut: "?",
+        run: go(toggleShortcutsHelp),
       },
     ].filter((a) => matches(q, a.label));
 

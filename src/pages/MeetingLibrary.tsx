@@ -36,6 +36,7 @@ import {
   unarchiveMeeting,
 } from "@/hooks/useMeetings";
 import { useLabels } from "@/hooks/useLabels";
+import { usePinnedMeetings } from "@/hooks/usePinnedMeetings";
 import { MeetingActionMenuItems } from "@/components/MeetingActionMenuItems";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { LabelEditor } from "@/components/LabelEditor";
@@ -45,6 +46,7 @@ import {
   Search,
   Mic,
   MoreVertical,
+  Pin,
   LayoutGrid,
   List,
   Archive,
@@ -140,7 +142,17 @@ export function MeetingLibrary() {
   const hasFilters =
     debouncedSearch.trim().length > 0 || activeLabelIds.size > 0;
 
-  const groups = useMemo(() => groupByDay(filteredMeetings), [filteredMeetings]);
+  const { pinnedIds, togglePin } = usePinnedMeetings();
+  // Pinned meetings get their own group above the dated ones, in pin order.
+  const groups = useMemo(() => {
+    const byId = new Map(filteredMeetings.map((m) => [m.id, m]));
+    const pinnedMeetings = pinnedIds.flatMap((id) => byId.get(id) ?? []);
+    const pinned = new Set(pinnedMeetings.map((m) => m.id));
+    const dated = groupByDay(filteredMeetings.filter((m) => !pinned.has(m.id)));
+    return pinnedMeetings.length > 0
+      ? [{ label: "Pinned", meetings: pinnedMeetings, pinned: true }, ...dated]
+      : dated;
+  }, [filteredMeetings, pinnedIds]);
 
   const handleViewModeChange = useCallback((mode: "grid" | "list") => {
     setViewMode(mode);
@@ -219,13 +231,15 @@ export function MeetingLibrary() {
     ) => (
       <MeetingActionMenuItems
         meeting={meeting}
+        isPinned={pinnedIds.includes(meeting.id)}
+        onTogglePin={() => togglePin(meeting.id)}
         onArchive={() => setArchived(meeting, true)}
         onUnarchive={() => setArchived(meeting, false)}
         onDelete={() => setDeleteTarget(meeting)}
         {...primitives}
       />
     ),
-    [setArchived],
+    [setArchived, pinnedIds, togglePin],
   );
 
   return (
@@ -266,7 +280,7 @@ export function MeetingLibrary() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             ref={searchRef}
-            placeholder="Search meetings…"
+            placeholder="Search titles and transcripts…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
@@ -385,9 +399,10 @@ export function MeetingLibrary() {
       ) : (
         groups.map((group) => (
         <section key={group.label} className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {"pinned" in group && <Pin className="h-3 w-3" />}
             {group.label}
-            <span className="ml-2 font-normal normal-case tracking-normal opacity-70">
+            <span className="ml-0.5 font-normal normal-case tracking-normal opacity-70">
               {group.meetings.length}
             </span>
           </h2>

@@ -191,7 +191,7 @@ struct AskFilterArgs {
 enum MeetingsAction {
     /// List meetings
     List {
-        /// Search by title
+        /// Search by title or transcript text
         #[arg(long)]
         search: Option<String>,
         /// Include archived meetings

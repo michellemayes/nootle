@@ -18,7 +18,7 @@ use crate::ops;
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListMeetingsParams {
-    /// Optional search query to filter meetings by title
+    /// Optional search query to filter meetings by title or transcript text
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search: Option<String>,
     /// Only meetings with this label ID (see list_labels)
@@ -607,7 +607,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "List meetings",
-        description = "List meetings, newest first, with their label names, optionally filtered by title or label. Archived meetings are left out unless include_archived.",
+        description = "List meetings, newest first, with their label names, optionally filtered by title or transcript text, or by label. Archived meetings are left out unless include_archived.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn list_meetings(

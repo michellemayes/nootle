@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CalendarDays, Circle, Video, X } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Circle, History, Video, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { RecordingIntent } from "@/pages/RecordingView";
-import type { CalendarEvent, UpcomingEvents } from "@/types";
+import { relativeWhen } from "@/lib/momentum";
+import { useMeetings } from "@/hooks/useMeetings";
+import { useAllInsights } from "@/hooks/useInsights";
+import type { CalendarEvent, InsightWithActionItem, Meeting, UpcomingEvents } from "@/types";
 
 const DISMISS_KEY = "calendarPromptDismissed";
 const REFRESH_MS = 5 * 60 * 1000;
@@ -16,6 +19,91 @@ const SHOWN = 3;
 
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+const NO_EVENTS: CalendarEvent[] = [];
+
+const normalizeTitle = (title: string) => title.trim().toLowerCase().replace(/\s+/g, " ");
+
+/** What you need going into a meeting you've had before. */
+interface Brief {
+  last: Meeting;
+  openItems: InsightWithActionItem[];
+}
+
+/**
+ * Past meetings in the same series as each event (same title, or recorded
+ * from that calendar event), newest first, with their open action items.
+ */
+function useBriefs(events: CalendarEvent[]): Map<string, Brief> {
+  // Same cached, event-refreshed lists the library and momentum strip use.
+  const { meetings } = useMeetings();
+  const { insights: openItems } = useAllInsights("action_item", "open");
+
+  const normalized = useMemo(
+    () => meetings.filter((m) => m.status !== "recording").map((m) => ({ m, title: normalizeTitle(m.title) })),
+    [meetings],
+  );
+
+  return useMemo(() => {
+    const briefs = new Map<string, Brief>();
+    for (const event of events) {
+      const title = normalizeTitle(event.title);
+      const series = normalized
+        .filter(({ m, title: t }) => m.calendar_event_id === event.id || t === title)
+        .map(({ m }) => m);
+      if (series.length === 0) continue;
+      const ids = new Set(series.map((m) => m.id));
+      briefs.set(event.id, {
+        last: series[0],
+        openItems: openItems.filter((i) => ids.has(i.meeting_id)),
+      });
+    }
+    return briefs;
+  }, [events, normalized, openItems]);
+}
+
+function BriefLine({ brief }: { brief: Brief }) {
+  const navigate = useNavigate();
+  const [expanded, setExpanded] = useState(false);
+  const count = brief.openItems.length;
+  return (
+    <span className="block text-xs text-muted-foreground">
+      <span className="flex flex-wrap items-center gap-x-2">
+        <button
+          type="button"
+          onClick={() => navigate(`/meeting/${brief.last.id}`)}
+          className="inline-flex items-center gap-1 hover:text-foreground hover:underline underline-offset-2"
+          title={`Open "${brief.last.title}"`}
+        >
+          <History className="h-3 w-3" />
+          Last met {relativeWhen(brief.last.start_time)}
+        </button>
+        {count > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="inline-flex items-center gap-0.5 hover:text-foreground"
+          >
+            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {count} open action {count === 1 ? "item" : "items"}
+          </button>
+        )}
+      </span>
+      {expanded && (
+        <ul className="mt-1 space-y-0.5 pl-4">
+          {brief.openItems.slice(0, 5).map((item) => (
+            <li key={item.id} className="list-disc text-foreground/80">
+              {item.content}
+              {item.assignee && <span className="text-muted-foreground"> · {item.assignee}</span>}
+            </li>
+          ))}
+          {count > 5 && <li className="list-none">and {count - 5} more</li>}
+        </ul>
+      )}
+    </span>
+  );
+}
 
 function readDismissed(): boolean {
   try {
@@ -34,6 +122,8 @@ export function UpcomingMeetings() {
   const [upcoming, setUpcoming] = useState<UpcomingEvents | null>(null);
   const [dismissed, setDismissed] = useState(readDismissed);
   const [now, setNow] = useState(() => Date.now());
+  const events = useMemo(() => upcoming?.events.slice(0, SHOWN) ?? [], [upcoming]);
+  const briefs = useBriefs(upcoming?.status === "granted" ? events : NO_EVENTS);
 
   const load = useCallback(() => {
     invoke<UpcomingEvents>("list_upcoming_events", { hours: 12 })
@@ -95,7 +185,6 @@ export function UpcomingMeetings() {
     );
   }
 
-  const events = upcoming.events.slice(0, SHOWN);
   if (events.length === 0) return null;
 
   const record = (event: CalendarEvent) =>
@@ -111,6 +200,7 @@ export function UpcomingMeetings() {
       <div className="divide-y rounded-xl border bg-card shadow-sm">
         {events.map((event) => {
           const live = new Date(event.start).getTime() <= now;
+          const brief = briefs.get(event.id);
           return (
             <div key={event.id} className="flex items-center gap-3 px-4 py-2.5">
               <span className="w-36 shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
@@ -136,6 +226,7 @@ export function UpcomingMeetings() {
                       .join(" · ")}
                   </span>
                 )}
+                {brief && <BriefLine brief={brief} />}
               </span>
               {event.meeting_url && (
                 <Button

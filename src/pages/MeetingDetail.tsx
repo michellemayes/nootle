@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, useDeferredValue } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,12 +32,14 @@ import { SnapshotsSection } from "@/components/SnapshotsSection";
 import {
   AudioPlayerControls,
   SKIP_SECONDS,
+  segmentIndexAt,
   skipBy,
   useFollowPlayback,
   useIsPlaying,
 } from "@/components/AudioPlayerControls";
 import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment } from "@/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { LabelEditor } from "@/components/LabelEditor";
@@ -50,9 +52,11 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   FileText,
   Lightbulb,
   List,
+  Mail,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
@@ -60,6 +64,7 @@ import {
   Pencil,
   Play,
   RotateCw,
+  Search,
   Sparkles,
   StickyNote,
   X,
@@ -107,6 +112,58 @@ const speakerColors = [
   "text-chart-6",
 ];
 
+/** A transcript timestamp; plays the recording from there when clickable. */
+function TimestampButton({
+  ms,
+  onSeek,
+  className,
+}: {
+  ms: number;
+  onSeek?: (ms: number) => void;
+  className?: string;
+}) {
+  const classes = cn("font-mono tabular-nums text-muted-foreground", className);
+  if (!onSeek) return <span className={classes}>{formatMs(ms)}</span>;
+  return (
+    <button
+      type="button"
+      onClick={() => onSeek(ms)}
+      title="Play from here"
+      aria-label={`Play from ${formatMs(ms)}`}
+      className={cn(classes, "rounded-sm transition-colors hover:text-primary hover:underline underline-offset-2")}
+    >
+      {formatMs(ms)}
+    </button>
+  );
+}
+
+/** Wraps case-insensitive matches of `query` in <mark>. */
+function highlightMatches(text: string, query: string): React.ReactNode {
+  if (!query) return text;
+  const lower = text.toLowerCase();
+  const needle = query.toLowerCase();
+  const parts: React.ReactNode[] = [];
+  let from = 0;
+  for (let at = lower.indexOf(needle); at !== -1; at = lower.indexOf(needle, from)) {
+    if (at > from) parts.push(text.slice(from, at));
+    parts.push(
+      <mark key={at} className="rounded-sm bg-highlight/40 text-foreground">
+        {text.slice(at, at + needle.length)}
+      </mark>,
+    );
+    from = at + needle.length;
+  }
+  if (from < text.length) parts.push(text.slice(from));
+  return parts;
+}
+
+/** Opens a new message in the default mail app. */
+function openMailDraft(subject: string, body: string) {
+  return openUrl(
+    `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
+  ).catch(() => {});
+}
+
 function pluralLines(n: number): string {
   return `${n} line${n === 1 ? "" : "s"}`;
 }
@@ -118,9 +175,12 @@ function pluralLines(n: number): string {
 function SegmentText({
   seg,
   speaker,
+  query,
   onSave,
 }: {
   seg: TranscriptSegment;
+  /** Find-in-transcript text to highlight. */
+  query: string;
   /** The speaker name, rendered before the line (it has its own editor). */
   speaker: React.ReactNode;
   onSave: (seg: TranscriptSegment, text: string) => Promise<void>;
@@ -140,7 +200,7 @@ function SegmentText({
         title="Double-click to fix a word"
       >
         {speaker}
-        {seg.text}
+        {highlightMatches(seg.text, query)}
       </p>
     );
   }
@@ -177,10 +237,12 @@ function ActionItemRow({
   item,
   onToggle,
   onUpdate,
+  onSeek,
 }: {
   item: InsightWithActionItem;
   onToggle: (actionItemId: string, currentStatus: string) => void;
   onUpdate: (actionItemId: string, assignee: string | null, dueDate: string | null) => void;
+  onSeek?: (ms: number) => void;
 }) {
   const [editingAssignee, setEditingAssignee] = useState(false);
   const [assignee, setAssignee] = useState(item.assignee ?? "");
@@ -269,9 +331,7 @@ function ActionItemRow({
             </button>
           )}
           {item.transcript_start_ms != null && (
-            <span className="font-mono text-muted-foreground">
-              {formatMs(item.transcript_start_ms)}
-            </span>
+            <TimestampButton ms={item.transcript_start_ms} onSeek={onSeek} />
           )}
         </div>
       </div>
@@ -329,8 +389,10 @@ function InsightSection({
 
 function InsightsPanel({
   meetingId,
+  onSeek,
 }: {
   meetingId: string;
+  onSeek?: (ms: number) => void;
 }) {
   const {
     insights,
@@ -428,6 +490,7 @@ function InsightsPanel({
                         item={item}
                         onToggle={toggleActionItem}
                         onUpdate={updateActionItem}
+                        onSeek={onSeek}
                       />
                     ) : (
                       <div className="rounded-md border p-3 space-y-1 group/insight">
@@ -436,9 +499,11 @@ function InsightsPanel({
                           <CopyButton text={item.content} className="opacity-0 group-hover/insight:opacity-100 shrink-0 mt-0.5" />
                         </div>
                         {item.transcript_start_ms != null && (
-                          <span className="font-mono text-xs text-muted-foreground">
-                            {formatMs(item.transcript_start_ms)}
-                          </span>
+                          <TimestampButton
+                            ms={item.transcript_start_ms}
+                            onSeek={onSeek}
+                            className="text-xs"
+                          />
                         )}
                       </div>
                     )
@@ -614,12 +679,14 @@ function NotesPanel({
   enrichedNotes,
   scratchNotes,
   onRefresh,
+  onSeek,
 }: {
   meetingId: string;
   rawNotes: string | null;
   enrichedNotes: string | null;
   scratchNotes: { id: string; content: string; timestamp_ms: number }[];
   onRefresh: () => void;
+  onSeek?: (ms: number) => void;
 }) {
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [enriching, setEnriching] = useState(false);
@@ -674,9 +741,11 @@ function NotesPanel({
               key={note.id}
               className="flex items-start gap-3 rounded-lg border border-highlight/20 bg-highlight/5 px-3 py-2"
             >
-              <span className="mt-0.5 shrink-0 font-mono text-xs text-highlight-foreground">
-                {formatMs(note.timestamp_ms)}
-              </span>
+              <TimestampButton
+                ms={note.timestamp_ms}
+                onSeek={onSeek}
+                className="mt-0.5 shrink-0 text-xs text-highlight-foreground"
+              />
               <span className="text-sm leading-relaxed text-foreground">{note.content}</span>
             </div>
           ))}
@@ -973,6 +1042,70 @@ export function MeetingDetail() {
     if (!isPlaying) await audio.play().catch(() => {});
   }, [isPlaying, audioElement]);
 
+  const scrollToSegment = useCallback((segmentId: string) => {
+    transcriptViewport
+      ?.querySelector<HTMLElement>(`[data-segment-id="${CSS.escape(segmentId)}"]`)
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [transcriptViewport]);
+
+  // A timestamp in notes or insights: open the transcript at that line and
+  // play from there.
+  const [pendingScrollMs, setPendingScrollMs] = useState<number | null>(null);
+  const jumpToMs = useCallback((ms: number) => {
+    setTranscriptCollapsed(false);
+    setPendingScrollMs(ms);
+    if (!audioMissing) seekToMs(ms);
+  }, [audioMissing, seekToMs]);
+  useEffect(() => {
+    if (pendingScrollMs === null || !transcriptViewport || segments.length === 0) return;
+    const index = segmentIndexAt(segments, pendingScrollMs);
+    if (index >= 0) scrollToSegment(segments[index].id);
+    setPendingScrollMs(null);
+  }, [pendingScrollMs, transcriptViewport, segments, scrollToSegment]);
+
+  // Find in transcript (⌘F).
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findIndex, setFindIndex] = useState(0);
+  const findInputRef = useRef<HTMLInputElement>(null);
+  // Deferred so typing stays responsive while a long transcript re-highlights.
+  const trimmedFind = useDeferredValue(findOpen ? findQuery.trim() : "");
+  const lowerSegments = useMemo(
+    () => segments.map((s) => ({ seg: s, text: s.text.toLowerCase(), speaker: s.speaker_label.toLowerCase() })),
+    [segments],
+  );
+  const findMatches = useMemo(() => {
+    if (!trimmedFind) return [];
+    const needle = trimmedFind.toLowerCase();
+    return lowerSegments
+      .filter((s) => s.text.includes(needle) || s.speaker === needle)
+      .map((s) => s.seg);
+  }, [lowerSegments, trimmedFind]);
+  const matchPos = findMatches.length > 0 ? findIndex % findMatches.length : -1;
+  const currentMatch = matchPos >= 0 ? findMatches[matchPos] : null;
+  useEffect(() => {
+    if (currentMatch) scrollToSegment(currentMatch.id);
+  }, [currentMatch, scrollToSegment]);
+  const stepFind = (delta: number) => {
+    if (findMatches.length === 0) return;
+    setFindIndex((i) => (i + delta + findMatches.length) % findMatches.length);
+  };
+  const closeFind = () => {
+    setFindOpen(false);
+    setFindQuery("");
+  };
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || e.key.toLowerCase() !== "f") return;
+      e.preventDefault();
+      setTranscriptCollapsed(false);
+      setFindOpen(true);
+      requestAnimationFrame(() => findInputRef.current?.select());
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   // Space plays and pauses, ←/→ skip, like any media player, unless a
   // control that handles those keys itself has focus.
   useEffect(() => {
@@ -1217,6 +1350,17 @@ export function MeetingDetail() {
                 <div className="flex items-center justify-between px-5 border-b h-12">
                   <h2 className="text-sm font-semibold">Transcript</h2>
                   <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => (findOpen ? closeFind() : setFindOpen(true))}
+                      disabled={segments.length === 0}
+                      title="Find in transcript (⌘F)"
+                      aria-label="Find in transcript"
+                      aria-pressed={findOpen}
+                    >
+                      <Search className="h-4 w-4" />
+                    </Button>
                     <CopyButton
                       text={segments.map((s) => `${s.speaker_label}: ${s.text}`).join("\n")}
                     />
@@ -1241,6 +1385,47 @@ export function MeetingDetail() {
                     </Button>
                   </div>
                 </div>
+                {findOpen && (
+                  <div className="flex items-center gap-1.5 border-b px-5 py-2">
+                    <Input
+                      ref={findInputRef}
+                      autoFocus
+                      value={findQuery}
+                      onChange={(e) => {
+                        setFindQuery(e.target.value);
+                        setFindIndex(0);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          stepFind(e.shiftKey ? -1 : 1);
+                        } else if (e.key === "Escape") {
+                          e.preventDefault();
+                          closeFind();
+                        }
+                      }}
+                      placeholder="Find in transcript"
+                      aria-label="Find in transcript"
+                      className="h-7 flex-1 text-xs"
+                    />
+                    <span className="shrink-0 w-14 text-center text-xs tabular-nums text-muted-foreground" aria-live="polite">
+                      {trimmedFind
+                        ? findMatches.length === 0
+                          ? "No lines"
+                          : `${matchPos + 1} of ${findMatches.length}`
+                        : ""}
+                    </span>
+                    <Button variant="ghost" size="icon-sm" onClick={() => stepFind(-1)} disabled={findMatches.length === 0} aria-label="Previous match" title="Previous (⇧↵)">
+                      <ChevronUp className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon-sm" onClick={() => stepFind(1)} disabled={findMatches.length === 0} aria-label="Next match" title="Next (↵)">
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon-sm" onClick={closeFind} aria-label="Close find" title="Close (Esc)">
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
                 {dictionaryNotice && (
                   <div className="flex items-center gap-2 border-b bg-muted/50 px-5 py-2 text-xs text-muted-foreground">
                     <BookA className="h-3.5 w-3.5 shrink-0" />
@@ -1278,16 +1463,14 @@ export function MeetingDetail() {
                           className={cn(
                             "group -mx-2 flex gap-3 rounded-md px-2 transition-colors data-[active=true]:bg-primary/10",
                             compactTranscript && "items-baseline",
+                            currentMatch?.id === seg.id && "ring-1 ring-highlight",
                           )}
                         >
-                          <button
-                            onClick={() => seekToMs(seg.start_ms)}
-                            title="Play from here"
-                            aria-label={`Play from ${formatMs(seg.start_ms)}`}
-                            className="shrink-0 pt-0.5 text-xs text-muted-foreground font-mono tabular-nums w-12 text-left hover:text-primary group-data-[active=true]:text-primary transition-colors"
-                          >
-                            {formatMs(seg.start_ms)}
-                          </button>
+                          <TimestampButton
+                            ms={seg.start_ms}
+                            onSeek={seekToMs}
+                            className="shrink-0 pt-0.5 text-xs w-12 text-left hover:no-underline group-data-[active=true]:text-primary"
+                          />
                           <SegmentText
                             seg={seg}
                             speaker={
@@ -1316,6 +1499,7 @@ export function MeetingDetail() {
                               </button>
                             )
                             }
+                            query={trimmedFind}
                             onSave={saveSegmentEdit}
                           />
                         </div>
@@ -1373,6 +1557,7 @@ export function MeetingDetail() {
                 enrichedNotes={meeting.enriched_notes}
                 scratchNotes={scratchNotes}
                 onRefresh={refreshMeeting}
+                onSeek={jumpToMs}
               />
             </TabsContent>
             <TabsContent value="summaries" className="flex flex-1 flex-col mt-0">
@@ -1433,7 +1618,18 @@ export function MeetingDetail() {
                             <span className="text-xs text-muted-foreground">
                               {s.provider}/{s.model}
                             </span>
-                            <CopyButton text={s.content} className="ml-auto" />
+                            <div className="ml-auto flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openMailDraft(`Recap: ${meeting.title}`, s.content)}
+                                title="Email this summary"
+                                aria-label="Email this summary"
+                                className="inline-flex items-center rounded text-muted-foreground transition-colors hover:text-foreground"
+                              >
+                                <Mail className="h-3.5 w-3.5" />
+                              </button>
+                              <CopyButton text={s.content} markdown />
+                            </div>
                           </div>
                           <Markdown content={s.content} />
                           {hasLinear && (
@@ -1462,7 +1658,7 @@ export function MeetingDetail() {
               </ScrollArea>
             </TabsContent>
             <TabsContent value="insights" className="flex flex-1 flex-col mt-0">
-              <InsightsPanel meetingId={id!} />
+              <InsightsPanel meetingId={id!} onSeek={jumpToMs} />
             </TabsContent>
             <TabsContent value="analytics" className="flex flex-1 flex-col mt-0">
               <AnalyticsPanel meetingId={id!} />
@@ -1517,11 +1713,7 @@ export function MeetingDetail() {
                                     size="sm"
                                     variant="outline"
                                     className="h-7 text-xs"
-                                    onClick={async () => {
-                                      const url = `mailto:?subject=${encodeURIComponent(emailDraft.subject)}&body=${encodeURIComponent(emailDraft.body)}`;
-                                      const { openUrl } = await import("@tauri-apps/plugin-opener");
-                                      await openUrl(url);
-                                    }}
+                                    onClick={() => openMailDraft(emailDraft.subject, emailDraft.body)}
                                   >
                                     Open in Mail
                                   </Button>

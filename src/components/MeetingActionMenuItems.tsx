@@ -1,8 +1,10 @@
-import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Pin, PinOff, Trash2 } from "lucide-react";
 import type { Meeting } from "@/types";
 
 interface MeetingActionMenuItemsProps {
   meeting: Meeting;
+  isPinned: boolean;
+  onTogglePin: () => void;
   onArchive: () => void;
   onUnarchive: () => void;
   onDelete: () => void;
@@ -16,6 +18,8 @@ interface MeetingActionMenuItemsProps {
 
 export function MeetingActionMenuItems({
   meeting,
+  isPinned,
+  onTogglePin,
   onArchive,
   onUnarchive,
   onDelete,
@@ -26,6 +30,10 @@ export function MeetingActionMenuItems({
 
   return (
     <>
+      <MenuItem onClick={onTogglePin}>
+        {isPinned ? <PinOff className="mr-2 h-4 w-4" /> : <Pin className="mr-2 h-4 w-4" />}
+        {isPinned ? "Unpin" : "Pin to top"}
+      </MenuItem>
       {isArchived ? (
         <MenuItem onClick={onUnarchive}>
           <ArchiveRestore className="mr-2 h-4 w-4" />

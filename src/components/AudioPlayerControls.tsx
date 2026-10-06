@@ -33,7 +33,7 @@ export function useIsPlaying(audio: HTMLAudioElement | null) {
 }
 
 /** Index of the last segment starting at or before `ms` (-1 if none). */
-function segmentIndexAt(segments: TranscriptSegment[], ms: number): number {
+export function segmentIndexAt(segments: TranscriptSegment[], ms: number): number {
   let lo = 0;
   let hi = segments.length - 1;
   let found = -1;
