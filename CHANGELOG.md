@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-10-06
+
+### Features
+
+- **mcp:** Fix app opening from Claude Code, upgrade to MCP 2026-07-28, full CLI/MCP coverage (#161) ([e984b0a](https://github.com/michellemayes/nootle/commit/e984b0a330f4b465570d6c4d65143414182e11a5))
+
 ## [0.2.0] - 2026-10-05
 
 ### Features
