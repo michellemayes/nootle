@@ -23,6 +23,7 @@ pub mod mcp;
 pub mod meeting_popup;
 pub mod model_download;
 pub mod model_registry;
+pub mod ops;
 pub mod permissions;
 pub mod remote;
 pub mod sandbox_migration;
@@ -318,7 +319,7 @@ pub fn run() {
             commands::re_extract_meeting_insights,
             commands::update_action_item_status,
             commands::update_action_item,
-            commands::get_exe_path,
+            commands::get_mcp_command,
             commands::check_permissions,
             commands::request_microphone_permission,
             commands::request_screen_recording_permission,

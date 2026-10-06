@@ -153,7 +153,9 @@ GitHub can reuse a signed-in GitHub CLI (`gh auth token`). Slack and Asana conne
 
 ## CLI Tool
 
-`nootle-cli` is a standalone command-line tool for querying your meeting data and managing automations. It reads and writes the Nootle database directly — the app doesn't need to be running.
+`nootle-cli` is a standalone command-line tool that covers everything Nootle does outside of live recording: meetings, transcripts, labels, notes, action items, recipes, analytics, Ask, settings, and automations. It reads and writes the Nootle database directly — the app doesn't need to be running.
+
+`nootle-cli` ships inside Nootle.app at `/Applications/Nootle.app/Contents/MacOS/nootle-cli`; symlink it onto your PATH, or build it from source:
 
 ```bash
 # Build and install
@@ -173,6 +175,20 @@ nootle-cli meetings export <meeting-id> --format srt --output call.srt
 
 # Name a speaker
 nootle-cli meetings rename-speaker <meeting-id> "Speaker 2" "Priya"
+
+# Summarize, or ask about one meeting or all of them (uses your configured LLM;
+# --provider and --model pick another)
+nootle-cli meetings summarize <meeting-id>
+nootle-cli meetings ask <meeting-id> "What did we decide about pricing?"
+nootle-cli ask "Who owns the Q3 launch?"
+
+# Tag a meeting and mark an action item done
+nootle-cli meetings label <meeting-id> --add Customer
+nootle-cli actions update <action-item-id> --status done
+
+# Start and stop recording in the running app (needs Settings → Recording → Allow URL control)
+nootle-cli record start --title "Staff sync"
+nootle-cli record stop
 ```
 
 Output is JSON by default. Add `--pretty` for human-readable formatting. See `nootle-cli --help` for all commands.
@@ -213,13 +229,15 @@ claude skill add --global --file "$(dirname $(which nootle-cli))/../skills/nootl
 
 ## MCP Server
 
-Run the app binary with `--mcp` to use Nootle as an MCP server (Settings → About shows the exact command for your install):
+`nootle-cli mcp` serves Nootle over MCP. The CLI ships inside Nootle.app, so there's nothing extra to install (Settings → About shows the exact command for your install):
 
 ```bash
-claude mcp add nootle -- /Applications/Nootle.app/Contents/MacOS/nootle --mcp
+claude mcp add --scope user nootle -- /Applications/Nootle.app/Contents/MacOS/nootle-cli mcp
 ```
 
-Besides reading meetings and transcripts, the server has tools to list, create, update, run, and delete workflows, integrations, summary templates, and insight types, so you can ask an agent things like *"Set up a workflow that posts meeting recaps to #eng"* and it does the setup for you.
+The server supports MCP 2026-07-28 and the older handshake-based versions. Older setups that run the app with `--mcp` keep working, and the app serves MCP instead of opening whenever an MCP client launches it over stdio.
+
+The server has the same features as the CLI, except API keys, recording control, and the calendar: reading, searching, and editing meetings, labels, notes, action items, and the dictionary; summaries, insights, Ask, and other LLM features; and workflows, integrations, summary templates, and insight types. So you can ask an agent things like *"Tag last week's customer calls and summarize what they asked for"* or *"Set up a workflow that posts meeting recaps to #eng"*. Large results come in pages, and tools that delete things ask Claude to confirm with you first.
 
 ## URL Scheme
 

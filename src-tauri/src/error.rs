@@ -24,4 +24,10 @@ impl serde::Serialize for NootleError {
     }
 }
 
+impl From<anyhow::Error> for NootleError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::Other(format!("{e:#}"))
+    }
+}
+
 pub type Result<T> = std::result::Result<T, NootleError>;

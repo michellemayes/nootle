@@ -11,23 +11,11 @@ use std::sync::Arc;
 use tauri::{Emitter, State};
 use tokio::sync::Mutex as TokioMutex;
 
-fn truncate_at_word_boundary(text: &str, max_chars: usize, suffix: &str) -> String {
-    if text.chars().count() <= max_chars {
-        return text.trim().to_string();
-    }
-    let prefix: String = text.chars().take(max_chars).collect();
-    match prefix.rfind(' ') {
-        Some(pos) => format!("{}{suffix}", &prefix[..pos]),
-        None => format!("{prefix}{suffix}"),
-    }
-}
+use crate::ops::truncate_at_word_boundary;
 
 /// Where recordings and imported audio live.
 fn recordings_dir() -> Result<std::path::PathBuf, String> {
-    Ok(dirs::data_dir()
-        .ok_or_else(|| "Could not determine data directory".to_string())?
-        .join("Nootle")
-        .join("recordings"))
+    crate::ops::recordings_dir().map_err(|e| e.to_string())
 }
 
 /// Title for a recording started without one and with no calendar event to
@@ -45,25 +33,9 @@ pub type EmbeddingState = Arc<TokioMutex<Option<crate::embedding::EmbeddingEngin
 /// show progress for a job started before the user navigated away.
 pub type SentimentJobsState = Arc<std::sync::Mutex<std::collections::HashSet<String>>>;
 
-const ALLOWED_PROVIDERS: &[&str] = &[
-    "openai",
-    "anthropic",
-    "google",
-    "groq",
-    "openrouter",
-    "bedrock",
-    "codex",
-    "claude-agent",
-    "linear",
-    "asana",
-];
-
 fn validate_provider(provider: &str) -> Result<(), String> {
-    if ALLOWED_PROVIDERS.contains(&provider) {
-        Ok(())
-    } else {
-        Err(format!("Invalid provider: {}", provider))
-    }
+    crate::ops::validate_one_of("provider", provider, crate::ops::API_KEY_PROVIDERS)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -72,7 +44,7 @@ pub fn list_meetings(
     search: Option<String>,
     include_archived: Option<bool>,
 ) -> Result<Vec<Meeting>, String> {
-    db.list_meetings(search.as_deref(), include_archived.unwrap_or(false))
+    db.list_meetings(search.as_deref(), include_archived.unwrap_or(false), None)
         .map_err(|e| e.to_string())
 }
 
@@ -83,22 +55,7 @@ pub fn get_meeting(db: State<'_, DbState>, id: String) -> Result<Meeting, String
 
 #[tauri::command(async)]
 pub fn delete_meeting(db: State<'_, DbState>, id: String) -> Result<(), String> {
-    // Get meeting to find audio path before deleting
-    let audio_path = db.get_meeting(&id).ok().and_then(|m| m.audio_path.clone());
-
-    // Delete vec0 embeddings (not cascade-aware)
-    let _ = db.delete_meeting_chunks(&id);
-
-    db.delete_meeting(&id).map_err(|e| e.to_string())?;
-
-    if let Some(path) = audio_path {
-        let _ = std::fs::remove_file(&path);
-    }
-    if let Ok(dir) = recordings_dir() {
-        let _ = std::fs::remove_dir_all(crate::snapshots::dir_for(&dir, &id));
-    }
-
-    Ok(())
+    crate::ops::delete_meeting(&db, &id).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -107,10 +64,7 @@ pub fn update_meeting_status(
     id: String,
     status: String,
 ) -> Result<(), String> {
-    const VALID_STATUSES: &[&str] = &["recording", "transcribing", "summarized", "archived"];
-    if !VALID_STATUSES.contains(&status.as_str()) {
-        return Err(format!("Invalid meeting status: {}", status));
-    }
+    crate::ops::validate_meeting_status(&status).map_err(|e| e.to_string())?;
     db.update_meeting_status(&id, &status)
         .map_err(|e| e.to_string())
 }
@@ -121,7 +75,8 @@ pub fn update_meeting_title(
     id: String,
     title: String,
 ) -> Result<(), String> {
-    db.update_meeting_title(&id, &title)
+    let title = crate::ops::non_empty_name("Title", &title).map_err(|e| e.to_string())?;
+    db.update_meeting_title(&id, title)
         .map_err(|e| e.to_string())
 }
 
@@ -133,19 +88,11 @@ pub fn update_meeting_template(
     id: String,
     template_id: Option<String>,
 ) -> Result<(), String> {
+    if let Some(template_id) = &template_id {
+        crate::ops::validate_template(&db, template_id).map_err(|e| e.to_string())?;
+    }
     db.update_meeting_template(&id, template_id.as_deref())
         .map_err(|e| e.to_string())
-}
-
-fn validate_hex_color(color: &str) -> Result<(), String> {
-    if color.len() == 7
-        && color.starts_with('#')
-        && color[1..].chars().all(|ch| ch.is_ascii_hexdigit())
-    {
-        Ok(())
-    } else {
-        Err(format!("Invalid hex color: {}", color))
-    }
 }
 
 /// Linear access from the legacy API key setting, or else the Linear
@@ -173,9 +120,7 @@ pub fn create_label(
     color: String,
     icon: Option<String>,
 ) -> Result<Label, String> {
-    validate_hex_color(&color)?;
-    db.create_label(&name, &color, icon.as_deref())
-        .map_err(|e| e.to_string())
+    crate::ops::create_label(&db, &name, &color, icon.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -191,9 +136,15 @@ pub fn update_label(
     color: String,
     icon: Option<String>,
 ) -> Result<Label, String> {
-    validate_hex_color(&color)?;
-    db.update_label(&id, &name, &color, icon.as_deref())
-        .map_err(|e| e.to_string())
+    // The app sends every field; no icon means none rather than unchanged.
+    crate::ops::update_label(
+        &db,
+        &id,
+        Some(&name),
+        Some(&color),
+        Some(icon.as_deref().unwrap_or_default()),
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -282,10 +233,7 @@ pub fn list_snapshots(
 
 #[tauri::command(async)]
 pub fn delete_snapshot(db: State<'_, DbState>, id: String) -> Result<(), String> {
-    if let Some(snapshot) = db.delete_snapshot(&id).map_err(|e| e.to_string())? {
-        let _ = std::fs::remove_file(&snapshot.image_path);
-    }
-    Ok(())
+    crate::ops::delete_snapshot(&db, &id).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -308,19 +256,11 @@ pub async fn rename_speaker(
     from: String,
     to: String,
 ) -> Result<Vec<TranscriptSegment>, String> {
-    let to = to.trim();
-    if to.is_empty() {
-        return Err("Speaker name can't be empty".into());
-    }
-    db.rename_speaker(&meeting_id, &from, to)
+    let mut engine = embedding_state.lock().await;
+    crate::ops::rename_speaker(&db, engine.as_mut(), &meeting_id, &from, &to)
         .map_err(|e| e.to_string())?;
-
-    compute_analytics(&db, &app, &meeting_id);
-    if let Some(engine) = embedding_state.lock().await.as_mut() {
-        if let Err(e) = crate::chunking::reindex_meeting(&db, engine, &meeting_id) {
-            tracing::warn!("Failed to re-index meeting {meeting_id} after rename: {e}");
-        }
-    }
+    drop(engine);
+    let _ = app.emit("analytics-ready", &meeting_id);
     db.get_transcript(&meeting_id).map_err(|e| e.to_string())
 }
 
@@ -371,9 +311,7 @@ pub async fn apply_dictionary_to_meeting(
     db: State<'_, DbState>,
     meeting_id: String,
 ) -> Result<usize, String> {
-    let entries = db.list_dictionary_entries().map_err(|e| e.to_string())?;
-    let rules = crate::dictionary::Rules::new(&entries);
-    crate::dictionary::apply_to_meeting(&db, &meeting_id, &rules, None).map_err(|e| e.to_string())
+    crate::ops::apply_dictionary(&db, &meeting_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -393,13 +331,16 @@ pub fn create_recipe(
     prompt_template: String,
     output_format: String,
 ) -> Result<Recipe, String> {
-    db.create_recipe(NewRecipe {
-        name,
-        description,
-        slash_command,
-        prompt_template,
-        output_format,
-    })
+    crate::ops::create_recipe(
+        &db,
+        NewRecipe {
+            name,
+            description,
+            slash_command,
+            prompt_template,
+            output_format,
+        },
+    )
     .map_err(|e| e.to_string())
 }
 
@@ -418,15 +359,14 @@ pub fn update_recipe(
     prompt_template: String,
     output_format: String,
 ) -> Result<Recipe, String> {
-    db.update_recipe(
-        &id,
-        &name,
-        &description,
-        &slash_command,
-        &prompt_template,
-        &output_format,
-    )
-    .map_err(|e| e.to_string())
+    let patch = crate::ops::RecipePatch {
+        name: Some(name),
+        description: Some(description),
+        slash_command: Some(slash_command),
+        prompt_template: Some(prompt_template),
+        output_format: Some(output_format),
+    };
+    crate::ops::update_recipe(&db, &id, patch).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -664,36 +604,11 @@ pub async fn start_recording(
     Ok(meeting)
 }
 
-/// The model for automatic post-recording LLM work (title, summaries,
-/// insights). Honours an explicit choice before falling back to registration
-/// order. Order is a fragile default: which provider summarises your meetings
-/// then depends on which ones happen to be installed, and standing up a new
-/// one silently moves your transcripts to a different vendor. Set
-/// `summarization_provider` to pin it.
-fn pick_auto_model(db: &Database, llm: &LlmRegistry) -> Option<crate::llm::ModelInfo> {
-    let preferred = db.get_setting("summarization_provider").unwrap_or(None);
-    let models = llm.all_models();
-    preferred
-        .and_then(|p| models.iter().find(|m| m.provider == p).cloned())
-        .or_else(|| models.into_iter().next())
-}
+use crate::ops::pick_auto_model;
 
 /// Compute speaker analytics and engagement from the stored transcript.
 fn compute_analytics(db: &Database, app: &tauri::AppHandle, meeting_id: &str) {
-    let result = (|| -> anyhow::Result<()> {
-        let speaker_analytics = crate::analytics::compute_speaker_analytics(db, meeting_id)?;
-        db.save_speaker_analytics(meeting_id, &speaker_analytics)?;
-        let texts: Vec<String> = db
-            .get_transcript(meeting_id)?
-            .into_iter()
-            .map(|t| t.text)
-            .collect();
-        let engagement =
-            crate::analytics::compute_engagement(meeting_id, &speaker_analytics, &texts);
-        db.save_engagement(&engagement)?;
-        Ok(())
-    })();
-    match result {
+    match crate::ops::refresh_analytics(db, meeting_id) {
         Ok(()) => {
             let _ = app.emit("analytics-ready", meeting_id);
             tracing::info!("Analytics computed for meeting {meeting_id}");
@@ -1305,16 +1220,10 @@ pub async fn store_api_key(
     provider: String,
     key: String,
 ) -> Result<(), String> {
-    validate_provider(&provider)?;
-    // Linear keys are stored in the database alongside other Linear settings
+    crate::ops::store_api_key(&db, &provider, &key).map_err(|e| e.to_string())?;
     if provider == "linear" {
-        db.set_linear_setting("api_key", &key)
-            .map_err(|e| e.to_string())?;
         return Ok(());
     }
-
-    db.store_api_key(&provider, &key)
-        .map_err(|e| e.to_string())?;
 
     // Hot-reload: register the provider in the LLM registry
     let mut registry = llm.write().await;
@@ -1346,14 +1255,10 @@ pub async fn delete_api_key(
     llm: State<'_, LlmState>,
     provider: String,
 ) -> Result<(), String> {
-    validate_provider(&provider)?;
+    crate::ops::delete_api_key(&db, &provider).map_err(|e| e.to_string())?;
     if provider == "linear" {
-        db.delete_linear_setting("api_key")
-            .map_err(|e| e.to_string())?;
         return Ok(());
     }
-
-    db.delete_api_key(&provider).map_err(|e| e.to_string())?;
 
     // Hot-reload: remove the provider from the LLM registry
     let mut registry = llm.write().await;
@@ -1364,14 +1269,7 @@ pub async fn delete_api_key(
 
 #[tauri::command(async)]
 pub fn list_stored_providers(db: State<'_, DbState>) -> Result<Vec<String>, String> {
-    let mut providers = db.list_api_key_providers().map_err(|e| e.to_string())?;
-    // Check if Linear API key is stored in the database
-    if let Ok(Some(key)) = db.get_linear_setting("api_key") {
-        if !key.is_empty() {
-            providers.push("linear".to_string());
-        }
-    }
-    Ok(providers)
+    crate::ops::list_api_key_providers(&db).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1729,89 +1627,6 @@ pub async fn delete_model(model_id: String) -> Result<(), String> {
     model_download::delete_model_files(model)
 }
 
-/// Shared RAG helper: embed query, search chunks, call LLM with retrieved context.
-#[allow(clippy::too_many_arguments)]
-async fn rag_chat(
-    db: &Database,
-    llm: &LlmRegistry,
-    embedding_state: &EmbeddingState,
-    message: &str,
-    history: Vec<ChatMessage>,
-    provider: &str,
-    model: &str,
-    label_ids: &[String],
-    date_from: Option<&str>,
-    date_to: Option<&str>,
-) -> Result<(String, Vec<serde_json::Value>), String> {
-    let mut engine_lock = embedding_state.lock().await;
-    let engine = engine_lock
-        .as_mut()
-        .ok_or_else(|| "Embedding model not loaded. Please download it first.".to_string())?;
-
-    let query_embedding = engine
-        .embed(message)
-        .map_err(|e| format!("Failed to embed query: {e}"))?;
-    drop(engine_lock);
-
-    let results = db
-        .search_similar_chunks(&query_embedding, 10, label_ids, date_from, date_to)
-        .map_err(|e| e.to_string())?;
-
-    if results.is_empty() {
-        return Ok((
-            "I couldn't find any relevant transcript passages for your question. Try adjusting your filters or asking a different question.".into(),
-            Vec::new(),
-        ));
-    }
-
-    let mut context_parts = Vec::new();
-    let mut sources = Vec::new();
-    for result in &results {
-        let timestamp = crate::summarization::format_ms(result.start_ms);
-        context_parts.push(format!(
-            "---\n[Meeting: \"{}\", {}]\n{}\n",
-            result.meeting_title, timestamp, result.chunk_text
-        ));
-        sources.push(serde_json::json!({
-            "meeting_id": result.meeting_id,
-            "meeting_title": result.meeting_title,
-            "start_ms": result.start_ms,
-            "end_ms": result.end_ms,
-        }));
-    }
-
-    let system_prompt = format!(
-        "You are Nootle, an AI assistant that answers questions about the user's meetings.\n\n\
-         Below are relevant excerpts from the user's meeting transcripts. Each excerpt \
-         includes the meeting title and timestamp. Use ONLY these excerpts to answer.\n\
-         When you reference information, cite the source as [Meeting Title, timestamp].\n\n\
-         {}\n\
-         Answer the user's question based on these excerpts. Be concise.{}",
-        context_parts.join("\n"),
-        crate::dictionary::glossary(db)
-    );
-
-    let mut messages = vec![ChatMessage {
-        role: "system".into(),
-        content: system_prompt,
-    }];
-    messages.extend(history);
-    messages.push(ChatMessage {
-        role: "user".into(),
-        content: message.to_string(),
-    });
-
-    let llm_provider = llm
-        .get_provider(provider)
-        .ok_or_else(|| format!("Provider '{}' not found", provider))?;
-    let response = llm_provider
-        .chat(messages, model)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok((response, sources))
-}
-
 #[tauri::command]
 pub async fn embed_meeting_cmd(
     db: State<'_, DbState>,
@@ -1831,25 +1646,29 @@ pub async fn embed_all_meetings(
     db: State<'_, DbState>,
     embedding_state: State<'_, EmbeddingState>,
 ) -> Result<(), String> {
-    let meetings = db.list_meetings(None, false).map_err(|e| e.to_string())?;
-    let total = meetings.len();
+    let ids = crate::ops::meetings_to_index(&db).map_err(|e| e.to_string())?;
+    let total = ids.len();
 
     let mut engine_lock = embedding_state.lock().await;
     let engine = engine_lock
         .as_mut()
         .ok_or_else(|| "Embedding model not loaded".to_string())?;
 
-    for (i, meeting) in meetings.iter().enumerate() {
-        match crate::chunking::embed_meeting(&db, engine, &meeting.id) {
-            Ok(_) => {}
-            Err(e) => tracing::warn!("Failed to embed meeting {}: {e}", meeting.id),
-        }
+    let mut current = 0;
+    let report = crate::ops::embed_meetings(&ids, |id| {
+        let result = crate::chunking::embed_meeting(&db, engine, id);
+        current += 1;
         let _ = app.emit(
             "embedding-progress",
-            serde_json::json!({
-                "current": i + 1,
-                "total": total,
-            }),
+            serde_json::json!({ "current": current, "total": total }),
+        );
+        result
+    });
+    for failure in report.failed {
+        tracing::warn!(
+            "Failed to embed meeting {}: {}",
+            failure.meeting_id,
+            failure.error
         );
     }
     Ok(())
@@ -1939,6 +1758,7 @@ pub fn get_all_insights(
     search: Option<String>,
 ) -> Result<Vec<crate::db::InsightWithActionItem>, String> {
     db.get_all_insights(
+        None,
         insight_type.as_deref(),
         status.as_deref(),
         search.as_deref(),
@@ -1995,10 +1815,12 @@ pub fn update_action_item_status(
     id: String,
     status: String,
 ) -> Result<(), String> {
-    const VALID_STATUSES: &[&str] = &["open", "done", "cancelled"];
-    if !VALID_STATUSES.contains(&status.as_str()) {
-        return Err(format!("Invalid action item status: {status}"));
-    }
+    crate::ops::validate_one_of(
+        "action item status",
+        &status,
+        crate::ops::ACTION_ITEM_STATUSES,
+    )
+    .map_err(|e| e.to_string())?;
     db.update_action_item_status(&id, &status)
         .map_err(|e| e.to_string())
 }
@@ -2014,11 +1836,28 @@ pub fn update_action_item(
         .map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+pub struct McpCommand {
+    command: String,
+    args: Vec<&'static str>,
+}
+
+/// The command MCP clients should run: the bundled `nootle-cli mcp`, which
+/// can't open the app, or `nootle --mcp` when the CLI isn't next to the app
+/// (e.g. under `tauri dev`, which builds only the app).
 #[tauri::command(async)]
-pub fn get_exe_path() -> Result<String, String> {
-    std::env::current_exe()
-        .map(|p| p.to_string_lossy().into_owned())
-        .map_err(|e| e.to_string())
+pub fn get_mcp_command() -> Result<McpCommand, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let cli = exe.with_file_name("nootle-cli");
+    let (path, args) = if cli.exists() {
+        (cli, vec!["mcp"])
+    } else {
+        (exe, vec!["--mcp"])
+    };
+    Ok(McpCommand {
+        command: path.to_string_lossy().into_owned(),
+        args,
+    })
 }
 
 #[tauri::command]
@@ -2035,16 +1874,9 @@ pub async fn set_app_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
-    const ALLOWED_SETTING_KEYS: &[&str] = &[
-        "denoise_enabled",
-        "detection_enabled",
-        crate::remote::ENABLED_SETTING,
-        crate::dictionary::AUTO_LEARN_SETTING,
-    ];
-    if !ALLOWED_SETTING_KEYS.contains(&key.as_str()) {
-        return Err(format!("Invalid setting key: {key}"));
-    }
-    db.set_setting(&key, &value).map_err(|e| e.to_string())
+    crate::ops::set_setting(&db, &key, &value)
+        .map(drop)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -2085,91 +1917,31 @@ pub async fn send_chat_message(
     date_from: Option<String>,
     date_to: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    db.create_chat_message(&conversation_id, "user", &message, None)
-        .map_err(|e| e.to_string())?;
-
-    let db_messages = db
-        .list_chat_messages(&conversation_id)
-        .map_err(|e| e.to_string())?;
-
-    // Build history for LLM (excluding the last user message we just added — rag_chat appends it)
-    let history: Vec<ChatMessage> = db_messages
-        .iter()
-        .rev()
-        .skip(1) // skip the user msg we just saved
-        .rev()
-        .map(|m| ChatMessage {
-            role: m.role.clone(),
-            content: m.content.clone(),
-        })
-        .collect();
-
+    let query_embedding = {
+        let mut engine = embedding_state.lock().await;
+        let engine = engine
+            .as_mut()
+            .ok_or("Embedding model not loaded. Please download it first.")?;
+        crate::ops::embed_question(engine, &message).map_err(|e| e.to_string())?
+    };
+    let filters = crate::ops::AskFilters {
+        label_ids,
+        date_from,
+        date_to,
+    };
     let llm = llm.read().await;
-    let (response, sources) = rag_chat(
+    crate::ops::send_chat_message(
         &db,
         &llm,
-        &embedding_state,
+        &query_embedding,
+        &conversation_id,
         &message,
-        history,
         &provider,
         &model,
-        &label_ids,
-        date_from.as_deref(),
-        date_to.as_deref(),
+        &filters,
     )
-    .await?;
-
-    let sources_json = serde_json::to_string(&sources).ok();
-    db.create_chat_message(
-        &conversation_id,
-        "assistant",
-        &response,
-        sources_json.as_deref(),
-    )
-    .map_err(|e| e.to_string())?;
-
-    // Auto-title on first message using LLM
-    if db_messages.len() <= 1 {
-        let fallback = if message.chars().count() > 50 {
-            truncate_at_word_boundary(&message, 47, "...")
-        } else {
-            message.clone()
-        };
-
-        let title = if let Some(llm_provider) = llm.get_provider(&provider) {
-            let prompt = format!(
-                "Generate a short title (max 6 words) for a conversation that starts with this message. \
-                 Return ONLY the title, nothing else. No quotes, no punctuation at the end.\n\n{message}"
-            );
-            let title_messages = vec![crate::llm::ChatMessage {
-                role: "user".into(),
-                content: prompt,
-            }];
-            match llm_provider.chat(title_messages, &model).await {
-                Ok(resp) => {
-                    let t = resp.trim().trim_matches('"').trim().to_string();
-                    if t.is_empty() || t.len() > 100 {
-                        fallback
-                    } else {
-                        t
-                    }
-                }
-                Err(_) => fallback,
-            }
-        } else {
-            fallback
-        };
-
-        let _ = db.update_chat_conversation_title(&conversation_id, &title);
-    }
-
-    db.touch_chat_conversation(&conversation_id)
-        .map_err(|e| e.to_string())?;
-
-    Ok(serde_json::json!({
-        "response": response,
-        "sources": sources
-    }))
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -2178,7 +1950,8 @@ pub fn update_chat_conversation_title(
     id: String,
     title: String,
 ) -> Result<(), String> {
-    db.update_chat_conversation_title(&id, &title)
+    crate::ops::rename_conversation(&db, &id, &title)
+        .map(drop)
         .map_err(|e| e.to_string())
 }
 
@@ -2211,59 +1984,10 @@ pub async fn enrich_meeting_notes(
     model: String,
 ) -> Result<String, String> {
     validate_provider(&provider)?;
-
-    let meeting = db.get_meeting(&meeting_id).map_err(|e| e.to_string())?;
-    let raw_notes = meeting
-        .raw_notes
-        .ok_or_else(|| "No notes to enrich".to_string())?;
-
-    // Get transcript text
-    let segments = db.get_transcript(&meeting_id).map_err(|e| e.to_string())?;
-    let transcript_text: String = segments
-        .iter()
-        .map(|s| format!("{}: {}", s.speaker_label, s.text))
-        .collect::<Vec<_>>()
-        .join("\n")
-        + &crate::snapshots::context_section(&db, &meeting_id);
-
-    let system_prompt = format!(
-        "You are enriching meeting notes using the full transcript into a single merged document. \
-         Output in markdown format. Keep the user's original notes as the backbone structure. \
-         Wrap the user's original note content in [[highlight]]...[[/highlight]] markers so it stands out. \
-         Expand each note point with details, context, and supporting information from the transcript. \
-         The result should read as one cohesive document — not two separate sections. \
-         Maintain the same topic order as the original notes.\n\n\
-         TRANSCRIPT:\n{}\n\n\
-         USER'S NOTES:\n{}{}",
-        transcript_text,
-        raw_notes,
-        crate::dictionary::glossary(&db)
-    );
-
-    let messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: system_prompt,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: "Enrich my notes into a single merged markdown document. Highlight my original notes with [[highlight]]...[[/highlight]] markers and weave in transcript details around them.".into(),
-        },
-    ];
-
     let llm = llm.read().await;
-    let llm_provider = llm
-        .get_provider(&provider)
-        .ok_or_else(|| format!("Provider '{}' not found", provider))?;
-    let enriched = llm_provider
-        .chat(messages, &model)
+    crate::ops::enrich_notes(&db, &llm, &meeting_id, &provider, &model)
         .await
-        .map_err(|e| e.to_string())?;
-
-    db.update_meeting_enriched_notes(&meeting_id, &enriched)
-        .map_err(|e| e.to_string())?;
-
-    Ok(enriched)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2271,19 +1995,7 @@ pub async fn compute_meeting_analytics(
     db: State<'_, DbState>,
     meeting_id: String,
 ) -> Result<(), String> {
-    let speaker_analytics =
-        crate::analytics::compute_speaker_analytics(&db, &meeting_id).map_err(|e| e.to_string())?;
-
-    db.save_speaker_analytics(&meeting_id, &speaker_analytics)
-        .map_err(|e| e.to_string())?;
-
-    let transcripts = db.get_transcript(&meeting_id).map_err(|e| e.to_string())?;
-    let texts: Vec<String> = transcripts.iter().map(|t| t.text.clone()).collect();
-    let engagement = crate::analytics::compute_engagement(&meeting_id, &speaker_analytics, &texts);
-
-    db.save_engagement(&engagement).map_err(|e| e.to_string())?;
-
-    Ok(())
+    crate::ops::refresh_analytics(&db, &meeting_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2303,11 +2015,9 @@ pub async fn compute_meeting_sentiment(
 
     let result = async {
         let registry = llm.read().await;
-        let segments =
-            crate::analytics::analyze_sentiment(&db, &registry, &meeting_id, &provider, &model)
-                .await
-                .map_err(|e| e.to_string())?;
-        db.save_sentiment_segments(&meeting_id, &segments)
+        crate::ops::analyze_sentiment(&db, &registry, &meeting_id, &provider, &model)
+            .await
+            .map(drop)
             .map_err(|e| e.to_string())
     }
     .await;

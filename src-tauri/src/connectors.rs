@@ -16,7 +16,8 @@ use std::time::Duration;
 use rmcp::model::CallToolRequestParams;
 use rmcp::service::RunningService;
 use rmcp::transport::auth::{
-    AuthError, AuthorizationManager, AuthorizationSession, CredentialStore, StoredCredentials,
+    AuthError, AuthorizationManager, AuthorizationRequest, AuthorizationSession, CredentialStore,
+    StoredCredentials,
 };
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::StreamableHttpClientTransport;
@@ -150,15 +151,18 @@ pub async fn connect(
     let mut manager = AuthorizationManager::new(c.url)
         .await
         .map_err(|e| failed(auth_err(e)))?;
-    let metadata = manager
-        .discover_metadata()
+    let resolution = manager
+        .resolve_metadata()
         .await
         .map_err(|e| failed(auth_err(e)))?;
-    manager.set_metadata(metadata);
+    manager.set_metadata(resolution.metadata);
     manager.set_credential_store(store.clone());
-    let session = AuthorizationSession::new(manager, c.scopes, &redirect_uri, Some("Nootle"), None)
+    let request = AuthorizationRequest::new(&redirect_uri)
+        .with_scopes(c.scopes.iter().copied())
+        .with_client_name("Nootle");
+    let session = AuthorizationSession::new(manager, request)
         .await
-        .map_err(|e| failed(auth_err(e)))?;
+        .map_err(|(_, e)| failed(auth_err(e)))?;
 
     // One sign-in at a time; starting another abandons the last.
     let (cancel_tx, cancel_rx) = oneshot::channel();
