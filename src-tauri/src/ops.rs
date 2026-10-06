@@ -445,6 +445,15 @@ pub fn load_embedding_engine() -> Result<EmbeddingEngine> {
     EmbeddingEngine::load()
 }
 
+/// The cached embedding engine in `slot`, loaded on first use so a model
+/// downloaded after launch works without a restart.
+pub fn loaded_embedding_engine(slot: &mut Option<EmbeddingEngine>) -> Result<&mut EmbeddingEngine> {
+    if slot.is_none() {
+        *slot = Some(load_embedding_engine()?);
+    }
+    Ok(slot.as_mut().expect("just loaded"))
+}
+
 /// The embedding model if it's downloaded and loads, for work that can do
 /// without it.
 pub fn try_load_embedding_engine() -> Option<EmbeddingEngine> {
