@@ -1317,8 +1317,8 @@ impl Database {
         Ok(meeting)
     }
 
-    /// Meetings newest first, optionally only those whose title contains
-    /// `search` or that carry the label `label_id`.
+    /// Meetings newest first, optionally only those whose title or transcript
+    /// contains `search`, or that carry the label `label_id`.
     pub fn list_meetings(
         &self,
         search: Option<&str>,
@@ -1339,9 +1339,9 @@ impl Database {
         }
 
         if let Some(query) = search {
+            let n = param_values.len() + 1;
             conditions.push(format!(
-                "title LIKE ?{} ESCAPE '\\'",
-                param_values.len() + 1
+                "(title LIKE ?{n} ESCAPE '\\' OR id IN (SELECT meeting_id FROM transcripts WHERE text LIKE ?{n} ESCAPE '\\'))"
             ));
             let escaped = query
                 .replace('\\', "\\\\")
@@ -4025,6 +4025,43 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn list_meetings_search_matches_title_or_transcript() {
+        let db = Database::new_in_memory().unwrap();
+        let new = |title: &str| NewMeeting {
+            title: title.into(),
+            calendar_event_id: None,
+            template_id: None,
+        };
+        let pricing = db.create_meeting(new("Pricing review")).unwrap();
+        let standup = db.create_meeting(new("Standup")).unwrap();
+        db.create_meeting(new("Retro")).unwrap();
+        db.create_transcript_segment(NewTranscriptSegment {
+            meeting_id: standup.id.clone(),
+            speaker_label: "You".into(),
+            text: "Let's revisit pricing next week".into(),
+            start_ms: 0,
+            end_ms: 1_000,
+            confidence: 1.0,
+        })
+        .unwrap();
+
+        let mut ids: Vec<_> = db
+            .list_meetings(Some("pricing"), false, None)
+            .unwrap()
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        ids.sort();
+        let mut expected = vec![pricing.id, standup.id];
+        expected.sort();
+        assert_eq!(ids, expected);
+        assert!(db
+            .list_meetings(Some("100%"), false, None)
+            .unwrap()
+            .is_empty());
+    }
 
     #[test]
     fn snapshots_are_listed_in_order_and_deleted_with_their_meeting() {

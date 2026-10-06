@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,7 +12,31 @@ interface CopyButtonProps {
   variant?: "icon" | "button";
   /** Label for the `button` variant. */
   label?: string;
+  /**
+   * Treat `text` as Markdown and also put formatted HTML on the clipboard,
+   * so pasting into Mail, Docs, or Notion keeps headings, bold, and lists.
+   * Plain-text targets still get the Markdown.
+   */
+  markdown?: boolean;
   className?: string;
+}
+
+async function writeClipboard(text: string, markdown: boolean) {
+  if (markdown && typeof ClipboardItem !== "undefined") {
+    try {
+      const html = DOMPurify.sanitize(await marked.parse(text));
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" }),
+        }),
+      ]);
+      return;
+    } catch {
+      // Fall back to plain text below.
+    }
+  }
+  await navigator.clipboard.writeText(text);
 }
 
 /** Copies `text` and confirms with a checkmark. Used for transcripts, summaries, and config snippets. */
@@ -18,6 +44,7 @@ export function CopyButton({
   text,
   variant = "icon",
   label = "Copy",
+  markdown = false,
   className,
 }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
@@ -31,14 +58,14 @@ export function CopyButton({
 
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await writeClipboard(text, markdown);
     } catch {
       return;
     }
     setCopied(true);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setCopied(false), 1500);
-  }, [text]);
+  }, [text, markdown]);
 
   if (variant === "button") {
     return (

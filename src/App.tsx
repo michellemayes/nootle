@@ -9,6 +9,7 @@ import { useOpenRecordingEvent } from "@/hooks/useOpenRecordingEvent";
 import { CompactModeProvider } from "@/contexts/CompactModeContext";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { CommandPalette } from "@/components/CommandPalette";
+import { ShortcutsHelp } from "@/components/ShortcutsHelp";
 import { RecordingCelebration } from "@/components/RecordingCelebration";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { Toaster } from "@/components/Toaster";
@@ -77,6 +78,7 @@ function Layout() {
       </main>
       <GlobalChatPanel />
       <CommandPalette />
+      <ShortcutsHelp />
       <RecordingCelebration />
       <UpdateBanner />
       <Toaster />
