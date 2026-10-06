@@ -110,7 +110,17 @@ export function MeetingLibrary() {
     debouncedSearch || undefined,
     showArchived,
   );
-  const { labels, meetingLabelsMap, addMeetingLabel, removeMeetingLabel, createLabel } = useLabels();
+  const { labels, meetingLabelsMap, addMeetingLabel, removeMeetingLabel, createLabel, updateLabel, deleteLabel } = useLabels();
+
+  const handleDeleteLabel = useCallback(async (labelId: string) => {
+    await deleteLabel(labelId);
+    setActiveLabelIds((prev) => {
+      if (!prev.has(labelId)) return prev;
+      const next = new Set(prev);
+      next.delete(labelId);
+      return next;
+    });
+  }, [deleteLabel]);
 
   const toggleLabel = useCallback((labelId: string) => {
     setActiveLabelIds((prev) => {
@@ -462,6 +472,8 @@ export function MeetingLibrary() {
                           onAddLabel={addMeetingLabel}
                           onRemoveLabel={removeMeetingLabel}
                           onCreateLabel={(name, color) => createLabel(name, color, null)}
+                          onUpdateLabel={updateLabel}
+                          onDeleteLabel={handleDeleteLabel}
                         />
                       </div>
                     </CardContent>
@@ -494,6 +506,8 @@ export function MeetingLibrary() {
                       onAddLabel={addMeetingLabel}
                       onRemoveLabel={removeMeetingLabel}
                       onCreateLabel={(name, color) => createLabel(name, color, null)}
+                      onUpdateLabel={updateLabel}
+                      onDeleteLabel={handleDeleteLabel}
                     />
                   </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">

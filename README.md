@@ -110,6 +110,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **CLI tool** — query meetings and manage automations from the terminal or scripts
 - **Auto-titling** — untitled meetings are automatically titled from transcript content; a title you set yourself is kept
 - **Keyboard-first** — ⌘K command palette to jump to any meeting or ask a question, ⌘N to start recording from anywhere, ⌘↵ to stop, `/` to search meeting titles and transcripts, and in a meeting Space to play or pause, ←/→ to skip, and ⌘F to find. Press `?` anywhere to see every shortcut. Archiving a meeting can be undone straight from the confirmation toast
+- **Labels** — tag meetings with colored labels from the **+ Label** button and filter the library by them. Hover a label in that menu and click the pencil to rename it, change its color, or delete it (deleting removes it from every meeting)
 - **Pin meetings** — right-click a meeting (or use its ⋮ menu) and choose **Pin to top** to keep recurring references above the dated list
 - **Momentum at a glance** — workday recording streak, meetings this week, and open action items on the home screen, with a little celebration when you wrap a meeting
 - **In-app updates** — new versions are detected automatically and installed with one click, no trip to GitHub
