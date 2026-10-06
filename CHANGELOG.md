@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **chat:** Show sent message immediately instead of after the reply (#166) ([38272d3](https://github.com/michellemayes/nootle/commit/38272d3c830a76af87cbdd24823ae1b51464a5b2))
+
+## [0.5.0] - 2026-10-06
+
+### Features
+
+- **dictionary:** Import dictionary from VoiceInk (#165) ([e3f9199](https://github.com/michellemayes/nootle/commit/e3f919915e17c4397ab8f343fd1535db35a9f8d7))
+
 ## [0.4.0] - 2026-10-06
 
 ### Features
