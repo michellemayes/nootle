@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Meeting } from "@/types";
@@ -7,13 +7,24 @@ import type { Meeting } from "@/types";
 // a fresh copy loads in the background.
 const meetingsCache = new Map<string, Meeting[]>();
 
+// A failed import deletes its meeting and announces it with an id-only
+// payload; treat that as a removal rather than a full row.
+function isDeletion(payload: Meeting): boolean {
+  return !payload.status;
+}
+
 export function useMeetings(search?: string, includeArchived?: boolean) {
   const cacheKey = `${includeArchived ? 1 : 0}|${search ?? ""}`;
   const [meetings, setMeetings] = useState<Meeting[]>(() => meetingsCache.get(cacheKey) ?? []);
   const [loading, setLoading] = useState(() => !meetingsCache.has(cacheKey));
   const [error, setError] = useState<string | null>(null);
 
+  // Only the latest request may update state: a slow broad search ("pla")
+  // must not overwrite the results of the narrower one typed after it.
+  const requestRef = useRef(0);
+
   const refresh = useCallback(async () => {
+    const request = ++requestRef.current;
     try {
       setError(null);
       const result = await invoke<Meeting[]>("list_meetings", {
@@ -21,11 +32,11 @@ export function useMeetings(search?: string, includeArchived?: boolean) {
         includeArchived: includeArchived ?? false,
       });
       meetingsCache.set(cacheKey, result);
-      setMeetings(result);
+      if (request === requestRef.current) setMeetings(result);
     } catch (err) {
-      setError(String(err));
+      if (request === requestRef.current) setError(String(err));
     } finally {
-      setLoading(false);
+      if (request === requestRef.current) setLoading(false);
     }
   }, [search, includeArchived, cacheKey]);
 
@@ -45,7 +56,9 @@ export function useMeetings(search?: string, includeArchived?: boolean) {
       }
       setMeetings((prev) => {
         if (!prev.some((m) => m.id === updated.id)) return prev;
-        const next = prev.map((m) => (m.id === updated.id ? updated : m));
+        const next = isDeletion(updated)
+          ? prev.filter((m) => m.id !== updated.id)
+          : prev.map((m) => (m.id === updated.id ? updated : m));
         meetingsCache.set(cacheKey, next);
         return next;
       });
@@ -82,7 +95,8 @@ export function useMeeting(id: string) {
   // apply it directly instead of refetching.
   useEffect(() => {
     const unlisten = listen<Meeting>("meeting-updated", (event) => {
-      if (event.payload.id === id) setMeeting(event.payload);
+      if (event.payload.id !== id) return;
+      setMeeting(isDeletion(event.payload) ? null : event.payload);
     });
     return () => { unlisten.then((fn) => fn()); };
   }, [id]);

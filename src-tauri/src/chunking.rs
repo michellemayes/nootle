@@ -124,6 +124,22 @@ pub fn embed_meeting(
             }),
     );
 
+    // A half-written index would look "done" to has_meeting_chunks and never
+    // be retried, so roll back everything on the first failure.
+    if let Err(e) = insert_chunks(db, engine, meeting_id, &raw_chunks) {
+        let _ = db.delete_meeting_chunks(meeting_id);
+        return Err(e);
+    }
+
+    Ok(raw_chunks.len())
+}
+
+fn insert_chunks(
+    db: &Database,
+    engine: &mut EmbeddingEngine,
+    meeting_id: &str,
+    raw_chunks: &[(String, i64, i64, String)],
+) -> anyhow::Result<()> {
     for (i, (text, start_ms, end_ms, speakers_json)) in raw_chunks.iter().enumerate() {
         let chunk_id = uuid::Uuid::new_v4().to_string();
         let chunk = TranscriptChunk {
@@ -140,6 +156,5 @@ pub fn embed_meeting(
         let embedding = engine.embed(text).context("Failed to embed chunk")?;
         db.insert_chunk_embedding(&chunk_id, &embedding)?;
     }
-
-    Ok(raw_chunks.len())
+    Ok(())
 }

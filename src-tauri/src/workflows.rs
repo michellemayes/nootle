@@ -275,6 +275,77 @@ pub const PLACEHOLDERS: &[&str] = &[
     "{{action_items}}",
 ];
 
+/// Notion caps each rich_text item at 2000 characters and a create request
+/// at 100 child blocks, so emit one paragraph per line, split as needed.
+fn notion_paragraph_blocks(content: &str) -> Vec<serde_json::Value> {
+    const MAX_CHARS: usize = 2000;
+    const MAX_BLOCKS: usize = 100;
+    content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .flat_map(|line| {
+            let chars: Vec<char> = line.chars().collect();
+            chars
+                .chunks(MAX_CHARS)
+                .map(|c| c.iter().collect::<String>())
+                .collect::<Vec<_>>()
+        })
+        .take(MAX_BLOCKS)
+        .map(|text| {
+            serde_json::json!({
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": { "rich_text": [{ "text": { "content": text } }] }
+            })
+        })
+        .collect()
+}
+
+/// Escapes text for Confluence storage format, keeping line breaks.
+fn xhtml_text(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\n', "<br/>")
+}
+
+/// Wraps mapped speaker names in wiki links in a single pass, longest name
+/// first and only on whole words, so "Speaker 1" never rewrites the prefix
+/// of "Speaker 10".
+fn link_speakers(text: &str, speaker_map: &HashMap<String, String>) -> String {
+    let mut names: Vec<(&String, &String)> =
+        speaker_map.iter().filter(|(k, _)| !k.is_empty()).collect();
+    names.sort_by_key(|(raw, _)| std::cmp::Reverse(raw.len()));
+
+    let is_word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < text.len() {
+        let rest = &text[i..];
+        let prev = text[..i].chars().next_back();
+        let hit = if is_word(prev) {
+            None
+        } else {
+            names.iter().find(|(raw, _)| {
+                rest.starts_with(raw.as_str()) && !is_word(rest[raw.len()..].chars().next())
+            })
+        };
+        match hit {
+            Some((raw, mapped)) => {
+                out.push_str(&format!("[[{mapped}]]"));
+                i += raw.len();
+            }
+            None => {
+                let c = rest.chars().next().unwrap_or_default();
+                out.push(c);
+                i += c.len_utf8();
+            }
+        }
+    }
+    out
+}
+
 fn render_template(template: &str, context: &WorkflowContext) -> String {
     let action_items_text = context
         .action_items
@@ -429,13 +500,7 @@ async fn execute_notion(
                     "title": [{ "text": { "content": context.meeting_title } }]
                 }
             },
-            "children": [{
-                "object": "block",
-                "type": "paragraph",
-                "paragraph": {
-                    "rich_text": [{ "text": { "content": content } }]
-                }
-            }]
+            "children": notion_paragraph_blocks(&content)
         }))
         .send()
         .await
@@ -605,9 +670,11 @@ async fn execute_confluence(
     let api = ConfluenceApi::from_creds(&creds)?;
     let space_id = api.space_id(space_key).await?;
 
-    let content = render_template(
-        "<h2>Summary</h2><p>{{template_summary}}</p><h2>Action Items</h2><p>{{action_items}}</p>",
-        context,
+    // Storage format is XHTML: raw "&" or "<" in a summary is a 400.
+    let content = format!(
+        "<h2>Summary</h2><p>{}</p><h2>Action Items</h2><p>{}</p>",
+        xhtml_text(&render_template("{{template_summary}}", context)),
+        xhtml_text(&render_template("{{action_items}}", context)),
     );
 
     let resp = api
@@ -860,11 +927,22 @@ async fn execute_obsidian(
         .unwrap_or("{{date}} - {{title}}");
     let note_template = config["note_template"].as_str();
 
-    let date = context
-        .meeting_date
-        .split('T')
-        .next()
-        .unwrap_or(&context.meeting_date);
+    // start_time is stored in UTC; name the note after the local day the
+    // meeting happened on, not the UTC one.
+    let local_date = chrono::DateTime::parse_from_rfc3339(&context.meeting_date)
+        .ok()
+        .map(|dt| {
+            dt.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d")
+                .to_string()
+        });
+    let date = local_date.as_deref().unwrap_or_else(|| {
+        context
+            .meeting_date
+            .split('T')
+            .next()
+            .unwrap_or(&context.meeting_date)
+    });
 
     let raw_filename = filename_template
         .replace("{{date}}", date)
@@ -899,13 +977,7 @@ async fn execute_obsidian(
         counter += 1;
     }
 
-    let replace_speakers = |text: &str| -> String {
-        let mut result = text.to_string();
-        for (raw_name, mapped_name) in &speaker_map {
-            result = result.replace(raw_name, &format!("[[{mapped_name}]]"));
-        }
-        result
-    };
+    let replace_speakers = |text: &str| link_speakers(text, &speaker_map);
 
     let unique_speakers: BTreeSet<String> = context
         .action_items
@@ -1185,5 +1257,34 @@ mod tests {
             .await
             .unwrap();
         assert!(result.output.unwrap().contains("(2)"));
+    }
+    #[test]
+    fn test_link_speakers_respects_word_boundaries() {
+        let map = HashMap::from([
+            ("Speaker 1".to_string(), "Ana".to_string()),
+            ("Speaker 10".to_string(), "Bo".to_string()),
+        ]);
+        assert_eq!(
+            link_speakers("Speaker 1 and Speaker 10 met Speaker 11.", &map),
+            "[[Ana]] and [[Bo]] met Speaker 11."
+        );
+    }
+
+    #[test]
+    fn test_notion_paragraph_blocks_split_long_text() {
+        let long = "é".repeat(4500);
+        let blocks = notion_paragraph_blocks(&format!("intro\n\n{long}"));
+        assert_eq!(blocks.len(), 4);
+        for b in &blocks {
+            let text = b["paragraph"]["rich_text"][0]["text"]["content"]
+                .as_str()
+                .unwrap();
+            assert!(text.chars().count() <= 2000);
+        }
+    }
+
+    #[test]
+    fn test_xhtml_text_escapes_markup() {
+        assert_eq!(xhtml_text("R&D <5 min\nnext"), "R&amp;D &lt;5 min<br/>next");
     }
 }

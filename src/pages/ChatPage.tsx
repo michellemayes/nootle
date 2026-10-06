@@ -54,7 +54,8 @@ export function ChatPage() {
   }, [conversations, activeId]);
 
 
-  const getDateFrom = () => dateFromValue ? new Date(dateFromValue).toISOString() : null;
+  // A bare "YYYY-MM-DD" parses as UTC midnight; anchor both ends to local time.
+  const getDateFrom = () => dateFromValue ? new Date(dateFromValue + "T00:00:00").toISOString() : null;
   const getDateTo = () => dateToValue ? new Date(dateToValue + "T23:59:59").toISOString() : null;
 
   const handleNewConversation = async () => {
@@ -106,11 +107,13 @@ export function ChatPage() {
   // A question handed over from the command palette opens a fresh
   // conversation and asks it straight away (or waits for a model to be picked).
   const location = useLocation();
-  const handedOffRef = useRef(false);
+  // Track the handled navigation, not a one-shot flag: the page stays mounted
+  // when the palette hands over another question while it is open.
+  const handedOffKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const prompt = (location.state as { prompt?: string } | null)?.prompt;
-    if (!prompt || handedOffRef.current) return;
-    handedOffRef.current = true;
+    if (!prompt || handedOffKeyRef.current === location.key) return;
+    handedOffKeyRef.current = location.key;
     navigate(location.pathname, { replace: true, state: null });
     createConversation().then((conv) => {
       setActiveId(conv.id);

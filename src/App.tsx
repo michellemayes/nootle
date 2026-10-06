@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Outlet, useParams } from "react-router-dom";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { LLMSelectionProvider } from "@/contexts/LLMSelectionContext";
 import { Sidebar } from "@/components/Sidebar";
@@ -35,6 +35,14 @@ const HelpPage = lazy(pageLoaders.help);
 const Onboarding = lazy(() =>
   import("@/components/Onboarding").then((m) => ({ default: m.Onboarding })),
 );
+
+// Jumping straight from one meeting to another (⌘K, insight links) would
+// otherwise reuse the page and its hooks, so a slow response or a half-made
+// edit from the previous meeting could land on the new one.
+function KeyedMeetingDetail() {
+  const { id } = useParams<{ id: string }>();
+  return <MeetingDetail key={id} />;
+}
 
 function usePrefetchPages() {
   useEffect(() => {
@@ -102,7 +110,7 @@ function App() {
             <Route path="/insights" element={<InsightsDashboard />} />
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/recording" element={<RecordingView />} />
-            <Route path="/meeting/:id" element={<MeetingDetail />} />
+            <Route path="/meeting/:id" element={<KeyedMeetingDetail />} />
             <Route path="/templates" element={<TemplatesPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/help" element={<HelpPage />} />

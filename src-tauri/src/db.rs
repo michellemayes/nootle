@@ -2416,7 +2416,16 @@ impl Database {
                 "Cannot delete built-in templates".to_string(),
             ));
         }
-        conn.execute("DELETE FROM templates WHERE id = ?1", params![id])?;
+        // meetings.template_id references templates(id) with no ON DELETE
+        // action on databases created after that column was added, so
+        // detach meetings first or the delete trips the foreign key.
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
+            "UPDATE meetings SET template_id = NULL WHERE template_id = ?1",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM templates WHERE id = ?1", params![id])?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -2767,7 +2776,14 @@ impl Database {
 
         if let Some(to) = date_to {
             sql.push_str(&format!(" AND m.start_time <= ?{}", param_values.len() + 1));
-            param_values.push(Box::new(to.to_string()));
+            // A bare YYYY-MM-DD would sort before every RFC3339 timestamp on
+            // that day, so make the end date inclusive.
+            let to = if to.len() == 10 {
+                format!("{to}T23:59:59.999999999Z")
+            } else {
+                to.to_string()
+            };
+            param_values.push(Box::new(to));
         }
 
         let limit_param_idx = param_values.len() + 1;
@@ -3426,17 +3442,19 @@ impl Database {
         meeting_id: &str,
         analytics: &[SpeakerAnalytics],
     ) -> Result<()> {
-        let conn = self.lock_conn()?;
-        conn.execute(
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
             "DELETE FROM meeting_analytics WHERE meeting_id = ?1",
             params![meeting_id],
         )?;
         for a in analytics {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO meeting_analytics (id, meeting_id, speaker_label, talk_time_ms, turn_count, interruption_count, avg_turn_length_ms, longest_monologue_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![a.id, a.meeting_id, a.speaker_label, a.talk_time_ms, a.turn_count, a.interruption_count, a.avg_turn_length_ms, a.longest_monologue_ms],
             )?;
         }
+        tx.commit()?;
         Ok(())
     }
 
@@ -3467,17 +3485,19 @@ impl Database {
         meeting_id: &str,
         segments: &[SentimentSegment],
     ) -> Result<()> {
-        let conn = self.lock_conn()?;
-        conn.execute(
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
             "DELETE FROM sentiment_segments WHERE meeting_id = ?1",
             params![meeting_id],
         )?;
         for s in segments {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO sentiment_segments (id, meeting_id, start_ms, end_ms, sentiment, score) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![s.id, s.meeting_id, s.start_ms, s.end_ms, s.sentiment, s.score],
             )?;
         }
+        tx.commit()?;
         Ok(())
     }
 

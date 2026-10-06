@@ -542,10 +542,20 @@ pub fn rename_speaker(
     if let Err(e) = refresh_analytics(db, meeting_id) {
         tracing::warn!("Failed to compute analytics for {meeting_id}: {e}");
     }
-    if let Some(engine) = engine {
-        if let Err(e) = crate::chunking::reindex_meeting(db, engine, meeting_id) {
-            tracing::warn!("Failed to re-index meeting {meeting_id} after rename: {e}");
+    match engine {
+        Some(engine) => {
+            if let Err(e) = crate::chunking::reindex_meeting(db, engine, meeting_id) {
+                tracing::warn!("Failed to re-index meeting {meeting_id} after rename: {e}");
+            }
         }
+        // Chunks still carry the old name; drop them so the next indexing
+        // pass rebuilds them instead of citing the stale speaker forever.
+        None if changed > 0 => {
+            if let Err(e) = db.delete_meeting_chunks(meeting_id) {
+                tracing::warn!("Failed to drop stale chunks for {meeting_id}: {e}");
+            }
+        }
+        None => {}
     }
     Ok(changed)
 }

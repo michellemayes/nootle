@@ -1,6 +1,6 @@
 use nootle_app_lib::db::{
     Database, NewLinearTicket, NewMeeting, NewRecipe, NewSummary, NewTemplate,
-    NewTranscriptSegment, UpdateTemplate,
+    NewTranscriptSegment, TranscriptChunk, UpdateTemplate,
 };
 
 #[test]
@@ -585,4 +585,62 @@ fn test_recipe_crud() {
     db.delete_recipe(&recipe.id).unwrap();
     let recipes = db.list_recipes().unwrap();
     assert_eq!(recipes.len(), 5);
+}
+
+#[test]
+fn test_delete_template_in_use_by_meeting() {
+    let db = Database::new_in_memory().unwrap();
+    let template = db
+        .create_template(NewTemplate {
+            name: "Retro".into(),
+            description: String::new(),
+            sections: "[]".into(),
+            auto_apply_rules: "{}".into(),
+            prompt: "Summarize the retro.".into(),
+            is_favorite: false,
+            is_auto_run: false,
+        })
+        .unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Sprint retro".to_string(),
+            calendar_event_id: None,
+            template_id: Some(template.id.clone()),
+        })
+        .unwrap();
+
+    db.delete_template(&template.id).unwrap();
+
+    assert!(db.get_template(&template.id).is_err());
+    assert_eq!(db.get_meeting(&meeting.id).unwrap().template_id, None);
+}
+
+#[test]
+fn test_similar_chunks_date_to_includes_whole_day() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Planning".to_string(),
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    let day = &db.get_meeting(&meeting.id).unwrap().start_time[..10];
+    db.insert_chunk(&TranscriptChunk {
+        id: "c1".to_string(),
+        meeting_id: meeting.id.clone(),
+        chunk_index: 0,
+        text: "roadmap".to_string(),
+        start_ms: 0,
+        end_ms: 1000,
+        speaker_labels: "[]".to_string(),
+    })
+    .unwrap();
+    let embedding = vec![0.1f32; 384];
+    db.insert_chunk_embedding("c1", &embedding).unwrap();
+
+    let hits = db
+        .search_similar_chunks(&embedding, 5, &[], Some(day), Some(day))
+        .unwrap();
+    assert_eq!(hits.len(), 1, "a meeting on the end date must match");
 }
