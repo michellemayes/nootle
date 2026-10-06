@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-10-06
+
+### Features
+
+- **ux:** Transcript find, content search, pinning, meeting briefs, shortcuts sheet (#163) ([c14341e](https://github.com/michellemayes/nootle/commit/c14341e53c032115866030080e392bfed01cc30d))
+
 ## [0.3.1] - 2026-10-06
 
 ### Bug Fixes
