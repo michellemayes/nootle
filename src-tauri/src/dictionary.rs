@@ -7,10 +7,14 @@
 //!
 //! Auto-learning: when the user edits a transcript segment, the edit is diffed
 //! word by word and short substitutions ("noodle" → "Nootle") become entries.
+//!
+//! Entries can also be imported from a VoiceInk dictionary export or settings
+//! backup.
 
 use crate::db::Database;
 use crate::error::{NootleError, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Setting key that turns learning from transcript edits on or off.
 pub const AUTO_LEARN_SETTING: &str = "dictionary_auto_learn";
@@ -37,7 +41,7 @@ pub struct DictionaryEntry {
     pub id: String,
     pub term: String,
     pub misheard: Vec<String>,
-    /// "manual" or "learned".
+    /// "manual", "learned" or "imported".
     pub source: String,
     pub created_at: String,
 }
@@ -269,6 +273,112 @@ pub fn record_edit(db: &Database, segment_id: &str, text: &str) -> Result<Segmen
     })
 }
 
+/// The format identifier of VoiceInk's Dictionary → Export file.
+const VOICEINK_FORMAT: &str = "voiceink.dictionary";
+
+/// The dictionary parts of a VoiceInk file. A Dictionary export has
+/// `vocabulary` and `replacements`; a full settings backup has
+/// `vocabularyWords` and `wordReplacements`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VoiceInkFile {
+    format: Option<String>,
+    vocabulary: Option<Vec<VoiceInkTerm>>,
+    replacements: Option<Vec<VoiceInkReplacement>>,
+    vocabulary_words: Option<Vec<VoiceInkWord>>,
+    /// Comma-separated misheard variants → replacement.
+    word_replacements: Option<BTreeMap<String, String>>,
+}
+
+impl VoiceInkFile {
+    fn has_dictionary(&self) -> bool {
+        self.vocabulary.is_some()
+            || self.replacements.is_some()
+            || self.vocabulary_words.is_some()
+            || self.word_replacements.is_some()
+    }
+}
+
+#[derive(Deserialize)]
+struct VoiceInkTerm {
+    term: String,
+}
+
+#[derive(Deserialize)]
+struct VoiceInkWord {
+    word: String,
+}
+
+#[derive(Deserialize)]
+struct VoiceInkReplacement {
+    sources: Vec<String>,
+    replacement: String,
+}
+
+/// A term and its misheard variants, ready to merge into the dictionary.
+pub type ImportedTerm = (String, Vec<String>);
+
+/// Converts a VoiceInk dictionary export or settings backup into dictionary
+/// terms. Vocabulary words become plain terms; word replacements become terms
+/// whose misheard variants are the replacement's sources.
+pub fn parse_voiceink(json: &str) -> Result<Vec<ImportedTerm>> {
+    let invalid =
+        || NootleError::Other("This file is not a VoiceInk dictionary or settings backup".into());
+    let file: VoiceInkFile = serde_json::from_str(json).map_err(|_| invalid())?;
+    if let Some(format) = file.format.as_deref().filter(|f| *f != VOICEINK_FORMAT) {
+        return Err(NootleError::Other(format!(
+            "Unsupported dictionary format: {format}"
+        )));
+    }
+    if !file.has_dictionary() {
+        return Err(invalid());
+    }
+
+    let words = file
+        .vocabulary
+        .into_iter()
+        .flatten()
+        .map(|v| v.term)
+        .chain(file.vocabulary_words.into_iter().flatten().map(|w| w.word))
+        .map(|term| (term, Vec::new()));
+    let replacements = file
+        .replacements
+        .into_iter()
+        .flatten()
+        .map(|r| (r.replacement, r.sources))
+        .chain(
+            file.word_replacements
+                .into_iter()
+                .flatten()
+                .map(|(sources, replacement)| {
+                    let sources = sources.split(',').map(|s| s.trim().to_string()).collect();
+                    (replacement, sources)
+                }),
+        );
+    // A term can appear both as vocabulary and as a replacement; merge them.
+    let mut terms: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (term, misheard) in words.chain(replacements) {
+        let term = term.trim();
+        if !term.is_empty() {
+            terms.entry(term.to_string()).or_default().extend(misheard);
+        }
+    }
+    Ok(terms.into_iter().collect())
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ImportSummary {
+    /// Terms that were not in the dictionary before.
+    pub added: usize,
+    /// Existing terms that gained misheard variants.
+    pub updated: usize,
+}
+
+/// Merges a VoiceInk dictionary file's contents into the dictionary.
+pub fn import_voiceink(db: &Database, json: &str) -> Result<ImportSummary> {
+    db.import_dictionary_entries(&parse_voiceink(json)?)
+}
+
 /// Formats the dictionary as a spelling reference for LLM prompts, or an empty
 /// string when there is nothing to add.
 pub fn glossary(db: &Database) -> String {
@@ -419,6 +529,94 @@ mod tests {
         let noodle = entries.iter().find(|e| e.term == "noodle").unwrap();
         assert!(nootle.misheard.is_empty());
         assert_eq!(noodle.misheard, vec!["Nootle".to_string()]);
+    }
+
+    #[test]
+    fn parses_voiceink_dictionary_export() {
+        let json = r#"{
+            "format": "voiceink.dictionary",
+            "schemaVersion": 1,
+            "exportedAt": "2026-01-01T00:00:00Z",
+            "vocabulary": [{"term": "Nootle", "createdAt": null}, {"term": "  "}],
+            "replacements": [{"sources": ["cube or net ease", "cooper netties"], "replacement": "Kubernetes"}]
+        }"#;
+        assert_eq!(
+            parse_voiceink(json).unwrap(),
+            vec![
+                (
+                    "Kubernetes".to_string(),
+                    vec!["cube or net ease".to_string(), "cooper netties".to_string()]
+                ),
+                ("Nootle".to_string(), vec![]),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_voiceink_settings_backup() {
+        let json = r#"{
+            "version": "1.60",
+            "customPrompts": [],
+            "vocabularyWords": [{"word": "Siobhan"}],
+            "wordReplacements": {"noodle, nootel": "Nootle"}
+        }"#;
+        assert_eq!(
+            parse_voiceink(json).unwrap(),
+            vec![
+                (
+                    "Nootle".to_string(),
+                    vec!["noodle".to_string(), "nootel".to_string()]
+                ),
+                ("Siobhan".to_string(), vec![]),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_files_that_are_not_voiceink_dictionaries() {
+        assert!(parse_voiceink("not json").is_err());
+        assert!(parse_voiceink(r#"{"title": "something else"}"#).is_err());
+        assert!(parse_voiceink(r#"{"format": "other", "vocabulary": []}"#).is_err());
+    }
+
+    #[test]
+    fn import_merges_into_existing_entries() {
+        let db = Database::new_in_memory().unwrap();
+        db.upsert_dictionary_entry("Nootle", &["noodle".into()], "manual")
+            .unwrap();
+        let json = r#"{
+            "format": "voiceink.dictionary",
+            "vocabulary": [{"term": "Siobhan"}, {"term": "Nootle"}, {"term": "Kubernetes"}],
+            "replacements": [
+                {"sources": ["Noodle", "nootel"], "replacement": "Nootle"},
+                {"sources": ["cooper netties"], "replacement": "Kubernetes"}
+            ]
+        }"#;
+        assert_eq!(
+            import_voiceink(&db, json).unwrap(),
+            ImportSummary {
+                added: 2,
+                updated: 1
+            }
+        );
+        let entries = db.list_dictionary_entries().unwrap();
+        let nootle = entries.iter().find(|e| e.term == "Nootle").unwrap();
+        assert_eq!(
+            nootle.misheard,
+            vec!["noodle".to_string(), "nootel".to_string()]
+        );
+        assert_eq!(nootle.source, "manual");
+        let siobhan = entries.iter().find(|e| e.term == "Siobhan").unwrap();
+        assert_eq!(siobhan.source, "imported");
+
+        // Importing the same file again changes nothing.
+        assert_eq!(
+            import_voiceink(&db, json).unwrap(),
+            ImportSummary {
+                added: 0,
+                updated: 0
+            }
+        );
     }
 
     #[test]

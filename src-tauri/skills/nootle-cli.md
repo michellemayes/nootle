@@ -82,6 +82,7 @@ nootle-cli dictionary add Kubernetes --misheard "cooper netties"
 nootle-cli dictionary update <id> --misheard "cooper netties" --misheard "kuber nettis"
 nootle-cli dictionary delete <id>
 nootle-cli dictionary apply <meeting-id>        # re-correct an existing transcript
+nootle-cli dictionary import-voiceink ~/Downloads/VoiceInk-Dictionary.json  # merge a VoiceInk export
 ```
 
 ### Search

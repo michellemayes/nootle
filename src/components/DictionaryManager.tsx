@@ -1,17 +1,26 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { toast } from "@/components/Toaster";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { useDictionary, parseVariants } from "@/hooks/useDictionary";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { FileUp, Pencil, Plus, Trash2 } from "lucide-react";
 
 const AUTO_LEARN_SETTING = "dictionary_auto_learn";
 
 export function DictionaryManager() {
-  const { entries, error, addEntry, updateEntry, deleteEntry } = useDictionary();
+  const { entries, error, addEntry, updateEntry, deleteEntry, importVoiceInk } = useDictionary();
   const [autoLearn, setAutoLearn] = useState(true);
   const [newTerm, setNewTerm] = useState("");
   const [newVariants, setNewVariants] = useState("");
@@ -50,6 +59,24 @@ export function DictionaryManager() {
     }
   };
 
+  const handleImport = async () => {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      title: "Import VoiceInk dictionary",
+      filters: [{ name: "VoiceInk dictionary or backup", extensions: ["json"] }],
+    });
+    if (typeof path !== "string") return;
+    await run(async () => {
+      const { added, updated } = await importVoiceInk(path);
+      toast(
+        added + updated === 0
+          ? "Everything in that file is already in your dictionary."
+          : `Imported from VoiceInk: ${added} new ${added === 1 ? "word" : "words"}, ${updated} updated.`,
+      );
+    });
+  };
+
   const handleSaveEdit = async (id: string) => {
     if (await run(() => updateEntry(id, editTerm, parseVariants(editVariants)))) {
       setEditingId(null);
@@ -64,6 +91,16 @@ export function DictionaryManager() {
           Names and jargon the transcriber gets wrong. Misheard variants are corrected as you
           record, and every term is passed to the AI as a spelling reference.
         </CardDescription>
+        <CardAction>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleImport}
+            title="Import a VoiceInk dictionary export or settings backup (.json)"
+          >
+            <FileUp className="h-4 w-4" /> Import from VoiceInk
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between">
@@ -142,8 +179,10 @@ export function DictionaryManager() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold">{entry.term}</span>
-                      {entry.source === "learned" && (
-                        <Badge variant="secondary" size="sm">Learned</Badge>
+                      {entry.source !== "manual" && (
+                        <Badge variant="secondary" size="sm">
+                          {entry.source === "learned" ? "Learned" : "Imported"}
+                        </Badge>
                       )}
                     </div>
                     {entry.misheard.length > 0 && (

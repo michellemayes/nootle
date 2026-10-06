@@ -2159,26 +2159,28 @@ impl Database {
         source: &str,
     ) -> Result<DictionaryEntry> {
         let conn = self.lock_conn()?;
-        Self::upsert_dictionary_entry_with(&conn, term, misheard, source)
+        Ok(Self::upsert_dictionary_entry_with(&conn, term, misheard, source)?.0)
     }
 
+    /// Upserts like `upsert_dictionary_entry`, also returning the term's
+    /// variants from before the upsert, or `None` if the term is new.
     fn upsert_dictionary_entry_with(
         conn: &Connection,
         term: &str,
         misheard: &[String],
         source: &str,
-    ) -> Result<DictionaryEntry> {
+    ) -> Result<(DictionaryEntry, Option<Vec<String>>)> {
         let term = non_empty_term(term)?;
-        let existing: Vec<String> = conn
+        let previous: Option<Vec<String>> = conn
             .query_row(
                 "SELECT misheard FROM dictionary_entries WHERE term = ?1",
                 params![term],
                 |row| row.get::<_, String>(0),
             )
             .optional()?
-            .and_then(|json| serde_json::from_str(&json).ok())
-            .unwrap_or_default();
-        let merged = serde_json::to_string(&merge_variants(term, &existing, misheard))?;
+            .map(|json| serde_json::from_str(&json).unwrap_or_default());
+        let existing = previous.as_deref().unwrap_or_default();
+        let merged = serde_json::to_string(&merge_variants(term, existing, misheard))?;
         let entry = conn.query_row(
             &format!(
                 "INSERT INTO dictionary_entries (id, term, misheard, source, created_at)
@@ -2195,7 +2197,31 @@ impl Database {
             ],
             dictionary_entry_from_row,
         )?;
-        Ok(entry)
+        Ok((entry, previous))
+    }
+
+    /// Merges imported terms (each term at most once) into the dictionary in
+    /// one transaction, counting new terms and existing terms that gained
+    /// variants.
+    pub fn import_dictionary_entries(
+        &self,
+        entries: &[crate::dictionary::ImportedTerm],
+    ) -> Result<crate::dictionary::ImportSummary> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        let mut summary = crate::dictionary::ImportSummary {
+            added: 0,
+            updated: 0,
+        };
+        for (term, misheard) in entries {
+            match Self::upsert_dictionary_entry_with(&tx, term, misheard, "imported")? {
+                (_, None) => summary.added += 1,
+                (entry, Some(previous)) if entry.misheard != previous => summary.updated += 1,
+                _ => {}
+            }
+        }
+        tx.commit()?;
+        Ok(summary)
     }
 
     pub fn update_dictionary_entry(&self, id: &str, term: &str, misheard: &[String]) -> Result<()> {
