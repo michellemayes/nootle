@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Meeting } from "@/types";
@@ -13,20 +13,28 @@ export function useMeetings(search?: string, includeArchived?: boolean) {
   const [loading, setLoading] = useState(() => !meetingsCache.has(cacheKey));
   const [error, setError] = useState<string | null>(null);
 
+  // Only the latest request may update state: a slow broad search ("pla")
+  // must not overwrite the results of the narrower one typed after it.
+  const requestRef = useRef(0);
+
   const refresh = useCallback(async () => {
+    const request = ++requestRef.current;
+    setError(null);
+    let result: Meeting[] | null = null;
+    let failure: string | null = null;
     try {
-      setError(null);
-      const result = await invoke<Meeting[]>("list_meetings", {
+      result = await invoke<Meeting[]>("list_meetings", {
         search: search ?? null,
         includeArchived: includeArchived ?? false,
       });
       meetingsCache.set(cacheKey, result);
-      setMeetings(result);
     } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
+      failure = String(err);
     }
+    if (request !== requestRef.current) return;
+    if (result) setMeetings(result);
+    else setError(failure);
+    setLoading(false);
   }, [search, includeArchived, cacheKey]);
 
   useEffect(() => {
@@ -50,7 +58,19 @@ export function useMeetings(search?: string, includeArchived?: boolean) {
         return next;
       });
     });
-    return () => { unlisten.then((fn) => fn()); };
+    // A failed import removes the meeting it had created.
+    const unlistenDeleted = listen<string>("meeting-deleted", (event) => {
+      setMeetings((prev) => {
+        if (!prev.some((m) => m.id === event.payload)) return prev;
+        const next = prev.filter((m) => m.id !== event.payload);
+        meetingsCache.set(cacheKey, next);
+        return next;
+      });
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+      unlistenDeleted.then((fn) => fn());
+    };
   }, [refresh, search, cacheKey]);
 
   return { meetings, loading, error, refresh };
@@ -84,7 +104,13 @@ export function useMeeting(id: string) {
     const unlisten = listen<Meeting>("meeting-updated", (event) => {
       if (event.payload.id === id) setMeeting(event.payload);
     });
-    return () => { unlisten.then((fn) => fn()); };
+    const unlistenDeleted = listen<string>("meeting-deleted", (event) => {
+      if (event.payload === id) setMeeting(null);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+      unlistenDeleted.then((fn) => fn());
+    };
   }, [id]);
 
   return { meeting, loading, error, refresh };

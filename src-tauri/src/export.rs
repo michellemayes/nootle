@@ -135,12 +135,11 @@ pub fn to_markdown(
         out.push('\n');
     }
 
-    let notes = meeting
-        .enriched_notes
-        .as_deref()
-        .or(meeting.raw_notes.as_deref())
-        .map(str::trim)
-        .filter(|n| !n.is_empty());
+    // An empty enriched note must not hide the raw notes it was built from.
+    let notes = [&meeting.enriched_notes, &meeting.raw_notes]
+        .into_iter()
+        .filter_map(|n| n.as_deref().map(str::trim))
+        .find(|n| !n.is_empty());
     if let Some(notes) = notes {
         let _ = writeln!(out, "## Notes\n\n{notes}\n");
     }

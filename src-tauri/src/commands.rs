@@ -1159,7 +1159,7 @@ pub async fn import_recording(
                     tracing::error!("Import of {meeting_id} failed: {e:#}");
                     let _ = db.delete_meeting(&meeting_id);
                     let _ = std::fs::remove_file(&audio_path);
-                    let _ = app.emit("meeting-updated", serde_json::json!({ "id": meeting_id }));
+                    let _ = app.emit("meeting-deleted", &meeting_id);
                     crate::notify(&app, "Import failed", &e.to_string());
                 }
             }
@@ -1429,7 +1429,8 @@ pub async fn create_linear_ticket(
         .map_err(|e| e.to_string())?;
 
     // Parse LLM response, fallback to raw content
-    let (title, description) = match serde_json::from_str::<serde_json::Value>(&llm_response) {
+    let cleaned = crate::extraction::strip_code_fences_pub(&llm_response);
+    let (title, description) = match serde_json::from_str::<serde_json::Value>(cleaned) {
         Ok(json) => {
             let title = json
                 .get("title")

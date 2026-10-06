@@ -2053,12 +2053,20 @@ impl Database {
 
     /// Relabel every transcript line spoken by `from` in a meeting. Renaming
     /// onto an existing label merges the two speakers. Returns lines changed.
+    /// Renames a speaker in one meeting. Search chunks quote speaker names,
+    /// so they are dropped for the next embedding pass to rebuild.
     pub fn rename_speaker(&self, meeting_id: &str, from: &str, to: &str) -> Result<usize> {
-        let conn = self.lock_conn()?;
-        Ok(conn.execute(
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        let changed = tx.execute(
             "UPDATE transcripts SET speaker_label = ?3 WHERE meeting_id = ?1 AND speaker_label = ?2",
             params![meeting_id, from, to],
-        )?)
+        )?;
+        if changed > 0 {
+            Self::delete_meeting_chunks_with(&tx, meeting_id)?;
+        }
+        tx.commit()?;
+        Ok(changed)
     }
 
     pub fn get_transcript(&self, meeting_id: &str) -> Result<Vec<TranscriptSegment>> {
@@ -2416,7 +2424,16 @@ impl Database {
                 "Cannot delete built-in templates".to_string(),
             ));
         }
-        conn.execute("DELETE FROM templates WHERE id = ?1", params![id])?;
+        // meetings.template_id references templates(id) with no ON DELETE
+        // action on databases created after that column was added, so
+        // detach meetings first or the delete trips the foreign key.
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
+            "UPDATE meetings SET template_id = NULL WHERE template_id = ?1",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM templates WHERE id = ?1", params![id])?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -2703,6 +2720,36 @@ impl Database {
         Ok(())
     }
 
+    /// Writes a meeting's chunks and their embeddings in one transaction, so
+    /// a failure part-way can't leave a half-built index that looks done.
+    pub fn insert_embedded_chunks(&self, chunks: &[(TranscriptChunk, Vec<f32>)]) -> Result<()> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        {
+            let mut insert_chunk = tx.prepare_cached(
+                "INSERT INTO transcript_chunks (id, meeting_id, chunk_index, text, start_ms, end_ms, speaker_labels)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )?;
+            let mut insert_embedding = tx.prepare_cached(
+                "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (?1, ?2)",
+            )?;
+            for (chunk, embedding) in chunks {
+                insert_chunk.execute(params![
+                    chunk.id,
+                    chunk.meeting_id,
+                    chunk.chunk_index,
+                    chunk.text,
+                    chunk.start_ms,
+                    chunk.end_ms,
+                    chunk.speaker_labels
+                ])?;
+                insert_embedding.execute(params![chunk.id, f32_slice_to_bytes(embedding)])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn insert_chunk_embedding(&self, chunk_id: &str, embedding: &[f32]) -> Result<()> {
         let conn = self.lock_conn()?;
         let bytes = f32_slice_to_bytes(embedding);
@@ -2767,7 +2814,14 @@ impl Database {
 
         if let Some(to) = date_to {
             sql.push_str(&format!(" AND m.start_time <= ?{}", param_values.len() + 1));
-            param_values.push(Box::new(to.to_string()));
+            // A bare YYYY-MM-DD would sort before every RFC3339 timestamp on
+            // that day, so make the end date inclusive.
+            let to = if to.len() == 10 {
+                format!("{to}T23:59:59.999999999Z")
+            } else {
+                to.to_string()
+            };
+            param_values.push(Box::new(to));
         }
 
         let limit_param_idx = param_values.len() + 1;
@@ -3426,17 +3480,19 @@ impl Database {
         meeting_id: &str,
         analytics: &[SpeakerAnalytics],
     ) -> Result<()> {
-        let conn = self.lock_conn()?;
-        conn.execute(
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
             "DELETE FROM meeting_analytics WHERE meeting_id = ?1",
             params![meeting_id],
         )?;
         for a in analytics {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO meeting_analytics (id, meeting_id, speaker_label, talk_time_ms, turn_count, interruption_count, avg_turn_length_ms, longest_monologue_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![a.id, a.meeting_id, a.speaker_label, a.talk_time_ms, a.turn_count, a.interruption_count, a.avg_turn_length_ms, a.longest_monologue_ms],
             )?;
         }
+        tx.commit()?;
         Ok(())
     }
 
@@ -3467,17 +3523,19 @@ impl Database {
         meeting_id: &str,
         segments: &[SentimentSegment],
     ) -> Result<()> {
-        let conn = self.lock_conn()?;
-        conn.execute(
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
             "DELETE FROM sentiment_segments WHERE meeting_id = ?1",
             params![meeting_id],
         )?;
         for s in segments {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO sentiment_segments (id, meeting_id, start_ms, end_ms, sentiment, score) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![s.id, s.meeting_id, s.start_ms, s.end_ms, s.sentiment, s.score],
             )?;
         }
+        tx.commit()?;
         Ok(())
     }
 

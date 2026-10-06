@@ -1,7 +1,5 @@
 import type { Meeting } from "@/types";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 // Built once: constructing Intl formatters per call is surprisingly costly.
 const monthYearFmt = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
 const weekdayFmt = new Intl.DateTimeFormat("en-US", { weekday: "short" });
@@ -10,6 +8,12 @@ const monthDayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "num
 
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** Local midnight `n` calendar days from `d`. Days aren't always 24h long
+ * (DST), so stepping by a fixed millisecond count can skip or repeat one. */
+function addDays(d: Date, n: number): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 }
 
 function dayKey(d: Date): string {
@@ -24,11 +28,11 @@ function isWeekend(d: Date): boolean {
 function startOfWeek(d: Date): Date {
   const day = startOfDay(d);
   const offset = (day.getDay() + 6) % 7;
-  return new Date(day.getTime() - offset * DAY_MS);
+  return addDays(day, -offset);
 }
 
 function startOfLastWeek(d: Date): number {
-  return startOfWeek(d).getTime() - 7 * DAY_MS;
+  return addDays(startOfWeek(d), -7).getTime();
 }
 
 function meetingMinutes(m: Meeting): number {
@@ -47,7 +51,7 @@ export function workdayStreak(meetings: Meeting[], now = new Date()): number {
   let cursor = startOfDay(now);
   let streak = 0;
   // Today hasn't happened yet — start counting from yesterday instead.
-  if (!days.has(dayKey(cursor))) cursor = new Date(cursor.getTime() - DAY_MS);
+  if (!days.has(dayKey(cursor))) cursor = addDays(cursor, -1);
   // Hard stop at a year so a weekend-only gap can't loop forever.
   for (let i = 0; i < 366; i++) {
     if (days.has(dayKey(cursor))) {
@@ -55,7 +59,7 @@ export function workdayStreak(meetings: Meeting[], now = new Date()): number {
     } else if (!isWeekend(cursor)) {
       break;
     }
-    cursor = new Date(cursor.getTime() - DAY_MS);
+    cursor = addDays(cursor, -1);
   }
   return streak;
 }
@@ -108,7 +112,7 @@ export function greeting(now = new Date()): string {
 /** Buckets meetings (already sorted newest first) into human date sections. */
 export function groupByDay(meetings: Meeting[], now = new Date()): { label: string; meetings: Meeting[] }[] {
   const today = startOfDay(now).getTime();
-  const yesterday = today - DAY_MS;
+  const yesterday = addDays(now, -1).getTime();
   const week = startOfWeek(now).getTime();
   const lastWeek = startOfLastWeek(now);
   const groups: { label: string; meetings: Meeting[] }[] = [];

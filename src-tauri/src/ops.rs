@@ -542,8 +542,10 @@ pub fn rename_speaker(
     if let Err(e) = refresh_analytics(db, meeting_id) {
         tracing::warn!("Failed to compute analytics for {meeting_id}: {e}");
     }
+    // The rename dropped the meeting's stale chunks; rebuild them now when the
+    // search model is at hand, otherwise the next indexing pass will.
     if let Some(engine) = engine {
-        if let Err(e) = crate::chunking::reindex_meeting(db, engine, meeting_id) {
+        if let Err(e) = crate::chunking::embed_meeting(db, engine, meeting_id) {
             tracing::warn!("Failed to re-index meeting {meeting_id} after rename: {e}");
         }
     }

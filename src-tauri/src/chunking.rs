@@ -84,16 +84,6 @@ pub fn chunk_segments(
     chunks
 }
 
-/// Rebuild a meeting's search index after its transcript changed.
-pub fn reindex_meeting(
-    db: &Database,
-    engine: &mut EmbeddingEngine,
-    meeting_id: &str,
-) -> anyhow::Result<usize> {
-    db.delete_meeting_chunks(meeting_id)?;
-    embed_meeting(db, engine, meeting_id)
-}
-
 pub fn embed_meeting(
     db: &Database,
     engine: &mut EmbeddingEngine,
@@ -124,22 +114,24 @@ pub fn embed_meeting(
             }),
     );
 
-    for (i, (text, start_ms, end_ms, speakers_json)) in raw_chunks.iter().enumerate() {
-        let chunk_id = uuid::Uuid::new_v4().to_string();
+    // Embed everything before writing anything: the index is stored in one
+    // transaction, so a failed embedding leaves the meeting un-indexed (and
+    // retried next pass) rather than half-indexed for good.
+    let mut embedded = Vec::with_capacity(raw_chunks.len());
+    for (i, (text, start_ms, end_ms, speakers_json)) in raw_chunks.into_iter().enumerate() {
+        let embedding = engine.embed(&text).context("Failed to embed chunk")?;
         let chunk = TranscriptChunk {
-            id: chunk_id.clone(),
+            id: uuid::Uuid::new_v4().to_string(),
             meeting_id: meeting_id.to_string(),
             chunk_index: i as i32,
-            text: text.clone(),
-            start_ms: *start_ms,
-            end_ms: *end_ms,
-            speaker_labels: speakers_json.clone(),
+            text,
+            start_ms,
+            end_ms,
+            speaker_labels: speakers_json,
         };
-        db.insert_chunk(&chunk)?;
-
-        let embedding = engine.embed(text).context("Failed to embed chunk")?;
-        db.insert_chunk_embedding(&chunk_id, &embedding)?;
+        embedded.push((chunk, embedding));
     }
+    db.insert_embedded_chunks(&embedded)?;
 
-    Ok(raw_chunks.len())
+    Ok(embedded.len())
 }

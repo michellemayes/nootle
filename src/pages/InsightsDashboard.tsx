@@ -32,10 +32,14 @@ function ActionItemTicketButton({
   const { storedProviders } = useApiKeys();
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const { defaultTeamId, defaultProjectId } = useLinearSettings();
-  const { projects } = useLinearProjects(defaultTeamId);
   const [open, setOpen] = useState(false);
-  const [teamId, setTeamId] = useState(defaultTeamId ?? "");
-  const [projectId, setProjectId] = useState(defaultProjectId ?? "");
+  // Only the user's picks live in state; until then follow the defaults,
+  // which load after the first render.
+  const [teamOverride, setTeamId] = useState<string | null>(null);
+  const [projectOverride, setProjectId] = useState<string | null>(null);
+  const teamId = teamOverride ?? defaultTeamId ?? "";
+  const projectId = projectOverride ?? defaultProjectId ?? "";
+  const { projects } = useLinearProjects(teamId || null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,7 +101,10 @@ function ActionItemTicketButton({
           size="xs"
           containerClassName="flex-1"
           value={teamId}
-          onChange={(e) => setTeamId(e.target.value)}
+          onChange={(e) => {
+            setTeamId(e.target.value);
+            setProjectId("");
+          }}
           aria-label="Linear team"
         >
           <option value="">Team</option>
