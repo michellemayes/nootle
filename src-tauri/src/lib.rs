@@ -96,11 +96,14 @@ pub fn run() {
     let embedding_state: EmbeddingState = Arc::new(TokioMutex::new(None));
     if crate::embedding::EmbeddingEngine::is_available() {
         let embedding_state = embedding_state.clone();
-        std::thread::spawn(move || match crate::embedding::EmbeddingEngine::load() {
-            Ok(engine) => {
-                embedding_state.blocking_lock().get_or_insert(engine);
+        // Holding the lock while loading makes early callers wait for this
+        // load rather than starting a second one.
+        std::thread::spawn(move || {
+            if let Err(err) =
+                crate::ops::loaded_embedding_engine(&mut embedding_state.blocking_lock())
+            {
+                tracing::warn!("Failed to load embedding engine: {err}");
             }
-            Err(err) => tracing::warn!("Failed to load embedding engine: {err}"),
         });
     }
 

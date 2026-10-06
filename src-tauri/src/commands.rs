@@ -29,6 +29,33 @@ pub type RecordingState = Arc<TokioMutex<Option<RecordingSession>>>;
 pub type LlmState = Arc<tokio::sync::RwLock<LlmRegistry>>;
 pub type DownloadManagerState = Arc<TokioMutex<DownloadManager>>;
 pub type EmbeddingState = Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>;
+
+/// Locks the embedding engine, loading it first if it isn't loaded yet.
+async fn lock_embedding_engine(
+    state: &EmbeddingState,
+) -> Result<
+    tokio::sync::OwnedMappedMutexGuard<
+        Option<crate::embedding::EmbeddingEngine>,
+        crate::embedding::EmbeddingEngine,
+    >,
+    String,
+> {
+    let mut guard = state.clone().lock_owned().await;
+    if guard.is_none() {
+        // Loading takes seconds, so keep it off the async runtime.
+        guard = tokio::task::spawn_blocking(move || {
+            crate::ops::loaded_embedding_engine(&mut guard).map(|_| ())?;
+            Ok::<_, anyhow::Error>(guard)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(tokio::sync::OwnedMutexGuard::map(guard, |slot| {
+        slot.as_mut().expect("loaded above")
+    }))
+}
+
 /// Meeting IDs with a sentiment analysis in flight, so a remounted view can
 /// show progress for a job started before the user navigated away.
 pub type SentimentJobsState = Arc<std::sync::Mutex<std::collections::HashSet<String>>>;
@@ -256,8 +283,17 @@ pub async fn rename_speaker(
     from: String,
     to: String,
 ) -> Result<Vec<TranscriptSegment>, String> {
-    let mut engine = embedding_state.lock().await;
-    crate::ops::rename_speaker(&db, engine.as_mut(), &meeting_id, &from, &to)
+    // Load the search model only to rebuild an index the meeting already
+    // had; without it the next indexing pass rebuilds it.
+    let mut engine = if db
+        .has_meeting_chunks(&meeting_id)
+        .map_err(|e| e.to_string())?
+    {
+        lock_embedding_engine(&embedding_state).await.ok()
+    } else {
+        None
+    };
+    crate::ops::rename_speaker(&db, engine.as_deref_mut(), &meeting_id, &from, &to)
         .map_err(|e| e.to_string())?;
     drop(engine);
     let _ = app.emit("analytics-ready", &meeting_id);
@@ -789,7 +825,7 @@ async fn run_transcription_pipeline(
         let meeting_id = meeting_id.clone();
         tokio::task::spawn_blocking(move || {
             let mut engine_lock = embedding_state.blocking_lock();
-            if let Some(ref mut engine) = *engine_lock {
+            if let Ok(engine) = crate::ops::loaded_embedding_engine(&mut engine_lock) {
                 match crate::chunking::embed_meeting(&db, engine, &meeting_id) {
                     Ok(count) => tracing::info!("Embedded {count} chunks for meeting {meeting_id}"),
                     Err(e) => tracing::warn!("Failed to embed meeting {meeting_id}: {e}"),
@@ -1644,11 +1680,8 @@ pub async fn embed_meeting_cmd(
     embedding_state: State<'_, EmbeddingState>,
     meeting_id: String,
 ) -> Result<usize, String> {
-    let mut engine_lock = embedding_state.lock().await;
-    let engine = engine_lock
-        .as_mut()
-        .ok_or_else(|| "Embedding model not loaded".to_string())?;
-    crate::chunking::embed_meeting(&db, engine, &meeting_id).map_err(|e| e.to_string())
+    let mut engine = lock_embedding_engine(&embedding_state).await?;
+    crate::chunking::embed_meeting(&db, &mut engine, &meeting_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1660,14 +1693,11 @@ pub async fn embed_all_meetings(
     let ids = crate::ops::meetings_to_index(&db).map_err(|e| e.to_string())?;
     let total = ids.len();
 
-    let mut engine_lock = embedding_state.lock().await;
-    let engine = engine_lock
-        .as_mut()
-        .ok_or_else(|| "Embedding model not loaded".to_string())?;
+    let mut engine = lock_embedding_engine(&embedding_state).await?;
 
     let mut current = 0;
     let report = crate::ops::embed_meetings(&ids, |id| {
-        let result = crate::chunking::embed_meeting(&db, engine, id);
+        let result = crate::chunking::embed_meeting(&db, &mut engine, id);
         current += 1;
         let _ = app.emit(
             "embedding-progress",
@@ -1686,17 +1716,14 @@ pub async fn embed_all_meetings(
 }
 
 #[tauri::command]
-pub async fn get_embedding_status(
-    db: State<'_, DbState>,
-    embedding_state: State<'_, EmbeddingState>,
-) -> Result<serde_json::Value, String> {
+pub async fn get_embedding_status(db: State<'_, DbState>) -> Result<serde_json::Value, String> {
     let (embedded, total) = db.get_embedding_status().map_err(|e| e.to_string())?;
-    let engine_lock = embedding_state.lock().await;
-    let model_available = engine_lock.is_some();
+    // Whether the model is downloaded, not whether it has finished loading:
+    // the commands that need it load it on first use.
     Ok(serde_json::json!({
         "embedded": embedded,
         "total": total,
-        "model_available": model_available,
+        "model_available": crate::embedding::EmbeddingEngine::is_available(),
     }))
 }
 
@@ -1929,11 +1956,8 @@ pub async fn send_chat_message(
     date_to: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let query_embedding = {
-        let mut engine = embedding_state.lock().await;
-        let engine = engine
-            .as_mut()
-            .ok_or("Embedding model not loaded. Please download it first.")?;
-        crate::ops::embed_question(engine, &message).map_err(|e| e.to_string())?
+        let mut engine = lock_embedding_engine(&embedding_state).await?;
+        crate::ops::embed_question(&mut engine, &message).map_err(|e| e.to_string())?
     };
     let filters = crate::ops::AskFilters {
         label_ids,

@@ -32,6 +32,7 @@ export function GlobalChatPanel() {
     clearMessages,
     setFilters,
     embeddingStatus,
+    refreshEmbeddingStatus,
     embedAllMeetings,
   } = useGlobalChat();
   const { labels } = useLabels();
@@ -49,6 +50,12 @@ export function GlobalChatPanel() {
   const [embedding, setEmbedding] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { sentinelRef } = useStickToBottom(scrollRef, messages);
+
+  // The panel stays mounted, so re-check on open in case the search model
+  // was downloaded (or meetings were added) since it last looked.
+  useEffect(() => {
+    if (open) refreshEmbeddingStatus();
+  }, [open, refreshEmbeddingStatus]);
 
   // Dragging state – use right/bottom offsets so framer-motion's transform doesn't conflict
   const [offset, setOffset] = useState({ right: 24, bottom: 24 });

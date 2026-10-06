@@ -479,14 +479,6 @@ async fn blocking<T: Send + 'static>(
         .map_err(|e| invalid(e.to_string()))?
 }
 
-/// The cached embedding engine, loaded on first use.
-fn loaded_engine(slot: &mut Option<EmbeddingEngine>) -> crate::error::Result<&mut EmbeddingEngine> {
-    if slot.is_none() {
-        *slot = Some(ops::load_embedding_engine()?);
-    }
-    Ok(slot.as_mut().expect("just loaded"))
-}
-
 /// Serializes `result` as the tool's output. Errors go back to the model as a
 /// tool error rather than a protocol error, so it can read them and retry.
 fn respond<T: serde::Serialize>(
@@ -1005,7 +997,7 @@ impl NootleMcpServer {
                 // Load the search model only to rebuild an index the meeting
                 // already had; without it the next indexing pass rebuilds it.
                 let changed = if db.has_meeting_chunks(&p.meeting_id)? {
-                    rename(loaded_engine(&mut engine.blocking_lock()).ok())?
+                    rename(ops::loaded_embedding_engine(&mut engine.blocking_lock()).ok())?
                 } else {
                     rename(None)?
                 };
@@ -1443,7 +1435,10 @@ impl NootleMcpServer {
                 let (engine, question) = (self.engine.clone(), p.question.clone());
                 let embedding = blocking(move || {
                     let mut slot = engine.blocking_lock();
-                    Ok(ops::embed_question(loaded_engine(&mut slot)?, &question)?)
+                    Ok(ops::embed_question(
+                        ops::loaded_embedding_engine(&mut slot)?,
+                        &question,
+                    )?)
                 })
                 .await?;
                 let filters = ops::AskFilters {
@@ -1608,11 +1603,15 @@ impl NootleMcpServer {
                     None => ops::meetings_to_index(&db)?,
                 };
                 // Fail once without the search model rather than per meeting.
-                loaded_engine(&mut engine.blocking_lock())?;
+                ops::loaded_embedding_engine(&mut engine.blocking_lock())?;
                 // Lock per meeting so ask_meetings needn't wait for the batch.
                 Ok(ops::embed_meetings(&ids, |id| {
                     let mut slot = engine.blocking_lock();
-                    crate::chunking::embed_meeting(&db, loaded_engine(&mut slot)?, id)
+                    crate::chunking::embed_meeting(
+                        &db,
+                        ops::loaded_embedding_engine(&mut slot)?,
+                        id,
+                    )
                 }))
             })
             .await,
