@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
+import { markdownToHtml } from "@/lib/markdown";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -24,7 +23,7 @@ interface CopyButtonProps {
 async function writeClipboard(text: string, markdown: boolean) {
   if (markdown && typeof ClipboardItem !== "undefined") {
     try {
-      const html = DOMPurify.sanitize(await marked.parse(text));
+      const html = markdownToHtml(text);
       await navigator.clipboard.write([
         new ClipboardItem({
           "text/html": new Blob([html], { type: "text/html" }),

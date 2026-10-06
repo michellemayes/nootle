@@ -1339,15 +1339,23 @@ impl Database {
         }
 
         if let Some(query) = search {
+            // Titles match anywhere; transcripts go through the FTS index as
+            // a quoted phrase with a prefix wildcard, so search-as-you-type
+            // finds "pric" in "pricing" without scanning every segment.
             let n = param_values.len() + 1;
             conditions.push(format!(
-                "(title LIKE ?{n} ESCAPE '\\' OR id IN (SELECT meeting_id FROM transcripts WHERE text LIKE ?{n} ESCAPE '\\'))"
+                "(title LIKE ?{n} ESCAPE '\\' OR id IN (
+                    SELECT t.meeting_id FROM transcripts_fts f
+                    JOIN transcripts t ON t.rowid = f.rowid
+                    WHERE transcripts_fts MATCH ?{}))",
+                n + 1
             ));
             let escaped = query
                 .replace('\\', "\\\\")
                 .replace('%', "\\%")
                 .replace('_', "\\_");
             param_values.push(Box::new(format!("%{}%", escaped)));
+            param_values.push(Box::new(format!("\"{}\"*", query.replace('"', "\"\""))));
         }
 
         if let Some(label_id) = label_id {

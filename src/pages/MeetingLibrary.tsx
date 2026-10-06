@@ -145,13 +145,12 @@ export function MeetingLibrary() {
   const { pinnedIds, togglePin } = usePinnedMeetings();
   // Pinned meetings get their own group above the dated ones, in pin order.
   const groups = useMemo(() => {
-    const pinned = new Set(pinnedIds);
-    const pinnedMeetings = pinnedIds
-      .map((id) => filteredMeetings.find((m) => m.id === id))
-      .filter((m): m is Meeting => m !== undefined);
+    const byId = new Map(filteredMeetings.map((m) => [m.id, m]));
+    const pinnedMeetings = pinnedIds.flatMap((id) => byId.get(id) ?? []);
+    const pinned = new Set(pinnedMeetings.map((m) => m.id));
     const dated = groupByDay(filteredMeetings.filter((m) => !pinned.has(m.id)));
     return pinnedMeetings.length > 0
-      ? [{ label: "Pinned", meetings: pinnedMeetings }, ...dated]
+      ? [{ label: "Pinned", meetings: pinnedMeetings, pinned: true }, ...dated]
       : dated;
   }, [filteredMeetings, pinnedIds]);
 
@@ -401,7 +400,7 @@ export function MeetingLibrary() {
         groups.map((group) => (
         <section key={group.label} className="space-y-2">
           <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {group.label === "Pinned" && <Pin className="h-3 w-3" />}
+            {"pinned" in group && <Pin className="h-3 w-3" />}
             {group.label}
             <span className="ml-0.5 font-normal normal-case tracking-normal opacity-70">
               {group.meetings.length}

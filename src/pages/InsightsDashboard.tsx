@@ -217,6 +217,9 @@ function DueDate({ date, done }: { date: string; done: boolean }) {
 
 const UNASSIGNED = "__unassigned__";
 
+/** How assignees are compared: case and surrounding space don't matter. */
+const assigneeKey = (item: InsightWithActionItem) => item.assignee?.trim().toLowerCase() ?? "";
+
 function InsightItem({
   item,
   icon: Icon,
@@ -372,8 +375,8 @@ export function InsightsDashboard() {
     for (const t of insightTypes) {
       if (!t.has_action_fields) continue;
       for (const item of groupedByType[t.slug] ?? []) {
-        const name = item.assignee?.trim();
-        if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+        const key = assigneeKey(item);
+        if (key && !names.has(key)) names.set(key, item.assignee!.trim());
       }
     }
     return [...names.values()].sort((a, b) => a.localeCompare(b));
@@ -385,16 +388,17 @@ export function InsightsDashboard() {
       (typeFilter === undefined || typeFilter === t.slug) &&
       (assigneeFilter === undefined || t.has_action_fields),
   );
-  const itemsFor = (t: InsightType) => {
-    const items = groupedByType[t.slug] ?? [];
-    if (assigneeFilter === undefined) return items;
-    return items.filter((i) =>
-      assigneeFilter === UNASSIGNED
-        ? !i.assignee?.trim()
-        : i.assignee?.trim().toLowerCase() === assigneeFilter.toLowerCase(),
+  const itemsByType = useMemo(() => {
+    if (assigneeFilter === undefined) return groupedByType;
+    const want = assigneeFilter === UNASSIGNED ? "" : assigneeFilter.toLowerCase();
+    return Object.fromEntries(
+      Object.entries(groupedByType).map(([slug, items]) => [
+        slug,
+        items.filter((i) => assigneeKey(i) === want),
+      ]),
     );
-  };
-  const totalItems = visibleTypes.reduce((sum, t) => sum + itemsFor(t).length, 0);
+  }, [groupedByType, assigneeFilter]);
+  const totalItems = visibleTypes.reduce((sum, t) => sum + (itemsByType[t.slug]?.length ?? 0), 0);
   const hasFilters = !!typeFilter || !!statusFilter || !!searchDebounced || !!assigneeFilter;
 
   return (
@@ -467,7 +471,7 @@ export function InsightsDashboard() {
               <TypeSection
                 key={t.slug}
                 insightType={t}
-                items={itemsFor(t)}
+                items={itemsByType[t.slug] ?? []}
                 teams={teams}
                 toggleActionItem={toggleActionItem}
                 onNavigate={handleNavigate}

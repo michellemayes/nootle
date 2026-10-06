@@ -3,8 +3,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Highlight from "@tiptap/extension-highlight";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Markdown } from "@tiptap/markdown";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
+import { markdownToHtml } from "@/lib/markdown";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { useEffect, useRef } from "react";
 
@@ -12,21 +11,6 @@ interface NotesEditorProps {
   content: string;
   hasHighlights: boolean;
   onChange: (markdown: string) => void;
-}
-
-// Convert markdown with [[highlight]] markers → HTML with <mark> tags
-function markdownToHtml(text: string, hasHighlights: boolean): string {
-  let src = text;
-  if (hasHighlights) {
-    src = src
-      .replace(/\[\[highlight\]\]/g, "<mark>")
-      .replace(/\[\[\/highlight\]\]/g, "</mark>");
-  }
-  const raw = marked.parse(src, { async: false }) as string;
-  return DOMPurify.sanitize(raw, {
-    ALLOWED_TAGS: ["p","br","ul","ol","li","h1","h2","h3","h4","h5","h6","strong","em","mark","code","pre","blockquote","a","hr","table","thead","tbody","tr","th","td","del","sup","sub"],
-    ALLOWED_ATTR: ["href","target","rel"],
-  });
 }
 
 // Set TipTap content from HTML via ProseMirror's DOM parser, so <mark> maps to Highlight

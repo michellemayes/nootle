@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { RecordingIntent } from "@/pages/RecordingView";
 import { relativeWhen } from "@/lib/momentum";
+import { useMeetings } from "@/hooks/useMeetings";
+import { useAllInsights } from "@/hooks/useInsights";
 import type { CalendarEvent, InsightWithActionItem, Meeting, UpcomingEvents } from "@/types";
 
 const DISMISS_KEY = "calendarPromptDismissed";
@@ -17,6 +19,8 @@ const SHOWN = 3;
 
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+const NO_EVENTS: CalendarEvent[] = [];
 
 const normalizeTitle = (title: string) => title.trim().toLowerCase().replace(/\s+/g, " ");
 
@@ -30,43 +34,32 @@ interface Brief {
  * Past meetings in the same series as each event (same title, or recorded
  * from that calendar event), newest first, with their open action items.
  */
-function useBriefs(events: CalendarEvent[], refreshKey: number): Map<string, Brief> {
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [openItems, setOpenItems] = useState<InsightWithActionItem[]>([]);
-  const hasEvents = events.length > 0;
+function useBriefs(events: CalendarEvent[]): Map<string, Brief> {
+  // Same cached, event-refreshed lists the library and momentum strip use.
+  const { meetings } = useMeetings();
+  const { insights: openItems } = useAllInsights("action_item", "open");
 
-  useEffect(() => {
-    if (!hasEvents) return;
-    invoke<Meeting[]>("list_meetings", { search: null, includeArchived: false })
-      .then(setMeetings)
-      .catch(() => setMeetings([]));
-    invoke<InsightWithActionItem[]>("get_all_insights", {
-      insightType: "action_item",
-      status: "open",
-      search: null,
-    })
-      .then(setOpenItems)
-      .catch(() => setOpenItems([]));
-  }, [hasEvents, refreshKey]);
+  const normalized = useMemo(
+    () => meetings.filter((m) => m.status !== "recording").map((m) => ({ m, title: normalizeTitle(m.title) })),
+    [meetings],
+  );
 
   return useMemo(() => {
     const briefs = new Map<string, Brief>();
     for (const event of events) {
       const title = normalizeTitle(event.title);
-      const series = meetings.filter(
-        (m) =>
-          m.status !== "recording" &&
-          (m.calendar_event_id === event.id || normalizeTitle(m.title) === title),
-      );
+      const series = normalized
+        .filter(({ m, title: t }) => m.calendar_event_id === event.id || t === title)
+        .map(({ m }) => m);
       if (series.length === 0) continue;
       const ids = new Set(series.map((m) => m.id));
       briefs.set(event.id, {
         last: series[0],
-        openItems: openItems.filter((i) => i.status === "open" && ids.has(i.meeting_id)),
+        openItems: openItems.filter((i) => ids.has(i.meeting_id)),
       });
     }
     return briefs;
-  }, [events, meetings, openItems]);
+  }, [events, normalized, openItems]);
 }
 
 function BriefLine({ brief }: { brief: Brief }) {
@@ -130,7 +123,7 @@ export function UpcomingMeetings() {
   const [dismissed, setDismissed] = useState(readDismissed);
   const [now, setNow] = useState(() => Date.now());
   const events = useMemo(() => upcoming?.events.slice(0, SHOWN) ?? [], [upcoming]);
-  const briefs = useBriefs(upcoming?.status === "granted" ? events : [], now);
+  const briefs = useBriefs(upcoming?.status === "granted" ? events : NO_EVENTS);
 
   const load = useCallback(() => {
     invoke<UpcomingEvents>("list_upcoming_events", { hours: 12 })

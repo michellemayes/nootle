@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, useDeferredValue } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,7 @@ import {
 } from "@/components/AudioPlayerControls";
 import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment } from "@/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { LabelEditor } from "@/components/LabelEditor";
@@ -154,6 +155,13 @@ function highlightMatches(text: string, query: string): React.ReactNode {
   }
   if (from < text.length) parts.push(text.slice(from));
   return parts;
+}
+
+/** Opens a new message in the default mail app. */
+function openMailDraft(subject: string, body: string) {
+  return openUrl(
+    `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
+  ).catch(() => {});
 }
 
 function pluralLines(n: number): string {
@@ -1060,16 +1068,21 @@ export function MeetingDetail() {
   const [findQuery, setFindQuery] = useState("");
   const [findIndex, setFindIndex] = useState(0);
   const findInputRef = useRef<HTMLInputElement>(null);
-  const trimmedFind = findOpen ? findQuery.trim() : "";
+  // Deferred so typing stays responsive while a long transcript re-highlights.
+  const trimmedFind = useDeferredValue(findOpen ? findQuery.trim() : "");
+  const lowerSegments = useMemo(
+    () => segments.map((s) => ({ seg: s, text: s.text.toLowerCase(), speaker: s.speaker_label.toLowerCase() })),
+    [segments],
+  );
   const findMatches = useMemo(() => {
     if (!trimmedFind) return [];
     const needle = trimmedFind.toLowerCase();
-    return segments.filter(
-      (s) => s.text.toLowerCase().includes(needle) || s.speaker_label.toLowerCase() === needle,
-    );
-  }, [segments, trimmedFind]);
-  const currentMatch = findMatches.length > 0 ? findMatches[findIndex % findMatches.length] : null;
-  useEffect(() => setFindIndex(0), [trimmedFind]);
+    return lowerSegments
+      .filter((s) => s.text.includes(needle) || s.speaker === needle)
+      .map((s) => s.seg);
+  }, [lowerSegments, trimmedFind]);
+  const matchPos = findMatches.length > 0 ? findIndex % findMatches.length : -1;
+  const currentMatch = matchPos >= 0 ? findMatches[matchPos] : null;
   useEffect(() => {
     if (currentMatch) scrollToSegment(currentMatch.id);
   }, [currentMatch, scrollToSegment]);
@@ -1121,13 +1134,6 @@ export function MeetingDetail() {
       );
     }
   });
-
-  const emailSummary = async (content: string) => {
-    const subject = `Recap: ${meeting?.title ?? "Meeting"}`;
-    const url = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(content)}`;
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(url).catch(() => {});
-  };
 
   const handleGenerate = async () => {
     if (!selectedTemplate || !selectedProvider || !selectedModel) return;
@@ -1385,7 +1391,10 @@ export function MeetingDetail() {
                       ref={findInputRef}
                       autoFocus
                       value={findQuery}
-                      onChange={(e) => setFindQuery(e.target.value)}
+                      onChange={(e) => {
+                        setFindQuery(e.target.value);
+                        setFindIndex(0);
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
@@ -1403,7 +1412,7 @@ export function MeetingDetail() {
                       {trimmedFind
                         ? findMatches.length === 0
                           ? "No lines"
-                          : `${(findIndex % findMatches.length) + 1} of ${findMatches.length}`
+                          : `${matchPos + 1} of ${findMatches.length}`
                         : ""}
                     </span>
                     <Button variant="ghost" size="icon-sm" onClick={() => stepFind(-1)} disabled={findMatches.length === 0} aria-label="Previous match" title="Previous (⇧↵)">
@@ -1457,14 +1466,11 @@ export function MeetingDetail() {
                             currentMatch?.id === seg.id && "ring-1 ring-highlight",
                           )}
                         >
-                          <button
-                            onClick={() => seekToMs(seg.start_ms)}
-                            title="Play from here"
-                            aria-label={`Play from ${formatMs(seg.start_ms)}`}
-                            className="shrink-0 pt-0.5 text-xs text-muted-foreground font-mono tabular-nums w-12 text-left hover:text-primary group-data-[active=true]:text-primary transition-colors"
-                          >
-                            {formatMs(seg.start_ms)}
-                          </button>
+                          <TimestampButton
+                            ms={seg.start_ms}
+                            onSeek={seekToMs}
+                            className="shrink-0 pt-0.5 text-xs w-12 text-left hover:no-underline group-data-[active=true]:text-primary"
+                          />
                           <SegmentText
                             seg={seg}
                             speaker={
@@ -1615,7 +1621,7 @@ export function MeetingDetail() {
                             <div className="ml-auto flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => emailSummary(s.content)}
+                                onClick={() => openMailDraft(`Recap: ${meeting.title}`, s.content)}
                                 title="Email this summary"
                                 aria-label="Email this summary"
                                 className="inline-flex items-center rounded text-muted-foreground transition-colors hover:text-foreground"
@@ -1707,11 +1713,7 @@ export function MeetingDetail() {
                                     size="sm"
                                     variant="outline"
                                     className="h-7 text-xs"
-                                    onClick={async () => {
-                                      const url = `mailto:?subject=${encodeURIComponent(emailDraft.subject)}&body=${encodeURIComponent(emailDraft.body)}`;
-                                      const { openUrl } = await import("@tauri-apps/plugin-opener");
-                                      await openUrl(url);
-                                    }}
+                                    onClick={() => openMailDraft(emailDraft.subject, emailDraft.body)}
                                   >
                                     Open in Mail
                                   </Button>
