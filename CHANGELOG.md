@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-10-06
+
+### Bug Fixes
+
+- Resolve 18 bugs across data layer, integrations, and UI (#162) ([30b9375](https://github.com/michellemayes/nootle/commit/30b93754493deed275ea4da477a465ef5067d845))
+
 ## [0.3.0] - 2026-10-06
 
 ### Features
