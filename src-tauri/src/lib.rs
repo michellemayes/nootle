@@ -264,6 +264,7 @@ pub fn run() {
             commands::add_dictionary_entry,
             commands::update_dictionary_entry,
             commands::delete_dictionary_entry,
+            commands::import_voiceink_dictionary,
             commands::apply_dictionary_to_meeting,
             commands::create_recipe,
             commands::list_recipes,

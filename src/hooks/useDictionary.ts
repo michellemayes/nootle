@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { DictionaryEntry } from "@/types";
+import type { DictionaryEntry, DictionaryImportSummary } from "@/types";
 
 /** Splits a comma-separated list of misheard variants. */
 export function parseVariants(text: string): string[] {
@@ -28,9 +28,10 @@ export function useDictionary() {
   }, [refresh]);
 
   const mutate = useCallback(
-    async (command: string, args: Record<string, unknown>) => {
-      await invoke(command, args);
+    async <T = void>(command: string, args: Record<string, unknown>) => {
+      const result = await invoke<T>(command, args);
       await refresh();
+      return result;
     },
     [refresh],
   );
@@ -40,6 +41,8 @@ export function useDictionary() {
   const updateEntry = (id: string, term: string, misheard: string[]) =>
     mutate("update_dictionary_entry", { id, term, misheard });
   const deleteEntry = (id: string) => mutate("delete_dictionary_entry", { id });
+  const importVoiceInk = (path: string) =>
+    mutate<DictionaryImportSummary>("import_voiceink_dictionary", { path });
 
-  return { entries, error, addEntry, updateEntry, deleteEntry };
+  return { entries, error, addEntry, updateEntry, deleteEntry, importVoiceInk };
 }

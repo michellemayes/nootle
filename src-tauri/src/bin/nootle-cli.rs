@@ -459,6 +459,11 @@ enum DictionaryAction {
     },
     /// Delete an entry
     Delete { id: String },
+    /// Import a VoiceInk dictionary export or settings backup (JSON)
+    ImportVoiceink {
+        /// Path to the exported file
+        file: std::path::PathBuf,
+    },
     /// Apply the dictionary to an already-recorded meeting's transcript
     Apply {
         /// Meeting ID
@@ -1674,6 +1679,13 @@ fn run_dictionary(db: &Database, action: &DictionaryAction, pretty: bool) -> Cli
         DictionaryAction::Delete { id } => {
             db.delete_dictionary_entry(id)?;
             print_deleted(id, pretty);
+        }
+        DictionaryAction::ImportVoiceink { file } => {
+            let json = std::fs::read_to_string(file)?;
+            print_json(
+                &nootle_app_lib::dictionary::import_voiceink(db, &json)?,
+                pretty,
+            );
         }
         DictionaryAction::Apply { meeting_id } => {
             let changed = ops::apply_dictionary(db, meeting_id)?;

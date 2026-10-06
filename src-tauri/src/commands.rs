@@ -305,6 +305,16 @@ pub fn delete_dictionary_entry(db: State<'_, DbState>, id: String) -> Result<(),
     db.delete_dictionary_entry(&id).map_err(|e| e.to_string())
 }
 
+/// Merges a VoiceInk dictionary export or settings backup into the dictionary.
+#[tauri::command(async)]
+pub fn import_voiceink_dictionary(
+    db: State<'_, DbState>,
+    path: String,
+) -> Result<crate::dictionary::ImportSummary, String> {
+    let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    crate::dictionary::import_voiceink(&db, &json).map_err(|e| e.to_string())
+}
+
 /// Re-applies the dictionary to an already-recorded meeting.
 #[tauri::command]
 pub async fn apply_dictionary_to_meeting(

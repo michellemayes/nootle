@@ -119,6 +119,7 @@ Credentials and API keys are never printed. If Nootle is open, reopen the page t
 | `snapshots list <meeting-id>` / `delete <id>` | List or delete screen snapshots |
 | `dictionary list` / `add <term> --misheard <variant>` / `update <id>` / `delete <id>` | Manage the transcript dictionary |
 | `dictionary apply <meeting-id>` | Apply the dictionary to an existing transcript |
+| `dictionary import-voiceink <file>` | Merge a VoiceInk dictionary export or settings backup into the dictionary |
 | `recipes list` / `get <id>` / `create` / `update <id>` / `delete <id>` | Manage recipes (slash commands) |
 | `recipes run <id> --meeting <id>` | Run a recipe on a meeting (LLM) |
 | `analytics get <meeting-id>` | Speaker, engagement, and sentiment analytics |

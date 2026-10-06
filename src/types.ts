@@ -266,8 +266,13 @@ export interface DictionaryEntry {
   id: string;
   term: string;
   misheard: string[];
-  source: "manual" | "learned";
+  source: "manual" | "learned" | "imported";
   created_at: string;
+}
+
+export interface DictionaryImportSummary {
+  added: number;
+  updated: number;
 }
 
 export interface LearnedCorrection {
