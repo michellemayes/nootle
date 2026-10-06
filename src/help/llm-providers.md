@@ -1,5 +1,3 @@
-# LLM Providers
-
 Nootle uses large language models to generate meeting summaries and power the chat feature. You can choose from several providers.
 
 ## Supported Providers

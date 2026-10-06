@@ -167,34 +167,35 @@ export function TemplatesPage() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <PageHeader
-        title="Automations"
-        description="Summary templates, slash commands, and post-meeting workflows"
-      />
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex shrink-0 items-center justify-between border-b px-6 py-4">
-          <TabsList className="h-10">
-            <TabsTrigger value="templates">Templates</TabsTrigger>
-            <TabsTrigger value="recipes">Slash commands</TabsTrigger>
-            <TabsTrigger value="post-meeting">Workflows</TabsTrigger>
-          </TabsList>
-          {activeTab === "templates" && (
-            <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>
-              <Plus /> New template
-            </Button>
-          )}
-          {activeTab === "recipes" && (
-            <Button size="sm" variant="outline" onClick={() => setRecipeDialogOpen(true)}>
-              <Plus /> New slash command
-            </Button>
-          )}
-          {activeTab === "post-meeting" && (
-            <Button size="sm" variant="outline" onClick={() => setWorkflowDialogOpen(true)}>
-              <Plus /> New workflow
-            </Button>
-          )}
-        </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col gap-0 overflow-hidden">
+        <PageHeader
+          title="Automations"
+          description="Summary templates, slash commands, and post-meeting workflows"
+          tabs={
+            <>
+              <TabsList>
+                <TabsTrigger value="templates">Templates</TabsTrigger>
+                <TabsTrigger value="recipes">Slash commands</TabsTrigger>
+                <TabsTrigger value="post-meeting">Workflows</TabsTrigger>
+              </TabsList>
+              {activeTab === "templates" && (
+                <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>
+                  <Plus /> New template
+                </Button>
+              )}
+              {activeTab === "recipes" && (
+                <Button size="sm" variant="outline" onClick={() => setRecipeDialogOpen(true)}>
+                  <Plus /> New slash command
+                </Button>
+              )}
+              {activeTab === "post-meeting" && (
+                <Button size="sm" variant="outline" onClick={() => setWorkflowDialogOpen(true)}>
+                  <Plus /> New workflow
+                </Button>
+              )}
+            </>
+          }
+        />
 
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           if (!open) resetForm();
