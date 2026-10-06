@@ -32,7 +32,10 @@ export function ChatPage() {
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  // Shown optimistically until the stored copy arrives with the reply.
+  const [pending, setPending] = useState<{ conversationId: string; text: string } | null>(null);
+  const loading = pending !== null;
+  const pendingHere = pending?.conversationId === activeId ? pending : null;
   const [sendError, setSendError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [selectedLabel, setSelectedLabel] = useState("");
@@ -40,7 +43,7 @@ export function ChatPage() {
   const [dateToValue, setDateToValue] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { sentinelRef } = useStickToBottom(scrollRef, dbMessages);
+  const { sentinelRef } = useStickToBottom(scrollRef, pendingHere ?? dbMessages);
 
   // Resize state for conversation list
   const [sidebarWidth, setSidebarWidth] = useState(256);
@@ -83,7 +86,7 @@ export function ChatPage() {
   const handleSend = async (text = input, conversationId = activeId) => {
     if (!text.trim() || !selectedProvider || !selectedModel || !conversationId) return;
     setInput("");
-    setLoading(true);
+    setPending({ conversationId, text });
     setSendError(null);
     try {
       await invoke<GlobalChatResponse>("send_chat_message", {
@@ -95,12 +98,14 @@ export function ChatPage() {
         dateFrom: getDateFrom(),
         dateTo: getDateTo(),
       });
-      await refreshMessages();
-      await refreshConvos();
+      await Promise.all([refreshMessages(), refreshConvos()]);
     } catch (err) {
       setSendError(String(err));
+      // The backend stores the user message before asking the model, so a
+      // refresh picks it up even when the reply failed.
+      await refreshMessages();
     } finally {
-      setLoading(false);
+      setPending(null);
     }
   };
 
@@ -284,13 +289,13 @@ export function ChatPage() {
         ) : (
           <>
             <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-              {dbMessages.length === 0 && !loading && (
+              {dbMessages.length === 0 && !pendingHere && (
                 <div className="mx-auto flex h-full w-full max-w-md">
                   <SuggestedPrompts
                     intro="Ask a question across all of your meetings."
                     prompts={LIBRARY_PROMPTS}
                     onPick={(prompt) => handleSend(prompt)}
-                    disabled={!selectedProvider || !selectedModel}
+                    disabled={loading || !selectedProvider || !selectedModel}
                   />
                 </div>
               )}
@@ -317,7 +322,12 @@ export function ChatPage() {
                   />
                 );
               })}
-              {loading && <ChatThinking />}
+              {pendingHere && (
+                <>
+                  <ChatMessage role="user" content={pendingHere.text} />
+                  <ChatThinking />
+                </>
+              )}
               {sendError && (
                 <p className="text-xs text-destructive text-center">{sendError}</p>
               )}
