@@ -988,9 +988,10 @@ export function MeetingDetail() {
   }, [removeMeetingLabel, getMeetingLabels]);
 
   const handleUpdateLabel = useCallback(async (labelId: string, name: string, color: string, icon: string | null) => {
-    await updateLabel(labelId, name, color, icon);
-    if (id) setMeetingLabels(await getMeetingLabels(id));
-  }, [id, updateLabel, getMeetingLabels]);
+    const updated = await updateLabel(labelId, name, color, icon);
+    setMeetingLabels((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+    return updated;
+  }, [updateLabel]);
 
   const handleDeleteLabel = useCallback(async (labelId: string) => {
     await deleteLabel(labelId);

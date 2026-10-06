@@ -53,17 +53,17 @@ export function useLabels() {
   const updateLabel = useCallback(
     async (id: string, name: string, color: string, icon: string | null) => {
       const label = await invoke<Label>("update_label", { id, name, color, icon });
-      await refresh();
+      // Meeting chips hold copies of each label, so refetch them too.
+      await Promise.all([refresh(), refreshMeetingLabels()]);
       return label;
     },
-    [refresh],
+    [refresh, refreshMeetingLabels],
   );
 
   const deleteLabel = useCallback(
     async (id: string) => {
       await invoke("delete_label", { id });
-      await refresh();
-      await refreshMeetingLabels();
+      await Promise.all([refresh(), refreshMeetingLabels()]);
     },
     [refresh, refreshMeetingLabels],
   );

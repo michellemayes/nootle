@@ -57,35 +57,25 @@ export function LabelEditor({
   onAddLabel: (meetingId: string, labelId: string) => Promise<void>;
   onRemoveLabel: (meetingId: string, labelId: string) => Promise<void>;
   onCreateLabel: (name: string, color: string) => Promise<Label>;
-  onUpdateLabel: (id: string, name: string, color: string, icon: string | null) => Promise<unknown>;
+  onUpdateLabel: (id: string, name: string, color: string, icon: string | null) => Promise<Label>;
   onDeleteLabel: (id: string) => Promise<void>;
 }) {
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[0]);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Label | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editColor, setEditColor] = useState(LABEL_COLORS[0]);
+  const [draft, setDraft] = useState<Label | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Label | null>(null);
   const meetingLabelIds = new Set(meetingLabels.map((t) => t.id));
 
-  const startEditing = (label: Label) => {
-    setEditing(label);
-    setEditName(label.name);
-    setEditColor(label.color);
-    setEditError(null);
-  };
-
   const handleSaveEdit = async () => {
-    if (!editing) return;
-    const name = editName.trim();
-    if (!name) return;
+    const name = draft?.name.trim();
+    if (!draft || !name) return;
     setEditError(null);
     try {
-      await onUpdateLabel(editing.id, name, editColor, editing.icon);
-      setEditing(null);
+      await onUpdateLabel(draft.id, name, draft.color, draft.icon);
+      setDraft(null);
     } catch (err) {
       setEditError(String(err));
     }
@@ -137,7 +127,7 @@ export function LabelEditor({
         open={popoverOpen}
         onOpenChange={(open) => {
           setPopoverOpen(open);
-          if (!open) setEditing(null);
+          if (!open) setDraft(null);
         }}
       >
         <PopoverTrigger asChild>
@@ -152,41 +142,41 @@ export function LabelEditor({
         <PopoverContent className="w-64 p-3" align="start" onClick={(e) => e.stopPropagation()}>
           <div className="space-y-3">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Labels</p>
-            {editing ? (
+            {draft ? (
               <div className="space-y-2">
                 <Input
-                  value={editName}
+                  value={draft.name}
                   onChange={(e) => {
-                    setEditName(e.target.value);
+                    setDraft({ ...draft, name: e.target.value });
                     setEditError(null);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleSaveEdit();
                     if (e.key === "Escape") {
                       e.preventDefault();
-                      setEditing(null);
+                      setDraft(null);
                     }
                   }}
                   aria-label="Label name"
                   className="h-8 text-sm"
                   autoFocus
                 />
-                <ColorSwatches value={editColor} onChange={setEditColor} />
+                <ColorSwatches value={draft.color} onChange={(color) => setDraft({ ...draft, color })} />
                 {editError && <p className="text-xs text-destructive">{editError}</p>}
                 <div className="flex items-center gap-2 pt-1">
                   <Button
                     size="sm"
                     variant="ghost"
                     className="text-destructive hover:text-destructive"
-                    onClick={() => setPendingDelete(editing)}
+                    onClick={() => setPendingDelete(draft)}
                   >
                     Delete
                   </Button>
                   <div className="flex-1" />
-                  <Button size="sm" variant="outline" onClick={() => setEditing(null)}>
+                  <Button size="sm" variant="outline" onClick={() => setDraft(null)}>
                     Cancel
                   </Button>
-                  <Button size="sm" onClick={handleSaveEdit} disabled={!editName.trim()}>
+                  <Button size="sm" onClick={handleSaveEdit} disabled={!draft.name.trim()}>
                     Save
                   </Button>
                 </div>
@@ -215,7 +205,8 @@ export function LabelEditor({
                       title="Edit label"
                       onClick={(e) => {
                         e.preventDefault();
-                        startEditing(label);
+                        setDraft(label);
+                        setEditError(null);
                       }}
                       className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                     >
@@ -263,15 +254,11 @@ export function LabelEditor({
           if (!open) setPendingDelete(null);
         }}
         title="Delete label?"
-        description={
-          <>
-            "{pendingDelete?.name}" will be removed from every meeting. This can't be undone.
-          </>
-        }
+        description={`"${pendingDelete?.name}" will be removed from every meeting. This can't be undone.`}
         onConfirm={async () => {
           if (!pendingDelete) return;
           await onDeleteLabel(pendingDelete.id);
-          setEditing(null);
+          setDraft(null);
         }}
       />
     </div>
