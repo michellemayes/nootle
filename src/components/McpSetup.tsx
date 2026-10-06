@@ -19,10 +19,10 @@ let commandPromise: Promise<McpCommand | null> | undefined;
 function CodeSnippet({ code }: { code: string }) {
   return (
     <div className="relative">
-      <pre className="overflow-x-auto rounded-lg bg-muted p-4 font-mono text-xs">
+      <pre className="overflow-x-auto rounded-lg border bg-muted/50 p-4 pr-24 font-mono text-xs">
         {code}
       </pre>
-      <CopyButton variant="button" text={code} className="absolute top-2 right-2" />
+      <CopyButton variant="button" text={code} className="absolute top-2 right-2 bg-background/80 backdrop-blur" />
     </div>
   );
 }

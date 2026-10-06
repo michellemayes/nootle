@@ -1,6 +1,6 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Markdown } from "@/components/Markdown";
+import { HelpArticle } from "@/components/HelpArticle";
 import { PageHeader } from "@/components/PageHeader";
 import { McpSetup } from "@/components/McpSetup";
 
@@ -53,11 +53,15 @@ export function HelpPage() {
         />
 
         {tabs.map((tab) => (
-          <TabsContent key={tab.value} value={tab.value} className="mt-0 flex-1 overflow-auto">
-            <div className="flex max-w-3xl flex-col gap-6 p-6">
-              {"quickStart" in tab && tab.quickStart && <McpQuickStart />}
-              <Markdown content={tab.content} />
-            </div>
+          <TabsContent
+            key={tab.value}
+            value={tab.value}
+            className="mt-0 min-h-0 flex-1 animate-in duration-300 fade-in-0"
+          >
+            <HelpArticle
+              content={tab.content}
+              afterLead={"quickStart" in tab && tab.quickStart && <McpQuickStart />}
+            />
           </TabsContent>
         ))}
       </Tabs>

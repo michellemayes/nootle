@@ -1,4 +1,3 @@
-
 Nootle includes a command-line tool (`nootle-cli`) for querying your meeting data and managing automations from the terminal. It reads and writes the Nootle database directly — the app doesn't need to be running.
 
 ## Install

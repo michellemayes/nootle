@@ -1,6 +1,6 @@
-import { memo } from "react";
+import { memo, type ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
-import type { Components } from "react-markdown";
+import type { Components, ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 
@@ -8,32 +8,33 @@ interface MarkdownProps {
   content: string;
 }
 
-const remarkPlugins = [remarkGfm];
-const rehypePlugins = [rehypeSanitize];
+export const remarkPlugins = [remarkGfm];
+export const rehypePlugins = [rehypeSanitize];
 
 const SAFE_PROTOCOLS = ["http:", "https:", "mailto:"];
 
-const components: Components = {
-  a: ({ href, children, ...props }) => {
-    let safe = false;
-    if (href) {
-      try {
-        const url = new URL(href, "https://placeholder.invalid");
-        safe = SAFE_PROTOCOLS.includes(url.protocol);
-      } catch {
-        safe = false;
-      }
+/** Renders links only for web and mail URLs; anything else becomes plain text. */
+export function SafeLink({ href, children, node: _node, ...props }: ComponentProps<"a"> & ExtraProps) {
+  let safe = false;
+  if (href) {
+    try {
+      const url = new URL(href, "https://placeholder.invalid");
+      safe = SAFE_PROTOCOLS.includes(url.protocol);
+    } catch {
+      safe = false;
     }
-    if (!safe) {
-      return <span {...props}>{children}</span>;
-    }
-    return (
-      <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
-        {children}
-      </a>
-    );
-  },
-};
+  }
+  if (!safe) {
+    return <span {...props}>{children}</span>;
+  }
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+      {children}
+    </a>
+  );
+}
+
+const components: Components = { a: SafeLink };
 
 // Memoized: parsing markdown is the costliest part of rendering a summary, so
 // unrelated parent re-renders shouldn't redo it.

@@ -1,4 +1,3 @@
-
 Common issues and how to fix them.
 
 ## Audio Not Recording

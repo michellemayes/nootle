@@ -1,28 +1,6 @@
-
 Nootle includes a built-in MCP (Model Context Protocol) server that lets AI assistants like Claude access your meeting data directly.
 
-## Quick Start
-
-Run this once to add Nootle to Claude Code for all your projects:
-
-```bash
-claude mcp add --scope user nootle -- /Applications/Nootle.app/Contents/MacOS/nootle-cli mcp
-```
-
-For other MCP clients, add this to their config:
-
-```json
-{
-  "mcpServers": {
-    "nootle": {
-      "command": "/Applications/Nootle.app/Contents/MacOS/nootle-cli",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Settings → About shows both, filled in for your install. Start a new Claude Code session and "nootle" appears under `/mcp`.
+The quick start is filled in for your install, and Settings → About shows it too. After adding it, start a new Claude Code session and "nootle" appears under `/mcp`.
 
 The server is `nootle-cli`, which ships inside Nootle.app and never opens the app window. Setups from older versions that run `nootle --mcp` keep working.
 

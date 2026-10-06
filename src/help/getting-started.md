@@ -1,4 +1,3 @@
-
 Welcome to Nootle — your local AI meeting recorder and assistant. This guide walks you through recording your first meeting.
 
 ## Permissions
