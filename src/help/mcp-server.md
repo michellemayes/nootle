@@ -1,4 +1,3 @@
-# MCP Server
 
 Nootle includes a built-in MCP (Model Context Protocol) server that lets AI assistants like Claude access your meeting data directly.
 

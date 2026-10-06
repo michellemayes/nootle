@@ -806,23 +806,22 @@ export function SettingsPage() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <PageHeader
-        title="Settings"
-        description="Preferences, AI providers, integrations, and local models"
-      />
-
-      <Tabs defaultValue={searchParams.get("tab") ?? "general"} className="flex flex-1 flex-col overflow-hidden">
-        <div className="shrink-0 border-b px-6 py-4">
-          <TabsList className="h-10">
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="api-keys">API keys</TabsTrigger>
-            <TabsTrigger value="integrations">Integrations</TabsTrigger>
-            <TabsTrigger value="models">Models</TabsTrigger>
-            <TabsTrigger value="dictionary">Dictionary</TabsTrigger>
-            <TabsTrigger value="insight-types">Insight types</TabsTrigger>
-            <TabsTrigger value="about">About</TabsTrigger>
-          </TabsList>
-        </div>
+      <Tabs defaultValue={searchParams.get("tab") ?? "general"} className="flex flex-1 flex-col gap-0 overflow-hidden">
+        <PageHeader
+          title="Settings"
+          description="Preferences, AI providers, integrations, and local models"
+          tabs={
+            <TabsList>
+              <TabsTrigger value="general">General</TabsTrigger>
+              <TabsTrigger value="api-keys">API keys</TabsTrigger>
+              <TabsTrigger value="integrations">Integrations</TabsTrigger>
+              <TabsTrigger value="models">Models</TabsTrigger>
+              <TabsTrigger value="dictionary">Dictionary</TabsTrigger>
+              <TabsTrigger value="insight-types">Insight types</TabsTrigger>
+              <TabsTrigger value="about">About</TabsTrigger>
+            </TabsList>
+          }
+        />
 
         <TabsContent value="general" className="mt-0 flex-1 overflow-auto">
           <div className="flex flex-col gap-8 p-6 max-w-3xl">
