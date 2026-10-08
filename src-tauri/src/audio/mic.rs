@@ -105,8 +105,9 @@ impl MicCapture {
         Ok(())
     }
 
-    pub fn read_samples(&mut self, buf: &mut [f32]) -> usize {
-        self.consumer.pop_slice(buf)
+    /// Everything captured since the last read.
+    pub fn read_all(&mut self) -> Vec<f32> {
+        self.consumer.pop_iter().collect()
     }
 }
 
