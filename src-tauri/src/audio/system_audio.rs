@@ -157,8 +157,9 @@ mod core_audio_impl {
             Ok(())
         }
 
-        pub fn read_samples(&mut self, buf: &mut [f32]) -> usize {
-            self.consumer.pop_slice(buf)
+        /// Everything captured since the last read.
+        pub fn read_all(&mut self) -> Vec<f32> {
+            self.consumer.pop_iter().collect()
         }
     }
 }
@@ -209,8 +210,9 @@ mod fallback_impl {
             Ok(())
         }
 
-        pub fn read_samples(&mut self, buf: &mut [f32]) -> usize {
-            self.consumer.pop_slice(buf)
+        /// Everything captured since the last read.
+        pub fn read_all(&mut self) -> Vec<f32> {
+            self.consumer.pop_iter().collect()
         }
     }
 }
@@ -243,8 +245,6 @@ mod tests {
     #[test]
     fn test_system_audio_capture_read_empty() {
         let mut capture = SystemAudioCapture::new().unwrap();
-        let mut buf = [0.0f32; 1024];
-        let n = capture.read_samples(&mut buf);
-        assert_eq!(n, 0);
+        assert!(capture.read_all().is_empty());
     }
 }

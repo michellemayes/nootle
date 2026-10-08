@@ -10,6 +10,10 @@ pub fn validate_audio_devices() -> anyhow::Result<()> {
     Ok(())
 }
 
+const POLL_MS: u64 = 50;
+/// Send a chunk to the transcription pipeline every ~2 seconds.
+const SEND_SAMPLES: usize = TARGET_RATE as usize * 2;
+
 /// ~2 s of 16 kHz audio for the transcription pipeline. The mic and system
 /// streams ride along with the mix so speakers can be told apart by source.
 pub struct AudioChunk {
@@ -47,14 +51,9 @@ pub fn run_audio_capture(
     audio_path: std::path::PathBuf,
     denoise: Option<&mut crate::denoise::DenoiseEngine>,
 ) -> anyhow::Result<()> {
-    const POLL_MS: u64 = 50;
-    // Send a chunk to the transcription pipeline every ~2 seconds.
-    const SEND_SAMPLES: usize = TARGET_RATE as usize * 2;
-
     // --- Microphone (required) ---
     let mut mic = MicCapture::new()?;
     let mic_rate = mic.sample_rate;
-    mic.start()?;
 
     // --- System audio (optional) ---
     let mut sys_audio: Option<SystemAudioCapture> = match SystemAudioCapture::new() {
@@ -72,15 +71,13 @@ pub fn run_audio_capture(
         }
     };
     let sys_rate = sys_audio.as_ref().map(|s| s.sample_rate).unwrap_or(48_000);
+    // Started together, after the slow system-audio setup, so the mic has no
+    // head start: speakers are told apart by comparing the two streams over
+    // the same moments.
+    mic.start()?;
 
     let mixer = AudioMixer::new();
     let mut writer = AudioWriter::new(&audio_path, TARGET_RATE)?;
-
-    // Read buffers sized for one poll interval at native sample rates.
-    let mic_buf_len = (mic_rate as usize * POLL_MS as usize) / 1000;
-    let sys_buf_len = (sys_rate as usize * POLL_MS as usize) / 1000;
-    let mut mic_buf = vec![0.0f32; mic_buf_len];
-    let mut sys_buf = vec![0.0f32; sys_buf_len];
 
     let mut accumulator = AudioChunk {
         mixed: Vec::with_capacity(SEND_SAMPLES),
@@ -98,8 +95,6 @@ pub fn run_audio_capture(
         sys_rate,
         &mixer,
         &mut writer,
-        &mut mic_buf,
-        &mut sys_buf,
         &mut accumulator,
         &audio_tx,
         denoise,
@@ -127,60 +122,50 @@ fn capture_loop(
     sys_rate: u32,
     mixer: &AudioMixer,
     writer: &mut AudioWriter,
-    mic_buf: &mut [f32],
-    sys_buf: &mut [f32],
     accumulator: &mut AudioChunk,
     audio_tx: &tokio::sync::mpsc::Sender<AudioChunk>,
     mut denoise: Option<&mut crate::denoise::DenoiseEngine>,
 ) -> anyhow::Result<()> {
-    const POLL_MS: u64 = 50;
-    const SEND_SAMPLES: usize = TARGET_RATE as usize * 2;
+    // 16 kHz audio not yet paired with the other stream.
+    let (mut mic_pending, mut sys_pending) = (Vec::new(), Vec::new());
 
     while is_active.load(Ordering::Acquire) {
-        // Read from mic ring buffer
-        let mic_n = mic.read_samples(mic_buf);
-        let mic_samples = &mic_buf[..mic_n];
-
-        // Read from system audio ring buffer
-        let sys_samples: &[f32] = if let Some(ref mut sys) = sys_audio {
-            let n = sys.read_samples(sys_buf);
-            &sys_buf[..n]
-        } else {
-            &[]
-        };
+        // Drain everything buffered. Each pass takes a little longer than
+        // POLL_MS, so reading a fixed POLL_MS of audio would fall further
+        // behind every pass, then drop audio once the ring buffers filled.
+        let mic_samples = mic.read_all();
+        let sys_samples = sys_audio
+            .as_mut()
+            .map(SystemAudioCapture::read_all)
+            .unwrap_or_default();
 
         // Paused: the reads above keep the device buffers drained, so
         // resuming picks up live audio rather than a backlog.
         if is_paused.load(Ordering::Acquire) {
             levels.set(0.0, sys_audio.as_ref().map(|_| 0.0));
+            mic_pending.clear();
+            sys_pending.clear();
             std::thread::sleep(std::time::Duration::from_millis(POLL_MS));
             continue;
         }
 
         levels.set(
-            rms(mic_samples),
-            sys_audio.as_ref().map(|_| rms(sys_samples)),
+            rms(&mic_samples),
+            sys_audio.as_ref().map(|_| rms(&sys_samples)),
         );
 
         // Resample both to 16 kHz
-        let mic_16k = resample(mic_samples, mic_rate, TARGET_RATE);
-        let sys_16k = if !sys_samples.is_empty() {
-            resample(sys_samples, sys_rate, TARGET_RATE)
-        } else {
-            vec![]
-        };
+        mic_pending.extend(resample(&mic_samples, mic_rate, TARGET_RATE));
+        sys_pending.extend(resample(&sys_samples, sys_rate, TARGET_RATE));
 
         // Mix (or pass through mic-only), keeping both sources aligned.
         let (mic_16k, sys_16k, mut mixed) = if sys_audio.is_some() {
-            let len = mic_16k.len().max(sys_16k.len());
-            let (mut mic_padded, mut sys_padded) = (mic_16k, sys_16k);
-            mic_padded.resize(len, 0.0);
-            sys_padded.resize(len, 0.0);
-            let mixed = mixer.mix(&sys_padded, &mic_padded);
-            (mic_padded, sys_padded, mixed)
-        } else {
-            let mixed = mic_16k.clone();
+            let (mic_16k, sys_16k) = take_aligned(&mut mic_pending, &mut sys_pending);
+            let mixed = mixer.mix(&sys_16k, &mic_16k);
             (mic_16k, sys_16k, mixed)
+        } else {
+            let mic_16k = std::mem::take(&mut mic_pending);
+            (mic_16k.clone(), Vec::new(), mic_16k)
         };
 
         if !mixed.is_empty() {
@@ -215,6 +200,34 @@ fn capture_loop(
     Ok(())
 }
 
+/// How far one stream may run ahead of the other before the lagging one is
+/// taken to have stalled and its gap filled with silence, so neither stream
+/// is ever held back for long.
+const MAX_SKEW_SAMPLES: usize = TARGET_RATE as usize / 5;
+
+/// Take equal lengths of mic and system audio covering the same moments.
+/// Each device delivers in its own burst sizes, so the stream that is ahead
+/// keeps its surplus for the next poll instead of the other being padded
+/// with silence every poll, which would stretch both out of step.
+fn take_aligned(mic: &mut Vec<f32>, sys: &mut Vec<f32>) -> (Vec<f32>, Vec<f32>) {
+    let (shorter, longer) = if mic.len() < sys.len() {
+        (mic.len(), sys.len())
+    } else {
+        (sys.len(), mic.len())
+    };
+    let n = if longer - shorter > MAX_SKEW_SAMPLES {
+        longer
+    } else {
+        shorter
+    };
+    let take = |v: &mut Vec<f32>| {
+        let mut out: Vec<f32> = v.drain(..n.min(v.len())).collect();
+        out.resize(n, 0.0);
+        out
+    };
+    (take(mic), take(sys))
+}
+
 /// Linear-interpolation resampler (sufficient for speech).
 ///
 /// TODO: Replace with a proper polyphase or sinc-based resampler (e.g. the
@@ -245,4 +258,31 @@ fn resample(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
         out.push(s as f32);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn take_aligned_holds_back_the_stream_that_is_ahead() {
+        let mut mic = vec![1.0; 800];
+        let mut sys = vec![2.0; 640];
+        let (m, s) = take_aligned(&mut mic, &mut sys);
+        assert_eq!((m.len(), s.len()), (640, 640));
+        assert!(s.iter().all(|&x| x == 2.0));
+        assert_eq!((mic.len(), sys.len()), (160, 0));
+    }
+
+    #[test]
+    fn take_aligned_fills_a_stalled_stream_with_silence() {
+        let mut mic = vec![1.0; MAX_SKEW_SAMPLES + 500];
+        let mut sys = vec![2.0; 100];
+        let (m, s) = take_aligned(&mut mic, &mut sys);
+        assert_eq!(m.len(), MAX_SKEW_SAMPLES + 500);
+        assert_eq!(s.len(), m.len());
+        assert_eq!(s[99], 2.0);
+        assert_eq!(s[100], 0.0);
+        assert!(mic.is_empty() && sys.is_empty());
+    }
 }
