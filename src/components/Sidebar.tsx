@@ -25,7 +25,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className={cn("group/sidebar flex h-screen flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] border-r border-sidebar-border transition-[width] duration-200 ease-out", isCompact ? "w-12" : "w-60")}
+      className={cn("group/sidebar flex flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] border-r border-sidebar-border transition-[width] duration-200 ease-out", isCompact ? "w-12" : "w-60")}
     >
       {/* Logo */}
       <div data-tauri-drag-region className={cn("relative flex items-center px-5 pt-10 pb-4", isCompact ? "justify-center px-2" : "gap-2")}>

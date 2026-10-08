@@ -158,6 +158,14 @@
   * {
     @apply border-border outline-ring/50;
     }
+  /* The app is a fixed-viewport shell: only inner panes scroll. Locking the
+     document stops it from scrolling (or rubber-banding) and exposing blank
+     space below the layout. */
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    }
   body {
     @apply bg-background text-foreground;
     -webkit-font-smoothing: antialiased;
