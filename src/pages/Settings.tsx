@@ -882,7 +882,7 @@ export function SettingsPage() {
                   <div>
                     <p className="text-sm font-medium">Snapshots</p>
                     <p className="text-sm text-muted-foreground">
-                      When someone shares their screen, snap slides, designs, docs and charts into your notes so you can ask about them later. Only the meeting window is captured, and text is read on your Mac
+                      When someone shares their screen (you included), snap slides, designs, docs and charts into your notes so you can ask about them later. Only the meeting window, or the screen you're sharing, is captured, and text is read on your Mac
                     </p>
                   </div>
                   <Switch

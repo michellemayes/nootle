@@ -3,8 +3,10 @@
 //! While a recording runs (and the user has turned snapshots on), the meeting
 //! app's own window is captured every few seconds. A frame is kept when
 //! someone is sharing their screen and the shared content has changed, so a
-//! slide deck yields one picture per slide. Only the meeting window is ever
-//! captured, never the rest of the screen.
+//! slide deck yields one picture per slide. Only the meeting window is
+//! captured, except while the user shares their own screen: the meeting app
+//! then hides its window, so the display being shared is captured instead
+//! (with the meeting app's and Nootle's own windows left out).
 //!
 //! Text is read off each snapshot on-device so summaries, chat and search can
 //! answer questions like "what did the revenue chart say?".
@@ -57,6 +59,18 @@ pub struct WindowInfo {
     pub on_screen: bool,
     /// 0 for normal app windows; menus, toolbars and overlays sit higher.
     pub layer: isize,
+    /// Belongs to Nootle itself.
+    pub is_own: bool,
+}
+
+/// What to capture this poll.
+#[derive(Debug, PartialEq)]
+pub enum Target {
+    /// The meeting window, by index.
+    Meeting(usize),
+    /// The user is sharing their own screen; the index is the meeting app's
+    /// sharing toolbar, which sits on the display being shared.
+    OwnShare(usize),
 }
 
 /// Browser window titles (the active tab) that mean a web meeting is showing.
@@ -88,20 +102,57 @@ fn is_meeting_title(app: &str, title: &str) -> bool {
     }
 }
 
-/// The meeting window to capture: the largest normal on-screen window of the
-/// app in the call whose title says it's the meeting.
-pub fn pick_meeting_window(windows: &[WindowInfo], call: &DetectedMeeting) -> Option<usize> {
+fn is_call_app(w: &WindowInfo, call: &DetectedMeeting) -> bool {
+    crate::detection::meeting_app_for_bundle(&w.bundle_id)
+        .is_some_and(|app| app.display_name == call.display_name)
+}
+
+/// Whether a window is the floating bar meeting apps show while the user
+/// shares their own screen, e.g. Zoom's "zoom share toolbar window" or
+/// Teams' "Sharing control bar". Only floating windows count, so a normal
+/// window or browser tab that merely mentions sharing never does.
+fn is_own_share_indicator(w: &WindowInfo) -> bool {
+    w.on_screen && w.layer > 0 && w.title.to_lowercase().contains("shar")
+}
+
+/// What to capture: the display being shared while the user shares their
+/// own screen, otherwise the largest normal on-screen window of the app in
+/// the call whose title says it's the meeting.
+pub fn pick_target(windows: &[WindowInfo], call: &DetectedMeeting) -> Option<Target> {
+    let app = &call.display_name;
+    // Chat apps' floating windows aren't share bars.
+    let chat = matches!(app.as_str(), "Slack" | "Discord");
+    if let Some(i) = windows
+        .iter()
+        .position(|w| !chat && is_own_share_indicator(w) && is_call_app(w, call))
+    {
+        return Some(Target::OwnShare(i));
+    }
     windows
         .iter()
         .enumerate()
         .filter(|(_, w)| w.on_screen && w.layer == 0 && w.width >= 480.0 && w.height >= 320.0)
-        .filter(|(_, w)| {
-            crate::detection::meeting_app_for_bundle(&w.bundle_id)
-                .is_some_and(|app| app.display_name == call.display_name)
-        })
-        .filter(|(_, w)| is_meeting_title(&call.display_name, &w.title))
+        .filter(|(_, w)| is_call_app(w, call) && is_meeting_title(app, &w.title))
         .max_by(|(_, a), (_, b)| (a.width * a.height).total_cmp(&(b.width * b.height)))
+        .map(|(i, _)| Target::Meeting(i))
+}
+
+/// Windows to leave out of a capture of the user's own share: Nootle's, and
+/// the meeting app's own (all of them, or for a browser just the call and its
+/// floating bars, since the share may well be another tab).
+pub fn hidden_while_sharing(windows: &[WindowInfo], call: &DetectedMeeting) -> Vec<usize> {
+    let app = &call.display_name;
+    let browser = crate::detection::is_browser(app);
+    windows
+        .iter()
+        .enumerate()
+        .filter(|(_, w)| {
+            w.is_own
+                || (is_call_app(w, call)
+                    && (!browser || w.layer != 0 || is_meeting_title(app, &w.title)))
+        })
         .map(|(i, _)| i)
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -313,13 +364,20 @@ impl Run {
         let mut gate = ChangeGate::default();
         let mut last_words = HashSet::new();
         let mut taken = 0;
+        let mut own_share = false;
 
         while self.wait() && taken < MAX_PER_MEETING {
             let Some(thumb) = self.capture(&mut capturer, THUMB_EDGE) else {
                 gate.reset();
                 continue;
             };
-            let Ok(sig) = Signature::from_image(&thumb) else {
+            // Switching to or from the user's own share starts over, so the
+            // new view must hold still across two polls before it's read.
+            if thumb.own_share != own_share {
+                own_share = thumb.own_share;
+                gate.reset();
+            }
+            let Ok(sig) = Signature::from_image(&thumb.jpeg) else {
                 continue;
             };
             if !gate.observe(sig) {
@@ -345,9 +403,9 @@ impl Run {
         )
     }
 
-    /// The meeting window as a JPEG, while recording (not paused) a call
-    /// whose window is showing. Only ever the meeting app's window.
-    fn capture(&self, capturer: &mut platform::Capturer, max_edge: f64) -> Option<Vec<u8>> {
+    /// The meeting window (or the user's own share) as a JPEG, while
+    /// recording (not paused) a call whose window is showing.
+    fn capture(&self, capturer: &mut platform::Capturer, max_edge: f64) -> Option<Capture> {
         if self.is_paused.load(Ordering::Acquire) {
             return None;
         }
@@ -361,17 +419,20 @@ impl Run {
     }
 
     /// Read the frame's text and keep it if it's newly shared content.
-    fn examine(&self, jpeg: &[u8], last_words: &mut HashSet<String>) -> anyhow::Result<bool> {
+    fn examine(&self, frame: &Capture, last_words: &mut HashSet<String>) -> anyhow::Result<bool> {
         let offset_ms = self.clock.recorded().as_millis() as i64;
         let path = self.dir.join(format!("{}.jpg", uuid::Uuid::new_v4()));
-        std::fs::write(&path, jpeg)?;
+        std::fs::write(&path, &frame.jpeg)?;
 
         let text = platform::recognize_text(&path).unwrap_or_else(|e| {
             tracing::debug!("Text recognition failed: {e:#}");
             String::new()
         });
         let found = words(&text);
-        if !shows_screen_share(&text) || !is_new_content(&found, last_words) {
+        // The user's own share carries no on-screen cue; the meeting app's
+        // sharing toolbar already said it's a share.
+        let shared = frame.own_share || shows_screen_share(&text);
+        if !shared || !is_new_content(&found, last_words) {
             let _ = std::fs::remove_file(&path);
             return Ok(false);
         }
@@ -385,13 +446,20 @@ impl Run {
     }
 }
 
+/// One captured frame.
+pub struct Capture {
+    pub jpeg: Vec<u8>,
+    /// Of the user's own screen share rather than the meeting window.
+    pub own_share: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Platform: ScreenCaptureKit for the window, Vision for the text
 // ---------------------------------------------------------------------------
 
 #[cfg(all(target_os = "macos", feature = "system-audio"))]
 mod platform {
-    use super::{pick_meeting_window, WindowInfo};
+    use super::{hidden_while_sharing, is_call_app, pick_target, Capture, Target, WindowInfo};
     use crate::detection::DetectedMeeting;
     use anyhow::{anyhow, Context};
     use cidre::{cf, cg, ns, sc, ut, vn};
@@ -410,30 +478,32 @@ mod platform {
             Ok(Self { rt })
         }
 
-        /// The meeting window as a JPEG no larger than `max_edge` pixels,
-        /// or None when it isn't on screen.
+        /// The meeting window, or the display the user is sharing, as a JPEG
+        /// no larger than `max_edge` pixels; None when neither is on screen.
         pub fn capture_meeting_window(
             &mut self,
             call: &DetectedMeeting,
             max_edge: f64,
-        ) -> anyhow::Result<Option<Vec<u8>>> {
+        ) -> anyhow::Result<Option<Capture>> {
             self.rt.block_on(capture(call, max_edge))
         }
     }
 
-    async fn capture(call: &DetectedMeeting, max_edge: f64) -> anyhow::Result<Option<Vec<u8>>> {
+    async fn capture(call: &DetectedMeeting, max_edge: f64) -> anyhow::Result<Option<Capture>> {
         let content = sc::ShareableContent::current()
             .await
             .map_err(|e| anyhow!("list windows (check Screen Recording permission): {e:?}"))?;
+        let own_pid = std::process::id() as i32;
         let windows = content.windows();
         let windows: Vec<&sc::Window> = windows.iter().collect();
         let infos: Vec<WindowInfo> = windows
             .iter()
             .map(|w| {
                 let frame = w.frame();
+                let app = w.owning_app();
                 WindowInfo {
-                    bundle_id: w
-                        .owning_app()
+                    bundle_id: app
+                        .as_ref()
                         .map(|a| a.bundle_id().to_string())
                         .unwrap_or_default(),
                     title: w.title().map(|t| t.to_string()).unwrap_or_default(),
@@ -441,27 +511,71 @@ mod platform {
                     height: frame.size.height,
                     on_screen: w.is_on_screen(),
                     layer: w.window_layer(),
+                    is_own: app.is_some_and(|a| a.process_id() == own_pid),
                 }
             })
             .collect();
-        let Some(index) = pick_meeting_window(&infos, call) else {
-            return Ok(None);
+
+        let (filter, w, h, own_share) = match pick_target(&infos, call) {
+            Some(Target::Meeting(i)) => (
+                sc::ContentFilter::with_desktop_independent_window(windows[i]),
+                infos[i].width,
+                infos[i].height,
+                false,
+            ),
+            Some(Target::OwnShare(i)) => {
+                // The display under the sharing toolbar, else the main one.
+                let displays = content.displays();
+                let bar = windows[i].frame().origin;
+                let Some(display) = displays
+                    .iter()
+                    .find(|d| d.frame().contains_point(&bar))
+                    .or_else(|| displays.iter().next())
+                else {
+                    return Ok(None);
+                };
+                let hidden: Vec<&sc::Window> = hidden_while_sharing(&infos, call)
+                    .into_iter()
+                    .map(|i| windows[i])
+                    .collect();
+                let hidden = ns::Array::from_slice(&hidden);
+                let frame = display.frame();
+                (
+                    sc::ContentFilter::with_display_excluding_windows(display, &hidden),
+                    frame.size.width,
+                    frame.size.height,
+                    true,
+                )
+            }
+            None => {
+                tracing::debug!(
+                    "No meeting window; {} windows: {:?}",
+                    call.display_name,
+                    infos
+                        .iter()
+                        .filter(|w| w.on_screen && is_call_app(w, call))
+                        .map(|w| (&w.title, w.layer))
+                        .collect::<Vec<_>>()
+                );
+                return Ok(None);
+            }
         };
-        let window = windows[index];
 
         // Points to pixels at Retina density, capped.
-        let (w, h) = (infos[index].width * 2.0, infos[index].height * 2.0);
+        let (w, h) = (w * 2.0, h * 2.0);
         let scale = (max_edge / w.max(h)).min(1.0);
         let mut cfg = sc::StreamCfg::new();
         cfg.set_width((w * scale) as usize);
         cfg.set_height((h * scale) as usize);
         cfg.set_shows_cursor(false);
 
-        let filter = sc::ContentFilter::with_desktop_independent_window(window);
         let image = sc::ScreenshotManager::capture_image(&filter, &cfg)
             .await
-            .map_err(|e| anyhow!("capture window: {e:?}"))?;
-        encode_jpeg(&image).map(Some)
+            .map_err(|e| anyhow!("capture: {e:?}"))?;
+        Ok(Some(Capture {
+            jpeg: encode_jpeg(&image)?,
+            own_share,
+        }))
     }
 
     fn encode_jpeg(image: &cg::Image) -> anyhow::Result<Vec<u8>> {
@@ -503,6 +617,7 @@ mod platform {
 
 #[cfg(not(all(target_os = "macos", feature = "system-audio")))]
 mod platform {
+    use super::Capture;
     use crate::detection::DetectedMeeting;
     use std::path::Path;
 
@@ -518,7 +633,7 @@ mod platform {
             &mut self,
             _call: &DetectedMeeting,
             _max_edge: f64,
-        ) -> anyhow::Result<Option<Vec<u8>>> {
+        ) -> anyhow::Result<Option<Capture>> {
             Ok(None)
         }
     }
@@ -540,6 +655,7 @@ mod tests {
             height,
             on_screen: true,
             layer: 0,
+            is_own: false,
         }
     }
 
@@ -555,29 +671,32 @@ mod tests {
             window("us.zoom.xos", "", 200.0, 40.0), // floating toolbar
             window("com.apple.Notes", "Secret notes", 1600.0, 1000.0),
         ];
-        assert_eq!(pick_meeting_window(&windows, &call("us.zoom.xos")), Some(1));
+        assert_eq!(
+            pick_target(&windows, &call("us.zoom.xos")),
+            Some(Target::Meeting(1))
+        );
     }
 
     #[test]
     fn browser_only_while_a_meeting_tab_is_showing() {
         let chrome = call("com.google.Chrome.helper");
         let browsing = [window("com.google.Chrome", "Inbox - Gmail", 1400.0, 900.0)];
-        assert_eq!(pick_meeting_window(&browsing, &chrome), None);
+        assert_eq!(pick_target(&browsing, &chrome), None);
         let meet = [window(
             "com.google.Chrome",
             "Meet - abc-defg-hij",
             1400.0,
             900.0,
         )];
-        assert_eq!(pick_meeting_window(&meet, &chrome), Some(0));
+        assert_eq!(pick_target(&meet, &chrome), Some(Target::Meeting(0)));
     }
 
     #[test]
     fn safari_window_matches_webkit_mic_process() {
         let windows = [window("com.apple.Safari", "Zoom Meeting", 1400.0, 900.0)];
         assert_eq!(
-            pick_meeting_window(&windows, &call("com.apple.WebKit.GPU")),
-            Some(0)
+            pick_target(&windows, &call("com.apple.WebKit.GPU")),
+            Some(Target::Meeting(0))
         );
     }
 
@@ -586,10 +705,7 @@ mod tests {
         let mut hidden = window("com.microsoft.teams2", "Meeting", 1400.0, 900.0);
         hidden.on_screen = false;
         let windows = [hidden, window("us.zoom.xos", "Zoom Meeting", 1400.0, 900.0)];
-        assert_eq!(
-            pick_meeting_window(&windows, &call("com.microsoft.teams2")),
-            None
-        );
+        assert_eq!(pick_target(&windows, &call("com.microsoft.teams2")), None);
     }
 
     #[test]
@@ -601,14 +717,86 @@ mod tests {
             1400.0,
             900.0,
         )];
-        assert_eq!(pick_meeting_window(&chat, &slack), None);
+        assert_eq!(pick_target(&chat, &slack), None);
         let huddle = [window(
             "com.tinyspeck.slackmacgap",
             "Huddle: design",
             1400.0,
             900.0,
         )];
-        assert_eq!(pick_meeting_window(&huddle, &slack), Some(0));
+        assert_eq!(pick_target(&huddle, &slack), Some(Target::Meeting(0)));
+    }
+
+    fn floating(bundle_id: &str, title: &str) -> WindowInfo {
+        WindowInfo {
+            layer: 3,
+            ..window(bundle_id, title, 400.0, 50.0)
+        }
+    }
+
+    #[test]
+    fn own_zoom_share_captures_the_screen() {
+        let zoom = call("us.zoom.xos");
+        let windows = [
+            window("com.apple.Keynote", "Q3 review", 1400.0, 900.0),
+            floating("us.zoom.xos", "zoom share toolbar window"),
+            floating("us.zoom.xos", "zoom floating video window"),
+        ];
+        assert_eq!(pick_target(&windows, &zoom), Some(Target::OwnShare(1)));
+        assert_eq!(hidden_while_sharing(&windows, &zoom), vec![1, 2]);
+    }
+
+    #[test]
+    fn own_share_wins_over_a_visible_meeting_window() {
+        let teams = call("com.microsoft.teams2");
+        let windows = [
+            window(
+                "com.microsoft.teams2",
+                "Meeting | Microsoft Teams",
+                1400.0,
+                900.0,
+            ),
+            floating(
+                "com.microsoft.teams2",
+                "Sharing control bar | Microsoft Teams",
+            ),
+        ];
+        assert_eq!(pick_target(&windows, &teams), Some(Target::OwnShare(1)));
+    }
+
+    #[test]
+    fn sharing_in_a_normal_window_title_is_not_an_own_share() {
+        let chrome = call("com.google.Chrome.helper");
+        let windows = [window(
+            "com.google.Chrome",
+            "Share - Google Drive",
+            1400.0,
+            900.0,
+        )];
+        assert_eq!(pick_target(&windows, &chrome), None);
+    }
+
+    #[test]
+    fn own_browser_share_keeps_other_tabs_and_hides_nootle() {
+        let chrome = call("com.google.Chrome.helper");
+        let mut nootle = window("com.nootle.desktop", "Nootle", 800.0, 600.0);
+        nootle.is_own = true;
+        let windows = [
+            window("com.google.Chrome", "Meet - abc-defg-hij", 1400.0, 900.0),
+            window(
+                "com.google.Chrome",
+                "Q3 deck - Google Slides",
+                1400.0,
+                900.0,
+            ),
+            floating(
+                "com.google.Chrome",
+                "meet.google.com is sharing your screen.",
+            ),
+            nootle,
+        ];
+        assert_eq!(pick_target(&windows, &chrome), Some(Target::OwnShare(2)));
+        assert_eq!(hidden_while_sharing(&windows, &chrome), vec![0, 2, 3]);
     }
 
     fn sig(fill: u8, changed: usize) -> Signature {
