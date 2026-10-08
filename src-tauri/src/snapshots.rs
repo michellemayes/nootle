@@ -111,12 +111,8 @@ fn is_call_app(w: &WindowInfo, call: &DetectedMeeting) -> bool {
 /// shares their own screen, e.g. Zoom's "zoom share toolbar window" or
 /// Teams' "Sharing control bar". Only floating windows count, so a normal
 /// window or browser tab that merely mentions sharing never does.
-fn is_own_share_indicator(app: &str, w: &WindowInfo) -> bool {
-    let title = w.title.to_lowercase();
-    w.on_screen
-        && w.layer > 0
-        && !matches!(app, "Slack" | "Discord")
-        && (title.contains("share") || title.contains("sharing"))
+fn is_own_share_indicator(w: &WindowInfo) -> bool {
+    w.on_screen && w.layer > 0 && w.title.to_lowercase().contains("shar")
 }
 
 /// What to capture: the display being shared while the user shares their
@@ -124,9 +120,11 @@ fn is_own_share_indicator(app: &str, w: &WindowInfo) -> bool {
 /// the call whose title says it's the meeting.
 pub fn pick_target(windows: &[WindowInfo], call: &DetectedMeeting) -> Option<Target> {
     let app = &call.display_name;
+    // Chat apps' floating windows aren't share bars.
+    let chat = matches!(app.as_str(), "Slack" | "Discord");
     if let Some(i) = windows
         .iter()
-        .position(|w| is_call_app(w, call) && is_own_share_indicator(app, w))
+        .position(|w| !chat && is_own_share_indicator(w) && is_call_app(w, call))
     {
         return Some(Target::OwnShare(i));
     }
@@ -366,12 +364,19 @@ impl Run {
         let mut gate = ChangeGate::default();
         let mut last_words = HashSet::new();
         let mut taken = 0;
+        let mut own_share = false;
 
         while self.wait() && taken < MAX_PER_MEETING {
             let Some(thumb) = self.capture(&mut capturer, THUMB_EDGE) else {
                 gate.reset();
                 continue;
             };
+            // Switching to or from the user's own share starts over, so the
+            // new view must hold still across two polls before it's read.
+            if thumb.own_share != own_share {
+                own_share = thumb.own_share;
+                gate.reset();
+            }
             let Ok(sig) = Signature::from_image(&thumb.jpeg) else {
                 continue;
             };
@@ -521,17 +526,10 @@ mod platform {
             Some(Target::OwnShare(i)) => {
                 // The display under the sharing toolbar, else the main one.
                 let displays = content.displays();
-                let bar = windows[i].frame();
-                let (x, y) = (bar.origin.x, bar.origin.y);
+                let bar = windows[i].frame().origin;
                 let Some(display) = displays
                     .iter()
-                    .find(|d| {
-                        let f = d.frame();
-                        x >= f.origin.x
-                            && x < f.origin.x + f.size.width
-                            && y >= f.origin.y
-                            && y < f.origin.y + f.size.height
-                    })
+                    .find(|d| d.frame().contains_point(&bar))
                     .or_else(|| displays.iter().next())
                 else {
                     return Ok(None);
