@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- Lock document scroll so the window can't shift and expose blank space (#169) ([8c590eb](https://github.com/michellemayes/nootle/commit/8c590eb7a215b68f65c4259f832ad7071192d9ee))
+- **audio:** Keep mic and call audio in step so Zoom speakers are told apart (#170) ([61e2e6c](https://github.com/michellemayes/nootle/commit/61e2e6ce716d2097f0add3d585798874b0c09eb2))
+
+## [0.5.4] - 2026-10-08
+
+### Bug Fixes
+
+- **snapshots:** Capture your own screen share (#171) ([9e78a02](https://github.com/michellemayes/nootle/commit/9e78a02de9d7252a0801f819b0f35a93556c1884))
+
 ## [0.5.3] - 2026-10-06
 
 ### Bug Fixes
