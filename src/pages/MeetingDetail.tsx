@@ -29,6 +29,7 @@ import { useLabels } from "@/hooks/useLabels";
 import { useScratchPad } from "@/hooks/useScratchPad";
 import { useSnapshots } from "@/hooks/useSnapshots";
 import { SnapshotsSection } from "@/components/SnapshotsSection";
+import { toast } from "@/components/Toaster";
 import {
   AudioPlayerControls,
   SKIP_SECONDS,
@@ -37,7 +38,7 @@ import {
   useFollowPlayback,
   useIsPlaying,
 } from "@/components/AudioPlayerControls";
-import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment } from "@/types";
+import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment, Workflow, WorkflowRun } from "@/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Input } from "@/components/ui/input";
@@ -856,6 +857,119 @@ function NotesPanel({
   );
 }
 
+function RunWorkflowMenu({
+  meetingId,
+  workflows,
+  runs,
+  runWorkflow,
+  refreshRuns,
+  onViewRuns,
+}: {
+  meetingId: string;
+  workflows: Workflow[];
+  runs: WorkflowRun[];
+  runWorkflow: ReturnType<typeof useWorkflows>["runWorkflow"];
+  refreshRuns: () => Promise<void>;
+  onViewRuns: () => void;
+}) {
+  const { selectedProvider, selectedModel } = useGlobalLLMSelection();
+  const [open, setOpen] = useState(false);
+  // Workflows started from this menu. The backend only records a run once
+  // any summary it needs is generated, so the run list alone can't show it.
+  const [startingIds, setStartingIds] = useState<Set<string>>(() => new Set());
+
+  const enabledWorkflows = workflows.filter((w) => w.is_enabled);
+  if (enabledWorkflows.length === 0) return null;
+
+  const items = enabledWorkflows.map((w) => {
+    const recentRun = runs.find((r) => r.workflow_id === w.id);
+    const isRunning =
+      startingIds.has(w.id) || recentRun?.status === "running" || recentRun?.status === "pending";
+    return { workflow: w, status: recentRun?.status, isRunning };
+  });
+  const anyRunning = items.some((i) => i.isRunning);
+
+  const run = async (workflow: Workflow) => {
+    setOpen(false);
+    setStartingIds((prev) => new Set(prev).add(workflow.id));
+    toast(`Running "${workflow.name}"…`);
+    let error: string | null = null;
+    try {
+      const result = await runWorkflow(meetingId, workflow.id, {
+        provider: selectedProvider ?? undefined,
+        model: selectedModel ?? undefined,
+      });
+      if (result.status === "failed") error = result.error ?? "";
+    } catch (err) {
+      error = String(err);
+    }
+    toast(
+      error === null
+        ? `"${workflow.name}" finished`
+        : `"${workflow.name}" failed${error ? `: ${error}` : ""}`,
+      { action: { label: "View", onClick: onViewRuns } },
+    );
+    setStartingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(workflow.id);
+      return next;
+    });
+    await refreshRuns();
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="text-xs gap-1.5">
+          {anyRunning ? (
+            <RotateCw className="h-3 w-3 animate-spin" />
+          ) : (
+            <Zap className="h-3 w-3" />
+          )}
+          {anyRunning ? "Running…" : "Run"}
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-1.5">
+        <div className="space-y-0.5">
+          {items.map(({ workflow: w, status, isRunning }) => (
+            <button
+              key={w.id}
+              type="button"
+              disabled={isRunning}
+              onClick={() => run(w)}
+              className="w-full text-left rounded-md px-2.5 py-2 text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-start gap-2"
+              title={w.description || w.name}
+            >
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">
+                {isRunning ? (
+                  <RotateCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                ) : status === "completed" ? (
+                  <Check className="h-3.5 w-3.5 text-success-foreground" />
+                ) : status === "failed" ? (
+                  <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                ) : w.icon ? (
+                  <span>{w.icon}</span>
+                ) : (
+                  <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block font-medium leading-tight">{w.name}</span>
+                {w.description && (
+                  <span className="block text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                    {w.description}
+                  </span>
+                )}
+              </span>
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function MeetingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -909,6 +1023,7 @@ export function MeetingDetail() {
   const { projects: linearProjects } = useLinearProjects(linearTeamId);
   const { workflows, runWorkflow } = useWorkflows();
   const { runs, refresh: refreshRuns } = useWorkflowRuns(id);
+  const [detailTab, setDetailTab] = useState("summaries");
   const [chatOpen, setChatOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -1266,82 +1381,14 @@ export function MeetingDetail() {
         </div>
         {!isCompact && (
         <div className="flex items-center gap-2">
-          {(() => {
-            const enabledWorkflows = workflows.filter((w) => w.is_enabled);
-            if (enabledWorkflows.length === 0) return null;
-            const anyRunning = enabledWorkflows.some((w) => {
-              const recentRun = runs.find((r) => r.workflow_id === w.id);
-              return recentRun?.status === "running" || recentRun?.status === "pending";
-            });
-            return (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="text-xs gap-1.5">
-                    {anyRunning ? (
-                      <RotateCw className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Zap className="h-3 w-3" />
-                    )}
-                    Run
-                    <ChevronDown className="h-3 w-3 opacity-60" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-72 p-1.5">
-                  <div className="space-y-0.5">
-                    {enabledWorkflows.map((w) => {
-                      const recentRun = runs.find((r) => r.workflow_id === w.id);
-                      const isRunning =
-                        recentRun?.status === "running" || recentRun?.status === "pending";
-                      const succeeded = recentRun?.status === "completed";
-                      const failed = recentRun?.status === "failed";
-                      return (
-                        <button
-                          key={w.id}
-                          type="button"
-                          disabled={isRunning}
-                          onClick={async () => {
-                            try {
-                              await runWorkflow(id!, w.id, {
-                                provider: selectedProvider ?? undefined,
-                                model: selectedModel ?? undefined,
-                              });
-                            } catch (err) {
-                              console.error("Workflow failed:", err);
-                            }
-                            await refreshRuns();
-                          }}
-                          className="w-full text-left rounded-md px-2.5 py-2 text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-start gap-2"
-                          title={w.description || w.name}
-                        >
-                          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">
-                            {isRunning ? (
-                              <RotateCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                            ) : succeeded ? (
-                              <Check className="h-3.5 w-3.5 text-success-foreground" />
-                            ) : failed ? (
-                              <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
-                            ) : w.icon ? (
-                              <span>{w.icon}</span>
-                            ) : (
-                              <Zap className="h-3.5 w-3.5 text-muted-foreground" />
-                            )}
-                          </span>
-                          <span className="flex-1 min-w-0">
-                            <span className="block font-medium leading-tight">{w.name}</span>
-                            {w.description && (
-                              <span className="block text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                                {w.description}
-                              </span>
-                            )}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            );
-          })()}
+          <RunWorkflowMenu
+            meetingId={id!}
+            workflows={workflows}
+            runs={runs}
+            runWorkflow={runWorkflow}
+            refreshRuns={refreshRuns}
+            onViewRuns={() => setDetailTab("workflows")}
+          />
           <ExportMenu meeting={meeting} />
           {!chatOpen && (
             <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
@@ -1534,7 +1581,7 @@ export function MeetingDetail() {
           )}
 
         <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
-          <Tabs defaultValue="summaries" className="flex flex-1 flex-col overflow-hidden">
+          <Tabs value={detailTab} onValueChange={setDetailTab} className="flex flex-1 flex-col overflow-hidden">
             <div className="px-4 border-b flex items-center h-12 gap-2">
               <Button
                 variant="ghost"
