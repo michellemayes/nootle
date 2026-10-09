@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.6] - 2026-10-09
+
+### Bug Fixes
+
+- Show progress when running a workflow from the Run menu (#172) ([e0cb57d](https://github.com/michellemayes/nootle/commit/e0cb57dfcb1821db3ca7aa4dd0364cf6ed11a952))
+
 ## [0.5.5] - 2026-10-08
 
 ### Bug Fixes
