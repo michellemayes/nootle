@@ -39,6 +39,77 @@ fn llm_transcript(db: &Database, meeting_id: &str, segments: &[TranscriptSegment
     format_transcript(segments) + &crate::snapshots::context_section(db, meeting_id)
 }
 
+/// How much transcript a provider reads in one prompt before it's condensed
+/// part by part first. Local models have small context windows (see
+/// `ollama::context_window`); hosted ones read an hour-long meeting whole.
+fn transcript_budget_chars(provider: &str) -> usize {
+    if provider == "ollama" {
+        60_000
+    } else {
+        400_000
+    }
+}
+
+/// Splits a formatted transcript into parts of at most `max_chars`, at line
+/// (speaker turn) boundaries.
+fn split_transcript(text: &str, max_chars: usize) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    for line in text.lines() {
+        if !current.is_empty() && current.len() + line.len() + 1 > max_chars {
+            parts.push(std::mem::take(&mut current));
+        }
+        current.push_str(line);
+        current.push('\n');
+    }
+    if !current.trim().is_empty() {
+        parts.push(current);
+    }
+    parts
+}
+
+/// The transcript, or for one too long for `provider` to read at once,
+/// detailed notes of each part in order (keeping timestamps and who said
+/// what), so the summary still covers the whole meeting.
+async fn condense_for(
+    provider: &dyn crate::llm::LlmProvider,
+    model: &str,
+    transcript: String,
+) -> anyhow::Result<String> {
+    let budget = transcript_budget_chars(provider.provider_name());
+    if transcript.len() <= budget {
+        return Ok(transcript);
+    }
+    let parts = split_transcript(&transcript, budget / 2);
+    let total = parts.len();
+    let notes = futures_util::future::try_join_all(parts.into_iter().enumerate().map(
+        |(i, part)| async move {
+            let messages = vec![
+                ChatMessage {
+                    role: "system".into(),
+                    content: "You condense one part of a long meeting transcript into detailed \
+                              notes for a later summary. Keep every decision, action item (with \
+                              owner and due date), number, name and open question, with its \
+                              [mm:ss] timestamp and who said it. Write bullet points only."
+                        .into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: format!("Part {} of {total}:\n\n{part}", i + 1),
+                },
+            ];
+            provider.chat(messages, model).await
+        },
+    ))
+    .await?;
+    Ok(notes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| format!("## Part {} of {total}\n{n}", i + 1))
+        .collect::<Vec<_>>()
+        .join("\n\n"))
+}
+
 pub async fn summarize_meeting(
     db: &Database,
     llm: &LlmRegistry,
@@ -71,6 +142,10 @@ pub async fn summarize_meeting(
     };
 
     let glossary = dictionary::glossary(db);
+    let provider = llm
+        .get_provider(provider_name)
+        .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider_name))?;
+    let transcript_text = condense_for(provider, model, transcript_text).await?;
 
     let messages = vec![
         ChatMessage {
@@ -86,9 +161,6 @@ pub async fn summarize_meeting(
         },
     ];
 
-    let provider = llm
-        .get_provider(provider_name)
-        .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider_name))?;
     let content = provider.chat(messages, model).await?;
 
     let summary = db.create_summary(NewSummary {
@@ -236,5 +308,24 @@ pub fn format_ms(ms: i64) -> String {
         format!("{h}:{m:02}:{s:02}")
     } else {
         format!("{m:02}:{s:02}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_transcripts_split_at_turns() {
+        let text = "[00:00] A: one\n[00:05] B: two two\n[00:09] A: three\n";
+        let parts = split_transcript(text, 36);
+        assert_eq!(parts.len(), 2);
+        assert!(parts.iter().all(|p| p.len() <= 36));
+        assert_eq!(parts.concat(), text, "nothing lost or repeated");
+    }
+
+    #[test]
+    fn local_models_get_a_smaller_budget() {
+        assert!(transcript_budget_chars("ollama") < transcript_budget_chars("anthropic"));
     }
 }
