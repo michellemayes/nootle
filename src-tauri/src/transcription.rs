@@ -526,14 +526,14 @@ fn sentences(
     offset_ms: u64,
     audio_ms: u64,
 ) -> Vec<TranscriptionSegment> {
-    struct Sentence {
+    struct Pending {
         text: String,
         first_frame: usize,
         last_frame: usize,
         probs: Vec<f32>,
     }
-    let mut done: Vec<Sentence> = Vec::new();
-    let mut current: Option<Sentence> = None;
+    let mut done: Vec<Pending> = Vec::new();
+    let mut current: Option<Pending> = None;
 
     for e in emissions {
         let Some(token) = vocab.get(e.token).filter(|t| !is_special(t)) else {
@@ -549,7 +549,7 @@ fn sentences(
                 done.push(s);
             }
         }
-        let s = current.get_or_insert_with(|| Sentence {
+        let s = current.get_or_insert_with(|| Pending {
             text: String::new(),
             first_frame: e.frame,
             last_frame: e.frame,

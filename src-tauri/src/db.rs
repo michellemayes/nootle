@@ -246,10 +246,9 @@ pub struct ChunkSearchResult {
 fn push_meeting_filters(
     sql: &mut String,
     params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
-    label_ids: &[String],
-    date_from: Option<&str>,
-    date_to: Option<&str>,
+    filters: &AskFilters,
 ) {
+    let label_ids = &filters.label_ids;
     if !label_ids.is_empty() {
         let placeholders: Vec<String> = (0..label_ids.len())
             .map(|i| format!("?{}", params.len() + i + 1))
@@ -262,11 +261,11 @@ fn push_meeting_filters(
             params.push(Box::new(label_id.clone()));
         }
     }
-    if let Some(from) = date_from {
+    if let Some(from) = &filters.date_from {
         sql.push_str(&format!(" AND m.start_time >= ?{}", params.len() + 1));
-        params.push(Box::new(from.to_string()));
+        params.push(Box::new(from.clone()));
     }
-    if let Some(to) = date_to {
+    if let Some(to) = &filters.date_to {
         sql.push_str(&format!(" AND m.start_time <= ?{}", params.len() + 1));
         // A bare YYYY-MM-DD would sort before every RFC3339 timestamp on
         // that day, so make the end date inclusive.
@@ -313,6 +312,14 @@ fn fts_any_terms(query: &str) -> Option<String> {
         .map(|w| format!("\"{w}\""))
         .collect();
     (!terms.is_empty()).then(|| terms.join(" OR "))
+}
+
+/// Filters for questions asked across all meetings.
+#[derive(Debug, Default)]
+pub struct AskFilters {
+    pub label_ids: Vec<String>,
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
 }
 
 /// Convert a f32 slice to a little-endian byte vector for sqlite-vec.
@@ -742,18 +749,6 @@ impl Database {
                 chunk_id TEXT PRIMARY KEY,
                 embedding float[384]
             );
-
-            -- Keyword index over the same chunks, so Ask finds exact names,
-            -- numbers and jargon that embeddings blur together.
-            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
-                text, content='transcript_chunks', content_rowid='rowid'
-            );
-            CREATE TRIGGER IF NOT EXISTS transcript_chunks_ai AFTER INSERT ON transcript_chunks BEGIN
-                INSERT INTO chunks_fts(rowid, text) VALUES (new.rowid, new.text);
-            END;
-            CREATE TRIGGER IF NOT EXISTS transcript_chunks_ad AFTER DELETE ON transcript_chunks BEGIN
-                INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES('delete', old.rowid, old.text);
-            END;
 
             CREATE TABLE IF NOT EXISTS insights (
                 id TEXT PRIMARY KEY,
@@ -1263,41 +1258,39 @@ impl Database {
     /// in `initialize`; anything that rewrites data belongs here so it can't
     /// run twice.
     fn run_versioned_migrations(conn: &Connection) -> Result<()> {
-        type Migration = fn(&Connection) -> Result<()>;
-        const MIGRATIONS: &[Migration] = &[
+        const MIGRATIONS: &[&str] = &[
             // 1: the search index was built with a tokenizer that turned most
-            // words into [UNK]. Drop it so every meeting is re-embedded.
-            |conn| {
-                conn.execute_batch(
-                    "DELETE FROM chunk_embeddings;
-                     DELETE FROM transcript_chunks;
-                     INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild');",
-                )?;
-                Ok(())
-            },
+            // words into [UNK]: drop it so every meeting is re-embedded, and
+            // add a keyword index over the chunks so Ask finds exact names,
+            // numbers and jargon that embeddings blur together.
+            "DELETE FROM chunk_embeddings;
+             DELETE FROM transcript_chunks;
+             CREATE VIRTUAL TABLE chunks_fts USING fts5(
+                 text, content='transcript_chunks', content_rowid='rowid'
+             );
+             CREATE TRIGGER transcript_chunks_ai AFTER INSERT ON transcript_chunks BEGIN
+                 INSERT INTO chunks_fts(rowid, text) VALUES (new.rowid, new.text);
+             END;
+             CREATE TRIGGER transcript_chunks_ad AFTER DELETE ON transcript_chunks BEGIN
+                 INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+             END;",
             // 2: speaker analytics counted every sentence as a turn. Drop
             // them; they're recomputed from the transcript when next viewed.
-            |conn| {
-                conn.execute_batch(
-                    "DELETE FROM meeting_analytics;
-                     DELETE FROM meeting_engagement;",
-                )?;
-                Ok(())
-            },
+            "DELETE FROM meeting_analytics;
+             DELETE FROM meeting_engagement;",
         ];
 
         let current: usize =
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? as usize;
-        for (i, migrate) in MIGRATIONS.iter().enumerate().skip(current) {
+        for (i, sql) in MIGRATIONS.iter().enumerate().skip(current) {
             let version = i + 1;
             conn.execute_batch("BEGIN")?;
-            let result = migrate(conn)
-                .and_then(|_| Ok(conn.execute_batch(&format!("PRAGMA user_version = {version}"))?));
+            let result = conn.execute_batch(&format!("{sql}\nPRAGMA user_version = {version};"));
             match result {
                 Ok(()) => conn.execute_batch("COMMIT")?,
                 Err(e) => {
                     let _ = conn.execute_batch("ROLLBACK");
-                    return Err(e);
+                    return Err(e.into());
                 }
             }
             tracing::info!("Applied database migration {version}");
@@ -1615,8 +1608,6 @@ impl Database {
         Ok(())
     }
 
-    /// Fix any meetings stuck in "recording" or "transcribing" status from a previous crash.
-    /// Sets them to "summarized" with end_time = now so they appear as completed.
     /// Meetings a previous run left recording or transcribing: the app quit
     /// or crashed before their pipeline finished.
     pub fn interrupted_meetings(&self) -> Result<Vec<Meeting>> {
@@ -2205,6 +2196,45 @@ impl Database {
         })
     }
 
+    /// Stores several segments in one transaction.
+    pub fn create_transcript_segments(
+        &self,
+        new: Vec<NewTranscriptSegment>,
+    ) -> Result<Vec<TranscriptSegment>> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        let mut stored = Vec::with_capacity(new.len());
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO transcripts (id, meeting_id, speaker_label, text, start_ms, end_ms, confidence)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )?;
+            for n in new {
+                let id = uuid::Uuid::new_v4().to_string();
+                stmt.execute(params![
+                    id,
+                    n.meeting_id,
+                    n.speaker_label,
+                    n.text,
+                    n.start_ms,
+                    n.end_ms,
+                    n.confidence
+                ])?;
+                stored.push(TranscriptSegment {
+                    id,
+                    meeting_id: n.meeting_id,
+                    speaker_label: n.speaker_label,
+                    text: n.text,
+                    start_ms: n.start_ms,
+                    end_ms: n.end_ms,
+                    confidence: n.confidence,
+                });
+            }
+        }
+        tx.commit()?;
+        Ok(stored)
+    }
+
     /// Relabel every transcript line spoken by `from` in a meeting. Renaming
     /// onto an existing label merges the two speakers. Returns lines changed.
     /// Renames a speaker in one meeting. Search chunks quote speaker names,
@@ -2251,22 +2281,7 @@ impl Database {
     /// post-meeting speaker pass. Search chunks quote speaker names, so they
     /// are dropped for the next embedding pass to rebuild.
     pub fn relabel_transcript(&self, meeting_id: &str, labels: &[(String, String)]) -> Result<()> {
-        if labels.is_empty() {
-            return Ok(());
-        }
-        let mut conn = self.lock_conn()?;
-        let tx = conn.transaction()?;
-        {
-            let mut stmt = tx.prepare_cached(
-                "UPDATE transcripts SET speaker_label = ?1 WHERE id = ?2 AND meeting_id = ?3",
-            )?;
-            for (id, label) in labels {
-                stmt.execute(params![label, id, meeting_id])?;
-            }
-        }
-        Self::delete_meeting_chunks_with(&tx, meeting_id)?;
-        tx.commit()?;
-        Ok(())
+        self.update_segments(meeting_id, "speaker_label", labels)
     }
 
     /// Removes a meeting's transcript (and its search chunks), so it can be
@@ -2290,17 +2305,28 @@ impl Database {
         meeting_id: &str,
         updates: &[(String, String)],
     ) -> Result<()> {
+        self.update_segments(meeting_id, "text", updates)
+    }
+
+    /// Sets `column` of each `(segment id, value)` in one transaction and
+    /// drops the meeting's now-stale search chunks.
+    fn update_segments(
+        &self,
+        meeting_id: &str,
+        column: &'static str,
+        updates: &[(String, String)],
+    ) -> Result<()> {
         if updates.is_empty() {
             return Ok(());
         }
         let mut conn = self.lock_conn()?;
         let tx = conn.transaction()?;
         {
-            let mut stmt = tx.prepare_cached(
-                "UPDATE transcripts SET text = ?1 WHERE id = ?2 AND meeting_id = ?3",
-            )?;
-            for (id, text) in updates {
-                stmt.execute(params![text, id, meeting_id])?;
+            let mut stmt = tx.prepare_cached(&format!(
+                "UPDATE transcripts SET {column} = ?1 WHERE id = ?2 AND meeting_id = ?3"
+            ))?;
+            for (id, value) in updates {
+                stmt.execute(params![value, id, meeting_id])?;
             }
         }
         Self::delete_meeting_chunks_with(&tx, meeting_id)?;
@@ -2980,16 +3006,16 @@ impl Database {
         &self,
         query_embedding: &[f32],
         limit: usize,
-        label_ids: &[String],
-        date_from: Option<&str>,
-        date_to: Option<&str>,
+        filters: &AskFilters,
     ) -> Result<Vec<ChunkSearchResult>> {
         let conn = self.lock_conn()?;
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         params.push(Box::new(f32_slice_to_bytes(query_embedding)));
         // Over-fetch 4x when filters are active so post-filter still yields enough results.
         // With strict filters on a small dataset, the caller may receive fewer than `limit` rows.
-        let filtered = !label_ids.is_empty() || date_from.is_some() || date_to.is_some();
+        let filtered = !filters.label_ids.is_empty()
+            || filters.date_from.is_some()
+            || filters.date_to.is_some();
         let k = if filtered { limit * 4 } else { limit };
         params.push(Box::new(k as i64));
 
@@ -3002,7 +3028,7 @@ impl Database {
              WHERE ce.embedding MATCH ?1
              AND ce.k = ?2",
         );
-        push_meeting_filters(&mut sql, &mut params, label_ids, date_from, date_to);
+        push_meeting_filters(&mut sql, &mut params, filters);
         sql.push_str(&format!(
             " ORDER BY ce.distance LIMIT ?{}",
             params.len() + 1
@@ -3017,9 +3043,7 @@ impl Database {
         &self,
         query: &str,
         limit: usize,
-        label_ids: &[String],
-        date_from: Option<&str>,
-        date_to: Option<&str>,
+        filters: &AskFilters,
     ) -> Result<Vec<ChunkSearchResult>> {
         let Some(match_expr) = fts_any_terms(query) else {
             return Ok(Vec::new());
@@ -3033,7 +3057,7 @@ impl Database {
              JOIN meetings m ON m.id = tc.meeting_id
              WHERE chunks_fts MATCH ?1",
         );
-        push_meeting_filters(&mut sql, &mut params, label_ids, date_from, date_to);
+        push_meeting_filters(&mut sql, &mut params, filters);
         sql.push_str(&format!(" ORDER BY fts.rank LIMIT ?{}", params.len() + 1));
         params.push(Box::new(limit as i64));
         query_chunks(&conn, &sql, &params)

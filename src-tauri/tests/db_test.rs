@@ -1,5 +1,5 @@
 use nootle_app_lib::db::{
-    Database, NewLinearTicket, NewMeeting, NewRecipe, NewSummary, NewTemplate,
+    AskFilters, Database, NewLinearTicket, NewMeeting, NewRecipe, NewSummary, NewTemplate,
     NewTranscriptSegment, TranscriptChunk, UpdateTemplate,
 };
 
@@ -640,7 +640,15 @@ fn test_similar_chunks_date_to_includes_whole_day() {
     db.insert_chunk_embedding("c1", &embedding).unwrap();
 
     let hits = db
-        .search_similar_chunks(&embedding, 5, &[], Some(day), Some(day))
+        .search_similar_chunks(
+            &embedding,
+            5,
+            &AskFilters {
+                date_from: Some(day.to_string()),
+                date_to: Some(day.to_string()),
+                ..Default::default()
+            },
+        )
         .unwrap();
     assert_eq!(hits.len(), 1, "a meeting on the end date must match");
 }
@@ -719,7 +727,7 @@ fn test_hybrid_search_finds_exact_terms_the_vectors_miss() {
     .unwrap();
 
     let keyword_hits = db
-        .search_chunks_by_keywords("What's blocking NOO-482?", 5, &[], None, None)
+        .search_chunks_by_keywords("What's blocking NOO-482?", 5, &AskFilters::default())
         .unwrap();
     assert_eq!(keyword_hits[0].chunk_id, "exact");
 
@@ -737,7 +745,8 @@ fn test_keyword_search_ignores_fts_syntax_in_questions() {
     let db = Database::new_in_memory().unwrap();
     for q in ["\"unbalanced", "NEAR(", "*", "a OR", "?!"] {
         assert!(
-            db.search_chunks_by_keywords(q, 5, &[], None, None).is_ok(),
+            db.search_chunks_by_keywords(q, 5, &AskFilters::default())
+                .is_ok(),
             "{q}"
         );
     }
@@ -768,7 +777,7 @@ fn test_deleting_a_meeting_removes_its_keyword_index() {
     .unwrap();
     db.delete_meeting_chunks(&meeting.id).unwrap();
     assert!(db
-        .search_chunks_by_keywords("zebra", 5, &[], None, None)
+        .search_chunks_by_keywords("zebra", 5, &AskFilters::default())
         .unwrap()
         .is_empty());
 }

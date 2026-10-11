@@ -84,13 +84,11 @@ pub fn run_audio_capture(
 
     let mixer = AudioMixer::new();
     let mut writer = AudioWriter::new(&audio_path, TARGET_RATE)?;
-    let mut stems = match sys_audio {
-        Some(_) => Some(AudioWriter::stereo(
-            &super::writer::stems_path(&audio_path),
-            TARGET_RATE,
-        )?),
-        None => None,
-    };
+    let stems_path = super::writer::stems_path(&audio_path);
+    let mut stems = sys_audio
+        .as_ref()
+        .map(|_| AudioWriter::stereo(&stems_path, TARGET_RATE))
+        .transpose()?;
 
     let mut accumulator = AudioChunk {
         mixed: Vec::with_capacity(SEND_SAMPLES),

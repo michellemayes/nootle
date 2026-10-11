@@ -61,6 +61,21 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// Clicking the Dock icon brings the window back.
+#[cfg(target_os = "macos")]
+fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
+    if let tauri::RunEvent::Reopen {
+        has_visible_windows: false,
+        ..
+    } = event
+    {
+        show_main_window(app);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn handle_run_event(_app: &tauri::AppHandle, _event: tauri::RunEvent) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -104,12 +119,19 @@ pub fn run() {
             // the model was missing, or dropped by a search-index migration),
             // one at a time so Ask never waits long for the engine.
             let ids = crate::ops::meetings_to_index(&db).unwrap_or_default();
-            for id in ids {
+            let report = crate::ops::embed_meetings(&ids, |id| {
                 let mut slot = embedding_state.blocking_lock();
-                let Some(engine) = slot.as_mut() else { return };
-                if let Err(e) = crate::chunking::embed_meeting(&db, engine, &id) {
-                    tracing::warn!("Failed to index meeting {id}: {e:#}");
-                }
+                let engine = slot
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("search model unloaded"))?;
+                crate::chunking::embed_meeting(&db, engine, id)
+            });
+            for failure in report.failed {
+                tracing::warn!(
+                    "Failed to index meeting {}: {}",
+                    failure.meeting_id,
+                    failure.error
+                );
             }
         });
     }
@@ -182,24 +204,28 @@ pub fn run() {
 
             // Meetings a crash or quit cut short are transcribed again from
             // the audio on disk instead of being shown as done.
-            tauri::async_runtime::spawn(commands::recover_interrupted_meetings(
-                app.state::<commands::DbState>().inner().clone(),
-                app.state::<LlmState>().inner().clone(),
-                app.state::<EmbeddingState>().inner().clone(),
-                app_handle.clone(),
-            ));
+            tauri::async_runtime::spawn(commands::recover_interrupted_meetings(app_handle.clone()));
 
-            // The speech detector is tiny and makes transcripts much better,
-            // so fetch it for anyone who already has the transcription model.
+            // The speech detector joined the transcription download after
+            // some people had already installed it; fetch the missing file
+            // (only that file) for them.
             if matches!(
                 crate::transcription::TranscriptionEngine::check_status(),
                 crate::transcription::ModelStatus::Ready
             ) && !crate::vad::SileroVad::is_available()
             {
                 let handle = app_handle.clone();
+                let variant = if crate::transcription::TranscriptionEngine::model_dir()
+                    .join("encoder-model.onnx.data")
+                    .exists()
+                {
+                    "full"
+                } else {
+                    "int8"
+                };
                 tauri::async_runtime::spawn(async move {
                     if let Some((model, variant)) =
-                        model_registry::get_variant("vad-silero", "default")
+                        model_registry::get_variant("parakeet-tdt-0.6b-v3", variant)
                     {
                         let cancel = tokio_util::sync::CancellationToken::new();
                         if let Err(e) =
@@ -400,15 +426,5 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, _event| {
-            // Clicking the Dock icon brings the window back.
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen {
-                has_visible_windows: false,
-                ..
-            } = _event
-            {
-                show_main_window(_app);
-            }
-        });
+        .run(handle_run_event);
 }

@@ -5,7 +5,6 @@ pub enum ModelCategory {
     Transcription,
     Diarization,
     Embedding,
-    VoiceActivity,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -42,6 +41,13 @@ pub struct ModelDefinition {
 // ── Parakeet TDT 0.6B v3 (Transcription) ──────────────────────────────
 // SHA-256 hashes sourced from HuggingFace LFS oid metadata.
 
+const SILERO_VAD: ModelFile = ModelFile {
+    local_name: crate::vad::MODEL_FILE,
+    url: "https://huggingface.co/onnx-community/silero-vad/resolve/main/onnx/model.onnx",
+    size_bytes: 2_243_022,
+    sha256: "a4a068cd6cf1ea8355b84327595838ca748ec29a25bc91fc82e6c299ccdc5808",
+};
+
 const PARAKEET_INT8_FILES: &[ModelFile] = &[
     ModelFile {
         local_name: "encoder.onnx",
@@ -67,6 +73,9 @@ const PARAKEET_INT8_FILES: &[ModelFile] = &[
         size_bytes: 140_000,
         sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
     },
+    // Silero VAD (MIT): splits audio at pauses so whole sentences are
+    // transcribed together. Part of transcription, not a separate download.
+    SILERO_VAD,
 ];
 
 const PARAKEET_FULL_FILES: &[ModelFile] = &[
@@ -102,6 +111,9 @@ const PARAKEET_FULL_FILES: &[ModelFile] = &[
         size_bytes: 140_000,
         sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
     },
+    // Silero VAD (MIT): splits audio at pauses so whole sentences are
+    // transcribed together. Part of transcription, not a separate download.
+    SILERO_VAD,
 ];
 
 const PARAKEET_VARIANTS: &[ModelVariant] = &[
@@ -109,13 +121,13 @@ const PARAKEET_VARIANTS: &[ModelVariant] = &[
         id: "int8",
         label: "Quantized (≈670 MB) — faster download, slightly less accurate",
         files: PARAKEET_INT8_FILES,
-        total_size_bytes: 670_434_000,
+        total_size_bytes: 672_677_022,
     },
     ModelVariant {
         id: "full",
         label: "Full Precision (≈2.5 GB) — best quality, large download",
         files: PARAKEET_FULL_FILES,
-        total_size_bytes: 2_554_534_000,
+        total_size_bytes: 2_556_777_022,
     },
 ];
 
@@ -167,22 +179,6 @@ const EMBEDDING_VARIANTS: &[ModelVariant] = &[ModelVariant {
     total_size_bytes: 86_232_000,
 }];
 
-// ── VAD (Silero VAD v5, MIT) ────────────────────────────────────────
-
-const VAD_FILES: &[ModelFile] = &[ModelFile {
-    local_name: "silero_vad.onnx",
-    url: "https://huggingface.co/onnx-community/silero-vad/resolve/main/onnx/model.onnx",
-    size_bytes: 2_243_022,
-    sha256: "a4a068cd6cf1ea8355b84327595838ca748ec29a25bc91fc82e6c299ccdc5808",
-}];
-
-const VAD_VARIANTS: &[ModelVariant] = &[ModelVariant {
-    id: "default",
-    label: "Voice Activity Detection (≈2 MB)",
-    files: VAD_FILES,
-    total_size_bytes: 2_243_022,
-}];
-
 // ── Full Registry ──────────────────────────────────────────────────────
 
 pub const MODEL_REGISTRY: &[ModelDefinition] = &[
@@ -209,14 +205,6 @@ pub const MODEL_REGISTRY: &[ModelDefinition] = &[
         category: ModelCategory::Embedding,
         dir_name: "embedding-minilm",
         variants: EMBEDDING_VARIANTS,
-    },
-    ModelDefinition {
-        id: "vad-silero",
-        name: "Voice Activity Detection",
-        description: "Silero VAD, which splits speech at natural pauses so whole sentences are transcribed together",
-        category: ModelCategory::VoiceActivity,
-        dir_name: "vad-silero",
-        variants: VAD_VARIANTS,
     },
 ];
 
@@ -288,8 +276,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_has_four_models() {
-        assert_eq!(MODEL_REGISTRY.len(), 4);
+    fn registry_has_three_models() {
+        assert_eq!(MODEL_REGISTRY.len(), 3);
     }
 
     #[test]
@@ -346,18 +334,11 @@ mod tests {
     }
 
     #[test]
-    fn vad_model_exists() {
-        let model = get_model("vad-silero").unwrap();
-        assert_eq!(model.variants.len(), 1);
-        assert_eq!(model.category, ModelCategory::VoiceActivity);
-    }
-
-    #[test]
     fn get_variant_works() {
         let (model, variant) = get_variant("parakeet-tdt-0.6b-v3", "int8").unwrap();
         assert_eq!(model.id, "parakeet-tdt-0.6b-v3");
         assert_eq!(variant.id, "int8");
-        assert_eq!(variant.files.len(), 4);
+        assert_eq!(variant.files.len(), 5);
     }
 
     #[test]

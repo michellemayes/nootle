@@ -10,7 +10,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use url::Url;
 
-use crate::commands::{self, DbState, EmbeddingState, LlmState, RecordingState};
+use crate::commands::{self, DbState, RecordingState};
 
 pub const ENABLED_SETTING: &str = "remote_control_enabled";
 
@@ -93,9 +93,7 @@ pub(crate) async fn do_start(app: &AppHandle, title: Option<String>) -> Outcome 
     let result = commands::start_recording(
         app.clone(),
         app.state::<DbState>(),
-        app.state::<LlmState>(),
         app.state::<RecordingState>(),
-        app.state::<EmbeddingState>(),
         title.unwrap_or_default(),
         None,
         None,

@@ -5,7 +5,7 @@
 //! whole sentences. So audio is split where people pause, found with Silero
 //! VAD (or, until that model is downloaded, a simple energy detector).
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use ort::session::Session;
 use ort::value::Tensor;
 
@@ -16,8 +16,8 @@ pub const FRAME_SAMPLES: usize = 512;
 const FRAME_MS: usize = FRAME_SAMPLES * 1000 / SAMPLE_RATE as usize;
 /// Silero v5 expects the last 64 samples of the previous frame prepended.
 const CONTEXT_SAMPLES: usize = 64;
-const MODEL_ID: &str = "vad-silero";
-const MODEL_FILE: &str = "silero_vad.onnx";
+/// Downloaded with the transcription model, into its folder.
+pub const MODEL_FILE: &str = "silero_vad.onnx";
 
 /// Scores how likely each 32 ms frame is to be speech.
 pub enum VoiceDetector {
@@ -53,21 +53,21 @@ impl VoiceDetector {
 pub struct SileroVad {
     session: Session,
     state: Vec<f32>,
-    context: Vec<f32>,
+    /// The model's input: the previous frame's last samples, then this frame.
+    input: Vec<f32>,
 }
 
 impl SileroVad {
-    fn model_path() -> Option<std::path::PathBuf> {
-        let model = crate::model_registry::get_model(MODEL_ID)?;
-        Some(crate::model_registry::model_dir(model).join(MODEL_FILE))
+    fn model_path() -> std::path::PathBuf {
+        crate::transcription::TranscriptionEngine::model_dir().join(MODEL_FILE)
     }
 
     pub fn is_available() -> bool {
-        Self::model_path().is_some_and(|p| p.exists())
+        Self::model_path().exists()
     }
 
     pub fn load() -> Result<Self> {
-        let path = Self::model_path().ok_or_else(|| anyhow!("{MODEL_ID} isn't registered"))?;
+        let path = Self::model_path();
         // A tiny recurrent model: CPU beats the CoreML hand-off per frame.
         let session = Session::builder()?
             .commit_from_file(&path)
@@ -75,26 +75,28 @@ impl SileroVad {
         Ok(Self {
             session,
             state: vec![0.0; 2 * 128],
-            context: vec![0.0; CONTEXT_SAMPLES],
+            input: vec![0.0; CONTEXT_SAMPLES + FRAME_SAMPLES],
         })
     }
 
     fn speech_prob(&mut self, frame: &[f32]) -> Result<f32> {
-        let mut input = Vec::with_capacity(CONTEXT_SAMPLES + FRAME_SAMPLES);
-        input.extend_from_slice(&self.context);
-        input.extend_from_slice(frame);
-        input.resize(CONTEXT_SAMPLES + FRAME_SAMPLES, 0.0);
-        self.context
-            .copy_from_slice(&input[input.len() - CONTEXT_SAMPLES..]);
+        // Slide the last frame's tail into the context slot, then the new
+        // frame (zero-padded if short) after it.
+        self.input.copy_within(FRAME_SAMPLES.., 0);
+        let fresh = &mut self.input[CONTEXT_SAMPLES..];
+        let n = frame.len().min(FRAME_SAMPLES);
+        fresh[..n].copy_from_slice(&frame[..n]);
+        fresh[n..].fill(0.0);
 
         let outputs = self.session.run(ort::inputs![
-            "input" => Tensor::from_array(([1_usize, input.len()], input))?,
+            "input" => Tensor::from_array(([1_usize, self.input.len()], self.input.clone()))?,
             "state" => Tensor::from_array(([2_usize, 1, 128], self.state.clone()))?,
             "sr" => Tensor::from_array(((), vec![SAMPLE_RATE as i64]))?,
         ])?;
         let (_, prob) = outputs["output"].try_extract_tensor::<f32>()?;
         let (_, state) = outputs["stateN"].try_extract_tensor::<f32>()?;
-        self.state = state.to_vec();
+        let n = self.state.len();
+        self.state.copy_from_slice(&state[..n]);
         Ok(prob.first().copied().unwrap_or(0.0))
     }
 }
@@ -245,20 +247,6 @@ impl Endpointer {
             end: end.min(self.frames_seen) * FRAME_SAMPLES,
         }
     }
-}
-
-/// Utterances in a whole recording.
-pub fn utterances(detector: &mut VoiceDetector, audio: &[f32]) -> Vec<Utterance> {
-    let mut endpointer = Endpointer::default();
-    let mut found: Vec<Utterance> = audio
-        .chunks(FRAME_SAMPLES)
-        .filter_map(|frame| endpointer.push(detector.speech_prob(frame)))
-        .collect();
-    found.extend(endpointer.flush());
-    for u in &mut found {
-        u.end = u.end.min(audio.len());
-    }
-    found
 }
 
 #[cfg(test)]

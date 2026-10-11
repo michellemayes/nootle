@@ -462,12 +462,14 @@ pub fn try_load_embedding_engine() -> Option<EmbeddingEngine> {
         .and_then(Result::ok)
 }
 
-/// The meetings "index everything" covers: those not archived and not yet
+/// The meetings "index everything" covers: those not archived, not still
+/// being recorded or transcribed (their transcript isn't final), and not yet
 /// indexed.
 pub fn meetings_to_index(db: &Database) -> Result<Vec<String>> {
     let mut ids = Vec::new();
     for meeting in db.list_meetings(None, false, None)? {
-        if !db.has_meeting_chunks(&meeting.id)? {
+        let in_progress = matches!(meeting.status.as_str(), "recording" | "transcribing");
+        if !in_progress && !db.has_meeting_chunks(&meeting.id)? {
             ids.push(meeting.id);
         }
     }
@@ -646,12 +648,7 @@ pub async fn enrich_notes(
         .filter(|n| !n.trim().is_empty())
         .ok_or_else(|| anyhow!("No notes to enrich"))?;
 
-    let transcript_text = db
-        .get_transcript(meeting_id)?
-        .iter()
-        .map(|s| format!("{}: {}", s.speaker_label, s.text))
-        .collect::<Vec<_>>()
-        .join("\n")
+    let transcript_text = crate::summarization::format_transcript(&db.get_transcript(meeting_id)?)
         + &crate::snapshots::context_section(db, meeting_id);
 
     let system_prompt = format!(
@@ -717,13 +714,7 @@ pub async fn analyze_sentiment(
     Ok(segments)
 }
 
-/// Filters for questions asked across all meetings.
-#[derive(Debug, Default)]
-pub struct AskFilters {
-    pub label_ids: Vec<String>,
-    pub date_from: Option<String>,
-    pub date_to: Option<String>,
-}
+pub use crate::db::AskFilters;
 
 /// Embeds a question for `rag_chat`. Separate so callers sharing an engine
 /// can release it before the slow LLM call.
@@ -742,20 +733,8 @@ pub fn hybrid_search(
     limit: usize,
 ) -> Result<Vec<crate::db::ChunkSearchResult>> {
     let candidates = limit * 2;
-    let by_meaning = db.search_similar_chunks(
-        query_embedding,
-        candidates,
-        &filters.label_ids,
-        filters.date_from.as_deref(),
-        filters.date_to.as_deref(),
-    )?;
-    let by_keywords = db.search_chunks_by_keywords(
-        question,
-        candidates,
-        &filters.label_ids,
-        filters.date_from.as_deref(),
-        filters.date_to.as_deref(),
-    )?;
+    let by_meaning = db.search_similar_chunks(query_embedding, candidates, filters)?;
+    let by_keywords = db.search_chunks_by_keywords(question, candidates, filters)?;
     Ok(reciprocal_rank_fusion([by_meaning, by_keywords], limit))
 }
 
@@ -1227,6 +1206,11 @@ mod tests {
         assert_eq!(report.failed[0].meeting_id, "b");
 
         let (db, id) = db_with_meeting();
+        assert!(
+            meetings_to_index(&db).unwrap().is_empty(),
+            "a meeting still recording has no final transcript to index"
+        );
+        db.update_meeting_status(&id, "summarized").unwrap();
         assert_eq!(meetings_to_index(&db).unwrap(), vec![id]);
     }
 

@@ -29,5 +29,5 @@ fetch diarization segmentation.onnx "$hf/onnx-community/pyannote-segmentation-3.
 fetch diarization embedding.onnx "$hf/Wespeaker/wespeaker-voxceleb-resnet34-LM/resolve/main/voxceleb_resnet34_LM.onnx" 7bb2f06e9df17cdf1ef14ee8a15ab08ed28e8d0ef5054ee135741560df2ec068
 fetch embedding-minilm model.onnx "$hf/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx" 6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452
 fetch embedding-minilm vocab.txt "$hf/sentence-transformers/all-MiniLM-L6-v2/resolve/main/vocab.txt" 07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3
-fetch vad-silero silero_vad.onnx "$hf/onnx-community/silero-vad/resolve/main/onnx/model.onnx" a4a068cd6cf1ea8355b84327595838ca748ec29a25bc91fc82e6c299ccdc5808
+fetch parakeet-tdt-0.6b-v3 silero_vad.onnx "$hf/onnx-community/silero-vad/resolve/main/onnx/model.onnx" a4a068cd6cf1ea8355b84327595838ca748ec29a25bc91fc82e6c299ccdc5808
 echo "Models ready in $models"

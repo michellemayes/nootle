@@ -398,45 +398,92 @@ pub const OFFLINE_SIMILARITY: f32 = 0.55;
 /// agglomerative clustering: repeatedly merge the two most similar groups
 /// until no pair is at least `threshold` similar. Returns each input's
 /// cluster, numbered by first appearance.
-pub fn cluster_voices(embeddings: &[Vec<f32>], threshold: f32) -> Vec<usize> {
+pub fn cluster_voices(embeddings: &[&[f32]], threshold: f32) -> Vec<usize> {
     let n = embeddings.len();
-    let mut members: Vec<Vec<usize>> = (0..n).map(|i| vec![i]).collect();
-    let mut alive = vec![true; n];
-    // Average-linkage similarity between live clusters, kept up to date with
-    // the Lance–Williams update so each merge costs O(n), not O(n²·size).
-    let mut sim: Vec<Vec<f32>> = embeddings
-        .iter()
-        .map(|a| embeddings.iter().map(|b| cosine_similarity(a, b)).collect())
-        .collect();
-    loop {
-        let mut best: Option<(usize, usize, f32)> = None;
-        for i in (0..n).filter(|&i| alive[i]) {
-            for j in (i + 1..n).filter(|&j| alive[j]) {
-                if sim[i][j] >= threshold && best.is_none_or(|(_, _, b)| sim[i][j] > b) {
-                    best = Some((i, j, sim[i][j]));
-                }
-            }
+    let mut sim = vec![0.0f32; n * n];
+    for i in 0..n {
+        for j in i + 1..n {
+            let s = cosine_similarity(embeddings[i], embeddings[j]);
+            sim[i * n + j] = s;
+            sim[j * n + i] = s;
         }
-        let Some((i, j, _)) = best else { break };
-        let (ni, nj) = (members[i].len() as f32, members[j].len() as f32);
+    }
+    let mut size = vec![1usize; n];
+    let mut alive = vec![true; n];
+    // Each live cluster's most similar neighbour, so finding the next merge
+    // is a scan of n entries rather than n² pairs.
+    let nearest_of = |i: usize, sim: &[f32], alive: &[bool]| -> Option<(usize, f32)> {
+        (0..n)
+            .filter(|&k| k != i && alive[k])
+            .map(|k| (k, sim[i * n + k]))
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+    };
+    let mut nearest: Vec<Option<(usize, f32)>> =
+        (0..n).map(|i| nearest_of(i, &sim, &alive)).collect();
+    let mut parent: Vec<usize> = (0..n).collect();
+
+    loop {
+        let best = (0..n)
+            .filter(|&i| alive[i])
+            .filter_map(|i| nearest[i].map(|(j, s)| (i, j, s)))
+            .max_by(|a, b| a.2.total_cmp(&b.2));
+        let Some((i, j, _)) = best.filter(|b| b.2 >= threshold) else {
+            break;
+        };
+        // Average linkage (Lance–Williams): the merged cluster's similarity
+        // to k is the size-weighted mean of the two it replaces.
+        let (ni, nj) = (size[i] as f32, size[j] as f32);
         for k in (0..n).filter(|&k| alive[k] && k != i && k != j) {
-            let merged = (ni * sim[i][k] + nj * sim[j][k]) / (ni + nj);
-            sim[i][k] = merged;
-            sim[k][i] = merged;
+            let merged = (ni * sim[i * n + k] + nj * sim[j * n + k]) / (ni + nj);
+            sim[i * n + k] = merged;
+            sim[k * n + i] = merged;
         }
         alive[j] = false;
-        let moved = std::mem::take(&mut members[j]);
-        members[i].extend(moved);
-    }
-    let mut clusters: Vec<&Vec<usize>> = members.iter().filter(|m| !m.is_empty()).collect();
-    clusters.sort_by_key(|c| c.iter().copied().min());
-    let mut assignment = vec![0; n];
-    for (k, cluster) in clusters.iter().enumerate() {
-        for &m in cluster.iter() {
-            assignment[m] = k;
+        size[i] += size[j];
+        parent[j] = i;
+        for k in (0..n).filter(|&k| alive[k]) {
+            let stale = k == i || matches!(nearest[k], Some((m, _)) if m == i || m == j);
+            if stale {
+                nearest[k] = nearest_of(k, &sim, &alive);
+            } else if nearest[k].is_none_or(|(_, best)| sim[k * n + i] > best) {
+                nearest[k] = Some((i, sim[k * n + i]));
+            }
         }
     }
-    assignment
+
+    // Each point's surviving cluster, numbered by first appearance.
+    let root = |mut i: usize| {
+        while parent[i] != i {
+            i = parent[i];
+        }
+        i
+    };
+    let mut number = std::collections::HashMap::new();
+    (0..n)
+        .map(|i| {
+            let next = number.len();
+            *number.entry(root(i)).or_insert(next)
+        })
+        .collect()
+}
+
+/// Unit-length mean voice of each cluster from [`cluster_voices`].
+pub fn centroids(embeddings: &[&[f32]], clusters: &[usize]) -> Vec<Vec<f32>> {
+    let count = clusters.iter().max().map_or(0, |m| m + 1);
+    let dim = embeddings.first().map_or(0, |e| e.len());
+    let mut sums = vec![vec![0.0f32; dim]; count];
+    for (e, &c) in embeddings.iter().zip(clusters) {
+        for (acc, x) in sums[c].iter_mut().zip(e.iter()) {
+            *acc += x;
+        }
+    }
+    for sum in &mut sums {
+        let norm = l2_norm(sum);
+        if norm > 0.0 {
+            sum.iter_mut().for_each(|x| *x /= norm);
+        }
+    }
+    sums
 }
 
 fn l2_norm(v: &[f32]) -> f32 {
@@ -444,7 +491,7 @@ fn l2_norm(v: &[f32]) -> f32 {
 }
 
 /// Compute cosine similarity between two vectors.
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
     }
@@ -694,16 +741,16 @@ mod tests {
         let b = vec![0.0, 0.0, 1.0];
         let b2 = vec![0.0, 0.3, 0.95];
         assert_eq!(
-            cluster_voices(&[b.clone(), a.clone(), b2, a2], OFFLINE_SIMILARITY),
+            cluster_voices(&[&b, &a, &b2, &a2], OFFLINE_SIMILARITY),
             vec![0, 1, 0, 1]
         );
         assert_eq!(cluster_voices(&[], OFFLINE_SIMILARITY), Vec::<usize>::new());
-        assert_eq!(cluster_voices(&[a, b], 0.99), vec![0, 1]);
+        assert_eq!(cluster_voices(&[&a, &b], 0.99), vec![0, 1]);
     }
 
     #[test]
     fn test_cluster_voices_scales_to_long_meetings() {
-        let voices: Vec<Vec<f32>> = (0..800)
+        let voices: Vec<Vec<f32>> = (0..1000)
             .map(|i| {
                 let mut v = vec![0.0f32; 256];
                 v[i % 4] = 1.0;
@@ -712,9 +759,10 @@ mod tests {
             })
             .collect();
         let started = std::time::Instant::now();
-        let clusters = cluster_voices(&voices, OFFLINE_SIMILARITY);
+        let refs: Vec<&[f32]> = voices.iter().map(Vec::as_slice).collect();
+        let clusters = cluster_voices(&refs, OFFLINE_SIMILARITY);
         assert_eq!(clusters.iter().max(), Some(&3));
-        assert!(started.elapsed().as_secs() < 20, "{:?}", started.elapsed());
+        assert!(started.elapsed().as_secs() < 30, "{:?}", started.elapsed());
     }
 
     #[test]

@@ -8,7 +8,7 @@ use crate::db::SentimentSegment;
 
 /// A pause longer than this ends a speaker's turn even if nobody else
 /// spoke in between.
-const MAX_TURN_GAP_MS: i64 = 3_000;
+pub(crate) const MAX_TURN_GAP_MS: i64 = 3_000;
 
 /// One stretch of a single speaker talking.
 #[derive(Debug, Clone, PartialEq)]

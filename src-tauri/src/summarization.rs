@@ -2,18 +2,33 @@ use crate::db::{Database, NewSummary, Summary, TranscriptSegment};
 use crate::dictionary;
 use crate::llm::{ChatMessage, LlmRegistry};
 
-/// `[mm:ss] Speaker: text`, one line per segment.
+/// Consecutive sentences by one speaker, merged into turns of
+/// `(speaker, start_ms, text)`. Segments are single sentences, so a line per
+/// segment would repeat the speaker's name before every sentence.
+pub fn speaker_turns(segments: &[TranscriptSegment]) -> Vec<(&str, i64, String)> {
+    let mut turns: Vec<(&str, i64, String)> = Vec::new();
+    let mut last_end = i64::MIN;
+    for s in segments {
+        match turns.last_mut() {
+            Some((speaker, _, text))
+                if *speaker == s.speaker_label
+                    && s.start_ms - last_end <= crate::analytics::MAX_TURN_GAP_MS =>
+            {
+                text.push(' ');
+                text.push_str(&s.text);
+            }
+            _ => turns.push((&s.speaker_label, s.start_ms, s.text.clone())),
+        }
+        last_end = s.end_ms;
+    }
+    turns
+}
+
+/// `[mm:ss] Speaker: text`, one line per speaker turn.
 pub fn format_transcript(segments: &[TranscriptSegment]) -> String {
-    segments
-        .iter()
-        .map(|s| {
-            format!(
-                "[{}] {}: {}",
-                format_ms(s.start_ms),
-                s.speaker_label,
-                s.text
-            )
-        })
+    speaker_turns(segments)
+        .into_iter()
+        .map(|(speaker, start_ms, text)| format!("[{}] {speaker}: {text}", format_ms(start_ms)))
         .collect::<Vec<_>>()
         .join("\n")
 }

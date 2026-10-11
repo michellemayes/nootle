@@ -19,8 +19,8 @@ use crate::audio::writer::{repair_wav_header, stems_path};
 use crate::audio::{rms, AudioChunk, AudioMixer, SAMPLE_RATE};
 use crate::db::{Database, NewTranscriptSegment, TranscriptSegment};
 use crate::diarization::{
-    classify, cluster_voices, is_automatic_label, speaker_label, DiarizationEngine, Source,
-    SpeakerAttributor, OFFLINE_SIMILARITY, SELF_LABEL, UNKNOWN_LABEL,
+    centroids, classify, cluster_voices, cosine_similarity, is_automatic_label, speaker_label,
+    DiarizationEngine, Source, SpeakerAttributor, OFFLINE_SIMILARITY, SELF_LABEL, UNKNOWN_LABEL,
 };
 use crate::transcription::{TranscriptionEngine, TranscriptionSegment};
 use crate::vad::{Endpointer, Utterance, VoiceDetector, FRAME_SAMPLES};
@@ -139,24 +139,27 @@ impl LiveTranscriber {
             .map(|segment| {
                 // The sentence's own audio decides who said it, so a reply
                 // that follows without a pause still gets its own speaker.
-                let span = |v: &[f32]| -> Vec<f32> {
-                    if v.is_empty() {
-                        return Vec::new();
-                    }
-                    let to_index = |ms: u64| {
-                        (ms as usize * SAMPLES_PER_MS)
-                            .saturating_sub(self.base)
-                            .min(v.len())
-                    };
-                    let (s, e) = (to_index(segment.start_ms), to_index(segment.end_ms));
-                    v[s..e.max(s)].to_vec()
-                };
-                let (mic, system, mixed) = (span(&self.mic), span(&self.system), span(&self.mixed));
-                let speaker = self.speakers.label(&mic, &system, &mixed);
+                let (from, to) = (segment.start_ms, segment.end_ms);
+                let speaker = self.speakers.label(
+                    span(&self.mic, self.base, from, to),
+                    span(&self.system, self.base, from, to),
+                    span(&self.mixed, self.base, from, to),
+                );
                 Sentence { segment, speaker }
             })
             .collect()
     }
+}
+
+/// The part of `audio` (which starts at sample `base`) between two times.
+fn span(audio: &[f32], base: usize, from_ms: u64, to_ms: u64) -> &[f32] {
+    let index = |ms: u64| {
+        (ms as usize * SAMPLES_PER_MS)
+            .saturating_sub(base)
+            .min(audio.len())
+    };
+    let (start, end) = (index(from_ms), index(to_ms));
+    &audio[start..end.max(start)]
 }
 
 /// Builds the transcriber for a new recording: the transcription model
@@ -185,155 +188,138 @@ pub fn store(db: &Database, meeting_id: &str, sentences: &[Sentence]) -> Vec<Tra
     // Reloaded per batch so words added mid-meeting apply straight away.
     let dictionary =
         crate::dictionary::Rules::new(&db.list_dictionary_entries().unwrap_or_default());
-    sentences
+    let new: Vec<NewTranscriptSegment> = sentences
         .iter()
-        .filter_map(|s| {
-            db.create_transcript_segment(NewTranscriptSegment {
-                meeting_id: meeting_id.to_string(),
-                speaker_label: s.speaker.clone(),
-                text: dictionary.apply(&s.segment.text),
-                start_ms: i64::try_from(s.segment.start_ms).unwrap_or(i64::MAX),
-                end_ms: i64::try_from(s.segment.end_ms).unwrap_or(i64::MAX),
-                confidence: f64::from(s.segment.confidence),
-            })
-            .map_err(|e| tracing::error!("Failed to store transcript segment: {e}"))
-            .ok()
+        .map(|s| NewTranscriptSegment {
+            meeting_id: meeting_id.to_string(),
+            speaker_label: s.speaker.clone(),
+            text: dictionary.apply(&s.segment.text),
+            start_ms: i64::try_from(s.segment.start_ms).unwrap_or(i64::MAX),
+            end_ms: i64::try_from(s.segment.end_ms).unwrap_or(i64::MAX),
+            confidence: f64::from(s.segment.confidence),
         })
-        .collect()
+        .collect();
+    db.create_transcript_segments(new).unwrap_or_else(|e| {
+        tracing::error!("Failed to store transcript segments: {e}");
+        Vec::new()
+    })
 }
 
 /// How much audio is fed to the transcriber at a time when reading a file.
 const FILE_CHUNK_SAMPLES: usize = SAMPLE_RATE as usize * 2;
 
+/// A recording on disk, read from its stems file (mic left, system right)
+/// when there is one, else from the mono mix.
+struct Recording {
+    reader: hound::WavReader<std::io::BufReader<std::fs::File>>,
+    stereo: bool,
+    mixer: AudioMixer,
+}
+
+impl Recording {
+    /// Opens a recording, first repairing headers a crash left stale so
+    /// every sample on disk is readable.
+    fn open(audio_path: &Path) -> Result<Self> {
+        let stems = stems_path(audio_path);
+        for path in [audio_path, stems.as_path()] {
+            if path.exists() {
+                if let Err(e) = repair_wav_header(path) {
+                    tracing::warn!("Couldn't repair {}: {e:#}", path.display());
+                }
+            }
+        }
+        let path = if stems.exists() {
+            stems.as_path()
+        } else {
+            audio_path
+        };
+        let reader = hound::WavReader::open(path)
+            .with_context(|| format!("Couldn't read {}", path.display()))?;
+        let stereo = reader.spec().channels == 2;
+        Ok(Self {
+            reader,
+            stereo,
+            mixer: AudioMixer::new(),
+        })
+    }
+
+    /// The next `frames` of audio; shorter at the end of the file.
+    fn read(&mut self, frames: usize) -> AudioChunk {
+        let channels = if self.stereo { 2 } else { 1 };
+        let samples: Vec<f32> = self
+            .reader
+            .samples::<i16>()
+            .take(frames * channels)
+            // A torn tail from a crash: keep what decoded.
+            .map_while(Result::ok)
+            .map(|v| v as f32 / 32768.0)
+            .collect();
+        if !self.stereo {
+            return AudioChunk {
+                mixed: samples,
+                mic: Vec::new(),
+                system: Vec::new(),
+            };
+        }
+        let mic: Vec<f32> = samples.iter().step_by(2).copied().collect();
+        let system: Vec<f32> = samples.iter().skip(1).step_by(2).copied().collect();
+        AudioChunk {
+            mixed: self.mixer.mix(&system, &mic),
+            mic,
+            system,
+        }
+    }
+
+    /// The audio between two times.
+    fn span(&mut self, start_ms: i64, end_ms: i64) -> Result<AudioChunk> {
+        let start = start_ms.max(0) as u32 * SAMPLES_PER_MS as u32;
+        self.reader.seek(start.min(self.reader.duration()))?;
+        Ok(self.read((end_ms - start_ms).max(0) as usize * SAMPLES_PER_MS))
+    }
+}
+
 /// Transcribes a recording already on disk from scratch, replacing any
 /// transcript the meeting has, e.g. to recover a meeting whose live
 /// transcription a crash cut short. Uses the separate mic/system stems when
-/// they exist so the user is told apart from the call. Calls `on_stored`
-/// with each batch of new segments; returns the recording's length in ms
-/// and the number of segments.
+/// they exist so the user is told apart from the call; remote speakers are
+/// left for [`rediarize`] to name. Calls `on_stored` with each batch of new
+/// segments; returns the recording's length in ms and the number of
+/// segments.
 pub fn transcribe_file(
     db: &Database,
     meeting_id: &str,
     audio_path: &Path,
     mut on_stored: impl FnMut(&[TranscriptSegment]),
 ) -> Result<(u64, u64)> {
-    let stems = stems_path(audio_path);
-    let source = if stems.exists() { &stems } else { audio_path };
-    if let Err(e) = repair_wav_header(source) {
-        tracing::warn!("Couldn't repair {}: {e:#}", source.display());
-    }
-    let mut reader = hound::WavReader::open(source)
-        .with_context(|| format!("Couldn't read {}", source.display()))?;
-    let channels = reader.spec().channels as usize;
-
-    let mut transcriber = live_transcriber(false)?;
+    let mut recording = Recording::open(audio_path)?;
+    let engine = TranscriptionEngine::load().context("Transcription model failed to load")?;
+    let mut transcriber = LiveTranscriber::new(engine, SpeakerAttributor::new(None, false));
     db.delete_transcript(meeting_id)?;
-    let mixer = AudioMixer::new();
-    let mut samples = reader
-        .samples::<i16>()
-        .map(|s| s.map(|v| v as f32 / 32768.0));
     let (mut total_samples, mut count) = (0u64, 0u64);
     loop {
-        let mut interleaved = Vec::with_capacity(FILE_CHUNK_SAMPLES * channels);
-        for sample in samples.by_ref().take(FILE_CHUNK_SAMPLES * channels) {
-            match sample {
-                Ok(v) => interleaved.push(v),
-                // A torn tail from the crash: keep what decoded.
-                Err(_) => break,
-            }
-        }
-        if interleaved.is_empty() {
-            break;
-        }
-        let chunk = if channels == 2 {
-            let mic: Vec<f32> = interleaved.iter().step_by(2).copied().collect();
-            let system: Vec<f32> = interleaved.iter().skip(1).step_by(2).copied().collect();
-            AudioChunk {
-                mixed: mixer.mix(&system, &mic),
-                mic,
-                system,
-            }
+        let chunk = recording.read(FILE_CHUNK_SAMPLES);
+        let len = chunk.mixed.len();
+        total_samples += len as u64;
+        let sentences = if len == 0 {
+            transcriber.finish()
         } else {
-            AudioChunk {
-                mixed: interleaved,
-                mic: Vec::new(),
-                system: Vec::new(),
-            }
+            transcriber.push(chunk)
         };
-        total_samples += chunk.mixed.len() as u64;
-        let last = chunk.mixed.len() < FILE_CHUNK_SAMPLES;
-        let stored = store(db, meeting_id, &transcriber.push(chunk));
+        let stored = store(db, meeting_id, &sentences);
         count += stored.len() as u64;
         on_stored(&stored);
-        if last {
+        if len == 0 {
             break;
         }
     }
-    let stored = store(db, meeting_id, &transcriber.finish());
-    count += stored.len() as u64;
-    on_stored(&stored);
     Ok((total_samples * 1000 / SAMPLE_RATE as u64, count))
 }
 
 /// A sentence needs this much audio to anchor a speaker in clustering;
 /// shorter ones join whichever speaker their voice is closest to.
-const MIN_ANCHOR_MS: u64 = 1_500;
+const MIN_ANCHOR_MS: i64 = 1_500;
 /// Remote speech in this many sentences shows the recording was a call.
 const CALL_EVIDENCE_SENTENCES: usize = 3;
-
-/// Reads spans of a recording, from the stems file when there is one.
-struct RecordingReader {
-    reader: hound::WavReader<std::io::BufReader<std::fs::File>>,
-    stereo: bool,
-}
-
-/// The audio of one span: separate sources when known, and the mix.
-struct SpanAudio {
-    mic: Vec<f32>,
-    system: Vec<f32>,
-    mixed: Vec<f32>,
-}
-
-impl RecordingReader {
-    fn open(audio_path: &Path) -> Result<Self> {
-        let stems = stems_path(audio_path);
-        let path = if stems.exists() {
-            stems
-        } else {
-            audio_path.to_path_buf()
-        };
-        let reader = hound::WavReader::open(&path)
-            .with_context(|| format!("Couldn't read {}", path.display()))?;
-        let stereo = reader.spec().channels == 2;
-        Ok(Self { reader, stereo })
-    }
-
-    fn span(&mut self, start_ms: i64, end_ms: i64) -> Result<SpanAudio> {
-        let start = start_ms.max(0) as u32 * SAMPLES_PER_MS as u32;
-        let frames = (end_ms - start_ms).max(0) as usize * SAMPLES_PER_MS;
-        self.reader.seek(start.min(self.reader.duration()))?;
-        let channels = if self.stereo { 2 } else { 1 };
-        let samples: Vec<f32> = self
-            .reader
-            .samples::<i16>()
-            .take(frames * channels)
-            .filter_map(|s| s.ok())
-            .map(|v| v as f32 / 32768.0)
-            .collect();
-        Ok(if self.stereo {
-            let mic: Vec<f32> = samples.iter().step_by(2).copied().collect();
-            let system: Vec<f32> = samples.iter().skip(1).step_by(2).copied().collect();
-            let mixed = mic.iter().zip(&system).map(|(m, s)| m + s).collect();
-            SpanAudio { mic, system, mixed }
-        } else {
-            SpanAudio {
-                mic: Vec::new(),
-                system: Vec::new(),
-                mixed: samples,
-            }
-        })
-    }
-}
 
 /// Labels the speakers of a finished meeting again, comparing every
 /// sentence's voice with every other. Leaves the transcript alone (returns
@@ -345,37 +331,42 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
         || !segments
             .iter()
             .all(|s| is_automatic_label(&s.speaker_label))
+        || !audio_path.exists()
     {
         return Ok(false);
     }
-    if !audio_path.exists() {
+    let Ok(mut engine) = DiarizationEngine::load() else {
         return Ok(false);
-    }
-    let mut engine = match DiarizationEngine::load() {
-        Ok(e) => e,
-        Err(_) => return Ok(false),
     };
-    let mut reader = RecordingReader::open(audio_path)?;
+    let mut recording = Recording::open(audio_path)?;
 
-    // Where each sentence came from, and its voice when long enough to tell.
-    let mut audio = Vec::with_capacity(segments.len());
+    // First pass: how loud each side is per sentence, which tells whether
+    // this was a call and who's on which side. Audio is read again in the
+    // second pass rather than holding a whole meeting in memory.
+    let mut levels = Vec::with_capacity(segments.len());
     for seg in &segments {
-        audio.push(reader.span(seg.start_ms, seg.end_ms)?);
+        let a = recording.span(seg.start_ms, seg.end_ms)?;
+        levels.push((rms(&a.mic), rms(&a.system)));
     }
-    let in_call = reader.stereo
-        && audio
+    let in_call = recording.stereo
+        && levels
             .iter()
-            .filter(|a| rms(&a.system) > crate::diarization::SPEECH_RMS)
+            .filter(|(_, system)| *system > crate::diarization::SPEECH_RMS)
             .count()
             >= CALL_EVIDENCE_SENTENCES;
+
     let mut sources = Vec::with_capacity(segments.len());
     let mut voices: Vec<Option<Vec<f32>>> = Vec::with_capacity(segments.len());
-    for a in &audio {
-        let source = classify(in_call, rms(&a.mic), rms(&a.system));
+    for (seg, &(mic, system)) in segments.iter().zip(&levels) {
+        let source = classify(in_call, mic, system);
         let voice = match source {
             Source::Local => None,
-            Source::Remote => engine.voice_embedding(&a.system)?,
-            Source::Room => engine.voice_embedding(&a.mixed)?,
+            Source::Remote => {
+                engine.voice_embedding(&recording.span(seg.start_ms, seg.end_ms)?.system)?
+            }
+            Source::Room => {
+                engine.voice_embedding(&recording.span(seg.start_ms, seg.end_ms)?.mixed)?
+            }
         };
         sources.push(source);
         voices.push(voice);
@@ -401,35 +392,22 @@ fn assign_speakers(
     sources: &[Source],
     voices: &[Option<Vec<f32>>],
 ) -> Vec<String> {
-    let anchors: Vec<usize> = (0..segments.len())
-        .filter(|&i| {
-            voices[i].is_some()
-                && (segments[i].end_ms - segments[i].start_ms) as u64 >= MIN_ANCHOR_MS
-        })
+    let anchors: Vec<(usize, &[f32])> = (0..segments.len())
+        .filter(|&i| segments[i].end_ms - segments[i].start_ms >= MIN_ANCHOR_MS)
+        .filter_map(|i| Some((i, voices[i].as_deref()?)))
         .collect();
-    let anchor_voices: Vec<Vec<f32>> = anchors
-        .iter()
-        .map(|&i| voices[i].clone().unwrap_or_default())
-        .collect();
+    let anchor_voices: Vec<&[f32]> = anchors.iter().map(|&(_, v)| v).collect();
     let clusters = cluster_voices(&anchor_voices, OFFLINE_SIMILARITY);
-    let n_clusters = clusters.iter().max().map_or(0, |m| m + 1);
-    let dim = anchor_voices.first().map_or(0, Vec::len);
-    let mut centroids = vec![vec![0.0f32; dim]; n_clusters];
-    for (v, &c) in anchor_voices.iter().zip(&clusters) {
-        for (acc, x) in centroids[c].iter_mut().zip(v) {
-            *acc += x;
-        }
-    }
     let mut cluster_of = vec![None; segments.len()];
-    for (&i, &c) in anchors.iter().zip(&clusters) {
+    for (&(i, _), &c) in anchors.iter().zip(&clusters) {
         cluster_of[i] = Some(c);
     }
-
+    let centroids = centroids(&anchor_voices, &clusters);
     let closest = |v: &[f32]| -> Option<usize> {
         centroids
             .iter()
+            .map(|c| cosine_similarity(c, v))
             .enumerate()
-            .map(|(c, centroid)| (c, centroid.iter().zip(v).map(|(a, b)| a * b).sum::<f32>()))
             .max_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(c, _)| c)
     };
