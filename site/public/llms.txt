@@ -35,6 +35,14 @@
 
 Audio recording and transcription always happen locally on your Mac using ONNX Runtime. No meeting audio is ever uploaded, and transcripts are stored only on the local device. AI summaries and chat use whichever provider the user picks: Ollama keeps everything on-device, while OpenAI, Anthropic, Google, Groq, OpenRouter, or AWS Bedrock send transcript context to that provider using the user's own API key. Nootle is fully local end-to-end only when paired with a local AI model.
 
+## Pages
+
+- Granola alternative: https://nootle.ai/granola-alternative
+- Otter alternative: https://nootle.ai/otter-alternative
+- For lawyers: https://nootle.ai/for/lawyers
+- For therapists: https://nootle.ai/for/therapists
+- For researchers: https://nootle.ai/for/researchers
+
 ## Author
 
 Michelle Mayes — https://michellemayes.me
