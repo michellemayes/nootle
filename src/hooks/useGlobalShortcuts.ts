@@ -11,7 +11,7 @@ const ROUTES: Record<string, string> = {
 
 /**
  * App-wide shortcuts: ⌘K opens the command palette, ⌘N starts (or returns
- * to) a recording, ⌘1…⌘6 jump between pages, ⌘, opens Settings.
+ * to) a recording, ⌘1…⌘7 jump between pages, ⌘, opens Settings.
  */
 export function useGlobalShortcuts() {
   const navigate = useNavigate();

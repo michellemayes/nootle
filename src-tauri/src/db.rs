@@ -314,6 +314,17 @@ fn fts_any_terms(query: &str) -> Option<String> {
     (!terms.is_empty()).then(|| terms.join(" OR "))
 }
 
+/// Someone you've met: a name you gave a speaker in at least one meeting.
+#[derive(Debug, Clone, Serialize)]
+pub struct Person {
+    pub name: String,
+    pub meeting_count: i64,
+    pub last_met: String,
+    /// Time they spent talking, across all meetings.
+    pub talk_time_ms: i64,
+    pub open_action_items: i64,
+}
+
 /// A remembered voice: a name and the mean fingerprint of their speech.
 #[derive(Debug, Clone, Serialize)]
 pub struct VoiceProfile {
@@ -2371,6 +2382,58 @@ impl Database {
         Self::delete_meeting_chunks_with(&tx, meeting_id)?;
         tx.commit()?;
         Ok(())
+    }
+
+    // --- People ---
+
+    /// Everyone you've named as a speaker ("You" and "Speaker N" aren't
+    /// people), most recently met first.
+    pub fn list_people(&self) -> Result<Vec<Person>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT t.speaker_label, COUNT(DISTINCT t.meeting_id), MAX(m.start_time),
+                    SUM(t.end_ms - t.start_ms),
+                    (SELECT COUNT(*) FROM action_items a
+                     WHERE a.status = 'open' AND a.assignee = t.speaker_label COLLATE NOCASE)
+             FROM transcripts t
+             JOIN meetings m ON m.id = t.meeting_id
+             WHERE m.status != 'archived'
+               AND t.speaker_label NOT IN ('You', 'Speaker')
+               AND t.speaker_label NOT GLOB 'Speaker [0-9]*'
+             GROUP BY t.speaker_label
+             ORDER BY MAX(m.start_time) DESC",
+        )?;
+        let people = stmt
+            .query_map([], |row| {
+                Ok(Person {
+                    name: row.get(0)?,
+                    meeting_count: row.get(1)?,
+                    last_met: row.get(2)?,
+                    talk_time_ms: row.get(3)?,
+                    open_action_items: row.get(4)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(people)
+    }
+
+    /// Meetings someone spoke in, newest first.
+    pub fn meetings_with(&self, name: &str) -> Result<Vec<Meeting>> {
+        let ids: Vec<String> = {
+            let conn = self.lock_conn()?;
+            let mut stmt = conn.prepare(
+                "SELECT m.id FROM meetings m
+                 WHERE m.status != 'archived'
+                   AND EXISTS (SELECT 1 FROM transcripts t
+                               WHERE t.meeting_id = m.id AND t.speaker_label = ?1)
+                 ORDER BY m.start_time DESC",
+            )?;
+            let ids = stmt
+                .query_map(params![name], |row| row.get(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            ids
+        };
+        ids.iter().map(|id| self.get_meeting(id)).collect()
     }
 
     // --- Recording consent ---

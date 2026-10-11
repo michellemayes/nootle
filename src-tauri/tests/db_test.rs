@@ -837,3 +837,34 @@ fn test_consent_is_noted_once() {
     );
     assert_eq!(db.consent_noted_at(&meeting.id).unwrap(), Some(first));
 }
+
+#[test]
+fn test_people_are_named_speakers_across_meetings() {
+    let db = Database::new_in_memory().unwrap();
+    for (title, speakers) in [("One", ["Priya", "Speaker 2"]), ("Two", ["Priya", "You"])] {
+        let meeting = db
+            .create_meeting(NewMeeting {
+                title: title.to_string(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        for (i, speaker) in speakers.iter().enumerate() {
+            db.create_transcript_segment(NewTranscriptSegment {
+                meeting_id: meeting.id.clone(),
+                speaker_label: speaker.to_string(),
+                text: "hi".to_string(),
+                start_ms: i as i64 * 1000,
+                end_ms: i as i64 * 1000 + 1000,
+                confidence: 1.0,
+            })
+            .unwrap();
+        }
+    }
+    let people = db.list_people().unwrap();
+    assert_eq!(people.len(), 1, "You and Speaker N aren't people");
+    assert_eq!(people[0].name, "Priya");
+    assert_eq!(people[0].meeting_count, 2);
+    assert_eq!(people[0].talk_time_ms, 2000);
+    assert_eq!(db.meetings_with("Priya").unwrap().len(), 2);
+}

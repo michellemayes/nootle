@@ -21,6 +21,7 @@ const pageLoaders = {
   recording: () => import("@/pages/RecordingView").then((m) => ({ default: m.RecordingView })),
   meeting: () => import("@/pages/MeetingDetail").then((m) => ({ default: m.MeetingDetail })),
   insights: () => import("@/pages/InsightsDashboard").then((m) => ({ default: m.InsightsDashboard })),
+  people: () => import("@/pages/PeoplePage").then((m) => ({ default: m.PeoplePage })),
   chat: () => import("@/pages/ChatPage").then((m) => ({ default: m.ChatPage })),
   templates: () => import("@/pages/Templates").then((m) => ({ default: m.TemplatesPage })),
   settings: () => import("@/pages/Settings").then((m) => ({ default: m.SettingsPage })),
@@ -29,6 +30,7 @@ const pageLoaders = {
 const RecordingView = lazy(pageLoaders.recording);
 const MeetingDetail = lazy(pageLoaders.meeting);
 const InsightsDashboard = lazy(pageLoaders.insights);
+const PeoplePage = lazy(pageLoaders.people);
 const ChatPage = lazy(pageLoaders.chat);
 const TemplatesPage = lazy(pageLoaders.templates);
 const SettingsPage = lazy(pageLoaders.settings);
@@ -110,6 +112,7 @@ function App() {
           <Route element={<Layout />}>
             <Route path="/" element={<MeetingLibrary />} />
             <Route path="/insights" element={<InsightsDashboard />} />
+            <Route path="/people" element={<PeoplePage />} />
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/recording" element={<RecordingView />} />
             <Route path="/meeting/:id" element={<KeyedMeetingDetail />} />

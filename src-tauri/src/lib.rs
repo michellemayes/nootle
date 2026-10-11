@@ -473,6 +473,8 @@ pub fn run() {
             commands::set_app_setting,
             commands::get_remote_control_token,
             commands::catch_up,
+            commands::list_people,
+            commands::get_person,
             commands::export_all_meetings,
             commands::get_consent_reminder,
             commands::note_consent,

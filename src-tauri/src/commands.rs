@@ -1451,6 +1451,28 @@ pub async fn generate_summary(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command(async)]
+pub fn list_people(db: State<'_, DbState>) -> Result<Vec<crate::db::Person>, String> {
+    db.list_people().map_err(|e| e.to_string())
+}
+
+/// One person's meetings and the action items assigned to them.
+#[tauri::command(async)]
+pub fn get_person(db: State<'_, DbState>, name: String) -> Result<serde_json::Value, String> {
+    let meetings = db.meetings_with(&name).map_err(|e| e.to_string())?;
+    let action_items: Vec<_> = db
+        .get_all_insights(None, Some("action_item"), None, None)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|i| {
+            i.assignee
+                .as_deref()
+                .is_some_and(|a| a.eq_ignore_ascii_case(&name))
+        })
+        .collect();
+    Ok(serde_json::json!({ "name": name, "meetings": meetings, "action_items": action_items }))
+}
+
 /// "What did I miss?" during (or after) a meeting.
 #[tauri::command]
 pub async fn catch_up(
