@@ -199,15 +199,16 @@ export function MeetingLibrary() {
     };
   };
 
-  // Transcribe a recording made elsewhere. The meeting opens right away and
-  // fills in as transcription runs.
+  // Transcribe a recording made elsewhere, or bring in a transcript exported
+  // from another meeting tool. The meeting opens right away and fills in as
+  // transcription runs.
   const handleImport = useCallback(async () => {
     setImportError(null);
     const extensions = await invoke<string[]>("import_extensions");
     const path = await open({
       multiple: false,
       directory: false,
-      filters: [{ name: "Audio or video", extensions }],
+      filters: [{ name: "Recording or transcript", extensions }],
     });
     if (typeof path !== "string") return;
     setImporting(true);

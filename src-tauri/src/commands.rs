@@ -1152,10 +1152,80 @@ pub async fn set_recording_paused(
     Ok(recording_status_of(session))
 }
 
-/// File extensions `import_recording` can read, for the file picker.
+/// File extensions `import_recording` can read, for the file picker:
+/// recordings, and transcripts exported from other meeting tools.
 #[tauri::command]
 pub fn import_extensions() -> Vec<&'static str> {
-    crate::import::SUPPORTED_EXTENSIONS.to_vec()
+    crate::import::SUPPORTED_EXTENSIONS
+        .iter()
+        .chain(crate::transcript_import::EXTENSIONS)
+        .copied()
+        .collect()
+}
+
+/// Writes every meeting into `dir` as Markdown. Returns how many.
+#[tauri::command(async)]
+pub fn export_all_meetings(db: State<'_, DbState>, dir: String) -> Result<usize, String> {
+    crate::export::export_all_markdown(&db, std::path::Path::new(&dir)).map_err(|e| e.to_string())
+}
+
+/// Brings in a transcript exported from another meeting tool (Otter,
+/// Fathom, Granola, Zoom, …) as a meeting, then titles, summarizes and
+/// indexes it like any other.
+async fn import_transcript(
+    app: tauri::AppHandle,
+    db: &Database,
+    path: &std::path::Path,
+) -> Result<Meeting, String> {
+    let content =
+        std::fs::read_to_string(path).map_err(|e| format!("Couldn't read the file: {e}"))?;
+    let lines = crate::transcript_import::parse(&content);
+    if lines.is_empty() {
+        return Err("No transcript found in this file".into());
+    }
+    let title = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().trim().to_string())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(fallback_title);
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: title.clone(),
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .map_err(|e| e.to_string())?;
+    let segments: Vec<NewTranscriptSegment> = lines
+        .into_iter()
+        .map(|l| NewTranscriptSegment {
+            meeting_id: meeting.id.clone(),
+            speaker_label: l.speaker,
+            text: l.text,
+            start_ms: l.start_ms,
+            end_ms: l.end_ms,
+            confidence: 1.0,
+        })
+        .collect();
+    let duration_ms = segments.iter().map(|s| s.end_ms).max().unwrap_or(0).max(0) as u64;
+    let count = segments.len() as u64;
+    db.create_transcript_segments(segments)
+        .map_err(|e| e.to_string())?;
+    db.finalize_meeting(
+        &meeting.id,
+        &end_time_after(&meeting.start_time, duration_ms),
+        None,
+        "transcribing",
+    )
+    .map_err(|e| e.to_string())?;
+    tokio::spawn(finish_meeting(
+        app,
+        meeting.id.clone(),
+        // The file name is a placeholder; a generated title reads better.
+        Some(title),
+        std::path::PathBuf::new(),
+        count,
+    ));
+    db.get_meeting(&meeting.id).map_err(|e| e.to_string())
 }
 
 /// Transcribe an existing audio or video file as a new meeting. Returns as
@@ -1178,6 +1248,9 @@ pub async fn import_recording(
     };
 
     let source_path = std::path::PathBuf::from(&path);
+    if crate::transcript_import::is_transcript(&source_path) {
+        return import_transcript(app, &db, &source_path).await;
+    }
     // Probing can seek through a large video; keep it off the async workers.
     let source = {
         let source_path = source_path.clone();

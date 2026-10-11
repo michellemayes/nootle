@@ -900,8 +900,41 @@ function PrivacyCard() {
             aria-label="Local-only mode"
           />
         </div>
+        <ExportAllMeetings />
       </CardContent>
     </Card>
+  );
+}
+
+/** Your notes as plain files: every meeting as Markdown in a folder. */
+function ExportAllMeetings() {
+  const [result, setResult] = useState<string | null>(null);
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium">Your data</p>
+        <p className="text-sm text-muted-foreground">
+          {result ??
+            "Export every meeting as a Markdown file: summaries, action items, notes and transcript. Import transcripts from Otter, Fathom, Granola or Zoom from the Meetings page"}
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={async () => {
+          const dir = await open({ directory: true, multiple: false });
+          if (typeof dir !== "string") return;
+          try {
+            const count = await invoke<number>("export_all_meetings", { dir });
+            setResult(`Exported ${count} ${count === 1 ? "meeting" : "meetings"} to ${dir}`);
+          } catch (err) {
+            setResult(String(err));
+          }
+        }}
+      >
+        Export all…
+      </Button>
+    </div>
   );
 }
 

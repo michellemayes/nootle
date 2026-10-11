@@ -59,6 +59,44 @@ pub fn export_meeting(db: &Database, meeting_id: &str, format: ExportFormat) -> 
     })
 }
 
+/// Writes every meeting (archived ones too) into `dir` as Markdown, one
+/// `YYYY-MM-DD Title.md` file each, so your notes are plain files you own.
+/// Returns how many were written.
+pub fn export_all_markdown(db: &Database, dir: &std::path::Path) -> Result<usize> {
+    std::fs::create_dir_all(dir)?;
+    let meetings = db.list_meetings(None, true, None)?;
+    let mut used = std::collections::HashSet::new();
+    for meeting in &meetings {
+        let content = export_meeting(db, &meeting.id, ExportFormat::Markdown)?;
+        let base = file_name_for(meeting);
+        let mut name = format!("{base}.md");
+        let mut n = 2;
+        while !used.insert(name.clone()) {
+            name = format!("{base} ({n}).md");
+            n += 1;
+        }
+        std::fs::write(dir.join(name), content)?;
+    }
+    Ok(meetings.len())
+}
+
+/// `2026-10-11 Weekly sync`, without characters file systems reject.
+fn file_name_for(meeting: &Meeting) -> String {
+    let date = meeting.start_time.get(..10).unwrap_or("");
+    let title: String = meeting
+        .title
+        .chars()
+        .map(|c| {
+            if "/\\:*?\"<>|".contains(c) || c.is_control() {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    format!("{date} {}", title.trim()).trim().to_string()
+}
+
 pub fn to_srt(segments: &[TranscriptSegment]) -> String {
     let mut out = String::new();
     for (i, s) in segments.iter().enumerate() {
@@ -199,6 +237,30 @@ fn cue_time(ms: i64, sep: char) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exports_every_meeting_as_a_markdown_file() {
+        let db = Database::new_in_memory().unwrap();
+        for title in ["Weekly sync", "Weekly sync", "Q3: plan/review"] {
+            db.create_meeting(crate::db::NewMeeting {
+                title: title.into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        }
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(export_all_markdown(&db, dir.path()).unwrap(), 3);
+        let mut names: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy()[11..].to_string())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            ["Q3- plan-review.md", "Weekly sync (2).md", "Weekly sync.md"]
+        );
+    }
 
     fn seg(speaker: &str, text: &str, start_ms: i64, end_ms: i64) -> TranscriptSegment {
         TranscriptSegment {

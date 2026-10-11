@@ -230,6 +230,12 @@ enum MeetingsAction {
         #[arg(long, short)]
         output: Option<std::path::PathBuf>,
     },
+    /// Write every meeting into a folder as Markdown files you own
+    ExportAll {
+        /// Folder to write into (created if missing)
+        #[arg(long)]
+        dir: std::path::PathBuf,
+    },
     /// Rename a speaker throughout a meeting's transcript
     RenameSpeaker {
         /// Meeting ID
@@ -1567,6 +1573,13 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
                 Some(path) => std::fs::write(path, content)?,
                 None => print!("{content}"),
             }
+        }
+        MeetingsAction::ExportAll { dir } => {
+            let count = nootle_app_lib::export::export_all_markdown(db, dir)?;
+            print_json(
+                &serde_json::json!({ "exported": count, "dir": dir }),
+                pretty,
+            );
         }
         MeetingsAction::RenameSpeaker { id, from, to } => {
             // Rebuild the search index too, if there is one and the model is

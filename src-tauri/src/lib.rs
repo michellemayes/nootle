@@ -30,6 +30,7 @@ pub mod sandbox_migration;
 pub mod shell_env;
 pub mod snapshots;
 pub mod summarization;
+pub mod transcript_import;
 pub mod transcription;
 pub mod vad;
 pub mod voices;
@@ -471,6 +472,7 @@ pub fn run() {
             commands::get_app_setting,
             commands::set_app_setting,
             commands::get_remote_control_token,
+            commands::export_all_meetings,
             commands::get_consent_reminder,
             commands::note_consent,
             commands::list_voice_profiles,
