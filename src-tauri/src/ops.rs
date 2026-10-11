@@ -731,6 +731,59 @@ pub fn embed_question(engine: &mut EmbeddingEngine, message: &str) -> Result<Vec
     engine.embed(message).context("Failed to embed query")
 }
 
+/// Passages for a question from both the vector index (meaning) and the
+/// keyword index (exact names, numbers and jargon), merged with Reciprocal
+/// Rank Fusion so a passage either one ranks highly makes the cut.
+pub fn hybrid_search(
+    db: &Database,
+    query_embedding: &[f32],
+    question: &str,
+    filters: &AskFilters,
+    limit: usize,
+) -> Result<Vec<crate::db::ChunkSearchResult>> {
+    let candidates = limit * 2;
+    let by_meaning = db.search_similar_chunks(
+        query_embedding,
+        candidates,
+        &filters.label_ids,
+        filters.date_from.as_deref(),
+        filters.date_to.as_deref(),
+    )?;
+    let by_keywords = db.search_chunks_by_keywords(
+        question,
+        candidates,
+        &filters.label_ids,
+        filters.date_from.as_deref(),
+        filters.date_to.as_deref(),
+    )?;
+    Ok(reciprocal_rank_fusion([by_meaning, by_keywords], limit))
+}
+
+/// Scores each passage 1/(60 + rank) per list it appears in and keeps the
+/// best `limit`. 60 is the constant from the original RRF paper; it stops a
+/// single first place from outweighing broad agreement.
+fn reciprocal_rank_fusion<const N: usize>(
+    lists: [Vec<crate::db::ChunkSearchResult>; N],
+    limit: usize,
+) -> Vec<crate::db::ChunkSearchResult> {
+    const K: f64 = 60.0;
+    let mut scored: Vec<(f64, crate::db::ChunkSearchResult)> = Vec::new();
+    for list in lists {
+        for (rank, result) in list.into_iter().enumerate() {
+            let score = 1.0 / (K + rank as f64 + 1.0);
+            match scored
+                .iter_mut()
+                .find(|(_, r)| r.chunk_id == result.chunk_id)
+            {
+                Some((total, _)) => *total += score,
+                None => scored.push((score, result)),
+            }
+        }
+    }
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+    scored.into_iter().take(limit).map(|(_, r)| r).collect()
+}
+
 /// Answers a question from the most relevant transcript passages across all
 /// meetings, given the question's embedding from `embed_question`. Returns
 /// the answer and the passages it drew on.
@@ -745,13 +798,7 @@ pub async fn rag_chat(
     model: &str,
     filters: &AskFilters,
 ) -> Result<(String, Vec<Value>)> {
-    let results = db.search_similar_chunks(
-        query_embedding,
-        10,
-        &filters.label_ids,
-        filters.date_from.as_deref(),
-        filters.date_to.as_deref(),
-    )?;
+    let results = hybrid_search(db, query_embedding, message, filters, 10)?;
 
     if results.is_empty() {
         return Ok((

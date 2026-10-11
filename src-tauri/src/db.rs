@@ -242,6 +242,79 @@ pub struct ChunkSearchResult {
     pub distance: f64,
 }
 
+/// Appends Ask's label and date filters to a chunk query over meetings `m`.
+fn push_meeting_filters(
+    sql: &mut String,
+    params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+    label_ids: &[String],
+    date_from: Option<&str>,
+    date_to: Option<&str>,
+) {
+    if !label_ids.is_empty() {
+        let placeholders: Vec<String> = (0..label_ids.len())
+            .map(|i| format!("?{}", params.len() + i + 1))
+            .collect();
+        sql.push_str(&format!(
+            " AND m.id IN (SELECT meeting_id FROM meeting_labels WHERE label_id IN ({}))",
+            placeholders.join(", ")
+        ));
+        for label_id in label_ids {
+            params.push(Box::new(label_id.clone()));
+        }
+    }
+    if let Some(from) = date_from {
+        sql.push_str(&format!(" AND m.start_time >= ?{}", params.len() + 1));
+        params.push(Box::new(from.to_string()));
+    }
+    if let Some(to) = date_to {
+        sql.push_str(&format!(" AND m.start_time <= ?{}", params.len() + 1));
+        // A bare YYYY-MM-DD would sort before every RFC3339 timestamp on
+        // that day, so make the end date inclusive.
+        let to = if to.len() == 10 {
+            format!("{to}T23:59:59.999999999Z")
+        } else {
+            to.to_string()
+        };
+        params.push(Box::new(to));
+    }
+}
+
+fn query_chunks(
+    conn: &Connection,
+    sql: &str,
+    params: &[Box<dyn rusqlite::types::ToSql>],
+) -> Result<Vec<ChunkSearchResult>> {
+    let mut stmt = conn.prepare(sql)?;
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let results = stmt
+        .query_map(param_refs.as_slice(), |row| {
+            Ok(ChunkSearchResult {
+                chunk_id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                meeting_title: row.get(2)?,
+                chunk_text: row.get(3)?,
+                start_ms: row.get(4)?,
+                end_ms: row.get(5)?,
+                speaker_labels: row.get(6)?,
+                distance: row.get(7)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(results)
+}
+
+/// An FTS5 query matching any word of a natural-language question. Each word
+/// is quoted, so punctuation and FTS operators in the question are inert.
+/// `None` when the question has no searchable words.
+fn fts_any_terms(query: &str) -> Option<String> {
+    let terms: Vec<String> = query
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.chars().count() >= 2)
+        .map(|w| format!("\"{w}\""))
+        .collect();
+    (!terms.is_empty()).then(|| terms.join(" OR "))
+}
+
 /// Convert a f32 slice to a little-endian byte vector for sqlite-vec.
 fn f32_slice_to_bytes(v: &[f32]) -> Vec<u8> {
     v.iter().flat_map(|f| f.to_le_bytes()).collect()
@@ -669,6 +742,18 @@ impl Database {
                 chunk_id TEXT PRIMARY KEY,
                 embedding float[384]
             );
+
+            -- Keyword index over the same chunks, so Ask finds exact names,
+            -- numbers and jargon that embeddings blur together.
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                text, content='transcript_chunks', content_rowid='rowid'
+            );
+            CREATE TRIGGER IF NOT EXISTS transcript_chunks_ai AFTER INSERT ON transcript_chunks BEGIN
+                INSERT INTO chunks_fts(rowid, text) VALUES (new.rowid, new.text);
+            END;
+            CREATE TRIGGER IF NOT EXISTS transcript_chunks_ad AFTER DELETE ON transcript_chunks BEGIN
+                INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+            END;
 
             CREATE TABLE IF NOT EXISTS insights (
                 id TEXT PRIMARY KEY,
@@ -1168,6 +1253,46 @@ impl Database {
             ",
         )?;
 
+        Self::run_versioned_migrations(conn)?;
+
+        Ok(())
+    }
+
+    /// One-time data migrations, each applied once and in order, tracked in
+    /// `PRAGMA user_version`. Schema additions that are safe to repeat stay
+    /// in `initialize`; anything that rewrites data belongs here so it can't
+    /// run twice.
+    fn run_versioned_migrations(conn: &Connection) -> Result<()> {
+        type Migration = fn(&Connection) -> Result<()>;
+        const MIGRATIONS: &[Migration] = &[
+            // 1: the search index was built with a tokenizer that turned most
+            // words into [UNK]. Drop it so every meeting is re-embedded.
+            |conn| {
+                conn.execute_batch(
+                    "DELETE FROM chunk_embeddings;
+                     DELETE FROM transcript_chunks;
+                     INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild');",
+                )?;
+                Ok(())
+            },
+        ];
+
+        let current: usize =
+            conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? as usize;
+        for (i, migrate) in MIGRATIONS.iter().enumerate().skip(current) {
+            let version = i + 1;
+            conn.execute_batch("BEGIN")?;
+            let result = migrate(conn)
+                .and_then(|_| Ok(conn.execute_batch(&format!("PRAGMA user_version = {version}"))?));
+            match result {
+                Ok(()) => conn.execute_batch("COMMIT")?,
+                Err(e) => {
+                    let _ = conn.execute_batch("ROLLBACK");
+                    return Err(e);
+                }
+            }
+            tracing::info!("Applied database migration {version}");
+        }
         Ok(())
     }
 
@@ -2811,7 +2936,13 @@ impl Database {
         date_to: Option<&str>,
     ) -> Result<Vec<ChunkSearchResult>> {
         let conn = self.lock_conn()?;
-        let query_bytes = f32_slice_to_bytes(query_embedding);
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        params.push(Box::new(f32_slice_to_bytes(query_embedding)));
+        // Over-fetch 4x when filters are active so post-filter still yields enough results.
+        // With strict filters on a small dataset, the caller may receive fewer than `limit` rows.
+        let filtered = !label_ids.is_empty() || date_from.is_some() || date_to.is_some();
+        let k = if filtered { limit * 4 } else { limit };
+        params.push(Box::new(k as i64));
 
         // First get KNN results from vec0, then join with metadata and apply filters.
         let mut sql = String::from(
@@ -2822,74 +2953,41 @@ impl Database {
              WHERE ce.embedding MATCH ?1
              AND ce.k = ?2",
         );
+        push_meeting_filters(&mut sql, &mut params, label_ids, date_from, date_to);
+        sql.push_str(&format!(
+            " ORDER BY ce.distance LIMIT ?{}",
+            params.len() + 1
+        ));
+        params.push(Box::new(limit as i64));
+        query_chunks(&conn, &sql, &params)
+    }
 
-        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        param_values.push(Box::new(query_bytes));
-        // Over-fetch 4x when filters are active so post-filter still yields enough results.
-        // With strict filters on a small dataset, the caller may receive fewer than `limit` rows.
-        let k = if label_ids.is_empty() && date_from.is_none() && date_to.is_none() {
-            limit as i64
-        } else {
-            (limit as i64) * 4
+    /// Chunks matching any of `query`'s words, best BM25 match first. The
+    /// `distance` field holds the BM25 rank (lower is better).
+    pub fn search_chunks_by_keywords(
+        &self,
+        query: &str,
+        limit: usize,
+        label_ids: &[String],
+        date_from: Option<&str>,
+        date_to: Option<&str>,
+    ) -> Result<Vec<ChunkSearchResult>> {
+        let Some(match_expr) = fts_any_terms(query) else {
+            return Ok(Vec::new());
         };
-        param_values.push(Box::new(k));
-
-        if !label_ids.is_empty() {
-            let placeholders: Vec<String> = label_ids
-                .iter()
-                .enumerate()
-                .map(|(i, _)| format!("?{}", param_values.len() + i + 1))
-                .collect();
-            sql.push_str(&format!(
-                " AND m.id IN (SELECT meeting_id FROM meeting_labels WHERE label_id IN ({}))",
-                placeholders.join(", ")
-            ));
-            for label_id in label_ids {
-                param_values.push(Box::new(label_id.clone()));
-            }
-        }
-
-        if let Some(from) = date_from {
-            sql.push_str(&format!(" AND m.start_time >= ?{}", param_values.len() + 1));
-            param_values.push(Box::new(from.to_string()));
-        }
-
-        if let Some(to) = date_to {
-            sql.push_str(&format!(" AND m.start_time <= ?{}", param_values.len() + 1));
-            // A bare YYYY-MM-DD would sort before every RFC3339 timestamp on
-            // that day, so make the end date inclusive.
-            let to = if to.len() == 10 {
-                format!("{to}T23:59:59.999999999Z")
-            } else {
-                to.to_string()
-            };
-            param_values.push(Box::new(to));
-        }
-
-        let limit_param_idx = param_values.len() + 1;
-        sql.push_str(&format!(" ORDER BY ce.distance LIMIT ?{}", limit_param_idx));
-        param_values.push(Box::new(limit as i64));
-
-        let mut stmt = conn.prepare(&sql)?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            param_values.iter().map(|p| p.as_ref()).collect();
-
-        let results = stmt
-            .query_map(param_refs.as_slice(), |row| {
-                Ok(ChunkSearchResult {
-                    chunk_id: row.get(0)?,
-                    meeting_id: row.get(1)?,
-                    meeting_title: row.get(2)?,
-                    chunk_text: row.get(3)?,
-                    start_ms: row.get(4)?,
-                    end_ms: row.get(5)?,
-                    speaker_labels: row.get(6)?,
-                    distance: row.get(7)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
-        Ok(results)
+        let conn = self.lock_conn()?;
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(match_expr)];
+        let mut sql = String::from(
+            "SELECT tc.id, tc.meeting_id, m.title, tc.text, tc.start_ms, tc.end_ms, tc.speaker_labels, fts.rank
+             FROM chunks_fts fts
+             JOIN transcript_chunks tc ON tc.rowid = fts.rowid
+             JOIN meetings m ON m.id = tc.meeting_id
+             WHERE chunks_fts MATCH ?1",
+        );
+        push_meeting_filters(&mut sql, &mut params, label_ids, date_from, date_to);
+        sql.push_str(&format!(" ORDER BY fts.rank LIMIT ?{}", params.len() + 1));
+        params.push(Box::new(limit as i64));
+        query_chunks(&conn, &sql, &params)
     }
 
     pub fn get_embedding_status(&self) -> Result<(u32, u32)> {

@@ -683,3 +683,128 @@ fn test_rename_speaker_drops_stale_search_chunks() {
     );
     assert!(!db.has_meeting_chunks(&meeting.id).unwrap());
 }
+
+#[test]
+fn test_hybrid_search_finds_exact_terms_the_vectors_miss() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Infra sync".to_string(),
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    let chunk = |id: &str, text: &str| TranscriptChunk {
+        id: id.to_string(),
+        meeting_id: meeting.id.clone(),
+        chunk_index: 0,
+        text: text.to_string(),
+        start_ms: 0,
+        end_ms: 1000,
+        speaker_labels: "[]".to_string(),
+    };
+    let query = vec![1.0f32; 384];
+    let mut far = vec![-1.0f32; 384];
+    far[0] = 1.0;
+    db.insert_embedded_chunks(&[
+        (
+            chunk("close", "We talked about the weather."),
+            query.clone(),
+        ),
+        (
+            chunk("exact", "Ticket NOO-482 blocks the Kubernetes upgrade."),
+            far,
+        ),
+    ])
+    .unwrap();
+
+    let keyword_hits = db
+        .search_chunks_by_keywords("What's blocking NOO-482?", 5, &[], None, None)
+        .unwrap();
+    assert_eq!(keyword_hits[0].chunk_id, "exact");
+
+    let filters = nootle_app_lib::ops::AskFilters::default();
+    let hits =
+        nootle_app_lib::ops::hybrid_search(&db, &query, "What's blocking NOO-482?", &filters, 2)
+            .unwrap();
+    let ids: Vec<&str> = hits.iter().map(|h| h.chunk_id.as_str()).collect();
+    assert_eq!(ids[0], "exact", "a passage both indexes rank first wins");
+    assert!(ids.contains(&"close"));
+}
+
+#[test]
+fn test_keyword_search_ignores_fts_syntax_in_questions() {
+    let db = Database::new_in_memory().unwrap();
+    for q in ["\"unbalanced", "NEAR(", "*", "a OR", "?!"] {
+        assert!(
+            db.search_chunks_by_keywords(q, 5, &[], None, None).is_ok(),
+            "{q}"
+        );
+    }
+}
+
+#[test]
+fn test_deleting_a_meeting_removes_its_keyword_index() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Gone".to_string(),
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    db.insert_embedded_chunks(&[(
+        TranscriptChunk {
+            id: "c1".to_string(),
+            meeting_id: meeting.id.clone(),
+            chunk_index: 0,
+            text: "zebra".to_string(),
+            start_ms: 0,
+            end_ms: 1,
+            speaker_labels: "[]".to_string(),
+        },
+        vec![0.1f32; 384],
+    )])
+    .unwrap();
+    db.delete_meeting_chunks(&meeting.id).unwrap();
+    assert!(db
+        .search_chunks_by_keywords("zebra", 5, &[], None, None)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn test_reopening_a_database_does_not_rerun_migrations() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("nootle.db");
+    let path = path.to_str().unwrap();
+    let meeting_id = {
+        let db = Database::new(path).unwrap();
+        let meeting = db
+            .create_meeting(NewMeeting {
+                title: "Kept".to_string(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        db.insert_embedded_chunks(&[(
+            TranscriptChunk {
+                id: "c1".to_string(),
+                meeting_id: meeting.id.clone(),
+                chunk_index: 0,
+                text: "indexed after the tokenizer fix".to_string(),
+                start_ms: 0,
+                end_ms: 1,
+                speaker_labels: "[]".to_string(),
+            },
+            vec![0.1f32; 384],
+        )])
+        .unwrap();
+        meeting.id
+    };
+    let db = Database::new(path).unwrap();
+    assert!(
+        db.has_meeting_chunks(&meeting_id).unwrap(),
+        "the one-time re-index migration must not wipe a fresh index"
+    );
+}

@@ -4,8 +4,11 @@ use crate::db::{Database, TranscriptChunk};
 use crate::embedding::EmbeddingEngine;
 use anyhow::Context;
 
-const TARGET_CHUNK_TOKENS: usize = 500;
-const OVERLAP_TOKENS: usize = 50;
+// Counted in words. English runs about 1.3 wordpieces per word, so a chunk
+// stays inside the embedding model's 256-wordpiece window instead of having
+// its second half silently cut off.
+const TARGET_CHUNK_TOKENS: usize = 160;
+const OVERLAP_TOKENS: usize = 30;
 
 fn token_count(text: &str) -> usize {
     text.split_whitespace().count()

@@ -96,13 +96,27 @@ pub fn run() {
     let embedding_state: EmbeddingState = Arc::new(TokioMutex::new(None));
     if crate::embedding::EmbeddingEngine::is_available() {
         let embedding_state = embedding_state.clone();
+        let db = db.clone();
         // Holding the lock while loading makes early callers wait for this
         // load rather than starting a second one.
         std::thread::spawn(move || {
-            if let Err(err) =
-                crate::ops::loaded_embedding_engine(&mut embedding_state.blocking_lock())
             {
-                tracing::warn!("Failed to load embedding engine: {err}");
+                let mut slot = embedding_state.blocking_lock();
+                if let Err(err) = crate::ops::loaded_embedding_engine(&mut slot) {
+                    tracing::warn!("Failed to load embedding engine: {err}");
+                    return;
+                }
+            }
+            // Catch up on meetings that aren't searchable yet (recorded while
+            // the model was missing, or dropped by a search-index migration),
+            // one at a time so Ask never waits long for the engine.
+            let ids = crate::ops::meetings_to_index(&db).unwrap_or_default();
+            for id in ids {
+                let mut slot = embedding_state.blocking_lock();
+                let Some(engine) = slot.as_mut() else { return };
+                if let Err(e) = crate::chunking::embed_meeting(&db, engine, &id) {
+                    tracing::warn!("Failed to index meeting {id}: {e:#}");
+                }
             }
         });
     }
