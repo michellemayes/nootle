@@ -23,6 +23,8 @@ import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
 import { useModelDownload } from "@/hooks/useModelDownload";
 import { useTheme } from "@/hooks/useTheme";
+import { useBooleanSetting } from "@/hooks/useBooleanSetting";
+import { plural } from "@/lib/utils";
 
 import { useInsightTypes } from "@/hooks/useInsightTypes";
 import { useAppVersion } from "@/hooks/useAppVersion";
@@ -750,23 +752,13 @@ interface VoiceProfile {
 /** "Remember voices": off by default because a voice fingerprint is
  * biometric data. Lists what's remembered, each deletable. */
 function RememberedVoices() {
-  const [enabled, setEnabled] = useState(false);
+  const [enabled, setEnabled] = useBooleanSetting("remember_voices", false);
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
 
   const refresh = useCallback(() => {
     invoke<VoiceProfile[]>("list_voice_profiles").then(setVoices).catch(() => {});
   }, []);
-  useEffect(() => {
-    invoke<string | null>("get_app_setting", { key: "remember_voices" })
-      .then((val) => setEnabled(val === "true"))
-      .catch(() => {});
-    refresh();
-  }, [refresh]);
-
-  const toggle = async (on: boolean) => {
-    setEnabled(on);
-    await invoke("set_app_setting", { key: "remember_voices", value: String(on) });
-  };
+  useEffect(refresh, [refresh]);
 
   return (
     <div className="space-y-3">
@@ -779,13 +771,13 @@ function RememberedVoices() {
             uploaded
           </p>
         </div>
-        <Switch checked={enabled} onCheckedChange={toggle} aria-label="Remember voices" />
+        <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Remember voices" />
       </div>
       {voices.length > 0 && (
         <div className="rounded-md bg-muted/50 p-3">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              {voices.length} remembered {voices.length === 1 ? "voice" : "voices"}
+              {plural(voices.length, "remembered voice")}
             </p>
             <Button
               variant="ghost"
@@ -804,7 +796,7 @@ function RememberedVoices() {
                 <span>
                   {v.name}
                   <span className="ml-2 text-xs text-muted-foreground">
-                    learned from {v.samples} {v.samples === 1 ? "meeting" : "meetings"}
+                    learned from {plural(v.samples, "meeting")}
                   </span>
                 </span>
                 <Button
@@ -829,22 +821,18 @@ function RememberedVoices() {
 
 /** Privacy: the consent reminder, its message, and local-only mode. */
 function PrivacyCard() {
-  const [reminder, setReminder] = useState(true);
+  const [reminder, setReminder] = useBooleanSetting("consent_reminder", true);
+  const [localOnly, setLocalOnly] = useBooleanSetting("local_only", false);
   const [message, setMessage] = useState("");
-  const [localOnly, setLocalOnly] = useState(false);
+  const [defaultMessage, setDefaultMessage] = useState("");
   useEffect(() => {
-    invoke<string | null>("get_app_setting", { key: "consent_reminder" })
-      .then((v) => setReminder(v !== "false"))
-      .catch(() => {});
     invoke<string | null>("get_app_setting", { key: "consent_message" })
       .then((v) => setMessage(v ?? ""))
       .catch(() => {});
-    invoke<string | null>("get_app_setting", { key: "local_only" })
-      .then((v) => setLocalOnly(v === "true"))
+    invoke<{ default_message: string }>("get_consent_reminder")
+      .then((r) => setDefaultMessage(r.default_message))
       .catch(() => {});
   }, []);
-  const save = (key: string, value: string) =>
-    invoke("set_app_setting", { key, value }).catch(() => {});
 
   return (
     <Card>
@@ -861,22 +849,17 @@ function PrivacyCard() {
               the meeting chat. Many places require everyone's consent to record
             </p>
           </div>
-          <Switch
-            checked={reminder}
-            onCheckedChange={(on) => {
-              setReminder(on);
-              save("consent_reminder", String(on));
-            }}
-            aria-label="Consent reminder"
-          />
+          <Switch checked={reminder} onCheckedChange={setReminder} aria-label="Consent reminder" />
         </div>
         {reminder && (
           <Textarea
             value={message}
             maxLength={600}
-            placeholder="Heads up: I'm recording and transcribing this call with Nootle so I can take notes. The recording stays on my computer. Let me know if you'd rather I didn't."
+            placeholder={defaultMessage}
             onChange={(e) => setMessage(e.target.value)}
-            onBlur={() => save("consent_message", message)}
+            onBlur={() =>
+              invoke("set_app_setting", { key: "consent_message", value: message }).catch(() => {})
+            }
             className="text-sm"
             rows={2}
             aria-label="Consent message"
@@ -891,14 +874,7 @@ function PrivacyCard() {
               transcription are always local
             </p>
           </div>
-          <Switch
-            checked={localOnly}
-            onCheckedChange={(on) => {
-              setLocalOnly(on);
-              save("local_only", String(on));
-            }}
-            aria-label="Local-only mode"
-          />
+          <Switch checked={localOnly} onCheckedChange={setLocalOnly} aria-label="Local-only mode" />
         </div>
         <ExportAllMeetings />
       </CardContent>
@@ -926,7 +902,7 @@ function ExportAllMeetings() {
           if (typeof dir !== "string") return;
           try {
             const count = await invoke<number>("export_all_meetings", { dir });
-            setResult(`Exported ${count} ${count === 1 ? "meeting" : "meetings"} to ${dir}`);
+            setResult(`Exported ${plural(count, "meeting")} to ${dir}`);
           } catch (err) {
             setResult(String(err));
           }

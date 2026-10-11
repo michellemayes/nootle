@@ -40,23 +40,32 @@ pub fn export_meeting(db: &Database, meeting_id: &str, format: ExportFormat) -> 
         ExportFormat::Vtt => to_vtt(&segments),
         ExportFormat::Markdown => {
             let meeting = db.get_meeting(meeting_id)?;
-            let templates = db.list_templates()?;
-            let summaries: Vec<(String, Summary)> = db
-                .get_summaries_for_meeting(meeting_id)?
-                .into_iter()
-                .map(|s| {
-                    let name = s
-                        .template_id
-                        .as_ref()
-                        .and_then(|id| templates.iter().find(|t| &t.id == id))
-                        .map_or_else(|| "Summary".to_string(), |t| t.name.clone());
-                    (name, s)
-                })
-                .collect();
-            let insights = db.get_insights_for_meeting(meeting_id)?;
-            to_markdown(&meeting, &summaries, &insights, &segments)
+            meeting_markdown(db, &meeting, &db.list_templates()?, &segments)?
         }
     })
+}
+
+/// A meeting as Markdown, naming each summary after its template.
+fn meeting_markdown(
+    db: &Database,
+    meeting: &Meeting,
+    templates: &[crate::db::Template],
+    segments: &[TranscriptSegment],
+) -> Result<String> {
+    let summaries: Vec<(String, Summary)> = db
+        .get_summaries_for_meeting(&meeting.id)?
+        .into_iter()
+        .map(|s| {
+            let name = s
+                .template_id
+                .as_ref()
+                .and_then(|id| templates.iter().find(|t| &t.id == id))
+                .map_or_else(|| "Summary".to_string(), |t| t.name.clone());
+            (name, s)
+        })
+        .collect();
+    let insights = db.get_insights_for_meeting(&meeting.id)?;
+    Ok(to_markdown(meeting, &summaries, &insights, segments))
 }
 
 /// Writes every meeting (archived ones too) into `dir` as Markdown, one
@@ -65,9 +74,11 @@ pub fn export_meeting(db: &Database, meeting_id: &str, format: ExportFormat) -> 
 pub fn export_all_markdown(db: &Database, dir: &std::path::Path) -> Result<usize> {
     std::fs::create_dir_all(dir)?;
     let meetings = db.list_meetings(None, true, None)?;
+    let templates = db.list_templates()?;
     let mut used = std::collections::HashSet::new();
     for meeting in &meetings {
-        let content = export_meeting(db, &meeting.id, ExportFormat::Markdown)?;
+        let segments = db.get_transcript(&meeting.id)?;
+        let content = meeting_markdown(db, meeting, &templates, &segments)?;
         let base = file_name_for(meeting);
         let mut name = format!("{base}.md");
         let mut n = 2;
@@ -83,18 +94,7 @@ pub fn export_all_markdown(db: &Database, dir: &std::path::Path) -> Result<usize
 /// `2026-10-11 Weekly sync`, without characters file systems reject.
 fn file_name_for(meeting: &Meeting) -> String {
     let date = meeting.start_time.get(..10).unwrap_or("");
-    let title: String = meeting
-        .title
-        .chars()
-        .map(|c| {
-            if "/\\:*?\"<>|".contains(c) || c.is_control() {
-                '-'
-            } else {
-                c
-            }
-        })
-        .collect();
-    format!("{date} {}", title.trim()).trim().to_string()
+    crate::workflows::sanitize_filename(&format!("{date} {}", meeting.title))
 }
 
 pub fn to_srt(segments: &[TranscriptSegment]) -> String {
@@ -258,7 +258,7 @@ mod tests {
         names.sort();
         assert_eq!(
             names,
-            ["Q3- plan-review.md", "Weekly sync (2).md", "Weekly sync.md"]
+            ["Q3_ plan_review.md", "Weekly sync (2).md", "Weekly sync.md"]
         );
     }
 

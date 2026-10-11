@@ -17,10 +17,7 @@ pub const SETTING_KEY: &str = "remember_voices";
 const MATCH_SIMILARITY: f32 = 0.6;
 
 pub fn enabled(db: &Database) -> bool {
-    db.get_setting(SETTING_KEY)
-        .ok()
-        .flatten()
-        .is_some_and(|v| v == "true")
+    db.get_bool_setting(SETTING_KEY, false)
 }
 
 /// Names for a meeting's speakers (one fingerprint each) from remembered
@@ -76,8 +73,24 @@ pub fn learn_from_rename(db: &Database, meeting_id: &str, from: &str, to: &str) 
         return Ok(());
     }
     db.save_meeting_voices(meeting_id, &[(to.to_string(), voice.clone())])?;
-    db.learn_voice_profile(to, &voice)?;
-    Ok(())
+    learn(db, to, &voice)
+}
+
+/// Folds a meeting's fingerprint into `name`'s remembered voice (creating
+/// it), as a running mean kept at unit length.
+fn learn(db: &Database, name: &str, voice: &[f32]) -> Result<()> {
+    let (mut mean, samples) = match db.get_voice_profile(name)? {
+        Some((old, n)) => (
+            old.iter()
+                .zip(voice)
+                .map(|(o, v)| o * n as f32 + v)
+                .collect(),
+            n + 1,
+        ),
+        None => (voice.to_vec(), 1),
+    };
+    crate::diarization::normalize(&mut mean);
+    db.save_voice_profile(name, &mean, samples)
 }
 
 /// Every remembered voice, for Settings.
@@ -134,7 +147,7 @@ mod tests {
         learn_from_rename(&db, &id, "Speaker 2", "Speaker 1").unwrap();
         assert!(list(&db).unwrap().is_empty());
 
-        db.learn_voice_profile("Sam", &[1.0, 0.0]).unwrap();
+        learn(&db, "Sam", &[1.0, 0.0]).unwrap();
         let names = recognize(&db, &[vec![0.9, 0.1], vec![0.99, 0.01]]);
         assert_eq!(
             names,

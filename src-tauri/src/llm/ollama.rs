@@ -3,6 +3,9 @@ use super::types::{ChatMessage, LlmProvider, ModelInfo};
 pub struct OllamaProvider {
     base_url: String,
     client: reqwest::Client,
+    /// The largest context window asked for so far. Ollama reloads the model
+    /// whenever num_ctx changes, so it only ever grows.
+    context: std::sync::atomic::AtomicUsize,
 }
 
 impl Default for OllamaProvider {
@@ -26,6 +29,7 @@ impl OllamaProvider {
         Self {
             base_url: "http://localhost:11434".to_string(),
             client: Self::build_client(),
+            context: Default::default(),
         }
     }
 
@@ -41,6 +45,7 @@ impl OllamaProvider {
         Ok(Self {
             base_url,
             client: Self::build_client(),
+            context: Default::default(),
         })
     }
 }
@@ -78,6 +83,13 @@ impl LlmProvider for OllamaProvider {
         // transcript.
         let url = format!("{}/api/chat", self.base_url);
         let prompt_chars: usize = messages.iter().map(|m| m.content.len()).sum();
+        let num_ctx = self
+            .context
+            .fetch_max(
+                context_window(prompt_chars),
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .max(context_window(prompt_chars));
         let resp = self
             .client
             .post(&url)
@@ -85,7 +97,7 @@ impl LlmProvider for OllamaProvider {
                 "model": model,
                 "messages": messages,
                 "stream": false,
-                "options": { "num_ctx": context_window(prompt_chars) },
+                "options": { "num_ctx": num_ctx },
             }))
             .send()
             .await?;
@@ -173,6 +185,11 @@ mod tests {
         assert!(request.starts_with("POST /api/chat "), "{}", &request[..40]);
         assert!(request.contains(r#""num_ctx":16384"#));
         assert!(request.contains(r#""stream":false"#));
+        assert_eq!(
+            provider.context.load(std::sync::atomic::Ordering::Relaxed),
+            16384,
+            "later, shorter prompts keep this window"
+        );
     }
 
     #[test]

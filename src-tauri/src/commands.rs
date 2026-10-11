@@ -1175,19 +1175,19 @@ pub fn export_all_meetings(db: State<'_, DbState>, dir: String) -> Result<usize,
 async fn import_transcript(
     app: tauri::AppHandle,
     db: &Database,
-    path: &std::path::Path,
+    path: std::path::PathBuf,
+    title: String,
 ) -> Result<Meeting, String> {
-    let content =
-        std::fs::read_to_string(path).map_err(|e| format!("Couldn't read the file: {e}"))?;
-    let lines = crate::transcript_import::parse(&content);
+    let lines = tokio::task::spawn_blocking(move || {
+        std::fs::read_to_string(&path)
+            .map(|content| crate::transcript_import::parse(&content))
+            .map_err(|e| format!("Couldn't read the file: {e}"))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     if lines.is_empty() {
         return Err("No transcript found in this file".into());
     }
-    let title = path
-        .file_stem()
-        .map(|s| s.to_string_lossy().trim().to_string())
-        .filter(|t| !t.is_empty())
-        .unwrap_or_else(fallback_title);
     let meeting = db
         .create_meeting(NewMeeting {
             title: title.clone(),
@@ -1248,8 +1248,14 @@ pub async fn import_recording(
     };
 
     let source_path = std::path::PathBuf::from(&path);
+    // A file name is a placeholder; a generated title replaces it.
+    let title = source_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().trim().to_string())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(fallback_title);
     if crate::transcript_import::is_transcript(&source_path) {
-        return import_transcript(app, &db, &source_path).await;
+        return import_transcript(app, &db, source_path, title).await;
     }
     // Probing can seek through a large video; keep it off the async workers.
     let source = {
@@ -1259,11 +1265,6 @@ pub async fn import_recording(
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?
     };
-    let title = source_path
-        .file_stem()
-        .map(|s| s.to_string_lossy().trim().to_string())
-        .filter(|t| !t.is_empty())
-        .unwrap_or_else(fallback_title);
 
     let recordings_dir = recordings_dir()?;
     std::fs::create_dir_all(&recordings_dir).map_err(|e| e.to_string())?;
@@ -1647,6 +1648,7 @@ pub async fn create_linear_ticket(
         Err(_) => (meeting.title.clone(), summary.content.clone()),
     };
 
+    crate::llm::ensure_may_send_to_integrations(&db)?;
     let issue = linear_client(&db)
         .await?
         .create_issue(&team_id, project_id.as_deref(), &title, &description)
@@ -1735,6 +1737,7 @@ pub async fn create_ticket_from_action_item(
         Err(_) => (item.content.clone(), item.content.clone()),
     };
 
+    crate::llm::ensure_may_send_to_integrations(&db)?;
     let issue = linear_client(&db)
         .await?
         .create_issue(&team_id, project_id.as_deref(), &title, &description)
@@ -2093,16 +2096,20 @@ pub fn forget_all_voices(db: State<'_, DbState>) -> Result<(), String> {
 #[tauri::command(async)]
 pub fn get_consent_reminder(
     db: State<'_, DbState>,
-    meeting_id: String,
+    meeting_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
     use crate::ops::{CONSENT_MESSAGE_SETTING, CONSENT_REMINDER_SETTING, DEFAULT_CONSENT_MESSAGE};
     let setting = |key| db.get_setting(key).map_err(|e| e.to_string());
     Ok(serde_json::json!({
-        "enabled": setting(CONSENT_REMINDER_SETTING)?.as_deref() != Some("false"),
+        "enabled": db.get_bool_setting(CONSENT_REMINDER_SETTING, true),
         "message": setting(CONSENT_MESSAGE_SETTING)?
             .filter(|m| !m.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_CONSENT_MESSAGE.to_string()),
-        "noted_at": db.consent_noted_at(&meeting_id).map_err(|e| e.to_string())?,
+        "default_message": DEFAULT_CONSENT_MESSAGE,
+        "noted_at": match meeting_id {
+            Some(id) => db.consent_noted_at(&id).map_err(|e| e.to_string())?,
+            None => None,
+        },
     }))
 }
 

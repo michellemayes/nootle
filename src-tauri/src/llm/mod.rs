@@ -74,9 +74,32 @@ pub fn local_only() -> bool {
     LOCAL_ONLY.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Whether local-only mode is on, from the database: the source of truth
+/// when the CLI, the MCP server and the app each run as their own process.
+pub fn local_only_enabled(db: &crate::db::Database) -> bool {
+    db.get_bool_setting(LOCAL_ONLY_SETTING, false)
+}
+
+/// Brings this process's provider filter up to date with the setting.
+pub fn sync_local_only(db: &crate::db::Database) {
+    set_local_only(local_only_enabled(db));
+}
+
+/// Refuses to send meeting content to an integration in local-only mode.
+pub fn ensure_may_send_to_integrations(db: &crate::db::Database) -> Result<(), String> {
+    if local_only_enabled(db) {
+        return Err(
+            "Local-only mode is on, so meetings aren't sent to integrations. Turn it off \
+                    in Settings → Privacy to do this."
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 /// Providers that never send meeting content off this Mac. Ollama is only
 /// ever reached on localhost.
-fn runs_locally(provider: &str) -> bool {
+pub fn runs_locally(provider: &str) -> bool {
     provider == "ollama"
 }
 
@@ -89,12 +112,7 @@ impl LlmRegistry {
     /// reachable or installed, plus any with an API key stored in `db`.
     pub fn detect(db: &crate::db::Database) -> Self {
         let mut registry = Self::new();
-        set_local_only(
-            db.get_setting(LOCAL_ONLY_SETTING)
-                .ok()
-                .flatten()
-                .is_some_and(|v| v == "true"),
-        );
+        sync_local_only(db);
 
         // Register Ollama only if it's reachable locally
         if std::net::TcpStream::connect_timeout(
@@ -180,5 +198,13 @@ mod tests {
         };
         assert_eq!(names(false), ["ollama", "openai"]);
         assert_eq!(names(true), ["ollama"]);
+    }
+
+    #[test]
+    fn integrations_are_refused_in_local_only_mode() {
+        let db = crate::db::Database::new_in_memory().unwrap();
+        assert!(ensure_may_send_to_integrations(&db).is_ok());
+        db.set_setting(LOCAL_ONLY_SETTING, "true").unwrap();
+        assert!(ensure_may_send_to_integrations(&db).is_err());
     }
 }

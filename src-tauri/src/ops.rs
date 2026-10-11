@@ -613,6 +613,8 @@ pub fn resolve_model(
     provider: Option<&str>,
     model: Option<&str>,
 ) -> Result<(String, String)> {
+    // A long-running CLI or MCP process sees the app's latest choice.
+    crate::llm::sync_local_only(db);
     let available = || match llm.provider_names() {
         names if names.is_empty() => "none".to_string(),
         names => names.join(", "),
@@ -684,6 +686,7 @@ pub async fn catch_up(
     if recent.is_empty() {
         return Ok("Nothing has been transcribed yet.".into());
     }
+    crate::llm::sync_local_only(db);
     let model = pick_auto_model(db, llm)
         .ok_or_else(|| anyhow!("Add an AI provider in Settings to catch up on a meeting"))?;
     let messages = vec![

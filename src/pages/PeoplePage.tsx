@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Link } from "react-router-dom";
 import { Users } from "lucide-react";
@@ -8,7 +8,7 @@ import { LoadingState } from "@/components/LoadingState";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { ActionItemCheckbox } from "@/components/ActionItemCheckbox";
-import { formatDate, cn } from "@/lib/utils";
+import { formatDate, cn, plural } from "@/lib/utils";
 import type { InsightWithActionItem, Meeting } from "@/types";
 
 interface Person {
@@ -34,32 +34,45 @@ function minutes(ms: number): string {
  * talked about, and what they owe. */
 export function PeoplePage() {
   const [people, setPeople] = useState<Person[] | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Person | null>(null);
   const [detail, setDetail] = useState<PersonDetail | null>(null);
 
   useEffect(() => {
     invoke<Person[]>("list_people")
       .then((list) => {
         setPeople(list);
-        setSelected((current) => current ?? list[0]?.name ?? null);
+        setSelected((current) => current ?? list[0] ?? null);
       })
       .catch(() => setPeople([]));
   }, []);
 
-  const loadDetail = useCallback((name: string) => {
-    invoke<PersonDetail>("get_person", { name }).then(setDetail).catch(() => {});
-  }, []);
   useEffect(() => {
-    if (selected) loadDetail(selected);
-  }, [selected, loadDetail]);
+    if (!selected) return;
+    invoke<PersonDetail>("get_person", { name: selected.name }).then(setDetail).catch(() => {});
+  }, [selected]);
 
+  // Updated in place: the list's open count and this item flip together.
   const toggle = async (item: InsightWithActionItem) => {
     if (!item.action_item_id) return;
-    await invoke("update_action_item_status", {
-      id: item.action_item_id,
-      status: item.status === "done" ? "open" : "done",
-    }).catch(() => {});
-    if (selected) loadDetail(selected);
+    const status = item.status === "done" ? "open" : "done";
+    try {
+      await invoke("update_action_item_status", { id: item.action_item_id, status });
+    } catch {
+      return;
+    }
+    setDetail((d) =>
+      d && {
+        ...d,
+        action_items: d.action_items.map((i) => (i.id === item.id ? { ...i, status } : i)),
+      },
+    );
+    setPeople((list) =>
+      list?.map((p) =>
+        p.name === detail?.name
+          ? { ...p, open_action_items: p.open_action_items + (status === "done" ? -1 : 1) }
+          : p,
+      ) ?? null,
+    );
   };
 
   return (
@@ -83,10 +96,10 @@ export function PeoplePage() {
               {people.map((p) => (
                 <li key={p.name}>
                   <button
-                    onClick={() => setSelected(p.name)}
+                    onClick={() => setSelected(p)}
                     className={cn(
                       "w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted",
-                      selected === p.name && "bg-muted",
+                      selected?.name === p.name && "bg-muted",
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -98,7 +111,7 @@ export function PeoplePage() {
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {p.meeting_count} {p.meeting_count === 1 ? "meeting" : "meetings"} · last{" "}
+                      {plural(p.meeting_count, "meeting")} · last{" "}
                       {formatDate(p.last_met)}
                     </p>
                   </button>
@@ -107,17 +120,13 @@ export function PeoplePage() {
             </ul>
           </ScrollArea>
           <ScrollArea className="flex-1">
-            {detail && detail.name === selected && (
+            {detail && selected && detail.name === selected.name && (
               <div className="max-w-3xl space-y-8 p-6">
                 <div>
                   <h2 className="text-lg font-semibold">{detail.name}</h2>
                   <p className="text-sm text-muted-foreground">
-                    {(() => {
-                      const p = people.find((x) => x.name === detail.name);
-                      return p
-                        ? `Talked for ${minutes(p.talk_time_ms)} across ${p.meeting_count} ${p.meeting_count === 1 ? "meeting" : "meetings"}`
-                        : null;
-                    })()}
+                    Talked for {minutes(selected.talk_time_ms)} across{" "}
+                    {plural(selected.meeting_count, "meeting")}
                   </p>
                 </div>
                 <section>

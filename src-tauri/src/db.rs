@@ -325,6 +325,26 @@ pub struct Person {
     pub open_action_items: i64,
 }
 
+const MEETING_COLUMNS: &str = "id, title, start_time, end_time, audio_path, status, \
+    calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at";
+
+fn meeting_from_row(row: &rusqlite::Row) -> rusqlite::Result<Meeting> {
+    Ok(Meeting {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        start_time: row.get(2)?,
+        end_time: row.get(3)?,
+        audio_path: row.get(4)?,
+        status: row.get(5)?,
+        calendar_event_id: row.get(6)?,
+        raw_notes: row.get(7)?,
+        enriched_notes: row.get(8)?,
+        template_id: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
+}
+
 /// A remembered voice: a name and the mean fingerprint of their speech.
 #[derive(Debug, Clone, Serialize)]
 pub struct VoiceProfile {
@@ -2390,14 +2410,14 @@ impl Database {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT t.speaker_label, COUNT(DISTINCT t.meeting_id), MAX(m.start_time),
-                    SUM(t.end_ms - t.start_ms),
-                    (SELECT COUNT(*) FROM action_items a
-                     WHERE a.status = 'open' AND a.assignee = t.speaker_label COLLATE NOCASE)
+                    SUM(t.end_ms - t.start_ms), COALESCE(MAX(open.n), 0)
              FROM transcripts t
              JOIN meetings m ON m.id = t.meeting_id
+             LEFT JOIN (SELECT assignee COLLATE NOCASE AS assignee, COUNT(*) AS n
+                        FROM action_items WHERE status = 'open'
+                        GROUP BY assignee COLLATE NOCASE) open
+                    ON open.assignee = t.speaker_label COLLATE NOCASE
              WHERE m.status != 'archived'
-               AND t.speaker_label NOT IN ('You', 'Speaker')
-               AND t.speaker_label NOT GLOB 'Speaker [0-9]*'
              GROUP BY t.speaker_label
              ORDER BY MAX(m.start_time) DESC",
         )?;
@@ -2411,27 +2431,27 @@ impl Database {
                     open_action_items: row.get(4)?,
                 })
             })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(people)
+            .collect::<std::result::Result<Vec<Person>, _>>()?;
+        Ok(people
+            .into_iter()
+            .filter(|p| !crate::diarization::is_automatic_label(&p.name))
+            .collect())
     }
 
     /// Meetings someone spoke in, newest first.
     pub fn meetings_with(&self, name: &str) -> Result<Vec<Meeting>> {
-        let ids: Vec<String> = {
-            let conn = self.lock_conn()?;
-            let mut stmt = conn.prepare(
-                "SELECT m.id FROM meetings m
-                 WHERE m.status != 'archived'
-                   AND EXISTS (SELECT 1 FROM transcripts t
-                               WHERE t.meeting_id = m.id AND t.speaker_label = ?1)
-                 ORDER BY m.start_time DESC",
-            )?;
-            let ids = stmt
-                .query_map(params![name], |row| row.get(0))?
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            ids
-        };
-        ids.iter().map(|id| self.get_meeting(id)).collect()
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {MEETING_COLUMNS} FROM meetings m
+             WHERE m.status != 'archived'
+               AND EXISTS (SELECT 1 FROM transcripts t
+                           WHERE t.meeting_id = m.id AND t.speaker_label = ?1)
+             ORDER BY m.start_time DESC"
+        ))?;
+        let meetings = stmt
+            .query_map(params![name], meeting_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(meetings)
     }
 
     // --- Recording consent ---
@@ -2499,33 +2519,21 @@ impl Database {
         Ok(bytes.map(|b| bytes_to_f32s(&b)))
     }
 
-    /// Folds a fingerprint into `name`'s remembered voice (creating it),
-    /// as a running mean kept at unit length.
-    pub fn learn_voice_profile(&self, name: &str, embedding: &[f32]) -> Result<()> {
+    /// `name`'s remembered voice and how many meetings it was learned from.
+    pub fn get_voice_profile(&self, name: &str) -> Result<Option<(Vec<f32>, i64)>> {
         let conn = self.lock_conn()?;
-        let existing: Option<(Vec<u8>, i64)> = conn
+        Ok(conn
             .query_row(
                 "SELECT embedding, samples FROM voice_profiles WHERE name = ?1",
                 params![name],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((bytes_to_f32s(&row.get::<_, Vec<u8>>(0)?), row.get(1)?)),
             )
-            .optional()?;
-        let (mut mean, samples) = match existing {
-            Some((bytes, n)) => {
-                let old = bytes_to_f32s(&bytes);
-                let mean: Vec<f32> = old
-                    .iter()
-                    .zip(embedding)
-                    .map(|(o, e)| o * n as f32 + e)
-                    .collect();
-                (mean, n + 1)
-            }
-            None => (embedding.to_vec(), 1),
-        };
-        let norm = mean.iter().map(|x| x * x).sum::<f32>().sqrt();
-        if norm > 0.0 {
-            mean.iter_mut().for_each(|x| *x /= norm);
-        }
+            .optional()?)
+    }
+
+    /// Creates or replaces `name`'s remembered voice.
+    pub fn save_voice_profile(&self, name: &str, embedding: &[f32], samples: i64) -> Result<()> {
+        let conn = self.lock_conn()?;
         conn.execute(
             "INSERT INTO voice_profiles (id, name, embedding, samples, updated_at)
              VALUES (?1, ?2, ?3, ?4, datetime('now'))
@@ -2534,7 +2542,7 @@ impl Database {
             params![
                 uuid::Uuid::new_v4().to_string(),
                 name,
-                f32_slice_to_bytes(&mean),
+                f32_slice_to_bytes(embedding),
                 samples
             ],
         )?;

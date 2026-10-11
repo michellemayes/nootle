@@ -478,12 +478,17 @@ pub fn centroids(embeddings: &[&[f32]], clusters: &[usize]) -> Vec<Vec<f32>> {
         }
     }
     for sum in &mut sums {
-        let norm = l2_norm(sum);
-        if norm > 0.0 {
-            sum.iter_mut().for_each(|x| *x /= norm);
-        }
+        normalize(sum);
     }
     sums
+}
+
+/// Scales `v` to unit length (leaves a zero vector alone).
+pub fn normalize(v: &mut [f32]) {
+    let norm = l2_norm(v);
+    if norm > 0.0 {
+        v.iter_mut().for_each(|x| *x /= norm);
+    }
 }
 
 fn l2_norm(v: &[f32]) -> f32 {

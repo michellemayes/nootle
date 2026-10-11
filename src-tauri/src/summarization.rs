@@ -43,7 +43,7 @@ fn llm_transcript(db: &Database, meeting_id: &str, segments: &[TranscriptSegment
 /// part by part first. Local models have small context windows (see
 /// `ollama::context_window`); hosted ones read an hour-long meeting whole.
 fn transcript_budget_chars(provider: &str) -> usize {
-    if provider == "ollama" {
+    if crate::llm::runs_locally(provider) {
         60_000
     } else {
         400_000
@@ -82,26 +82,40 @@ async fn condense_for(
     }
     let parts = split_transcript(&transcript, budget / 2);
     let total = parts.len();
-    let notes = futures_util::future::try_join_all(parts.into_iter().enumerate().map(
-        |(i, part)| async move {
-            let messages = vec![
-                ChatMessage {
-                    role: "system".into(),
-                    content: "You condense one part of a long meeting transcript into detailed \
-                              notes for a later summary. Keep every decision, action item (with \
-                              owner and due date), number, name and open question, with its \
-                              [mm:ss] timestamp and who said it. Write bullet points only."
-                        .into(),
-                },
-                ChatMessage {
-                    role: "user".into(),
-                    content: format!("Part {} of {total}:\n\n{part}", i + 1),
-                },
-            ];
-            provider.chat(messages, model).await
-        },
-    ))
-    .await?;
+    let condense = |i: usize, part: String| {
+        let messages = vec![
+            ChatMessage {
+                role: "system".into(),
+                content: "You condense one part of a long meeting transcript into detailed \
+                          notes for a later summary. Keep every decision, action item (with \
+                          owner and due date), number, name and open question, with its \
+                          [mm:ss] timestamp and who said it. Write bullet points only."
+                    .into(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: format!("Part {} of {total}:\n\n{part}", i + 1),
+            },
+        ];
+        provider.chat(messages, model)
+    };
+    // A local model serves one request at a time, so parts go one by one;
+    // hosted ones take them all at once.
+    let notes = if crate::llm::runs_locally(provider.provider_name()) {
+        let mut notes = Vec::with_capacity(total);
+        for (i, part) in parts.into_iter().enumerate() {
+            notes.push(condense(i, part).await?);
+        }
+        notes
+    } else {
+        futures_util::future::try_join_all(
+            parts
+                .into_iter()
+                .enumerate()
+                .map(|(i, part)| condense(i, part)),
+        )
+        .await?
+    };
     Ok(notes
         .iter()
         .enumerate()
