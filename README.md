@@ -113,6 +113,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **Labels** — tag meetings with colored labels from the **+ Label** button and filter the library by them. Hover a label in that menu and click the pencil to rename it, change its color, or delete it (deleting removes it from every meeting)
 - **Pin meetings** — right-click a meeting (or use its ⋮ menu) and choose **Pin to top** to keep recurring references above the dated list
 - **Momentum at a glance** — workday recording streak, meetings this week, and open action items on the home screen, with a little celebration when you wrap a meeting
+- **Logs for bug reports** — Help → Open Logs Folder shows `nootle.log` (timings and errors only; transcripts, summaries and prompts are never logged), and Help → Report a Problem opens a GitHub issue with your version filled in
 - **In-app updates** — new versions are detected automatically and installed with one click, no trip to GitHub
 - **Themes** — light or dark mode, a background theme (Lavender, White, Slate, Ocean, Sage, Sand, Mocha, Rose, or any custom color), and a separate accent color for buttons and highlights, all in Settings → General
 
@@ -242,17 +243,25 @@ The server supports MCP 2026-07-28 and the older handshake-based versions. Older
 
 The server has the same features as the CLI, except API keys, recording control, and the calendar: reading, searching, and editing meetings, labels, notes, action items, and the dictionary; summaries, insights, Ask, and other LLM features; and workflows, integrations, summary templates, and insight types. So you can ask an agent things like *"Tag last week's customer calls and summarize what they asked for"* or *"Set up a workflow that posts meeting recaps to #eng"*. Large results come in pages, and tools that delete things ask Claude to confirm with you first.
 
+To give an agent read access only, add `--read-only`: it can search and read your meetings but can't edit, delete, or send anything to an integration. Meeting text comes from everyone in the meeting, so this is the safer choice for agents that act on what they read.
+
+```bash
+claude mcp add --scope user nootle-readonly -- /Applications/Nootle.app/Contents/MacOS/nootle-cli mcp --read-only
+```
+
 ## URL Scheme
 
 Other apps and scripts can control recording with `nootle://` links. This is off by default. Turn on **Settings → Recording → Allow URL control** first.
 
+Every link must carry this Mac's secret `token`, so a web page can't start a recording just by opening a link. Copy a ready-made link from **Settings → Recording**; `nootle-cli record` adds the token for you.
+
 ```bash
-open "nootle://record/start?title=Staff%20sync"   # no-op if already recording
-open "nootle://record/stop"
-open "nootle://record/toggle"
-open "nootle://record/status"
-open "nootle://permissions/screen"                # prompt for Screen Recording access
-open "nootle://permissions/status"
+open "nootle://record/start?token=$TOKEN&title=Staff%20sync"   # no-op if already recording
+open "nootle://record/stop?token=$TOKEN"
+open "nootle://record/toggle?token=$TOKEN"
+open "nootle://record/status?token=$TOKEN"
+open "nootle://permissions/screen?token=$TOKEN"                # prompt for Screen Recording access
+open "nootle://permissions/status?token=$TOKEN"
 ```
 
 Nootle shows a notification whenever a link starts or stops a recording, or fails.

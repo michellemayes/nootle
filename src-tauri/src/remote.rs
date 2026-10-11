@@ -2,7 +2,9 @@
 //! (e.g. an external meeting detector) can start and stop recordings.
 //!
 //! Off by default: any web page can open a `nootle://` link, so actions only run
-//! once the user enables `remote_control_enabled` in Settings. Every outcome is
+//! once the user enables `remote_control_enabled` in Settings, and only for
+//! links carrying this install's secret `token` (the CLI adds it; Settings
+//! shows it for scripts). Every outcome is
 //! emitted as `remote-control-result`, and the user gets a system notification
 //! for anything worth interrupting them for.
 
@@ -13,6 +15,32 @@ use url::Url;
 use crate::commands::{self, DbState, RecordingState};
 
 pub const ENABLED_SETTING: &str = "remote_control_enabled";
+/// Secret every link must carry, so a web page can't drive recording just by
+/// opening a link. Never exposed to MCP agents.
+pub const TOKEN_SETTING: &str = "remote_control_token";
+
+/// This install's URL-control token, created on first use.
+pub fn token(db: &crate::db::Database) -> crate::error::Result<String> {
+    if let Some(token) = db.get_setting(TOKEN_SETTING)?.filter(|t| !t.is_empty()) {
+        return Ok(token);
+    }
+    let token = uuid::Uuid::new_v4().simple().to_string();
+    db.set_setting(TOKEN_SETTING, &token)?;
+    Ok(token)
+}
+
+/// Whether `url` carries the right token, compared in constant time.
+fn has_valid_token(db: &crate::db::Database, url: &Url) -> bool {
+    let (Some(given), Ok(expected)) = (query_value(url, "token"), token(db)) else {
+        return false;
+    };
+    given.len() == expected.len()
+        && given
+            .bytes()
+            .zip(expected.bytes())
+            .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+            == 0
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RemoteResult {
@@ -163,17 +191,22 @@ pub async fn handle_url(app: AppHandle, raw: String) {
     };
 
     let action = action_of(&url);
-    let enabled = app
-        .state::<DbState>()
+    let db = app.state::<DbState>();
+    let enabled = db
         .get_setting(ENABLED_SETTING)
         .ok()
         .flatten()
         .is_some_and(|v| v == "true");
 
-    let outcome = if enabled {
-        run_action(&app, &action, query_value(&url, "title")).await
-    } else {
+    let outcome = if !enabled {
         Outcome::err("URL control is disabled; enable it in Nootle Settings > Recording")
+    } else if !has_valid_token(&db, &url) {
+        Outcome::err(
+            "This nootle:// link is missing Nootle's URL-control token. Copy a link from \
+             Settings > Recording, or use nootle-cli record.",
+        )
+    } else {
+        run_action(&app, &action, query_value(&url, "title")).await
     };
 
     if outcome.ok {
@@ -237,6 +270,24 @@ mod tests {
         assert_eq!(
             query_value(&parse("nootle://record/start?title=%20%20"), "title"),
             None
+        );
+    }
+
+    #[test]
+    fn links_need_this_installs_token() {
+        let db = crate::db::Database::new_in_memory().unwrap();
+        let token = token(&db).unwrap();
+        assert_eq!(token.len(), 32);
+        assert_eq!(super::token(&db).unwrap(), token, "stable once created");
+        let with = |t: &str| parse(&format!("nootle://record/start?token={t}"));
+        assert!(has_valid_token(&db, &with(&token)));
+        assert!(!has_valid_token(&db, &with("guess")));
+        assert!(!has_valid_token(&db, &parse("nootle://record/start")));
+        assert!(
+            !crate::ops::settings_map(&db)
+                .unwrap()
+                .contains_key(TOKEN_SETTING),
+            "agents can't read the token"
         );
     }
 

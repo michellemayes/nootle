@@ -137,7 +137,11 @@ pub async fn extract_insights(
     let extracted = match parse_extraction_response(cleaned, &types) {
         Ok(e) => e,
         Err(e) => {
-            tracing::error!("Failed to parse extraction response: {e}\nRaw: {response}");
+            // The response quotes the meeting, so it stays out of the log file.
+            tracing::error!(
+                "Failed to parse extraction response ({} chars): {e}",
+                response.len()
+            );
             let _ = db.update_extraction_run_status(&run.id, "failed");
             anyhow::bail!("Failed to parse extraction response: {e}");
         }

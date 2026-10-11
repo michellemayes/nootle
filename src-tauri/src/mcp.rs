@@ -544,6 +544,8 @@ pub struct NootleMcpServer {
     /// The LLMs on this machine, detected on first use and again when a
     /// caller asks for one that wasn't there.
     llm: Arc<tokio::sync::RwLock<Option<Arc<LlmRegistry>>>>,
+    /// The tools this server offers: all of them, or only read-only ones.
+    tool_router: rmcp::handler::server::router::tool::ToolRouter<Self>,
 }
 
 impl NootleMcpServer {
@@ -594,7 +596,27 @@ impl NootleMcpServer {
             db,
             engine: Arc::default(),
             llm: Arc::default(),
+            tool_router: Self::tool_router(),
         }
+    }
+
+    /// A server offering only tools marked read-only: an agent can search
+    /// and read meetings but can't change, delete or send anything. Meeting
+    /// text can be influenced by anyone in the meeting, so this is the safe
+    /// choice for agents that act on what they read.
+    pub fn read_only(db: Arc<Database>) -> Self {
+        let mut server = Self::new(db);
+        let writable: Vec<String> = server
+            .tool_router
+            .list_all()
+            .into_iter()
+            .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) != Some(true))
+            .map(|t| t.name.to_string())
+            .collect();
+        for name in writable {
+            server.tool_router.remove_route(&name);
+        }
+        server
     }
 
     #[tool(
@@ -1708,7 +1730,7 @@ impl NootleMcpServer {
     }
 }
 
-#[tool_handler]
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for NootleMcpServer {
     fn get_info(&self) -> ServerConfig {
         let capabilities = ServerCapabilities::builder()
@@ -1829,13 +1851,17 @@ impl ServerHandler for NootleMcpServer {
 
 /// Serves MCP over stdin/stdout until the client disconnects. Nothing else
 /// may write to stdout meanwhile, so log to stderr.
-pub fn serve_stdio(db: Database) -> Result<(), Box<dyn std::error::Error>> {
+pub fn serve_stdio(db: Database, read_only: bool) -> Result<(), Box<dyn std::error::Error>> {
     use rmcp::ServiceExt;
 
+    let db = Arc::new(db);
+    let server = if read_only {
+        NootleMcpServer::read_only(db)
+    } else {
+        NootleMcpServer::new(db)
+    };
     tokio::runtime::Runtime::new()?.block_on(async {
-        let service = NootleMcpServer::new(Arc::new(db))
-            .serve(rmcp::transport::stdio())
-            .await?;
+        let service = server.serve(rmcp::transport::stdio()).await?;
         service.waiting().await?;
         Ok(())
     })
@@ -1855,6 +1881,24 @@ fn format_ms(ms: i64) -> String {
 mod tests {
     use super::*;
     use crate::db::{Database, NewMeeting, NewTranscriptSegment};
+
+    #[test]
+    fn read_only_server_offers_only_reading_tools() {
+        let db = Arc::new(Database::new_in_memory().unwrap());
+        let all = NootleMcpServer::new(db.clone()).tool_router.list_all();
+        let read_only = NootleMcpServer::read_only(db).tool_router.list_all();
+        assert!(!read_only.is_empty() && read_only.len() < all.len());
+        for tool in &read_only {
+            assert_eq!(
+                tool.annotations.as_ref().and_then(|a| a.read_only_hint),
+                Some(true),
+                "{}",
+                tool.name
+            );
+        }
+        let names: Vec<&str> = read_only.iter().map(|t| t.name.as_ref()).collect();
+        assert!(!names.contains(&"delete_meeting"));
+    }
 
     fn setup_test_db() -> Arc<Database> {
         let db = Database::new_in_memory().unwrap();

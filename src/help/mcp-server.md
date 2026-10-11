@@ -4,6 +4,10 @@ The quick start is filled in for your install, and Settings → About shows it t
 
 The server is `nootle-cli`, which ships inside Nootle.app and never opens the app window. Setups from older versions that run `nootle --mcp` keep working.
 
+### Read-only mode
+
+Add `--read-only` to the command (`nootle-cli mcp --read-only`) to offer only tools that read: the agent can search and read meetings, but can't edit, delete, or send anything to an integration. Anyone in a meeting can influence what its transcript says, so read-only is the safer choice for agents that act on what they read.
+
 ## What is MCP?
 
 MCP (Model Context Protocol) is an open standard that lets AI assistants connect to external tools and data sources. When you enable Nootle's MCP server, Claude can search your meetings, read transcripts, and answer questions about what was discussed — all without you having to copy and paste anything.

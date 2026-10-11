@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible } from "@/components/Collapsible";
 import { PageHeader } from "@/components/PageHeader";
 import { McpSetup } from "@/components/McpSetup";
+import { CopyButton } from "@/components/CopyButton";
 import { DictionaryManager } from "@/components/DictionaryManager";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
@@ -739,6 +740,30 @@ function InsightTypesManager() {
 }
 
 
+/** A ready-to-use start link with this install's secret token, so a web
+ * page can't start a recording just by opening a nootle:// link. */
+function UrlControlLink() {
+  const [token, setToken] = useState<string | null>(null);
+  useEffect(() => {
+    invoke<string>("get_remote_control_token").then(setToken).catch(() => {});
+  }, []);
+  if (!token) return null;
+  const link = `nootle://record/start?token=${token}`;
+  return (
+    <div className="space-y-1.5 rounded-md bg-muted/50 p-3">
+      <p className="text-xs text-muted-foreground">
+        Links must include this Mac's token. <code>nootle-cli record</code> adds it for you; for
+        your own scripts, copy a link and swap <code>start</code> for <code>stop</code>,{" "}
+        <code>toggle</code>, or <code>status</code>.
+      </p>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate text-xs">{link}</code>
+        <CopyButton text={link} variant="button" label="Copy link" />
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { storedProviders, storeKey, deleteKey } = useApiKeys();
   const { providers: llmProviders } = useLLM();
@@ -879,6 +904,7 @@ export function SettingsPage() {
                     aria-label="Allow URL control"
                   />
                 </div>
+                {remoteControlEnabled && <UrlControlLink />}
               </CardContent>
             </Card>
             <PermissionsCard />

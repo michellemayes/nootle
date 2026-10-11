@@ -1962,6 +1962,12 @@ pub async fn set_app_setting(
         .map_err(|e| e.to_string())
 }
 
+/// The token `nootle://` links must carry, for Settings to show.
+#[tauri::command(async)]
+pub fn get_remote_control_token(db: State<'_, DbState>) -> Result<String, String> {
+    crate::remote::token(&db).map_err(|e| e.to_string())
+}
+
 #[tauri::command(async)]
 pub fn create_chat_conversation(db: State<'_, DbState>) -> Result<ChatConversation, String> {
     db.create_chat_conversation().map_err(|e| e.to_string())

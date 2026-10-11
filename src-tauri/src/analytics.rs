@@ -240,7 +240,7 @@ pub async fn analyze_sentiment(
             }
         };
         let Some(items) = parse_sentiment_batch(&response) else {
-            tracing::warn!("Failed to parse sentiment JSON: {response}");
+            tracing::warn!("Failed to parse sentiment JSON ({} chars)", response.len());
             last_error = Some("Could not parse sentiment response from the model".into());
             continue;
         };
