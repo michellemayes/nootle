@@ -283,7 +283,7 @@ fn a_named_voice_is_recognised_next_time() {
     let db = Database::new_in_memory().unwrap();
     db.set_setting(nootle_app_lib::voices::SETTING_KEY, "true")
         .unwrap();
-    let mut record = |name: &str| -> String {
+    let record = |name: &str| -> String {
         let audio_path = dir.path().join(format!("{name}.wav"));
         let mut mixed = AudioWriter::new(&audio_path, 16_000).unwrap();
         mixed.write_samples(&call.mixed()).unwrap();
