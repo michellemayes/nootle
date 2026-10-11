@@ -46,6 +46,56 @@ const LiveSegments = memo(function LiveSegments({
   ));
 });
 
+interface ConsentReminderState {
+  enabled: boolean;
+  message: string;
+  noted_at: string | null;
+}
+
+/** Many places require everyone's consent to record a call, and a recorder
+ * with no bot in the call gives nobody a visual cue. This reminds you to say
+ * so, with a message to paste into the meeting chat. */
+function ConsentReminder({ meetingId }: { meetingId: string }) {
+  const [state, setState] = useState<ConsentReminderState | null>(null);
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    invoke<ConsentReminderState>("get_consent_reminder", { meetingId })
+      .then(setState)
+      .catch(() => {});
+  }, [meetingId]);
+  if (!state?.enabled || state.noted_at || hidden) return null;
+
+  const noted = () => {
+    invoke<string>("note_consent", { meetingId })
+      .then((noted_at) => setState((s) => (s ? { ...s, noted_at } : s)))
+      .catch(() => {});
+  };
+  return (
+    <div className="flex items-center gap-3 border-b bg-muted/40 px-6 py-2 text-xs">
+      <span className="flex-1 text-muted-foreground">
+        Let everyone know they're being recorded. Paste this into the meeting chat:{" "}
+        <span className="text-foreground">"{state.message}"</span>
+      </span>
+      <Button
+        size="xs"
+        variant="secondary"
+        onClick={async () => {
+          await navigator.clipboard.writeText(state.message).catch(() => {});
+          noted();
+        }}
+      >
+        Copy message
+      </Button>
+      <Button size="xs" variant="ghost" onClick={noted} title="Mark that you told them">
+        I told them
+      </Button>
+      <Button size="xs" variant="ghost" onClick={() => setHidden(true)} aria-label="Hide reminder">
+        ×
+      </Button>
+    </div>
+  );
+}
+
 interface TranscriptionStatus {
   meeting_id: string;
   available: boolean;
@@ -360,6 +410,8 @@ export function RecordingView() {
           {!isCompact && !stopping && <Kbd onSolid className="ml-1">⌘↵</Kbd>}
         </Button>
       </div>
+
+      {currentMeeting && isRecording && <ConsentReminder meetingId={currentMeeting.id} />}
 
       {silent && (
         <div

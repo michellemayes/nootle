@@ -1978,6 +1978,31 @@ pub fn forget_all_voices(db: State<'_, DbState>) -> Result<(), String> {
     db.forget_all_voices().map_err(|e| e.to_string())
 }
 
+/// What the recording screen needs to remind you to tell people they're
+/// being recorded: whether the reminder is on, the message to copy, and
+/// whether you already told this meeting.
+#[tauri::command(async)]
+pub fn get_consent_reminder(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<serde_json::Value, String> {
+    use crate::ops::{CONSENT_MESSAGE_SETTING, CONSENT_REMINDER_SETTING, DEFAULT_CONSENT_MESSAGE};
+    let setting = |key| db.get_setting(key).map_err(|e| e.to_string());
+    Ok(serde_json::json!({
+        "enabled": setting(CONSENT_REMINDER_SETTING)?.as_deref() != Some("false"),
+        "message": setting(CONSENT_MESSAGE_SETTING)?
+            .filter(|m| !m.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_CONSENT_MESSAGE.to_string()),
+        "noted_at": db.consent_noted_at(&meeting_id).map_err(|e| e.to_string())?,
+    }))
+}
+
+/// Records that you told this meeting's participants they're recorded.
+#[tauri::command(async)]
+pub fn note_consent(db: State<'_, DbState>, meeting_id: String) -> Result<String, String> {
+    db.note_consent(&meeting_id).map_err(|e| e.to_string())
+}
+
 /// The token `nootle://` links must carry, for Settings to show.
 #[tauri::command(async)]
 pub fn get_remote_control_token(db: State<'_, DbState>) -> Result<String, String> {

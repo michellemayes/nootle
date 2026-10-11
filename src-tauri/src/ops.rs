@@ -61,6 +61,8 @@ pub const SUMMARIZATION_PROVIDER_SETTING: &str = "summarization_provider";
 pub const TOGGLE_SETTINGS: &[&str] = &[
     "detection_enabled",
     crate::voices::SETTING_KEY,
+    crate::llm::LOCAL_ONLY_SETTING,
+    CONSENT_REMINDER_SETTING,
     crate::remote::ENABLED_SETTING,
     crate::dictionary::AUTO_LEARN_SETTING,
     crate::snapshots::SETTING_KEY,
@@ -71,15 +73,26 @@ pub const TOGGLE_SETTINGS: &[&str] = &[
 pub const AGENT_LOCKED_SETTINGS: &[&str] = &[
     crate::remote::ENABLED_SETTING,
     crate::voices::SETTING_KEY,
+    crate::llm::LOCAL_ONLY_SETTING,
     crate::snapshots::SETTING_KEY,
 ];
+
+/// Reminds you to tell people they're being recorded when a recording
+/// starts. On unless turned off.
+pub const CONSENT_REMINDER_SETTING: &str = "consent_reminder";
+/// The message the reminder offers to copy into the meeting chat.
+pub const CONSENT_MESSAGE_SETTING: &str = "consent_message";
+pub const DEFAULT_CONSENT_MESSAGE: &str = "Heads up: I'm recording and transcribing this call \
+     with Nootle so I can take notes. The recording stays on my computer. Let me know if you'd \
+     rather I didn't.";
+const MAX_CONSENT_MESSAGE_CHARS: usize = 600;
 
 /// Settings the app, CLI, and MCP server can read and change.
 pub fn editable_settings() -> impl Iterator<Item = &'static str> {
     TOGGLE_SETTINGS
         .iter()
         .copied()
-        .chain([SUMMARIZATION_PROVIDER_SETTING])
+        .chain([SUMMARIZATION_PROVIDER_SETTING, CONSENT_MESSAGE_SETTING])
 }
 
 pub fn validate_one_of(what: &str, value: &str, allowed: &[&str]) -> Result<()> {
@@ -126,10 +139,14 @@ fn validate_setting_key(key: &str) -> Result<()> {
 /// summarization provider any name ("" for automatic).
 pub fn validate_setting(key: &str, value: &str) -> Result<()> {
     validate_setting_key(key)?;
-    if key == SUMMARIZATION_PROVIDER_SETTING {
-        return Ok(());
+    match key {
+        SUMMARIZATION_PROVIDER_SETTING => Ok(()),
+        CONSENT_MESSAGE_SETTING if value.chars().count() > MAX_CONSENT_MESSAGE_CHARS => Err(
+            anyhow!("The consent message can be at most {MAX_CONSENT_MESSAGE_CHARS} characters"),
+        ),
+        CONSENT_MESSAGE_SETTING => Ok(()),
+        _ => validate_one_of("value", value, &["true", "false"]),
     }
-    validate_one_of("value", value, &["true", "false"])
 }
 
 /// One editable setting's value; `None` when unset.
@@ -150,6 +167,9 @@ pub fn set_setting(db: &Database, key: &str, value: &str) -> Result<String> {
     let value = value.trim();
     validate_setting(key, value)?;
     db.set_setting(key, value)?;
+    if key == crate::llm::LOCAL_ONLY_SETTING {
+        crate::llm::set_local_only(value == "true");
+    }
     Ok(value.to_string())
 }
 
@@ -1217,6 +1237,14 @@ mod tests {
         );
         db.update_meeting_status(&id, "summarized").unwrap();
         assert_eq!(meetings_to_index(&db).unwrap(), vec![id]);
+    }
+
+    #[test]
+    fn consent_message_is_free_text_within_a_limit() {
+        assert!(validate_setting(CONSENT_MESSAGE_SETTING, "We're recording, OK?").is_ok());
+        assert!(validate_setting(CONSENT_MESSAGE_SETTING, &"x".repeat(601)).is_err());
+        assert!(validate_setting(CONSENT_REMINDER_SETTING, "maybe").is_err());
+        assert!(AGENT_LOCKED_SETTINGS.contains(&crate::llm::LOCAL_ONLY_SETTING));
     }
 
     #[test]

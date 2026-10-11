@@ -77,6 +77,13 @@ pub async fn run_workflow_for_meeting(
     llm_provider: Option<&str>,
     llm_model: Option<&str>,
 ) -> crate::error::Result<crate::db::WorkflowRun> {
+    if crate::llm::local_only() {
+        return Err(crate::error::NootleError::Other(
+            "Local-only mode is on, so meetings aren't sent to integrations. Turn it off in \
+             Settings → Privacy to run workflows."
+                .into(),
+        ));
+    }
     let workflow = db.get_workflow(workflow_id)?;
     let integration = db.get_integration(&workflow.integration_id)?;
     let meeting = db.get_meeting(meeting_id)?;

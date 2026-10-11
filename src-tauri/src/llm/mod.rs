@@ -58,6 +58,28 @@ impl Default for LlmRegistry {
     }
 }
 
+/// Setting for local-only mode: meeting content may only go to AI that runs
+/// on this Mac (Ollama), and nothing is sent to integrations.
+pub const LOCAL_ONLY_SETTING: &str = "local_only";
+
+/// Local-only mode for this process, mirrored from the setting so every
+/// provider lookup can honour it without a database read.
+static LOCAL_ONLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_local_only(on: bool) {
+    LOCAL_ONLY.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn local_only() -> bool {
+    LOCAL_ONLY.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Providers that never send meeting content off this Mac. Ollama is only
+/// ever reached on localhost.
+fn runs_locally(provider: &str) -> bool {
+    provider == "ollama"
+}
+
 impl LlmRegistry {
     pub fn new() -> Self {
         Self { providers: vec![] }
@@ -67,6 +89,12 @@ impl LlmRegistry {
     /// reachable or installed, plus any with an API key stored in `db`.
     pub fn detect(db: &crate::db::Database) -> Self {
         let mut registry = Self::new();
+        set_local_only(
+            db.get_setting(LOCAL_ONLY_SETTING)
+                .ok()
+                .flatten()
+                .is_some_and(|v| v == "true"),
+        );
 
         // Register Ollama only if it's reachable locally
         if std::net::TcpStream::connect_timeout(
@@ -107,24 +135,50 @@ impl LlmRegistry {
         self.providers.retain(|p| p.provider_name() != name);
     }
 
-    pub fn get_provider(&self, name: &str) -> Option<&dyn LlmProvider> {
+    /// Registered providers usable right now: in local-only mode, only
+    /// those that run on this Mac.
+    fn usable(&self) -> impl Iterator<Item = &dyn LlmProvider> {
+        self.usable_when(local_only())
+    }
+
+    fn usable_when(&self, local_only: bool) -> impl Iterator<Item = &dyn LlmProvider> {
         self.providers
             .iter()
-            .find(|p| p.provider_name() == name)
             .map(|p| p.as_ref())
+            .filter(move |p| !local_only || runs_locally(p.provider_name()))
+    }
+
+    pub fn get_provider(&self, name: &str) -> Option<&dyn LlmProvider> {
+        self.usable().find(|p| p.provider_name() == name)
     }
 
     pub fn all_models(&self) -> Vec<ModelInfo> {
-        self.providers
-            .iter()
-            .flat_map(|p| p.available_models())
-            .collect()
+        self.usable().flat_map(|p| p.available_models()).collect()
     }
 
     pub fn provider_names(&self) -> Vec<String> {
-        self.providers
-            .iter()
+        self.usable()
             .map(|p| p.provider_name().to_string())
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_only_keeps_just_providers_on_this_mac() {
+        let mut registry = LlmRegistry::new();
+        registry.register(Box::new(OllamaProvider::new()));
+        registry.register(provider_for_key("openai", "sk-test".into()).unwrap());
+        let names = |local_only| -> Vec<&str> {
+            registry
+                .usable_when(local_only)
+                .map(|p| p.provider_name())
+                .collect()
+        };
+        assert_eq!(names(false), ["ollama", "openai"]);
+        assert_eq!(names(true), ["ollama"]);
     }
 }

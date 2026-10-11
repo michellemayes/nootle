@@ -1312,6 +1312,11 @@ impl Database {
                  samples INTEGER NOT NULL DEFAULT 1,
                  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
              );",
+            // 4: when you told a meeting's participants they were recorded.
+            "CREATE TABLE meeting_consent (
+                 meeting_id TEXT PRIMARY KEY REFERENCES meetings(id) ON DELETE CASCADE,
+                 noted_at TEXT NOT NULL
+             );",
         ];
 
         let current: usize =
@@ -2366,6 +2371,35 @@ impl Database {
         Self::delete_meeting_chunks_with(&tx, meeting_id)?;
         tx.commit()?;
         Ok(())
+    }
+
+    // --- Recording consent ---
+
+    /// Records that participants were told about the recording (first time
+    /// only), returning when.
+    pub fn note_consent(&self, meeting_id: &str) -> Result<String> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_consent (meeting_id, noted_at) VALUES (?1, ?2)",
+            params![meeting_id, chrono::Utc::now().to_rfc3339()],
+        )?;
+        Ok(conn.query_row(
+            "SELECT noted_at FROM meeting_consent WHERE meeting_id = ?1",
+            params![meeting_id],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// When participants were told about the recording, if they were.
+    pub fn consent_noted_at(&self, meeting_id: &str) -> Result<Option<String>> {
+        let conn = self.lock_conn()?;
+        Ok(conn
+            .query_row(
+                "SELECT noted_at FROM meeting_consent WHERE meeting_id = ?1",
+                params![meeting_id],
+                |row| row.get(0),
+            )
+            .optional()?)
     }
 
     // --- Remembered voices ---

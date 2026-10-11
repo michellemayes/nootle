@@ -827,6 +827,84 @@ function RememberedVoices() {
   );
 }
 
+/** Privacy: the consent reminder, its message, and local-only mode. */
+function PrivacyCard() {
+  const [reminder, setReminder] = useState(true);
+  const [message, setMessage] = useState("");
+  const [localOnly, setLocalOnly] = useState(false);
+  useEffect(() => {
+    invoke<string | null>("get_app_setting", { key: "consent_reminder" })
+      .then((v) => setReminder(v !== "false"))
+      .catch(() => {});
+    invoke<string | null>("get_app_setting", { key: "consent_message" })
+      .then((v) => setMessage(v ?? ""))
+      .catch(() => {});
+    invoke<string | null>("get_app_setting", { key: "local_only" })
+      .then((v) => setLocalOnly(v === "true"))
+      .catch(() => {});
+  }, []);
+  const save = (key: string, value: string) =>
+    invoke("set_app_setting", { key, value }).catch(() => {});
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Privacy</CardTitle>
+        <CardDescription>Consent and where meeting content may go</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Consent reminder</p>
+            <p className="text-sm text-muted-foreground">
+              When a recording starts, remind me to tell everyone, with a message to paste into
+              the meeting chat. Many places require everyone's consent to record
+            </p>
+          </div>
+          <Switch
+            checked={reminder}
+            onCheckedChange={(on) => {
+              setReminder(on);
+              save("consent_reminder", String(on));
+            }}
+            aria-label="Consent reminder"
+          />
+        </div>
+        {reminder && (
+          <Textarea
+            value={message}
+            maxLength={600}
+            placeholder="Heads up: I'm recording and transcribing this call with Nootle so I can take notes. The recording stays on my computer. Let me know if you'd rather I didn't."
+            onChange={(e) => setMessage(e.target.value)}
+            onBlur={() => save("consent_message", message)}
+            className="text-sm"
+            rows={2}
+            aria-label="Consent message"
+          />
+        )}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Local-only mode</p>
+            <p className="text-sm text-muted-foreground">
+              Meeting content never leaves this Mac: summaries and chat use only local models
+              (Ollama), and workflows don't send anything to integrations. Recording and
+              transcription are always local
+            </p>
+          </div>
+          <Switch
+            checked={localOnly}
+            onCheckedChange={(on) => {
+              setLocalOnly(on);
+              save("local_only", String(on));
+            }}
+            aria-label="Local-only mode"
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 /** A ready-to-use start link with this install's secret token, so a web
  * page can't start a recording just by opening a nootle:// link. */
 function UrlControlLink() {
@@ -995,6 +1073,7 @@ export function SettingsPage() {
                 <RememberedVoices />
               </CardContent>
             </Card>
+            <PrivacyCard />
             <PermissionsCard />
           </div>
         </TabsContent>

@@ -817,3 +817,23 @@ fn test_reopening_a_database_does_not_rerun_migrations() {
         "the one-time re-index migration must not wipe a fresh index"
     );
 }
+
+#[test]
+fn test_consent_is_noted_once() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Call".to_string(),
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    assert_eq!(db.consent_noted_at(&meeting.id).unwrap(), None);
+    let first = db.note_consent(&meeting.id).unwrap();
+    assert_eq!(
+        db.note_consent(&meeting.id).unwrap(),
+        first,
+        "the first time is kept"
+    );
+    assert_eq!(db.consent_noted_at(&meeting.id).unwrap(), Some(first));
+}
