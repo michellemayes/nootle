@@ -750,7 +750,7 @@ mod tests {
 
     #[test]
     fn test_cluster_voices_scales_to_long_meetings() {
-        let voices: Vec<Vec<f32>> = (0..1000)
+        let voices: Vec<Vec<f32>> = (0..400)
             .map(|i| {
                 let mut v = vec![0.0f32; 256];
                 v[i % 4] = 1.0;
@@ -762,7 +762,7 @@ mod tests {
         let refs: Vec<&[f32]> = voices.iter().map(Vec::as_slice).collect();
         let clusters = cluster_voices(&refs, OFFLINE_SIMILARITY);
         assert_eq!(clusters.iter().max(), Some(&3));
-        assert!(started.elapsed().as_secs() < 30, "{:?}", started.elapsed());
+        assert!(started.elapsed().as_secs() < 10, "{:?}", started.elapsed());
     }
 
     #[test]

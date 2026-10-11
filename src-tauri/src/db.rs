@@ -338,10 +338,8 @@ pub struct VoiceProfile {
 }
 
 fn bytes_to_f32s(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-        .collect()
+    let (chunks, _) = bytes.as_chunks::<4>();
+    chunks.iter().map(|b| f32::from_le_bytes(*b)).collect()
 }
 
 /// Filters for questions asked across all meetings.
