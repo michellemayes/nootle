@@ -7,6 +7,7 @@ on:
       - "**.md"
       - "docs/**"
       - "site/**"
+      - "Casks/**"
   workflow_dispatch:
 
 permissions:
@@ -178,7 +179,7 @@ jobs:
           gh release edit "$TAG" --draft=false --latest
 
       # Regenerate CHANGELOG.md on the latest main now that the new tag exists.
-      # The commit only touches a .md file, so it doesn't trigger another publish.
+      # The commit only touches CHANGELOG.md and Casks/, which publish ignores.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: main
@@ -187,18 +188,23 @@ jobs:
       # Regenerated from scratch on each attempt: if main moves between
       # checkout and push, rebuild on the new main rather than rebasing a
       # changelog that would miss the commit that just landed.
-      - name: Regenerate and push CHANGELOG.md
+      - name: Regenerate CHANGELOG.md, bump the Homebrew cask, and push
         run: |
           pipx install git-cliff
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          VERSION="${TAG#v}"
+          gh release download "$TAG" --pattern "Nootle_${VERSION}_aarch64.dmg" --dir /tmp/dmg
+          SHA=$(sha256sum "/tmp/dmg/Nootle_${VERSION}_aarch64.dmg" | cut -d' ' -f1)
           for attempt in 1 2 3; do
             git fetch origin main
             git reset --hard origin/main
             git-cliff --output CHANGELOG.md
-            git add CHANGELOG.md
+            sed -i -e "s/^  version \".*\"/  version \"$VERSION\"/" \
+                   -e "s/^  sha256 \".*\"/  sha256 \"$SHA\"/" Casks/nootle.rb
+            git add CHANGELOG.md Casks/nootle.rb
             if git diff --cached --quiet; then
-              echo "CHANGELOG.md already up to date"
+              echo "CHANGELOG.md and cask already up to date"
               exit 0
             fi
             git commit -m "chore: update changelog for $TAG"

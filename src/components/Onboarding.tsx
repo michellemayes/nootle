@@ -24,6 +24,16 @@ const PROVIDERS = [
 ] as const;
 
 export function Onboarding({ onComplete }: { onComplete: () => void }) {
+  // Opens the app on the recording screen with a test recording under way,
+  // so the first transcript and summary arrive in a minute, not at the next
+  // meeting. React Router keeps navigation state under `usr`.
+  const startTestRecording = () => {
+    window.history.replaceState(
+      { usr: { title: "Test recording" }, key: "test", idx: 0 },
+      "",
+      "/recording",
+    );
+  };
   const [step, setStep] = useState<Step>("Welcome");
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -150,11 +160,25 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                 </h2>
                 <p className="mb-8 text-muted-foreground">
                   Nootle detects meetings in Zoom, Teams, and Google Meet. You
-                  can also start a recording yourself at any time.
+                  can also start a recording yourself at any time. Try a short
+                  test recording now: talk for 30 seconds, press Stop, and see
+                  your transcript and summary.
                 </p>
-                <Button size="lg" onClick={finish} disabled={saving}>
-                  {saving ? "Setting up…" : "Open Nootle"}
-                </Button>
+                <div className="flex justify-center gap-3">
+                  <Button
+                    size="lg"
+                    onClick={() => {
+                      startTestRecording();
+                      finish();
+                    }}
+                    disabled={saving}
+                  >
+                    Make a test recording
+                  </Button>
+                  <Button size="lg" variant="outline" onClick={finish} disabled={saving}>
+                    {saving ? "Setting up…" : "Open Nootle"}
+                  </Button>
+                </div>
               </div>
             )}
           </motion.div>
@@ -193,9 +217,10 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
     };
   }, [checkStatus]);
 
-  // Calendar access only powers meeting detection, so it doesn't block setup.
-  const requiredGranted =
-    status?.microphone === "granted" && status?.screen_recording === true;
+  // Only the microphone is essential. Without screen recording Nootle can't
+  // hear the other side of a call, but in-person meetings and voice memos
+  // work, so it doesn't block setup; calendar access is a convenience.
+  const requiredGranted = status?.microphone === "granted";
 
   const requestPermission = async (type: "microphone" | "screen_recording" | "calendar") => {
     setRequesting(type);
@@ -254,13 +279,15 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
       </div>
       {!screenGranted && (
         <p className="mt-4 text-xs text-muted-foreground">
-          Screen recording is turned on in System Settings. Nootle picks up the
-          change automatically.
+          Screen recording is turned on in System Settings, and Nootle picks up the change
+          automatically. It's how Nootle hears the other people on a call; nothing on your
+          screen is recorded unless you turn on Snapshots. You can skip it for now and grant it
+          before your first call.
         </p>
       )}
       <div className="mt-8 flex justify-end">
         <Button onClick={onNext} disabled={!requiredGranted}>
-          Continue
+          {requiredGranted && !screenGranted ? "Continue without call audio" : "Continue"}
         </Button>
       </div>
     </div>
@@ -424,6 +451,9 @@ function ModelsStep({ onNext }: { onNext: () => void }) {
 
           {allDownloaded ? (
             <Button onClick={onNext}>Continue</Button>
+          ) : isDownloading || downloadingAll ? (
+            // Downloads carry on in the background; no need to wait here.
+            <Button onClick={onNext}>Continue while downloading</Button>
           ) : (
             <Button
               onClick={handleDownloadAll}

@@ -5,9 +5,13 @@
 <h1 align="center">Nootle</h1>
 
 <p align="center">
-  <strong>Your AI meeting recorder and assistant</strong>
+  <strong>The open-source, local-first AI meeting notetaker for Mac</strong>
   <br />
-  Record, transcribe, and understand your meetings with local AI.
+  Record any call without a bot, transcribe it on your Mac, and get summaries, action items, and answers with the AI you choose. A free, MIT-licensed alternative to Granola, Otter, and Fireflies.
+</p>
+
+<p align="center">
+  <code>brew tap michellemayes/nootle https://github.com/michellemayes/nootle && brew install --cask nootle</code>
 </p>
 
 <p align="center">
@@ -22,6 +26,23 @@
 Nootle captures your meetings — microphone and system audio — transcribes them in real time with speaker identification, and lets you chat with an AI about what was said. No cloud recording service needed.
 
 > **A note on privacy.** Recording and transcription are always local — meeting audio is never uploaded, and transcripts live only on your Mac. AI summaries and chat use whichever LLM provider you point Nootle at: pick **Ollama** (with a local model) to keep everything on-device, or use OpenAI, Anthropic, Google, Groq, OpenRouter, or AWS Bedrock with your own API key. You can also route through the **Claude Code CLI** (`claude -p`) or **Codex CLI** to reuse an existing Claude or ChatGPT subscription instead of an API key. Nootle is fully local end-to-end only when you use a local AI model. Turn on **Local-only mode** (Settings → Privacy) to enforce that: only local models can see meeting content, and workflows won't send anything to integrations.
+
+## Why Nootle
+
+| | Nootle | Granola | Otter | Meetily |
+|---|---|---|---|---|
+| Records without a bot joining the call | ✅ | ✅ | Desktop app only | ✅ |
+| Transcription on your Mac | ✅ | ❌ | ❌ | ✅ |
+| Tells speakers apart, remembers names | ✅ free | "Me / Them" on desktop | ✅ | Pro |
+| Any AI, including local models (Ollama) or your Claude / ChatGPT subscription | ✅ | ❌ | ❌ | ✅ |
+| Full history as plain files you own | ✅ | Limited free history; encrypted local cache | Paid plans | ✅ |
+| MCP server and CLI for agents | ✅ (read-only mode available) | MCP on paid plans | MCP (enterprise) | — |
+| Open source | ✅ MIT | ❌ | ❌ | Open core |
+| Price | Free | Free / $14 a month | Free / from $8.33 a month | Free / about $10 a month |
+
+Competitor details are as of October 2026 and change often; check their sites.
+
+**No telemetry.** Nootle sends no analytics, crash reports, or usage data anywhere. The only network calls are the AI provider you pick, model downloads from Hugging Face (each hash-checked), integrations you set up, and the update check against GitHub Releases.
 
 ## Screenshots
 
@@ -124,7 +145,14 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 
 ## Install
 
-Download the latest `.dmg` from [**Releases**](https://github.com/michellemayes/nootle/releases), open it, and drag Nootle to Applications.
+With [Homebrew](https://brew.sh):
+
+```bash
+brew tap michellemayes/nootle https://github.com/michellemayes/nootle
+brew install --cask nootle
+```
+
+Or download the latest `.dmg` from [**Releases**](https://github.com/michellemayes/nootle/releases), open it, and drag Nootle to Applications.
 
 Nootle supports Apple Silicon Macs only (M1, M2, M3, M4, and M5). Intel Macs are not supported. Download `Nootle_x.y.z_aarch64.dmg`.
 
