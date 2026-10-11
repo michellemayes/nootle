@@ -2151,14 +2151,14 @@ mod tests {
             })))
             .0
         };
-        assert!(!set("denoise_enabled", "false"));
+        assert!(!set("detection_enabled", "false"));
         assert!(!set("summarization_provider", "ollama"));
-        assert!(set("denoise_enabled", "off"));
+        assert!(set("detection_enabled", "off"));
         assert!(set(crate::remote::ENABLED_SETTING, "true"));
         assert!(set("api_key", "x"));
 
         let (_, settings) = output(server.get_settings());
-        assert_eq!(settings["denoise_enabled"], "false");
+        assert_eq!(settings["detection_enabled"], "false");
         assert_eq!(settings["summarization_provider"], "ollama");
         assert!(settings[crate::remote::ENABLED_SETTING].is_null());
     }

@@ -20,7 +20,7 @@ import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
 import { INSIGHT_ICONS } from "@/lib/insightIcons";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
-import { useModelDownload, MODELS_REQUIRING_AUTH } from "@/hooks/useModelDownload";
+import { useModelDownload } from "@/hooks/useModelDownload";
 import { useTheme } from "@/hooks/useTheme";
 
 import { useInsightTypes } from "@/hooks/useInsightTypes";
@@ -745,15 +745,11 @@ export function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const version = useAppVersion();
   const [searchParams] = useSearchParams();
-  const [denoiseEnabled, setDenoiseEnabled] = useState(true);
   const [detectionEnabled, setDetectionEnabled] = useState(true);
   const [remoteControlEnabled, setRemoteControlEnabled] = useState(false);
   const [snapshotsEnabled, setSnapshotsEnabled] = useState(false);
 
   useEffect(() => {
-    invoke<string | null>("get_app_setting", { key: "denoise_enabled" })
-      .then((val) => setDenoiseEnabled(val !== "false"))
-      .catch(() => {});
     invoke<string | null>("get_app_setting", { key: "detection_enabled" })
       .then((val) => setDetectionEnabled(val !== "false"))
       .catch(() => {});
@@ -764,14 +760,6 @@ export function SettingsPage() {
       .then((val) => setSnapshotsEnabled(val === "true"))
       .catch(() => {});
   }, []);
-
-  const toggleDenoise = async (enabled: boolean) => {
-    setDenoiseEnabled(enabled);
-    await invoke("set_app_setting", {
-      key: "denoise_enabled",
-      value: String(enabled),
-    });
-  };
 
   const toggleDetection = async (enabled: boolean) => {
     setDetectionEnabled(enabled);
@@ -849,22 +837,9 @@ export function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Recording</CardTitle>
-                <CardDescription>How audio is captured and cleaned up</CardDescription>
+                <CardDescription>How meetings are captured</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Noise cancellation</p>
-                    <p className="text-sm text-muted-foreground">
-                      Clean up audio before transcription for better accuracy
-                    </p>
-                  </div>
-                  <Switch
-                    checked={denoiseEnabled}
-                    onCheckedChange={toggleDenoise}
-                    aria-label="Noise cancellation"
-                  />
-                </div>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">Auto-detect meetings</p>
@@ -1156,7 +1131,6 @@ function ModelManagementCard() {
       <CardContent>
         <div className="divide-y">
           {diskStatus
-            .filter((model) => !MODELS_REQUIRING_AUTH.has(model.model_id))
             .map((model) => {
             const regModel = registry.find((r) => r.id === model.model_id);
             const isThisModelDownloading =

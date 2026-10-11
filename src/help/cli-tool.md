@@ -133,7 +133,7 @@ Credentials and API keys are never printed. If Nootle is open, reopen the page t
 | `chat messages <id>` | List messages in a conversation |
 | `chat create` / `rename <id> <title>` / `delete <id>` | Manage conversations |
 | `chat send <id> <message>` | Ask in a conversation, answered from all meetings (LLM) |
-| `settings list` / `get <key>` / `set <key> <value>` | App toggles (`denoise_enabled`, `detection_enabled`, `remote_control_enabled`, `dictionary_auto_learn`) and `summarization_provider` |
+| `settings list` / `get <key>` / `set <key> <value>` | App toggles (`detection_enabled`, `remote_control_enabled`, `dictionary_auto_learn`) and `summarization_provider` |
 | `linear tickets <meeting-id>` | Linear tickets created from a meeting |
 | `api-keys list` / `set <provider>` / `delete <provider>` | Manage API keys; `set` reads the key from stdin or `--key @file` |
 | `record start [--title T]` / `stop` / `toggle` | Control recording in the running app (needs Settings → Recording → Allow URL control) |

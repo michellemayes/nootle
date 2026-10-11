@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   useModelDownload,
-  MODELS_REQUIRING_AUTH,
   type ModelDefinition,
 } from "@/hooks/useModelDownload";
 import { VariantPicker, DownloadProgressBar } from "@/components/ModelDownload";
@@ -269,12 +268,7 @@ function PermissionsStep({ onNext }: { onNext: () => void }) {
 }
 
 function ModelsStep({ onNext }: { onNext: () => void }) {
-  const { registry: fullRegistry, diskStatus, progress, downloadModel, cancelDownload } =
-    useModelDownload();
-  const registry = useMemo(
-    () => fullRegistry.filter((m) => !MODELS_REQUIRING_AUTH.has(m.id)),
-    [fullRegistry],
-  );
+  const { registry, diskStatus, progress, downloadModel, cancelDownload } = useModelDownload();
 
   // Track selected variant per model (default to "int8" for models that have it)
   const [selectedVariants, setSelectedVariants] = useState<

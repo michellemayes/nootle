@@ -1140,15 +1140,12 @@ fn journey_stale_recording_cleanup() {
     db.finalize_meeting(&good.id, "2026-03-07T10:00:00Z", None, "summarized")
         .unwrap();
 
-    // Cleanup stale recordings
-    let cleaned = db.cleanup_stale_recordings().unwrap();
-    // Note: cleanup_stale_recordings uses a time-based check, so a just-created
-    // meeting may not be considered stale yet. We verify the function runs
-    // without error and the good meeting survives.
-    let meetings = db.list_meetings(None, false, None).unwrap();
-    assert!(meetings.iter().any(|m| m.title == "Good Meeting"));
-    // The stale one may or may not be cleaned depending on timing threshold
-    let _ = cleaned;
+    // Only the meeting a crash left recording needs recovering; nothing is
+    // marked done before its transcript and summary actually exist.
+    let interrupted = db.interrupted_meetings().unwrap();
+    assert_eq!(interrupted.len(), 1);
+    assert_eq!(interrupted[0].title, "Crashed Meeting");
+    assert_eq!(interrupted[0].status, "recording");
 }
 
 #[test]

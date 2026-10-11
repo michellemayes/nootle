@@ -48,6 +48,14 @@ export function useTranscript(meetingId: string) {
     return () => { unlisten.then((fn) => fn()); };
   }, [meetingId]);
 
+  // The post-meeting speaker pass relabelled lines, or an interrupted
+  // meeting is being transcribed again from its recording.
+  useEffect(() => {
+    const unlisten = listen<string>("transcript-replaced", (event) => {
+      if (event.payload === meetingId) refresh();
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [meetingId, refresh]);
 
   /** Rename (or, onto an existing name, merge) a speaker across the meeting. */
   const renameSpeaker = useCallback(

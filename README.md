@@ -84,8 +84,8 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 ## Features
 
 - **Record everything** — capture microphone and system audio simultaneously
-- **Live transcription** — speech-to-text powered by Parakeet via ONNX Runtime
-- **Speaker identification** — know who said what with automatic diarization (download the **Speaker Diarization** model in Settings). On a call (Zoom, Meet, Teams, and the rest), your microphone is labelled **You** and the call's audio is split into **Speaker 1**, **Speaker 2**, and so on. In an in-person meeting, everyone at the mic is told apart the same way. Click a speaker's name in the transcript to rename them everywhere in that meeting. Renaming one speaker to another's name merges the two
+- **Live transcription** — speech-to-text powered by Parakeet via ONNX Runtime. Audio is split where people pause (Silero voice activity detection), so each sentence is transcribed whole, with its own timing and a confidence score. Download **Voice Activity Detection** in Settings → Models (it's fetched for you if you already have the transcription model); until then a simpler energy-based detector is used
+- **Speaker identification** — know who said what with automatic diarization (download the **Speaker Diarization** model in Settings). On a call (Zoom, Meet, Teams, and the rest), your microphone is labelled **You** and the call's audio is split into **Speaker 1**, **Speaker 2**, and so on. In an in-person meeting, everyone at the mic is told apart the same way. When a meeting ends, a second speaker pass compares every sentence's voice with every other across the whole recording, which tells speakers apart far better than the live pass can. On calls, Nootle keeps your microphone and the call audio as separate channels next to the recording (`<meeting>.stems.wav`) for this. Click a speaker's name in the transcript to rename them everywhere in that meeting. Renaming one speaker to another's name merges the two
 - **Snapshots** — turn on **Snapshots** in Settings and, when someone shares their screen in a call (including you), Nootle snaps the slides, designs, docs, or charts into your notes, one picture per slide. Only the meeting window is captured, except while you share your own screen: then the display you're sharing is captured, with the meeting app's and Nootle's own windows left out. Capture only happens while a call is on and the recording isn't paused. Text on each snapshot is read on your Mac, so summaries, chat, and search can answer questions like "what did the revenue chart say?". Snapshots appear at the bottom of the meeting's notes, where you can view or remove them, and a snapshot indicator shows in the recording bar
 - **Live audio levels** — microphone and system-audio level bars in the recording bar show that sound is coming in, and a warning appears if Nootle hears nothing for 20 seconds (a muted mic or the wrong input). The live transcript follows along as people speak; scroll up to re-read and **Jump to live** brings you back
 - **Pause and resume** — go off the record mid-meeting; nothing is recorded or transcribed while paused, and the timer counts only recorded time
@@ -104,8 +104,8 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 - **URL scheme** — start and stop recordings from other apps or scripts via `nootle://` links (opt-in)
 - **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email. Notion, Linear, and Confluence connect in one click through their official MCP servers. GitHub can reuse your GitHub CLI (`gh`) sign-in. Anything else takes a pasted token, and a **Get a token** button opens the right page for each service, with Slack's app and GitHub's scopes pre-filled
 - **Templates** — customizable summary templates you can pick per recording, or mark auto-run to choose which ones run on every meeting (e.g. a standing template for 1:1s, standups, or interviews). With none marked, the built-in General template runs
-- **Semantic search** — ask questions across your entire meeting history
-- **Noise cancellation** — built-in denoising for cleaner audio and transcripts
+- **Search that finds names and numbers** — Ask combines meaning-based search with keyword search, so it finds "what did we say about churn?" as well as "NOO-482" or a customer's name
+- **Crash-safe recording** — the recording is saved every few seconds. If Nootle quits or crashes mid-meeting, the meeting is transcribed again from its audio the next time you open Nootle, then summarized as usual
 - **MCP server** — let Claude Code and other MCP clients read your meetings and set up workflows, integrations, templates, and insight types for you
 - **CLI tool** — query meetings and manage automations from the terminal or scripts
 - **Auto-titling** — untitled meetings are automatically titled from transcript content; a title you set yourself is kept
@@ -264,9 +264,17 @@ Every push to `main` publishes a release. The version comes from the [convention
 ## Testing
 
 ```bash
-# Rust tests
+# Rust tests (also run on Linux, apart from macOS capture code)
 cd src-tauri && cargo test
+
+# Golden tests: a short two-speaker call through the real transcription,
+# speaker and search models, checking word error rate and speaker labels.
+# Models download (and are hash-checked) into a folder of your choice.
+scripts/fetch-test-models.sh ~/nootle-test-models
+cd src-tauri && XDG_DATA_HOME=~/nootle-test-models cargo test --release --test models_test -- --ignored
 ```
+
+On macOS, point the golden tests at your own downloaded models instead by leaving `XDG_DATA_HOME` unset. CI runs these on every backend change.
 
 ## Built With
 

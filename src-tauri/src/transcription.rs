@@ -33,13 +33,22 @@ const PREEMPHASIS: f32 = 0.97;
 const LOG_ZERO_GUARD: f32 = 1e-10;
 const MAX_TOKENS_PER_STEP: usize = 10;
 
-/// A single transcription segment with timing.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// One sentence of transcript with its timing.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TranscriptionSegment {
     pub text: String,
     pub start_ms: u64,
     pub end_ms: u64,
-    pub speaker_id: Option<String>,
+    /// Mean probability the decoder gave the tokens it chose, 0–1.
+    pub confidence: f32,
+}
+
+/// A token the decoder emitted, at the encoder frame where it was emitted.
+#[derive(Debug, Clone, Copy)]
+struct Emission {
+    token: usize,
+    frame: usize,
+    prob: f32,
 }
 
 /// Status of model download/preparation.
@@ -361,10 +370,6 @@ impl TranscriptionEngine {
             let (nm, nf) = mel.dim();
             (mel.into_raw_vec_and_offset().0, nm, nf)
         };
-        tracing::info!(
-            "[DIAG] Mel: n_mels={n_mels}, n_frames={n_frames}, audio_len={}",
-            audio.len()
-        );
 
         // 2. Run encoder: mel [1, n_mels, n_frames] -> encoded [1, D, T]
         let mel_tensor = Tensor::from_array(([1, n_mels, n_frames], mel_data))?;
@@ -383,9 +388,6 @@ impl TranscriptionEngine {
         let enc_dims: Vec<usize> = enc_shape.iter().map(|&d| d as usize).collect();
         let d_model = enc_dims[1]; // feature dimension (1024)
         let t_enc = enc_dims[2]; // time frames
-        tracing::info!(
-            "[DIAG] Encoder output: enc_dims={enc_dims:?}, d_model={d_model}, t_enc={t_enc}"
-        );
 
         // Transpose from [D, T] to [T, D] so frame t is a contiguous slice at t * d_model.
         // Source layout (row-major, ignoring batch): element [d, t] = data[d * t_enc + t]
@@ -402,11 +404,6 @@ impl TranscriptionEngine {
             .try_extract_tensor::<i64>()
             .context("Failed to extract encoded lengths")?;
         let encoded_len = (enc_len_data[0] as usize).min(t_enc);
-        tracing::info!(
-            "[DIAG] Encoded length={encoded_len}, state1_dims={:?}, state2_dims={:?}",
-            self.state1_dims,
-            self.state2_dims
-        );
 
         // 4. TDT greedy search: call decoder step-by-step over encoder frames
         let mut state1 =
@@ -414,7 +411,7 @@ impl TranscriptionEngine {
         let mut state2 =
             vec![0.0f32; self.state2_dims[0] * self.state2_dims[1] * self.state2_dims[2]];
 
-        let mut tokens: Vec<usize> = Vec::new();
+        let mut emissions: Vec<Emission> = Vec::new();
         let mut t: usize = 0;
         let mut emitted_tokens: usize = 0;
 
@@ -425,7 +422,7 @@ impl TranscriptionEngine {
             let encoder_frame = Tensor::from_array(([1, d_model, 1], frame_data))?;
 
             // Previous token (or blank if nothing emitted yet)
-            let prev_token = tokens.last().copied().unwrap_or(self.blank_idx) as i32;
+            let prev_token = emissions.last().map_or(self.blank_idx, |e| e.token) as i32;
             let targets = Tensor::from_array(([1_usize, 1], vec![prev_token]))?;
             let target_length = Tensor::from_array(([1_usize], vec![1_i32]))?;
 
@@ -441,27 +438,12 @@ impl TranscriptionEngine {
             ])?;
 
             // Output 0 = logits (float), outputs 1 & 2 = new LSTM states
-            let (logit_shape, output_data) = decoder_out[0]
+            let (_, logits) = decoder_out[0]
                 .try_extract_tensor::<f32>()
                 .context("Failed to extract decoder logits")?;
-            let logits: Vec<f32> = output_data.to_vec();
-
-            if t == 0 {
-                let logit_dims: Vec<usize> = logit_shape.iter().map(|&d| d as usize).collect();
-                tracing::info!(
-                    "[DIAG] Decoder output shape: {logit_dims:?}, total logits={}, vocab_size={}",
-                    logits.len(),
-                    self.vocab_size
-                );
-            }
 
             // TDT: split into vocab logits and duration logits
             if logits.len() < self.vocab_size {
-                tracing::error!(
-                    "[DIAG] Decoder output too small: {} < vocab_size {}",
-                    logits.len(),
-                    self.vocab_size
-                );
                 return Err(anyhow!(
                     "Decoder output size {} smaller than vocab size {}",
                     logits.len(),
@@ -471,23 +453,8 @@ impl TranscriptionEngine {
             let vocab_logits = &logits[..self.vocab_size];
             let duration_logits = &logits[self.vocab_size..];
 
-            let token = vocab_logits
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(idx, _)| idx)
-                .unwrap_or(self.blank_idx);
-
-            let step: usize = if duration_logits.is_empty() {
-                0
-            } else {
-                duration_logits
-                    .iter()
-                    .enumerate()
-                    .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                    .map(|(idx, _)| idx)
-                    .unwrap_or(0)
-            };
+            let (token, prob) = argmax_with_prob(vocab_logits).unwrap_or((self.blank_idx, 0.0));
+            let step = argmax_with_prob(duration_logits).map_or(0, |(i, _)| i);
 
             if token != self.blank_idx {
                 // Update LSTM states only on non-blank emission
@@ -501,7 +468,11 @@ impl TranscriptionEngine {
                     .context("Failed to extract output_states_2")?;
                 state2 = s2.to_vec();
 
-                tokens.push(token);
+                emissions.push(Emission {
+                    token,
+                    frame: t,
+                    prob,
+                });
                 emitted_tokens += 1;
             }
 
@@ -513,68 +484,96 @@ impl TranscriptionEngine {
                 emitted_tokens = 0;
             }
         }
-
-        // 5. Convert token IDs to text
-        tracing::info!(
-            "[DIAG] TDT decode: {}/{encoded_len} frames processed, {} tokens emitted, blank_idx={}",
-            t,
-            tokens.len(),
-            self.blank_idx
+        tracing::debug!(
+            "Decoded {} tokens from {encoded_len} encoder frames",
+            emissions.len()
         );
-        if !tokens.is_empty() {
-            let sample: Vec<_> = tokens
-                .iter()
-                .take(10)
-                .map(|&id| {
-                    if id < self.vocab.len() {
-                        self.vocab[id].clone()
-                    } else {
-                        format!("?{id}")
-                    }
-                })
-                .collect();
-            tracing::info!("[DIAG] First tokens: {sample:?}");
-        }
-        let mut text = String::new();
-        for &id in &tokens {
-            if id < self.vocab.len() {
-                let token = &self.vocab[id];
-                if token == "<unk>"
-                    || token == "<pad>"
-                    || token == "<blk>"
-                    || token == "<s>"
-                    || token == "</s>"
-                    || token.starts_with("<|")
-                {
-                    continue;
-                }
-                // Handle SentencePiece underscore prefix (word boundary)
-                if let Some(stripped) = token.strip_prefix('\u{2581}') {
-                    if !text.is_empty() {
-                        text.push(' ');
-                    }
-                    text.push_str(stripped);
-                } else {
-                    text.push_str(token);
-                }
+
+        let audio_ms = (audio.len() as u64 * 1000) / SAMPLE_RATE as u64;
+        let frame_ms = audio_ms as f64 / t_enc.max(1) as f64;
+        Ok(sentences(
+            &self.vocab,
+            &emissions,
+            frame_ms,
+            offset_ms,
+            audio_ms,
+        ))
+    }
+}
+
+/// Index and softmax probability of the largest logit.
+fn argmax_with_prob(logits: &[f32]) -> Option<(usize, f32)> {
+    let (best, &max) = logits
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.total_cmp(b.1))?;
+    let sum: f32 = logits.iter().map(|&l| (l - max).exp()).sum();
+    Some((best, 1.0 / sum))
+}
+
+/// Tokens that never appear in text.
+fn is_special(token: &str) -> bool {
+    matches!(token, "<unk>" | "<pad>" | "<blk>" | "<s>" | "</s>") || token.starts_with("<|")
+}
+
+/// Groups emitted tokens into words, and words into sentences ending at
+/// `.`, `?` or `!`, each timed from its first token to just after its last.
+/// SentencePiece marks the first token of every word with `▁`.
+fn sentences(
+    vocab: &[String],
+    emissions: &[Emission],
+    frame_ms: f64,
+    offset_ms: u64,
+    audio_ms: u64,
+) -> Vec<TranscriptionSegment> {
+    struct Sentence {
+        text: String,
+        first_frame: usize,
+        last_frame: usize,
+        probs: Vec<f32>,
+    }
+    let mut done: Vec<Sentence> = Vec::new();
+    let mut current: Option<Sentence> = None;
+
+    for e in emissions {
+        let Some(token) = vocab.get(e.token).filter(|t| !is_special(t)) else {
+            continue;
+        };
+        let (word_start, piece) = match token.strip_prefix('\u{2581}') {
+            Some(rest) => (true, rest),
+            None => (false, token.as_str()),
+        };
+        // A new word after a finished sentence starts the next sentence.
+        if word_start {
+            if let Some(s) = current.take_if(|s| s.text.ends_with(['.', '?', '!'])) {
+                done.push(s);
             }
         }
-
-        let text = text.trim().to_string();
-        tracing::info!("[DIAG] Final text ({} chars): {:?}", text.len(), text);
-        if text.is_empty() {
-            return Ok(vec![]);
+        let s = current.get_or_insert_with(|| Sentence {
+            text: String::new(),
+            first_frame: e.frame,
+            last_frame: e.frame,
+            probs: Vec::new(),
+        });
+        if word_start && !s.text.is_empty() {
+            s.text.push(' ');
         }
-
-        let duration_ms = (audio.len() as u64 * 1000) / SAMPLE_RATE as u64;
-
-        Ok(vec![TranscriptionSegment {
-            text,
-            start_ms: offset_ms,
-            end_ms: offset_ms + duration_ms,
-            speaker_id: None,
-        }])
+        s.text.push_str(piece);
+        s.last_frame = e.frame;
+        s.probs.push(e.prob);
     }
+    done.extend(current);
+
+    let at = |frame: usize| offset_ms + ((frame as f64 * frame_ms) as u64).min(audio_ms);
+    done.into_iter()
+        .filter(|s| !s.text.trim().is_empty())
+        .map(|s| TranscriptionSegment {
+            text: s.text.trim().to_string(),
+            start_ms: at(s.first_frame),
+            end_ms: at(s.last_frame + 1),
+            confidence: s.probs.iter().sum::<f32>() / s.probs.len().max(1) as f32,
+        })
+        .collect()
 }
 
 // ── Decoder state helpers ────────────────────────────────────────────────────
@@ -798,6 +797,68 @@ mod tests {
                 "Roundtrip failed for {hz}: got {roundtrip}"
             );
         }
+    }
+
+    fn emissions(tokens: &[(usize, usize)]) -> Vec<Emission> {
+        tokens
+            .iter()
+            .map(|&(token, frame)| Emission {
+                token,
+                frame,
+                prob: 0.5,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn splits_sentences_and_times_them_from_their_tokens() {
+        let vocab: Vec<String> = [
+            "<blk>",
+            "\u{2581}Hi",
+            ".",
+            "\u{2581}How",
+            "\u{2581}are",
+            "\u{2581}you",
+            "?",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        // 80 ms frames, chunk starting 10 s into the meeting.
+        let e = emissions(&[(1, 0), (2, 2), (0, 3), (3, 10), (4, 12), (5, 14), (6, 15)]);
+        let out = sentences(&vocab, &e, 80.0, 10_000, 2_000);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].text, "Hi.");
+        assert_eq!((out[0].start_ms, out[0].end_ms), (10_000, 10_240));
+        assert_eq!(out[1].text, "How are you?");
+        assert_eq!((out[1].start_ms, out[1].end_ms), (10_800, 11_280));
+        assert!((out[1].confidence - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn subword_tokens_join_their_word() {
+        let vocab: Vec<String> = ["\u{2581}Noo", "tle", "\u{2581}rocks"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let out = sentences(
+            &vocab,
+            &emissions(&[(0, 0), (1, 1), (2, 3)]),
+            80.0,
+            0,
+            1_000,
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, "Nootle rocks");
+    }
+
+    #[test]
+    fn softmax_probability_of_the_argmax() {
+        let (i, p) = argmax_with_prob(&[0.0, 2.0, 0.0]).unwrap();
+        assert_eq!(i, 1);
+        let expected = 2f32.exp() / (2f32.exp() + 2.0);
+        assert!((p - expected).abs() < 1e-6);
+        assert!(argmax_with_prob(&[]).is_none());
     }
 
     #[test]

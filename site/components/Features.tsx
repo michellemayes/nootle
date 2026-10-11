@@ -47,9 +47,9 @@ const features: {
   },
   {
     icon: Volume2,
-    title: "Noise Cancellation",
+    title: "Crash-Safe Recording",
     description:
-      "Built-in noise reduction filters out background sounds for cleaner audio capture and more accurate transcriptions. Whether you're in a coffee shop, open office, or noisy home environment, Nootle produces clear, readable transcripts.",
+      "Your recording is saved every few seconds as you go. If your Mac or Nootle crashes mid-meeting, the meeting is transcribed again from its audio the next time you open Nootle and summarized as usual, so nothing quietly goes missing.",
     color: "#22d3ee",
   },
   {

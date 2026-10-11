@@ -19,7 +19,7 @@ const SEND_SAMPLES: usize = TARGET_RATE as usize * 2;
 /// ~2 s of 16 kHz audio for the transcription pipeline. The mic and system
 /// streams ride along with the mix so speakers can be told apart by source.
 pub struct AudioChunk {
-    /// What gets transcribed (and written to the WAV): mic + system, denoised.
+    /// What gets transcribed (and written to the WAV): mic + system.
     pub mixed: Vec<f32>,
     pub mic: Vec<f32>,
     /// Empty when system audio isn't being captured.
@@ -38,9 +38,15 @@ impl AudioChunk {
     }
 }
 
+/// How often the WAV headers are brought up to date, bounding what a crash
+/// can lose.
+const FLUSH_SAMPLES: usize = TARGET_RATE as usize * 5;
+
 /// Runs on a dedicated std::thread. Reads audio from hardware, resamples to
-/// 16 kHz, mixes mic + system audio, writes a WAV file, and feeds chunks to
-/// the transcription pipeline via `audio_tx`.
+/// 16 kHz, mixes mic + system audio, writes the mix (for playback) and, when
+/// system audio is captured, the two sources as a stereo stems file (for the
+/// post-meeting pass), and feeds chunks to the transcription pipeline via
+/// `audio_tx`.
 ///
 /// NOTE: The caller is responsible for providing an `audio_path` that is not
 /// concurrently written to. Currently `RecordingSession` creates the path but
@@ -51,7 +57,6 @@ pub fn run_audio_capture(
     is_paused: Arc<AtomicBool>,
     levels: Arc<AudioLevels>,
     audio_path: std::path::PathBuf,
-    denoise: Option<&mut crate::denoise::DenoiseEngine>,
 ) -> anyhow::Result<()> {
     // --- Microphone (required) ---
     let mut mic = MicCapture::new()?;
@@ -79,6 +84,13 @@ pub fn run_audio_capture(
 
     let mixer = AudioMixer::new();
     let mut writer = AudioWriter::new(&audio_path, TARGET_RATE)?;
+    let mut stems = match sys_audio {
+        Some(_) => Some(AudioWriter::stereo(
+            &super::writer::stems_path(&audio_path),
+            TARGET_RATE,
+        )?),
+        None => None,
+    };
 
     let mut accumulator = AudioChunk {
         mixed: Vec::with_capacity(SEND_SAMPLES),
@@ -96,9 +108,9 @@ pub fn run_audio_capture(
         sys_resampler.as_mut(),
         &mixer,
         &mut writer,
+        stems.as_mut(),
         &mut accumulator,
         &audio_tx,
-        denoise,
     );
 
     // Cleanup always runs regardless of how the loop exited
@@ -107,6 +119,9 @@ pub fn run_audio_capture(
         let _ = sys.stop();
     }
     writer.finalize()?;
+    if let Some(stems) = stems {
+        stems.finalize()?;
+    }
 
     tracing::info!("Audio capture loop finished");
     result
@@ -123,9 +138,9 @@ fn capture_loop(
     mut sys_resampler: Option<&mut StreamResampler>,
     mixer: &AudioMixer,
     writer: &mut AudioWriter,
+    mut stems: Option<&mut AudioWriter>,
     accumulator: &mut AudioChunk,
     audio_tx: &tokio::sync::mpsc::Sender<AudioChunk>,
-    mut denoise: Option<&mut crate::denoise::DenoiseEngine>,
 ) -> anyhow::Result<()> {
     // Speakers are told apart by comparing the two streams over the same
     // moments, so drop whatever the mic captured while system audio was
@@ -136,6 +151,7 @@ fn capture_loop(
     }
     // 16 kHz audio not yet paired with the other stream.
     let (mut mic_pending, mut sys_pending) = (Vec::new(), Vec::new());
+    let mut unflushed = 0usize;
 
     while is_active.load(Ordering::Acquire) {
         // Drain everything buffered. Each pass takes a little longer than
@@ -169,7 +185,7 @@ fn capture_loop(
         }
 
         // Mix (or pass through mic-only), keeping both sources aligned.
-        let (mic_16k, sys_16k, mut mixed) = if sys_audio.is_some() {
+        let (mic_16k, sys_16k, mixed) = if sys_audio.is_some() {
             let (mic_16k, sys_16k) = take_aligned(&mut mic_pending, &mut sys_pending);
             let mixed = mixer.mix(&sys_16k, &mic_16k);
             (mic_16k, sys_16k, mixed)
@@ -179,12 +195,18 @@ fn capture_loop(
         };
 
         if !mixed.is_empty() {
-            if let Some(ref mut engine) = denoise {
-                if let Err(e) = engine.process(&mut mixed) {
-                    tracing::warn!("Denoising failed, using raw audio: {e}");
-                }
-            }
             writer.write_samples(&mixed)?;
+            if let Some(stems) = stems.as_deref_mut() {
+                stems.write_stereo(&mic_16k, &sys_16k)?;
+            }
+            unflushed += mixed.len();
+            if unflushed >= FLUSH_SAMPLES {
+                writer.flush()?;
+                if let Some(stems) = stems.as_deref_mut() {
+                    stems.flush()?;
+                }
+                unflushed = 0;
+            }
             accumulator.mixed.extend_from_slice(&mixed);
             accumulator.mic.extend_from_slice(&mic_16k);
             accumulator.system.extend_from_slice(&sys_16k);

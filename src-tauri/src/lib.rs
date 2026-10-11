@@ -6,7 +6,6 @@ pub mod chunking;
 pub mod commands;
 pub mod connectors;
 pub mod db;
-pub mod denoise;
 pub mod detection;
 pub mod diarization;
 pub mod dictionary;
@@ -25,6 +24,7 @@ pub mod model_download;
 pub mod model_registry;
 pub mod ops;
 pub mod permissions;
+pub mod pipeline;
 pub mod remote;
 pub mod sandbox_migration;
 pub mod shell_env;
@@ -75,13 +75,6 @@ pub fn run() {
     std::fs::create_dir_all(&app_dir).unwrap();
     let db_path = app_dir.join("nootle.db");
     let db = std::sync::Arc::new(db::Database::new(db_path.to_str().unwrap()).unwrap());
-
-    // Fix any meetings stuck in "recording" or "transcribing" from a previous crash
-    match db.cleanup_stale_recordings() {
-        Ok(0) => {}
-        Ok(n) => tracing::info!("Cleaned up {n} stale recording(s) from previous session"),
-        Err(e) => tracing::warn!("Failed to clean up stale recordings: {e}"),
-    }
 
     let recording_state: RecordingState = Arc::new(TokioMutex::new(None));
 
@@ -186,6 +179,37 @@ pub fn run() {
         .setup(move |app| {
             let app_handle = app.handle().clone();
             model_registry::migrate_legacy_files();
+
+            // Meetings a crash or quit cut short are transcribed again from
+            // the audio on disk instead of being shown as done.
+            tauri::async_runtime::spawn(commands::recover_interrupted_meetings(
+                app.state::<commands::DbState>().inner().clone(),
+                app.state::<LlmState>().inner().clone(),
+                app.state::<EmbeddingState>().inner().clone(),
+                app_handle.clone(),
+            ));
+
+            // The speech detector is tiny and makes transcripts much better,
+            // so fetch it for anyone who already has the transcription model.
+            if matches!(
+                crate::transcription::TranscriptionEngine::check_status(),
+                crate::transcription::ModelStatus::Ready
+            ) && !crate::vad::SileroVad::is_available()
+            {
+                let handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Some((model, variant)) =
+                        model_registry::get_variant("vad-silero", "default")
+                    {
+                        let cancel = tokio_util::sync::CancellationToken::new();
+                        if let Err(e) =
+                            model_download::download_variant(handle, model, variant, cancel).await
+                        {
+                            tracing::warn!("Couldn't download the speech detector: {e}");
+                        }
+                    }
+                });
+            }
 
             // nootle:// URLs delivered while the app is already running.
             {

@@ -29,6 +29,7 @@ pub fn delete_meeting(db: &Database, id: &str) -> Result<()> {
     let _ = db.delete_meeting_chunks(id);
     db.delete_meeting(id)?;
     if let Some(path) = audio_path {
+        let _ = std::fs::remove_file(crate::audio::writer::stems_path(path.as_ref()));
         let _ = std::fs::remove_file(path);
     }
     if let Ok(dir) = recordings_dir() {
@@ -58,7 +59,6 @@ pub const API_KEY_PROVIDERS: &[&str] = &[
 pub const SUMMARIZATION_PROVIDER_SETTING: &str = "summarization_provider";
 /// On/off settings the app's settings screen changes.
 pub const TOGGLE_SETTINGS: &[&str] = &[
-    "denoise_enabled",
     "detection_enabled",
     crate::remote::ENABLED_SETTING,
     crate::dictionary::AUTO_LEARN_SETTING,
@@ -1011,8 +1011,8 @@ mod tests {
 
     #[test]
     fn settings_are_allow_listed_and_toggles_are_boolean() {
-        assert!(validate_setting("denoise_enabled", "true").is_ok());
-        assert!(validate_setting("denoise_enabled", "yes").is_err());
+        assert!(validate_setting("detection_enabled", "true").is_ok());
+        assert!(validate_setting("detection_enabled", "yes").is_err());
         assert!(validate_setting(SUMMARIZATION_PROVIDER_SETTING, "anthropic").is_ok());
         assert!(validate_setting(SUMMARIZATION_PROVIDER_SETTING, "").is_ok());
         assert!(validate_setting("theme", "dark").is_err());
@@ -1234,13 +1234,13 @@ mod tests {
     fn settings_and_api_keys() {
         let db = Database::new_in_memory().unwrap();
         assert_eq!(
-            set_setting(&db, "denoise_enabled", " true ").unwrap(),
+            set_setting(&db, "detection_enabled", " true ").unwrap(),
             "true"
         );
-        assert!(set_setting(&db, "denoise_enabled", "on").is_err());
+        assert!(set_setting(&db, "detection_enabled", "on").is_err());
         assert!(get_setting(&db, "theme").is_err());
         let settings = settings_map(&db).unwrap();
-        assert_eq!(settings["denoise_enabled"], "true");
+        assert_eq!(settings["detection_enabled"], "true");
         assert!(settings[SUMMARIZATION_PROVIDER_SETTING].is_null());
 
         store_api_key(&db, "linear", "lin_123").unwrap();

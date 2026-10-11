@@ -5,7 +5,6 @@ pub enum ModelCategory {
     Transcription,
     Diarization,
     Embedding,
-    Denoising,
     VoiceActivity,
 }
 
@@ -17,7 +16,7 @@ pub struct ModelFile {
     pub url: &'static str,
     /// Expected file size in bytes (used for progress calculation)
     pub size_bytes: u64,
-    /// SHA-256 hex digest for verification (empty string to skip verification)
+    /// SHA-256 hex digest the download must match.
     pub sha256: &'static str,
 }
 
@@ -168,47 +167,20 @@ const EMBEDDING_VARIANTS: &[ModelVariant] = &[ModelVariant {
     total_size_bytes: 86_232_000,
 }];
 
-// ── Denoising (DeepFilterNet3) ──────────────────────────────────────
-
-const DENOISE_FILES: &[ModelFile] = &[
-    ModelFile {
-        local_name: "deepfilternet3.onnx",
-        url: "https://huggingface.co/deepfilternet/DeepFilterNet3/resolve/main/DeepFilterNet3_onnx/enc.onnx",
-        size_bytes: 1_800_000,
-        // TODO(security): gated HuggingFace repo — download with HF token and run `shasum -a 256`
-        sha256: "",
-    },
-    ModelFile {
-        local_name: "deepfilternet3_dec.onnx",
-        url: "https://huggingface.co/deepfilternet/DeepFilterNet3/resolve/main/DeepFilterNet3_onnx/dec.onnx",
-        size_bytes: 1_200_000,
-        // TODO(security): gated HuggingFace repo — download with HF token and run `shasum -a 256`
-        sha256: "",
-    },
-];
-
-const DENOISE_VARIANTS: &[ModelVariant] = &[ModelVariant {
-    id: "default",
-    label: "Noise Cancellation (≈3 MB)",
-    files: DENOISE_FILES,
-    total_size_bytes: 3_000_000,
-}];
-
-// ── VAD (NeMo MarbleNet) ────────────────────────────────────────────
+// ── VAD (Silero VAD v5, MIT) ────────────────────────────────────────
 
 const VAD_FILES: &[ModelFile] = &[ModelFile {
-    local_name: "marblenet.onnx",
-    url: "https://huggingface.co/nvidia/vad_marblenet/resolve/main/vad_marblenet.onnx",
-    size_bytes: 5_000_000,
-    // TODO(security): gated HuggingFace repo — download with HF token and run `shasum -a 256`
-    sha256: "",
+    local_name: "silero_vad.onnx",
+    url: "https://huggingface.co/onnx-community/silero-vad/resolve/main/onnx/model.onnx",
+    size_bytes: 2_243_022,
+    sha256: "a4a068cd6cf1ea8355b84327595838ca748ec29a25bc91fc82e6c299ccdc5808",
 }];
 
 const VAD_VARIANTS: &[ModelVariant] = &[ModelVariant {
     id: "default",
-    label: "Voice Activity Detection (≈5 MB)",
+    label: "Voice Activity Detection (≈2 MB)",
     files: VAD_FILES,
-    total_size_bytes: 5_000_000,
+    total_size_bytes: 2_243_022,
 }];
 
 // ── Full Registry ──────────────────────────────────────────────────────
@@ -239,19 +211,11 @@ pub const MODEL_REGISTRY: &[ModelDefinition] = &[
         variants: EMBEDDING_VARIANTS,
     },
     ModelDefinition {
-        id: "deepfilternet3",
-        name: "Noise Cancellation",
-        description: "DeepFilterNet3 for real-time audio denoising before transcription",
-        category: ModelCategory::Denoising,
-        dir_name: "deepfilternet3",
-        variants: DENOISE_VARIANTS,
-    },
-    ModelDefinition {
-        id: "vad-marblenet",
+        id: "vad-silero",
         name: "Voice Activity Detection",
-        description: "NeMo MarbleNet for detecting speech in audio",
+        description: "Silero VAD, which splits speech at natural pauses so whole sentences are transcribed together",
         category: ModelCategory::VoiceActivity,
-        dir_name: "vad-marblenet",
+        dir_name: "vad-silero",
         variants: VAD_VARIANTS,
     },
 ];
@@ -324,8 +288,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_has_five_models() {
-        assert_eq!(MODEL_REGISTRY.len(), 5);
+    fn registry_has_four_models() {
+        assert_eq!(MODEL_REGISTRY.len(), 4);
+    }
+
+    #[test]
+    fn every_file_is_pinned_by_hash() {
+        for model in MODEL_REGISTRY {
+            for variant in model.variants {
+                for file in variant.files {
+                    assert_eq!(file.sha256.len(), 64, "{} is unpinned", file.local_name);
+                }
+            }
+        }
     }
 
     #[test]
@@ -371,15 +346,8 @@ mod tests {
     }
 
     #[test]
-    fn denoise_model_exists() {
-        let model = get_model("deepfilternet3").unwrap();
-        assert_eq!(model.variants.len(), 1);
-        assert_eq!(model.category, ModelCategory::Denoising);
-    }
-
-    #[test]
     fn vad_model_exists() {
-        let model = get_model("vad-marblenet").unwrap();
+        let model = get_model("vad-silero").unwrap();
         assert_eq!(model.variants.len(), 1);
         assert_eq!(model.category, ModelCategory::VoiceActivity);
     }

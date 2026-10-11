@@ -1275,6 +1275,15 @@ impl Database {
                 )?;
                 Ok(())
             },
+            // 2: speaker analytics counted every sentence as a turn. Drop
+            // them; they're recomputed from the transcript when next viewed.
+            |conn| {
+                conn.execute_batch(
+                    "DELETE FROM meeting_analytics;
+                     DELETE FROM meeting_engagement;",
+                )?;
+                Ok(())
+            },
         ];
 
         let current: usize =
@@ -1608,16 +1617,20 @@ impl Database {
 
     /// Fix any meetings stuck in "recording" or "transcribing" status from a previous crash.
     /// Sets them to "summarized" with end_time = now so they appear as completed.
-    pub fn cleanup_stale_recordings(&self) -> Result<usize> {
-        let conn = self.lock_conn()?;
-        let now = chrono::Utc::now().to_rfc3339();
-
-        let count = conn.execute(
-            "UPDATE meetings SET status = 'summarized', end_time = COALESCE(end_time, ?1), updated_at = ?1 WHERE status IN ('recording', 'transcribing')",
-            params![now],
-        )?;
-
-        Ok(count)
+    /// Meetings a previous run left recording or transcribing: the app quit
+    /// or crashed before their pipeline finished.
+    pub fn interrupted_meetings(&self) -> Result<Vec<Meeting>> {
+        let ids: Vec<String> = {
+            let conn = self.lock_conn()?;
+            let mut stmt = conn.prepare(
+                "SELECT id FROM meetings WHERE status IN ('recording', 'transcribing') ORDER BY start_time",
+            )?;
+            let ids = stmt
+                .query_map([], |row| row.get(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            ids
+        };
+        ids.iter().map(|id| self.get_meeting(id)).collect()
     }
 
     pub fn delete_meeting(&self, id: &str) -> Result<()> {
@@ -2232,6 +2245,42 @@ impl Database {
         )
         .optional()?
         .ok_or_else(|| NootleError::Other(format!("Transcript segment not found: {}", id)))
+    }
+
+    /// Sets each segment's speaker in one transaction, e.g. after the
+    /// post-meeting speaker pass. Search chunks quote speaker names, so they
+    /// are dropped for the next embedding pass to rebuild.
+    pub fn relabel_transcript(&self, meeting_id: &str, labels: &[(String, String)]) -> Result<()> {
+        if labels.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "UPDATE transcripts SET speaker_label = ?1 WHERE id = ?2 AND meeting_id = ?3",
+            )?;
+            for (id, label) in labels {
+                stmt.execute(params![label, id, meeting_id])?;
+            }
+        }
+        Self::delete_meeting_chunks_with(&tx, meeting_id)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Removes a meeting's transcript (and its search chunks), so it can be
+    /// transcribed again from the recording.
+    pub fn delete_transcript(&self, meeting_id: &str) -> Result<()> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM transcripts WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
+        Self::delete_meeting_chunks_with(&tx, meeting_id)?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Rewrites segment texts of one meeting in a single transaction. Search

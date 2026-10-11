@@ -1,6 +1,5 @@
 use crate::audio::{run_audio_capture, validate_audio_devices, RecordingSession};
 use crate::db::*;
-use crate::diarization::{DiarizationEngine, SpeakerAttributor};
 use crate::extraction;
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::model_download::{self, DownloadManager};
@@ -566,12 +565,6 @@ pub async fn start_recording(
 
     session.start();
 
-    let denoise_enabled = db
-        .get_setting("denoise_enabled")
-        .unwrap_or(None)
-        .map(|v| v != "false")
-        .unwrap_or(true); // default on
-
     // Spawn audio capture loop on a dedicated thread
     {
         let is_active = session.is_active_flag();
@@ -580,31 +573,7 @@ pub async fn start_recording(
         let audio_path = session.audio_path().to_path_buf();
 
         let handle = std::thread::spawn(move || {
-            // Create denoise engine inside the thread (Session may not be Send)
-            let mut denoise_engine =
-                if denoise_enabled && crate::denoise::DenoiseEngine::is_available() {
-                    match crate::denoise::DenoiseEngine::load() {
-                        Ok(e) => {
-                            tracing::info!("Denoising enabled");
-                            Some(e)
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to load denoise engine: {e}");
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
-
-            if let Err(e) = run_audio_capture(
-                audio_tx,
-                is_active,
-                is_paused,
-                levels,
-                audio_path,
-                denoise_engine.as_mut(),
-            ) {
+            if let Err(e) = run_audio_capture(audio_tx, is_active, is_paused, levels, audio_path) {
                 tracing::error!("Audio capture failed: {e}");
             }
         });
@@ -619,6 +588,7 @@ pub async fn start_recording(
         let meeting_id = meeting.id.clone();
         let placeholder_title = placeholder.then(|| meeting.title.clone());
         let app_handle = app.clone();
+        let audio_path = session.audio_path().to_path_buf();
 
         tokio::spawn(async move {
             run_transcription_pipeline(
@@ -628,6 +598,7 @@ pub async fn start_recording(
                 embedding_clone,
                 meeting_id,
                 placeholder_title,
+                audio_path,
                 app_handle,
             )
             .await;
@@ -783,13 +754,15 @@ async fn auto_extract_insights(
 }
 
 /// Background task: consume audio chunks, transcribe, diarize, persist, and emit events.
+#[allow(clippy::too_many_arguments)]
 async fn run_transcription_pipeline(
     audio_rx: tokio::sync::mpsc::Receiver<crate::audio::AudioChunk>,
     db: Arc<Database>,
     llm_state: LlmState,
-    embedding_state: Arc<TokioMutex<Option<crate::embedding::EmbeddingEngine>>>,
+    embedding_state: EmbeddingState,
     meeting_id: String,
     placeholder_title: Option<String>,
+    audio_path: std::path::PathBuf,
     app: tauri::AppHandle,
 ) {
     // Model loading and inference are CPU-bound, so they run on a blocking
@@ -798,25 +771,59 @@ async fn run_transcription_pipeline(
         let db = db.clone();
         let meeting_id = meeting_id.clone();
         let app = app.clone();
-        tokio::task::spawn_blocking(move || {
-            let count = transcribe_live(audio_rx, &db, &meeting_id, &app);
-            // Analytics only need the transcript, so they are ready before any LLM work.
-            if count > 0 {
-                compute_analytics(&db, &app, &meeting_id);
-            }
-            count
-        })
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!("Transcription thread panicked: {e}");
-            0
-        })
+        tokio::task::spawn_blocking(move || transcribe_live(audio_rx, &db, &meeting_id, &app))
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!("Transcription thread panicked: {e}");
+                0
+            })
     };
+    finish_meeting(
+        db,
+        llm_state,
+        embedding_state,
+        meeting_id,
+        placeholder_title,
+        audio_path,
+        app,
+        segment_count,
+    )
+    .await;
+}
 
+/// Everything after the transcript: the post-meeting speaker pass,
+/// analytics, search indexing, title, summaries and insights.
+#[allow(clippy::too_many_arguments)]
+async fn finish_meeting(
+    db: Arc<Database>,
+    llm_state: LlmState,
+    embedding_state: EmbeddingState,
+    meeting_id: String,
+    placeholder_title: Option<String>,
+    audio_path: std::path::PathBuf,
+    app: tauri::AppHandle,
+    segment_count: u64,
+) {
     if segment_count == 0 {
         tracing::info!(
             "No transcript segments produced for {meeting_id}, not marking as summarized"
         );
+    } else {
+        let db = db.clone();
+        let meeting_id = meeting_id.clone();
+        let app = app.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            match crate::pipeline::rediarize(&db, &meeting_id, &audio_path) {
+                Ok(true) => {
+                    let _ = app.emit("transcript-replaced", &meeting_id);
+                }
+                Ok(false) => {}
+                Err(e) => tracing::warn!("Post-meeting speaker pass failed: {e:#}"),
+            }
+            // Analytics only need the transcript, so they are ready before any LLM work.
+            compute_analytics(&db, &app, &meeting_id);
+        })
+        .await;
     }
 
     // Embedding is local CPU work and independent of the LLM calls below.
@@ -869,6 +876,115 @@ async fn run_transcription_pipeline(
     }
 }
 
+/// Finishes meetings a previous run left recording or transcribing (the app
+/// quit or crashed): transcribes them again from the audio on disk and runs
+/// the usual post-meeting work, so nothing is silently marked done without
+/// its transcript and summary.
+pub async fn recover_interrupted_meetings(
+    db: Arc<Database>,
+    llm_state: LlmState,
+    embedding_state: EmbeddingState,
+    app: tauri::AppHandle,
+) {
+    let meetings = match db.interrupted_meetings() {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!("Couldn't look for interrupted meetings: {e}");
+            return;
+        }
+    };
+    let Ok(dir) = recordings_dir() else { return };
+    for meeting in meetings {
+        let audio_path = meeting
+            .audio_path
+            .clone()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| dir.join(format!("{}.wav", meeting.id)));
+        tracing::info!("Recovering interrupted meeting {}", meeting.id);
+        let _ = db.update_meeting_status(&meeting.id, "transcribing");
+        emit_meeting_updated(&db, &app, &meeting.id);
+
+        let transcribed = {
+            let db = db.clone();
+            let app = app.clone();
+            let meeting_id = meeting.id.clone();
+            let audio_path = audio_path.clone();
+            tokio::task::spawn_blocking(move || {
+                // The partial live transcript is replaced once the models
+                // load, so tell open pages to start over first.
+                let mut replaced = false;
+                crate::pipeline::transcribe_file(&db, &meeting_id, &audio_path, |stored| {
+                    if !replaced {
+                        replaced = true;
+                        let _ = app.emit("transcript-replaced", &meeting_id);
+                    }
+                    if !stored.is_empty() {
+                        let _ = app.emit("transcript-update", stored);
+                    }
+                })
+            })
+            .await
+        };
+        let mut failure = None;
+        let segment_count = match transcribed {
+            Ok(Ok((duration_ms, count))) => {
+                let end_time = chrono::DateTime::parse_from_rfc3339(&meeting.start_time)
+                    .map(|start| {
+                        (start + chrono::Duration::milliseconds(duration_ms as i64)).to_rfc3339()
+                    })
+                    .unwrap_or_else(|_| chrono::Utc::now().to_rfc3339());
+                let end_time = meeting.end_time.clone().unwrap_or(end_time);
+                let _ = db.finalize_meeting(
+                    &meeting.id,
+                    &end_time,
+                    Some(&audio_path.to_string_lossy()),
+                    "transcribing",
+                );
+                count
+            }
+            Ok(Err(e)) => {
+                tracing::warn!("Couldn't re-transcribe {}: {e:#}", meeting.id);
+                failure = Some(e.to_string());
+                // Keep whatever the live pass stored before the interruption.
+                db.get_transcript(&meeting.id).map_or(0, |t| t.len() as u64)
+            }
+            Err(e) => {
+                tracing::error!("Recovery thread panicked: {e}");
+                failure = Some("Transcription crashed".to_string());
+                0
+            }
+        };
+        if segment_count == 0 {
+            // Nothing to summarize: mark it done rather than leave it spinning.
+            let _ = db.update_meeting_status(&meeting.id, "summarized");
+            emit_meeting_updated(&db, &app, &meeting.id);
+            let reason = failure.unwrap_or_else(|| "No speech was found in its recording.".into());
+            crate::notify(
+                &app,
+                "A meeting couldn't be recovered",
+                &format!("\"{}\" was interrupted. {reason}", meeting.title),
+            );
+            continue;
+        }
+        crate::notify(
+            &app,
+            "Recovered an interrupted meeting",
+            &format!("\"{}\" was transcribed from its recording.", meeting.title),
+        );
+        finish_meeting(
+            db.clone(),
+            llm_state.clone(),
+            embedding_state.clone(),
+            meeting.id.clone(),
+            None,
+            audio_path,
+            app.clone(),
+            segment_count,
+        )
+        .await;
+    }
+}
+
 /// Tell the frontend a meeting row changed; pages apply the payload directly.
 fn emit_meeting_updated(db: &Database, app: &tauri::AppHandle, meeting_id: &str) {
     if let Ok(meeting) = db.get_meeting(meeting_id) {
@@ -882,107 +998,64 @@ async fn auto_model_is_local(db: &Database, llm_state: &LlmState) -> bool {
 }
 
 /// Transcribe audio chunks as they arrive until recording stops. Emits only
-/// the new segments for each chunk; returns how many segments were stored.
+/// the new segments for each utterance; returns how many segments were stored.
 fn transcribe_live(
     mut audio_rx: tokio::sync::mpsc::Receiver<crate::audio::AudioChunk>,
     db: &Database,
     meeting_id: &str,
     app: &tauri::AppHandle,
 ) -> u64 {
-    let mut transcription_engine = match TranscriptionEngine::load() {
-        Ok(e) => Some(e),
-        Err(err) => {
-            tracing::error!("Transcription engine failed to load: {err:#}");
-            None
-        }
-    };
-
-    // Notify frontend whether live transcription is available
-    if transcription_engine.is_some() {
-        let _ = app.emit(
-            "transcription-status",
-            serde_json::json!({ "meeting_id": meeting_id, "available": true }),
-        );
-    } else {
-        let reason = match TranscriptionEngine::check_status() {
-            transcription::ModelStatus::NotDownloaded => {
-                "Transcription model not downloaded. Recording audio only.".to_string()
-            }
-            _ => {
-                "Transcription model failed to load. The model files may be corrupted — try deleting and re-downloading in Settings.".to_string()
-            }
-        };
-        let _ = app.emit(
-            "transcription-status",
-            serde_json::json!({
-                "meeting_id": meeting_id,
-                "available": false,
-                "reason": reason,
-            }),
-        );
-    }
-
     // A meeting app on the mic means this is a call, where the mic is the
     // user and system audio everyone else.
-    let diarization_engine = match DiarizationEngine::load() {
-        Ok(e) => Some(e),
-        Err(err) => {
-            tracing::info!("Diarization models not available, skipping: {err}");
-            None
-        }
-    };
     let call_app = crate::detection::meeting_app_using_mic();
     if let Some(app) = &call_app {
         tracing::info!("Recording a {} call", app.display_name);
     }
-    let mut speakers = SpeakerAttributor::new(diarization_engine, call_app.is_some());
-
-    let sample_rate: u64 = 16000;
-    let mut offset_samples: u64 = 0;
-    let mut segment_count: u64 = 0;
-
-    while let Some(audio) = audio_rx.blocking_recv() {
-        let chunk = audio.mixed;
-        speakers.observe(&audio.system);
-        let offset_ms = offset_samples * 1000 / sample_rate;
-        offset_samples += chunk.len() as u64;
-
-        let Some(ref mut engine) = transcription_engine else {
-            continue;
-        };
-        let segments = match engine.transcribe(&chunk, offset_ms) {
-            Ok(segments) if !segments.is_empty() => segments,
-            Ok(_) => continue,
-            Err(e) => {
-                tracing::error!("transcribe() failed at {offset_ms}ms: {e:#}");
-                continue;
-            }
-        };
-
-        // One speaker per chunk, shared across its segments.
-        let speaker = speakers.label(&audio.mic, &audio.system, &chunk);
-        // Reloaded per chunk so words added mid-meeting apply straight away.
-        let dictionary =
-            crate::dictionary::Rules::new(&db.list_dictionary_entries().unwrap_or_default());
-
-        let mut stored = Vec::with_capacity(segments.len());
-        for seg in &segments {
-            match db.create_transcript_segment(NewTranscriptSegment {
-                meeting_id: meeting_id.to_string(),
-                speaker_label: speaker.clone(),
-                text: dictionary.apply(&seg.text),
-                start_ms: i64::try_from(seg.start_ms).unwrap_or(i64::MAX),
-                end_ms: i64::try_from(seg.end_ms).unwrap_or(i64::MAX),
-                confidence: 0.9,
-            }) {
-                Ok(s) => stored.push(s),
-                Err(e) => tracing::error!("Failed to store transcript segment: {e}"),
-            }
+    let mut transcriber = match crate::pipeline::live_transcriber(call_app.is_some()) {
+        Ok(t) => {
+            let _ = app.emit(
+                "transcription-status",
+                serde_json::json!({ "meeting_id": meeting_id, "available": true }),
+            );
+            Some(t)
         }
+        Err(err) => {
+            tracing::error!("{err:#}");
+            let reason = match TranscriptionEngine::check_status() {
+                transcription::ModelStatus::NotDownloaded => {
+                    "Transcription model not downloaded. Recording audio only.".to_string()
+                }
+                _ => {
+                    "Transcription model failed to load. The model files may be corrupted — try deleting and re-downloading in Settings.".to_string()
+                }
+            };
+            let _ = app.emit(
+                "transcription-status",
+                serde_json::json!({
+                    "meeting_id": meeting_id,
+                    "available": false,
+                    "reason": reason,
+                }),
+            );
+            None
+        }
+    };
+
+    let mut segment_count: u64 = 0;
+    let mut emit = |sentences: Vec<crate::pipeline::Sentence>| {
+        let stored = crate::pipeline::store(db, meeting_id, &sentences);
         segment_count += stored.len() as u64;
         if !stored.is_empty() {
             let _ = app.emit("transcript-update", &stored);
         }
+    };
+    while let Some(audio) = audio_rx.blocking_recv() {
+        if let Some(t) = transcriber.as_mut() {
+            emit(t.push(audio));
+        }
+    }
+    if let Some(t) = transcriber.as_mut() {
+        emit(t.finish());
     }
 
     tracing::info!("Audio channel closed after {segment_count} segments");
@@ -1150,6 +1223,7 @@ pub async fn import_recording(
     db.update_meeting_status(&meeting.id, "transcribing")
         .map_err(|e| e.to_string())?;
     let audio_path = recordings_dir.join(format!("{}.wav", meeting.id));
+    let pipeline_audio_path = audio_path.clone();
     let (audio_tx, audio_rx) = tokio::sync::mpsc::channel::<AudioChunk>(100);
 
     // Decode on a plain thread, writing the WAV the player uses and feeding
@@ -1222,6 +1296,7 @@ pub async fn import_recording(
         meeting.id.clone(),
         // A file name is a placeholder; a generated title reads better.
         Some(meeting.title.clone()),
+        pipeline_audio_path,
         app,
     ));
 
