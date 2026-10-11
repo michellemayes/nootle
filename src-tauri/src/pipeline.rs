@@ -372,7 +372,10 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
         voices.push(voice);
     }
 
-    let labels = assign_speakers(&segments, &sources, &voices);
+    let (labels, speaker_voices) = assign_speakers(&segments, &sources, &voices, |centroids| {
+        crate::voices::recognize(db, centroids)
+    });
+    crate::voices::remember_meeting_voices(db, meeting_id, &speaker_voices);
     let changed: Vec<(String, String)> = segments
         .iter()
         .zip(labels)
@@ -386,12 +389,15 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
 /// Speaker labels from each sentence's source and voice: the user's own
 /// lines are "You"; everyone else is clustered by voice, with sentences too
 /// short to anchor a cluster joining the closest one (or, with no voice at
-/// all, the previous remote speaker).
+/// all, the previous remote speaker). `recognize` may put a remembered name
+/// on each cluster; the rest are numbered "Speaker 1", "Speaker 2", … in
+/// order of first appearance. Also returns each label's voice.
 fn assign_speakers(
     segments: &[TranscriptSegment],
     sources: &[Source],
     voices: &[Option<Vec<f32>>],
-) -> Vec<String> {
+    recognize: impl FnOnce(&[Vec<f32>]) -> Vec<Option<String>>,
+) -> (Vec<String>, Vec<(String, Vec<f32>)>) {
     let anchors: Vec<(usize, &[f32])> = (0..segments.len())
         .filter(|&i| segments[i].end_ms - segments[i].start_ms >= MIN_ANCHOR_MS)
         .filter_map(|i| Some((i, voices[i].as_deref()?)))
@@ -403,6 +409,19 @@ fn assign_speakers(
         cluster_of[i] = Some(c);
     }
     let centroids = centroids(&anchor_voices, &clusters);
+    let mut names = recognize(&centroids);
+    names.resize(centroids.len(), None);
+    let mut next_number = 0;
+    let cluster_labels: Vec<String> = names
+        .into_iter()
+        .map(|name| {
+            name.unwrap_or_else(|| {
+                next_number += 1;
+                speaker_label(next_number - 1)
+            })
+        })
+        .collect();
+
     let closest = |v: &[f32]| -> Option<usize> {
         centroids
             .iter()
@@ -423,11 +442,11 @@ fn assign_speakers(
             .or(previous);
         previous = cluster.or(previous);
         labels.push(match cluster {
-            Some(c) => speaker_label(c),
+            Some(c) => cluster_labels[c].clone(),
             None => UNKNOWN_LABEL.to_string(),
         });
     }
-    labels
+    (labels, cluster_labels.into_iter().zip(centroids).collect())
 }
 
 #[cfg(test)]
@@ -467,8 +486,9 @@ mod tests {
             Source::Remote,
         ];
         let voices = [a.clone(), None, b.clone(), Some(vec![0.9, 0.1]), None, a];
+        let (labels, speakers) = assign_speakers(&segments, &sources, &voices, |_| vec![]);
         assert_eq!(
-            assign_speakers(&segments, &sources, &voices),
+            labels,
             [
                 "Speaker 1",
                 "You",
@@ -478,15 +498,28 @@ mod tests {
                 "Speaker 1"
             ]
         );
+        assert_eq!(speakers.len(), 2);
+        assert_eq!(speakers[0].0, "Speaker 1");
+    }
+
+    #[test]
+    fn remembered_voices_name_their_cluster() {
+        let segments = [seg(0, 3000), seg(3000, 6000)];
+        let sources = [Source::Remote, Source::Remote];
+        let voices = [Some(vec![1.0, 0.0]), Some(vec![0.0, 1.0])];
+        let (labels, _) = assign_speakers(&segments, &sources, &voices, |centroids| {
+            assert_eq!(centroids.len(), 2);
+            vec![None, Some("Priya".into())]
+        });
+        assert_eq!(labels, ["Speaker 1", "Priya"]);
     }
 
     #[test]
     fn without_voices_everyone_is_speaker() {
         let segments = [seg(0, 1000), seg(1000, 2000)];
         let sources = [Source::Room, Source::Room];
-        assert_eq!(
-            assign_speakers(&segments, &sources, &[None, None]),
-            ["Speaker", "Speaker"]
-        );
+        let (labels, speakers) = assign_speakers(&segments, &sources, &[None, None], |_| vec![]);
+        assert_eq!(labels, ["Speaker", "Speaker"]);
+        assert!(speakers.is_empty());
     }
 }

@@ -32,6 +32,7 @@ pub mod snapshots;
 pub mod summarization;
 pub mod transcription;
 pub mod vad;
+pub mod voices;
 pub mod workflows;
 
 use commands::{
@@ -470,6 +471,9 @@ pub fn run() {
             commands::get_app_setting,
             commands::set_app_setting,
             commands::get_remote_control_token,
+            commands::list_voice_profiles,
+            commands::delete_voice_profile,
+            commands::forget_all_voices,
             commands::create_chat_conversation,
             commands::list_chat_conversations,
             commands::delete_chat_conversation,

@@ -314,6 +314,25 @@ fn fts_any_terms(query: &str) -> Option<String> {
     (!terms.is_empty()).then(|| terms.join(" OR "))
 }
 
+/// A remembered voice: a name and the mean fingerprint of their speech.
+#[derive(Debug, Clone, Serialize)]
+pub struct VoiceProfile {
+    pub id: String,
+    pub name: String,
+    #[serde(skip)]
+    pub embedding: Vec<f32>,
+    /// How many meetings the fingerprint was learned from.
+    pub samples: i64,
+    pub updated_at: String,
+}
+
+fn bytes_to_f32s(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect()
+}
+
 /// Filters for questions asked across all meetings.
 #[derive(Debug, Default)]
 pub struct AskFilters {
@@ -1278,6 +1297,21 @@ impl Database {
             // them; they're recomputed from the transcript when next viewed.
             "DELETE FROM meeting_analytics;
              DELETE FROM meeting_engagement;",
+            // 3: remembered voices (opt-in), and each meeting's speaker
+            // fingerprints so naming a speaker can teach Nootle their voice.
+            "CREATE TABLE meeting_voices (
+                 meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                 speaker_label TEXT NOT NULL,
+                 embedding BLOB NOT NULL,
+                 PRIMARY KEY (meeting_id, speaker_label)
+             );
+             CREATE TABLE voice_profiles (
+                 id TEXT PRIMARY KEY,
+                 name TEXT NOT NULL UNIQUE,
+                 embedding BLOB NOT NULL,
+                 samples INTEGER NOT NULL DEFAULT 1,
+                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+             );",
         ];
 
         let current: usize =
@@ -2331,6 +2365,116 @@ impl Database {
         }
         Self::delete_meeting_chunks_with(&tx, meeting_id)?;
         tx.commit()?;
+        Ok(())
+    }
+
+    // --- Remembered voices ---
+
+    /// Replaces the stored fingerprints of these speakers in a meeting.
+    pub fn save_meeting_voices(
+        &self,
+        meeting_id: &str,
+        voices: &[(String, Vec<f32>)],
+    ) -> Result<()> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO meeting_voices (meeting_id, speaker_label, embedding) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(meeting_id, speaker_label) DO UPDATE SET embedding = excluded.embedding",
+            )?;
+            for (label, embedding) in voices {
+                stmt.execute(params![meeting_id, label, f32_slice_to_bytes(embedding)])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Removes and returns a speaker's fingerprint in a meeting.
+    pub fn take_meeting_voice(&self, meeting_id: &str, label: &str) -> Result<Option<Vec<f32>>> {
+        let conn = self.lock_conn()?;
+        let bytes: Option<Vec<u8>> = conn
+            .query_row(
+                "DELETE FROM meeting_voices WHERE meeting_id = ?1 AND speaker_label = ?2 RETURNING embedding",
+                params![meeting_id, label],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(bytes.map(|b| bytes_to_f32s(&b)))
+    }
+
+    /// Folds a fingerprint into `name`'s remembered voice (creating it),
+    /// as a running mean kept at unit length.
+    pub fn learn_voice_profile(&self, name: &str, embedding: &[f32]) -> Result<()> {
+        let conn = self.lock_conn()?;
+        let existing: Option<(Vec<u8>, i64)> = conn
+            .query_row(
+                "SELECT embedding, samples FROM voice_profiles WHERE name = ?1",
+                params![name],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let (mut mean, samples) = match existing {
+            Some((bytes, n)) => {
+                let old = bytes_to_f32s(&bytes);
+                let mean: Vec<f32> = old
+                    .iter()
+                    .zip(embedding)
+                    .map(|(o, e)| o * n as f32 + e)
+                    .collect();
+                (mean, n + 1)
+            }
+            None => (embedding.to_vec(), 1),
+        };
+        let norm = mean.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            mean.iter_mut().for_each(|x| *x /= norm);
+        }
+        conn.execute(
+            "INSERT INTO voice_profiles (id, name, embedding, samples, updated_at)
+             VALUES (?1, ?2, ?3, ?4, datetime('now'))
+             ON CONFLICT(name) DO UPDATE SET embedding = excluded.embedding,
+                 samples = excluded.samples, updated_at = excluded.updated_at",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                name,
+                f32_slice_to_bytes(&mean),
+                samples
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_voice_profiles(&self) -> Result<Vec<VoiceProfile>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, embedding, samples, updated_at FROM voice_profiles ORDER BY name COLLATE NOCASE",
+        )?;
+        let profiles = stmt
+            .query_map([], |row| {
+                Ok(VoiceProfile {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    embedding: bytes_to_f32s(&row.get::<_, Vec<u8>>(2)?),
+                    samples: row.get(3)?,
+                    updated_at: row.get(4)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(profiles)
+    }
+
+    pub fn delete_voice_profile(&self, id: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute("DELETE FROM voice_profiles WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Forgets every remembered voice and every meeting's fingerprints.
+    pub fn forget_all_voices(&self) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute_batch("DELETE FROM voice_profiles; DELETE FROM meeting_voices;")?;
         Ok(())
     }
 

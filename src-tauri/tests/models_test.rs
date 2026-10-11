@@ -269,3 +269,54 @@ fn recovered_recording_gets_the_speakers_right() {
     eprintln!("speaker accuracy {:.0}%", accuracy * 100.0);
     assert!(accuracy >= 0.9, "{mapping:?}");
 }
+
+/// Remembered voices: name a speaker in one meeting and the same voice is
+/// named in the next meeting without asking.
+#[test]
+#[ignore = "needs the transcription and speaker models downloaded"]
+fn a_named_voice_is_recognised_next_time() {
+    use nootle_app_lib::audio::AudioWriter;
+    use nootle_app_lib::db::{Database, NewMeeting};
+
+    let call = golden::call();
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::new_in_memory().unwrap();
+    db.set_setting(nootle_app_lib::voices::SETTING_KEY, "true")
+        .unwrap();
+    let mut record = |name: &str| -> String {
+        let audio_path = dir.path().join(format!("{name}.wav"));
+        let mut mixed = AudioWriter::new(&audio_path, 16_000).unwrap();
+        mixed.write_samples(&call.mixed()).unwrap();
+        mixed.finalize().unwrap();
+        let mut stems = AudioWriter::stereo(
+            &nootle_app_lib::audio::writer::stems_path(&audio_path),
+            16_000,
+        )
+        .unwrap();
+        stems.write_stereo(&call.mic, &call.system).unwrap();
+        stems.finalize().unwrap();
+        let id = db
+            .create_meeting(NewMeeting {
+                title: name.into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap()
+            .id;
+        nootle_app_lib::pipeline::transcribe_file(&db, &id, &audio_path, |_| {}).unwrap();
+        nootle_app_lib::pipeline::rediarize(&db, &id, &audio_path).unwrap();
+        id
+    };
+
+    let first = record("first");
+    // Speaker 1 opens the call ("Saturday, August fifteenth").
+    nootle_app_lib::ops::rename_speaker(&db, None, &first, "Speaker 1", "Ada").unwrap();
+
+    let second = record("second");
+    let segments = db.get_transcript(&second).unwrap();
+    assert_eq!(segments[0].speaker_label, "Ada", "{segments:#?}");
+    assert!(
+        segments.iter().any(|s| s.speaker_label == "Speaker 1"),
+        "the other remote voice keeps a number"
+    );
+}

@@ -1962,6 +1962,22 @@ pub async fn set_app_setting(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command(async)]
+pub fn list_voice_profiles(db: State<'_, DbState>) -> Result<Vec<crate::db::VoiceProfile>, String> {
+    crate::voices::list(&db).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn delete_voice_profile(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_voice_profile(&id).map_err(|e| e.to_string())
+}
+
+/// Forgets every remembered voice and stored speaker fingerprint.
+#[tauri::command(async)]
+pub fn forget_all_voices(db: State<'_, DbState>) -> Result<(), String> {
+    db.forget_all_voices().map_err(|e| e.to_string())
+}
+
 /// The token `nootle://` links must carry, for Settings to show.
 #[tauri::command(async)]
 pub fn get_remote_control_token(db: State<'_, DbState>) -> Result<String, String> {

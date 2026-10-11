@@ -740,6 +740,93 @@ function InsightTypesManager() {
 }
 
 
+interface VoiceProfile {
+  id: string;
+  name: string;
+  samples: number;
+  updated_at: string;
+}
+
+/** "Remember voices": off by default because a voice fingerprint is
+ * biometric data. Lists what's remembered, each deletable. */
+function RememberedVoices() {
+  const [enabled, setEnabled] = useState(false);
+  const [voices, setVoices] = useState<VoiceProfile[]>([]);
+
+  const refresh = useCallback(() => {
+    invoke<VoiceProfile[]>("list_voice_profiles").then(setVoices).catch(() => {});
+  }, []);
+  useEffect(() => {
+    invoke<string | null>("get_app_setting", { key: "remember_voices" })
+      .then((val) => setEnabled(val === "true"))
+      .catch(() => {});
+    refresh();
+  }, [refresh]);
+
+  const toggle = async (on: boolean) => {
+    setEnabled(on);
+    await invoke("set_app_setting", { key: "remember_voices", value: String(on) });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium">Remember voices</p>
+          <p className="text-sm text-muted-foreground">
+            When you rename a speaker, Nootle learns their voice and names them in later
+            meetings. Voice fingerprints stay in Nootle's database on this Mac and are never
+            uploaded
+          </p>
+        </div>
+        <Switch checked={enabled} onCheckedChange={toggle} aria-label="Remember voices" />
+      </div>
+      {voices.length > 0 && (
+        <div className="rounded-md bg-muted/50 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              {voices.length} remembered {voices.length === 1 ? "voice" : "voices"}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                await invoke("forget_all_voices");
+                refresh();
+              }}
+            >
+              Forget all
+            </Button>
+          </div>
+          <ul className="divide-y">
+            {voices.map((v) => (
+              <li key={v.id} className="flex items-center justify-between py-1.5 text-sm">
+                <span>
+                  {v.name}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    learned from {v.samples} {v.samples === 1 ? "meeting" : "meetings"}
+                  </span>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Forget ${v.name}'s voice`}
+                  onClick={async () => {
+                    await invoke("delete_voice_profile", { id: v.id });
+                    refresh();
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** A ready-to-use start link with this install's secret token, so a web
  * page can't start a recording just by opening a nootle:// link. */
 function UrlControlLink() {
@@ -905,6 +992,7 @@ export function SettingsPage() {
                   />
                 </div>
                 {remoteControlEnabled && <UrlControlLink />}
+                <RememberedVoices />
               </CardContent>
             </Card>
             <PermissionsCard />

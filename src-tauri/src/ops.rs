@@ -60,6 +60,7 @@ pub const SUMMARIZATION_PROVIDER_SETTING: &str = "summarization_provider";
 /// On/off settings the app's settings screen changes.
 pub const TOGGLE_SETTINGS: &[&str] = &[
     "detection_enabled",
+    crate::voices::SETTING_KEY,
     crate::remote::ENABLED_SETTING,
     crate::dictionary::AUTO_LEARN_SETTING,
     crate::snapshots::SETTING_KEY,
@@ -69,6 +70,7 @@ pub const TOGGLE_SETTINGS: &[&str] = &[
 /// on stays a decision made by the user.
 pub const AGENT_LOCKED_SETTINGS: &[&str] = &[
     crate::remote::ENABLED_SETTING,
+    crate::voices::SETTING_KEY,
     crate::snapshots::SETTING_KEY,
 ];
 
@@ -550,6 +552,9 @@ pub fn rename_speaker(
         return Err(anyhow!("Speaker name can't be empty"));
     }
     let changed = db.rename_speaker(meeting_id, from, to)?;
+    if let Err(e) = crate::voices::learn_from_rename(db, meeting_id, from, to) {
+        tracing::warn!("Couldn't learn {to}'s voice: {e}");
+    }
     if let Err(e) = refresh_analytics(db, meeting_id) {
         tracing::warn!("Failed to compute analytics for {meeting_id}: {e}");
     }
