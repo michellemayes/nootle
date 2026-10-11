@@ -17,6 +17,7 @@ import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Kbd } from "@/components/Kbd";
 import { AudioLevelMeter } from "@/components/AudioLevelMeter";
+import { Markdown } from "@/components/Markdown";
 import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { Square, ArrowLeft, ArrowDown, ChevronDown, ChevronRight, FileText, MicOff, Pause, Play, ScanLine } from "lucide-react";
 
@@ -93,6 +94,49 @@ function ConsentReminder({ meetingId }: { meetingId: string }) {
         ×
       </Button>
     </div>
+  );
+}
+
+/** "What did I miss?": a few bullets on the last five minutes, for when
+ * you stepped away or drifted off. */
+function CatchUp({ meetingId }: { meetingId: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "done">("idle");
+  const [text, setText] = useState("");
+  const ask = async () => {
+    setState("loading");
+    try {
+      setText(await invoke<string>("catch_up", { meetingId, minutes: 5 }));
+    } catch (err) {
+      setText(String(err));
+    }
+    setState("done");
+  };
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={ask}
+        disabled={state === "loading"}
+        title="Summarize the last five minutes"
+      >
+        {state === "loading" ? "Catching up…" : "What did I miss?"}
+      </Button>
+      {state === "done" && (
+        <div
+          role="status"
+          className="absolute right-6 top-14 z-20 w-96 rounded-lg border bg-popover p-4 text-sm shadow-lg"
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <p className="font-medium">The last five minutes</p>
+            <Button size="xs" variant="ghost" onClick={() => setState("idle")} aria-label="Close">
+              ×
+            </Button>
+          </div>
+          <Markdown content={text} />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -302,7 +346,7 @@ export function RecordingView() {
   return (
     <div className="flex flex-1 flex-col">
       {/* Header bar: recording indicator, title, timer, waveform, stop */}
-      <div className="flex items-center gap-4 border-b px-6 py-3">
+      <div className="relative flex items-center gap-4 border-b px-6 py-3">
         <div className="flex items-center gap-2">
           <span
             className={
@@ -387,10 +431,12 @@ export function RecordingView() {
           </span>
         )}
 
+        <span className="ml-auto" />
+        {currentMeeting && isRecording && !isCompact && <CatchUp meetingId={currentMeeting.id} />}
+
         <Button
           size="sm"
           variant="outline"
-          className="ml-auto"
           onClick={() => setPaused(!isPaused).catch(() => {})}
           disabled={!isRecording || stopping}
           title={isPaused ? "Resume recording" : "Pause recording. Nothing is recorded or transcribed until you resume"}

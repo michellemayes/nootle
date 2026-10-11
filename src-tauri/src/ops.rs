@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 use crate::db::{
     ChatConversation, Database, InsightWithActionItem, Label, Meeting, NewRecipe, Recipe,
-    SentimentSegment,
+    SentimentSegment, TranscriptSegment,
 };
 use crate::dictionary::DictionaryEntry;
 use crate::embedding::EmbeddingEngine;
@@ -658,6 +658,53 @@ async fn chat(
         .await
 }
 
+/// The last `minutes` of a meeting's transcript, for catching up.
+pub fn recent_transcript(segments: &[TranscriptSegment], minutes: i64) -> Vec<TranscriptSegment> {
+    let Some(latest) = segments.iter().map(|s| s.end_ms).max() else {
+        return Vec::new();
+    };
+    let since = latest - minutes * 60_000;
+    segments
+        .iter()
+        .filter(|s| s.end_ms > since)
+        .cloned()
+        .collect()
+}
+
+/// "What did I miss?": a few bullets on the last `minutes` of a meeting
+/// (usually one still being recorded), calling out anything put to the
+/// user, using the automatic summary model.
+pub async fn catch_up(
+    db: &Database,
+    llm: &LlmRegistry,
+    meeting_id: &str,
+    minutes: i64,
+) -> Result<String> {
+    let recent = recent_transcript(&db.get_transcript(meeting_id)?, minutes);
+    if recent.is_empty() {
+        return Ok("Nothing has been transcribed yet.".into());
+    }
+    let model = pick_auto_model(db, llm)
+        .ok_or_else(|| anyhow!("Add an AI provider in Settings to catch up on a meeting"))?;
+    let messages = vec![
+        ChatMessage {
+            role: "system".into(),
+            content: format!(
+                "You help someone who stepped away from a live meeting catch up. In 3–5 short \
+                 bullets, say what was discussed in the last {minutes} minutes. Then, if \
+                 anyone asked \"You\" a question, assigned \"You\" something, or is waiting \
+                 on \"You\", add a line starting \"For you:\". Be brief; no preamble.{}",
+                crate::dictionary::glossary(db)
+            ),
+        },
+        ChatMessage {
+            role: "user".into(),
+            content: crate::summarization::format_transcript(&recent),
+        },
+    ];
+    chat(llm, &model.provider, &model.id, messages).await
+}
+
 /// Merges a meeting's notes with details from its transcript and saves the
 /// result as the meeting's enriched notes.
 pub async fn enrich_notes(
@@ -1237,6 +1284,23 @@ mod tests {
         );
         db.update_meeting_status(&id, "summarized").unwrap();
         assert_eq!(meetings_to_index(&db).unwrap(), vec![id]);
+    }
+
+    #[test]
+    fn catching_up_reads_only_the_recent_minutes() {
+        let seg = |start_ms: i64| TranscriptSegment {
+            id: start_ms.to_string(),
+            meeting_id: "m".into(),
+            speaker_label: "A".into(),
+            text: "x".into(),
+            start_ms,
+            end_ms: start_ms + 1_000,
+            confidence: 1.0,
+        };
+        let segments = [seg(0), seg(400_000), seg(590_000)];
+        let recent = recent_transcript(&segments, 5);
+        assert_eq!(recent.len(), 2);
+        assert!(recent_transcript(&[], 5).is_empty());
     }
 
     #[test]

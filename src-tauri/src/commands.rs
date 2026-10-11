@@ -1451,6 +1451,20 @@ pub async fn generate_summary(
         .map_err(|e| e.to_string())
 }
 
+/// "What did I miss?" during (or after) a meeting.
+#[tauri::command]
+pub async fn catch_up(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    minutes: Option<i64>,
+) -> Result<String, String> {
+    let llm = llm.read().await;
+    crate::ops::catch_up(&db, &llm, &meeting_id, minutes.unwrap_or(5).clamp(1, 60))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn chat_with_meeting(
     db: State<'_, DbState>,

@@ -472,6 +472,7 @@ pub fn run() {
             commands::get_app_setting,
             commands::set_app_setting,
             commands::get_remote_control_token,
+            commands::catch_up,
             commands::export_all_meetings,
             commands::get_consent_reminder,
             commands::note_consent,
