@@ -1,0 +1,42 @@
+name: Intel build (manual)
+
+# Builds an unsigned Intel (x86_64) DMG to try Nootle on Intel Macs before
+# releases ship for them. Run it from the Actions tab; the DMG is attached to
+# the run as an artifact. Nothing is published.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+        with:
+          targets: x86_64-apple-darwin
+      - uses: swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: intel
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: 9
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        # No signing or updater artifacts: this is a test build.
+        run: >-
+          pnpm tauri build --target x86_64-apple-darwin --features system-audio
+          --bundles dmg --no-sign
+          --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Nootle-intel-dmg
+          path: src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
