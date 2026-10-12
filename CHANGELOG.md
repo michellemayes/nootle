@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-10-12
+
+### Features
+
+- **speakers:** Name speakers from the call window and learn their voices (#174) ([9025deb](https://github.com/michellemayes/nootle/commit/9025debdaa5b1afe6a2f693e38ef372810cf8f97))
+
 ## [0.5.6] - 2026-10-09
 
 ### Bug Fixes

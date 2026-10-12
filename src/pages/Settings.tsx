@@ -749,6 +749,25 @@ interface VoiceProfile {
   updated_at: string;
 }
 
+/** "Names from the call": reads names off the call window's video tiles to
+ * name speakers. On by default; only runs with Screen Recording allowed. */
+function CallNames() {
+  const [enabled, setEnabled] = useBooleanSetting("call_names_enabled", true);
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium">Names from the call</p>
+        <p className="text-sm text-muted-foreground">
+          During a call, read the names on people's video tiles (Zoom, Meet, Teams, …) on this
+          Mac and use them to name speakers. Only the names are kept. Needs Screen Recording
+          permission
+        </p>
+      </div>
+      <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Names from the call" />
+    </div>
+  );
+}
+
 /** "Remember voices": off by default because a voice fingerprint is
  * biometric data. Lists what's remembered, each deletable. */
 function RememberedVoices() {
@@ -766,9 +785,9 @@ function RememberedVoices() {
         <div>
           <p className="text-sm font-medium">Remember voices</p>
           <p className="text-sm text-muted-foreground">
-            When you rename a speaker, Nootle learns their voice and names them in later
-            meetings. Voice fingerprints stay in Nootle's database on this Mac and are never
-            uploaded
+            When you name a speaker, or their name is read from the call, Nootle learns their
+            voice and names them in later meetings on any app, even in person. Voice fingerprints
+            stay in Nootle's database on this Mac and are never uploaded
           </p>
         </div>
         <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Remember voices" />
@@ -1098,6 +1117,7 @@ export function SettingsPage() {
                   />
                 </div>
                 {remoteControlEnabled && <UrlControlLink />}
+                <CallNames />
                 <RememberedVoices />
               </CardContent>
             </Card>
@@ -1258,7 +1278,7 @@ function PermissionsCard() {
 
   const rows: { label: string; key: "microphone" | "screen_recording" | "calendar"; granted: boolean; description: string }[] = permissions ? [
     { label: "Microphone", key: "microphone", granted: permissions.microphone === "granted", description: "Required for recording audio" },
-    { label: "Screen recording", key: "screen_recording", granted: permissions.screen_recording, description: "Required for system audio capture" },
+    { label: "Screen recording", key: "screen_recording", granted: permissions.screen_recording, description: "Required for system audio capture, snapshots, and names from the call" },
     { label: "Calendar", key: "calendar", granted: permissions.calendar === "granted", description: "Optional. Detect meetings from your calendar" },
   ] : [];
 
