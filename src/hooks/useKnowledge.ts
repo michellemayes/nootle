@@ -31,13 +31,8 @@ export function useKnowledge() {
 
   const addSource = useCallback(
     async (kind: KnowledgeSource["kind"], location: string, sourceTags: string[] = []) => {
-      const source = await invoke<KnowledgeSource>("add_knowledge_source", {
-        kind,
-        location,
-        tags: sourceTags,
-      });
+      await invoke("add_knowledge_source", { kind, location, tags: sourceTags });
       await refresh();
-      return source;
     },
     [refresh],
   );
@@ -60,7 +55,7 @@ export function useKnowledge() {
 
   const reindex = useCallback((id?: string) => invoke("reindex_knowledge", { id: id ?? null }), []);
 
-  return { sources, tags, refresh, addSource, removeSource, setSourceTags, reindex };
+  return { sources, tags, addSource, removeSource, setSourceTags, reindex };
 }
 
 /** Just the tags, for filters elsewhere in the app. */

@@ -255,19 +255,18 @@ mod eventkit {
                 Some(a) => msg_send![a, count],
                 None => 0,
             };
-            let mut attendee_names = Vec::new();
-            if let Some(list) = attendees.as_ref() {
-                for j in 0..attendee_count {
-                    let participant: *mut AnyObject = msg_send![list, objectAtIndex: j];
-                    if let Some(participant) = participant.as_ref() {
-                        if let Some(name) =
-                            ns_string(msg_send![participant, name]).filter(|n| !n.trim().is_empty())
-                        {
-                            attendee_names.push(name);
-                        }
-                    }
-                }
-            }
+            let attendee_names: Vec<String> = attendees
+                .as_ref()
+                .map(|list| {
+                    (0..attendee_count)
+                        .filter_map(|j| {
+                            let participant: *mut AnyObject = msg_send![list, objectAtIndex: j];
+                            ns_string(msg_send![participant.as_ref()?, name])
+                        })
+                        .filter(|n| !n.trim().is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
 
             let meeting_url = find_meeting_url(
                 [url.as_deref(), location.as_deref(), notes.as_deref()]
@@ -286,7 +285,7 @@ mod eventkit {
                 meeting_url,
                 attendee_count,
                 attendees: attendee_names,
-                notes: notes.filter(|n| !n.trim().is_empty()),
+                notes,
             });
         }
         Some(events)

@@ -1691,7 +1691,15 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
         }
         MeetingsAction::EnrichNotes { id, llm: llm_args } => {
             let (llm, provider, model) = llm(db, llm_args)?;
-            let enriched = block_on(ops::enrich_notes(db, &llm, id, &provider, &model, None))?;
+            let embedding = ops::notes_embedding(db, &mut None, id);
+            let enriched = block_on(ops::enrich_notes(
+                db,
+                &llm,
+                id,
+                &provider,
+                &model,
+                embedding.as_deref(),
+            ))?;
             print_text("enriched_notes", &enriched, pretty);
         }
     }

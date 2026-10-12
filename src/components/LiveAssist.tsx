@@ -12,7 +12,7 @@ import { useBooleanSetting } from "@/hooks/useBooleanSetting";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import type { LiveAssistCard, TranscriptSegment } from "@/types";
 
-const normalize = (q: string) => q.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+
 
 /** Answers questions during a recording from the knowledge base and past
  * meetings: automatically for questions heard in the meeting (when turned
@@ -37,14 +37,15 @@ export function LiveAssist({
   const seenRef = useRef<Set<string> | null>(null);
   const queueRef = useRef<string | null>(null);
   const inFlightRef = useRef(false);
-  const askedRef = useRef(new Set<string>());
+  // Questions already on cards; the backend skips them.
+  const askedRef = useRef<string[]>([]);
 
   const llm = { provider: selectedProvider || null, model: selectedModel || null };
   const llmRef = useRef(llm);
   llmRef.current = llm;
 
   const addCard = (card: LiveAssistCard) => {
-    askedRef.current.add(normalize(card.question));
+    askedRef.current.push(card.question);
     setCards((list) => [card, ...list].slice(0, 20));
   };
 
@@ -61,9 +62,10 @@ export function LiveAssist({
           meetingId,
           text,
           automatic: true,
+          asked: askedRef.current,
           ...llmRef.current,
         });
-        if (card && !askedRef.current.has(normalize(card.question))) addCard(card);
+        if (card) addCard(card);
       } catch {
         // Unprompted help fails quietly; typed questions show their errors.
       } finally {

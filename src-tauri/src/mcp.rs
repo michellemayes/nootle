@@ -1557,17 +1557,9 @@ impl NootleMcpServer {
         respond(
             async {
                 let (llm, provider, model) = self.llm(&p.llm).await?;
-                // Related documents are a bonus: without the search model,
-                // notes are still enriched from the transcript.
                 let (db, engine, id) = (self.db.clone(), self.engine.clone(), p.meeting_id.clone());
                 let embedding = blocking(move || {
-                    let Some(query) = ops::notes_query(&db, &id)? else {
-                        return Ok(None);
-                    };
-                    let mut slot = engine.blocking_lock();
-                    Ok(ops::loaded_embedding_engine(&mut slot)
-                        .ok()
-                        .and_then(|engine| ops::embed_question(engine, &query).ok()))
+                    Ok(ops::notes_embedding(&db, &mut engine.blocking_lock(), &id))
                 })
                 .await?;
                 let notes = ops::enrich_notes(

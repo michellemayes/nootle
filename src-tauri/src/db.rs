@@ -480,27 +480,30 @@ fn push_knowledge_filters(
     tags: &[String],
     kinds: &[String],
 ) {
-    if !tags.is_empty() {
-        let placeholders: Vec<String> = (0..tags.len())
+    // Appends ` AND {before}(?n, ?n+1, …){after}` with `values` as the parameters.
+    let mut push_in = |before: &str, values: &[String], after: &str| {
+        if values.is_empty() {
+            return;
+        }
+        let placeholders: Vec<String> = (0..values.len())
             .map(|i| format!("?{}", params.len() + i + 1))
             .collect();
         sql.push_str(&format!(
-            " AND EXISTS (SELECT 1 FROM json_each(s.tags) WHERE json_each.value IN ({}))",
+            " AND {before}({}){after}",
             placeholders.join(", ")
         ));
-        for tag in tags {
-            params.push(Box::new(tag.clone()));
-        }
-    }
-    if !kinds.is_empty() {
-        let placeholders: Vec<String> = (0..kinds.len())
-            .map(|i| format!("?{}", params.len() + i + 1))
-            .collect();
-        sql.push_str(&format!(" AND d.kind IN ({})", placeholders.join(", ")));
-        for kind in kinds {
-            params.push(Box::new(kind.clone()));
-        }
-    }
+        params.extend(
+            values
+                .iter()
+                .map(|v| Box::new(v.clone()) as Box<dyn rusqlite::types::ToSql>),
+        );
+    };
+    push_in(
+        "EXISTS (SELECT 1 FROM json_each(s.tags) WHERE json_each.value IN ",
+        tags,
+        ")",
+    );
+    push_in("d.kind IN ", kinds, "");
 }
 
 fn query_knowledge_hits(
@@ -3677,24 +3680,13 @@ impl Database {
     pub fn delete_knowledge_source(&self, id: &str) -> Result<()> {
         let mut conn = self.lock_conn()?;
         let tx = conn.transaction()?;
-        tx.execute(
-            "DELETE FROM knowledge_embeddings WHERE chunk_id IN (
-                SELECT kc.id FROM knowledge_chunks kc
-                JOIN knowledge_documents d ON d.id = kc.document_id
-                WHERE d.source_id = ?1
-            )",
-            params![id],
-        )?;
-        tx.execute(
-            "DELETE FROM knowledge_chunks WHERE document_id IN (
-                SELECT id FROM knowledge_documents WHERE source_id = ?1
-            )",
-            params![id],
-        )?;
-        tx.execute(
-            "DELETE FROM knowledge_documents WHERE source_id = ?1",
-            params![id],
-        )?;
+        let document_ids: Vec<String> = tx
+            .prepare("SELECT id FROM knowledge_documents WHERE source_id = ?1")?
+            .query_map(params![id], |row| row.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        for document_id in document_ids {
+            Self::delete_knowledge_document_with(&tx, &document_id)?;
+        }
         tx.execute("DELETE FROM knowledge_sources WHERE id = ?1", params![id])?;
         tx.commit()?;
         Ok(())

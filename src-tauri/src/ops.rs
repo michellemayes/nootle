@@ -649,7 +649,7 @@ pub fn detect_llm(
     Ok((llm, provider, model))
 }
 
-async fn chat(
+pub(crate) async fn chat(
     llm: &LlmRegistry,
     provider: &str,
     model: &str,
@@ -709,10 +709,48 @@ pub async fn catch_up(
     chat(llm, &model.provider, &model.id, messages).await
 }
 
+/// A meeting's notes as one text: what was typed, then the timestamped
+/// quick notes. Empty when it has neither.
+pub fn meeting_notes(db: &Database, meeting_id: &str) -> Result<String> {
+    let mut notes = db
+        .get_meeting(meeting_id)?
+        .raw_notes
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let quick_notes = db.get_scratch_notes(meeting_id)?;
+    if !quick_notes.is_empty() {
+        notes.push_str(&format!(
+            "\n\nQuick notes, with when in the meeting they were taken:\n{}",
+            crate::summarization::format_scratch_notes(&quick_notes)
+        ));
+    }
+    Ok(notes.trim().to_string())
+}
+
+/// The embedding of a meeting's title and notes, for finding related
+/// documents. None when the knowledge base is empty, there are no notes, or
+/// the search model can't load, since notes are still enriched without it.
+pub fn notes_embedding(
+    db: &Database,
+    engine: &mut Option<EmbeddingEngine>,
+    meeting_id: &str,
+) -> Option<Vec<f32>> {
+    if !db.has_knowledge().unwrap_or(false) {
+        return None;
+    }
+    let notes = meeting_notes(db, meeting_id)
+        .ok()
+        .filter(|n| !n.is_empty())?;
+    let title = db.get_meeting(meeting_id).ok()?.title;
+    let engine = loaded_embedding_engine(engine).ok()?;
+    embed_question(engine, &format!("{title}\n{notes}")).ok()
+}
+
 /// Merges a meeting's notes (typed shorthand and timestamped quick notes)
 /// with details from its transcript, calendar event and, given the notes'
-/// embedding, the most relevant knowledge-base passages, and saves the
-/// result as the meeting's enriched notes.
+/// embedding from `notes_embedding`, the closest knowledge-base passages,
+/// and saves the result as the meeting's enriched notes.
 pub async fn enrich_notes(
     db: &Database,
     llm: &LlmRegistry,
@@ -721,38 +759,18 @@ pub async fn enrich_notes(
     model: &str,
     notes_embedding: Option<&[f32]>,
 ) -> Result<String> {
-    let meeting = db.get_meeting(meeting_id)?;
-    let raw_notes = meeting.raw_notes.unwrap_or_default();
-    let quick_notes: Vec<String> = db
-        .get_scratch_notes(meeting_id)?
-        .into_iter()
-        .map(|n| {
-            format!(
-                "- [{}] {}",
-                crate::summarization::format_ms(n.timestamp_ms),
-                n.content
-            )
-        })
-        .collect();
-    if raw_notes.trim().is_empty() && quick_notes.is_empty() {
+    let notes = meeting_notes(db, meeting_id)?;
+    if notes.is_empty() {
         bail!("No notes to enrich");
     }
-    let mut notes = raw_notes.trim().to_string();
-    if !quick_notes.is_empty() {
-        notes.push_str(&format!(
-            "\n\nQuick notes, with when in the meeting they were taken:\n{}",
-            quick_notes.join("\n")
-        ));
-    }
 
-    let transcript_text = crate::summarization::format_transcript(&db.get_transcript(meeting_id)?)
-        + &crate::snapshots::context_section(db, meeting_id)
-        + &crate::calendar::context_section(db, meeting_id);
+    let transcript_text =
+        crate::summarization::llm_transcript(db, meeting_id, &db.get_transcript(meeting_id)?);
+    // By meaning only: a keyword query built from every word of the notes
+    // would match nearly every passage.
     let documents = match notes_embedding {
-        Some(embedding) if db.has_knowledge()? => {
-            crate::knowledge::search(db, embedding, &notes, &[], &[], 5)?
-        }
-        _ => Vec::new(),
+        Some(embedding) => db.search_knowledge_similar(embedding, 5, &[], &[])?,
+        None => Vec::new(),
     };
     let documents_section = if documents.is_empty() {
         String::new()
@@ -797,19 +815,6 @@ pub async fn enrich_notes(
     let enriched = chat(llm, provider, model, messages).await?;
     db.update_meeting_enriched_notes(meeting_id, &enriched)?;
     Ok(enriched)
-}
-
-/// The text to embed when looking up documents for a meeting's notes.
-pub fn notes_query(db: &Database, meeting_id: &str) -> Result<Option<String>> {
-    let meeting = db.get_meeting(meeting_id)?;
-    let mut query = meeting.title;
-    query.push('\n');
-    query.push_str(meeting.raw_notes.as_deref().unwrap_or_default());
-    for note in db.get_scratch_notes(meeting_id)? {
-        query.push('\n');
-        query.push_str(&note.content);
-    }
-    Ok((!query.trim().is_empty()).then_some(query))
 }
 
 /// Extracts decisions, action items, and custom insights from a meeting,
@@ -898,6 +903,42 @@ pub(crate) fn reciprocal_rank_fusion<T, const N: usize>(
     scored.into_iter().take(limit).map(|(_, r)| r).collect()
 }
 
+/// Meeting and document passages formatted for a prompt, each headed with
+/// how to cite it, and the same passages as sources for the answer.
+pub(crate) fn passages_context(
+    meetings: &[crate::db::ChunkSearchResult],
+    documents: &[crate::db::KnowledgeHit],
+) -> (String, Vec<Value>) {
+    let mut context: Vec<String> = meetings
+        .iter()
+        .map(|m| {
+            format!(
+                "---\n[Meeting: \"{}\", {}]\n{}\n",
+                m.meeting_title,
+                crate::summarization::format_ms(m.start_ms),
+                m.chunk_text
+            )
+        })
+        .collect();
+    let mut sources: Vec<Value> = meetings
+        .iter()
+        .map(|m| {
+            json!({
+                "type": "meeting",
+                "meeting_id": m.meeting_id,
+                "meeting_title": m.meeting_title,
+                "start_ms": m.start_ms,
+                "end_ms": m.end_ms,
+            })
+        })
+        .collect();
+    if !documents.is_empty() {
+        context.push(crate::knowledge::prompt_context(documents));
+        sources.extend(documents.iter().map(crate::knowledge::source_json));
+    }
+    (context.join("\n"), sources)
+}
+
 /// Answers a question from the most relevant transcript passages across all
 /// meetings, given the question's embedding from `embed_question`. Returns
 /// the answer and the passages it drew on.
@@ -943,25 +984,7 @@ pub async fn rag_chat(
         ));
     }
 
-    let mut context_parts = Vec::new();
-    let mut sources = Vec::new();
-    for result in &results {
-        let timestamp = crate::summarization::format_ms(result.start_ms);
-        context_parts.push(format!(
-            "---\n[Meeting: \"{}\", {}]\n{}\n",
-            result.meeting_title, timestamp, result.chunk_text
-        ));
-        sources.push(json!({
-            "meeting_id": result.meeting_id,
-            "meeting_title": result.meeting_title,
-            "start_ms": result.start_ms,
-            "end_ms": result.end_ms,
-        }));
-    }
-    if !documents.is_empty() {
-        context_parts.push(crate::knowledge::prompt_context(&documents));
-        sources.extend(documents.iter().map(crate::knowledge::source_json));
-    }
+    let (context, sources) = passages_context(&results, &documents);
 
     let system_prompt = format!(
         "You are Nootle, an AI assistant that answers questions about the user's meetings \
@@ -973,7 +996,7 @@ pub async fn rag_chat(
          [Document title, page].\n\n\
          {}\n\
          Answer the user's question based on these excerpts. Be concise.{}",
-        context_parts.join("\n"),
+        context,
         crate::dictionary::glossary(db)
     );
 

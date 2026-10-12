@@ -22,6 +22,7 @@ import { LoadingState } from "@/components/LoadingState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { openKnowledgeDocument } from "@/components/SourceCitation";
 import { toast } from "@/components/Toaster";
+import { Collapsible } from "@/components/Collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +32,11 @@ import { useKnowledge } from "@/hooks/useKnowledge";
 import { formatDate, plural } from "@/lib/utils";
 import type { KnowledgeDocument, KnowledgeHit, KnowledgeSource } from "@/types";
 
-const FILE_EXTENSIONS = ["pdf", "docx", "pptx", "xlsx", "md", "markdown", "txt", "csv", "html", "htm", "webloc", "url"];
+// Matches what the backend reads (knowledge::extract::kind_for_path).
+const FILE_EXTENSIONS = [
+  "pdf", "docx", "pptx", "xlsx", "md", "markdown", "mdx", "txt", "text", "rst", "org", "csv", "tsv",
+  "html", "htm", "webloc", "url",
+];
 
 const KIND_LABELS: Record<string, string> = {
   pdf: "PDFs",
@@ -381,7 +386,7 @@ function SourceRow({
           </Button>
         </div>
       </div>
-      {expanded && (
+      <Collapsible open={expanded}>
         <div className="ml-14 mt-2">
           {documents === null ? (
             <p className="text-xs text-muted-foreground">Loading…</p>
@@ -407,7 +412,7 @@ function SourceRow({
             </ul>
           )}
         </div>
-      )}
+      </Collapsible>
     </li>
   );
 }

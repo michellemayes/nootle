@@ -52,30 +52,12 @@ pub fn extract(kind: &str, bytes: &[u8]) -> Result<Extracted> {
         "xlsx" => xlsx(bytes),
         "markdown" => {
             let text = decode_text(bytes);
-            Ok(Extracted {
-                title: markdown_title(&text),
-                sections: vec![Section {
-                    locator: None,
-                    text,
-                }],
-            })
+            Ok(whole(markdown_title(&text), text))
         }
-        "text" => Ok(Extracted {
-            title: None,
-            sections: vec![Section {
-                locator: None,
-                text: decode_text(bytes),
-            }],
-        }),
+        "text" => Ok(whole(None, decode_text(bytes))),
         "html" | "web" => {
             let (title, text) = html_to_text(&decode_text(bytes));
-            Ok(Extracted {
-                title,
-                sections: vec![Section {
-                    locator: None,
-                    text,
-                }],
-            })
+            Ok(whole(title, text))
         }
         other => Err(anyhow!("Unsupported document type: {other}")),
     }
@@ -100,6 +82,17 @@ pub fn bookmark_url(bytes: &[u8]) -> Option<String> {
     from_ini
         .or_else(from_plist)
         .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
+}
+
+/// A document read as one section, without pages or slides.
+fn whole(title: Option<String>, text: String) -> Extracted {
+    Extracted {
+        title,
+        sections: vec![Section {
+            locator: None,
+            text,
+        }],
+    }
 }
 
 fn decode_text(bytes: &[u8]) -> String {
@@ -189,14 +182,10 @@ fn push_entity(out: &mut String, r: &quick_xml::events::BytesRef) {
 
 fn docx(bytes: &[u8]) -> Result<Extracted> {
     let mut archive = zip_archive(bytes)?;
-    let text = ooxml_text(&zip_part(&mut archive, "word/document.xml")?);
-    Ok(Extracted {
-        title: None,
-        sections: vec![Section {
-            locator: None,
-            text,
-        }],
-    })
+    Ok(whole(
+        None,
+        ooxml_text(&zip_part(&mut archive, "word/document.xml")?),
+    ))
 }
 
 fn pptx(bytes: &[u8]) -> Result<Extracted> {
@@ -378,8 +367,10 @@ fn sheet_text(xml: &str, shared: &[String]) -> String {
     lines.join("\n")
 }
 
-/// Elements whose content is never readable text.
-const SKIPPED_ELEMENTS: &[&str] = &["script", "style", "noscript", "svg", "template", "iframe"];
+/// Elements whose content is never body text (the title is taken separately).
+const SKIPPED_ELEMENTS: &[&str] = &[
+    "script", "style", "noscript", "svg", "template", "iframe", "title",
+];
 /// Elements that start a new line of text.
 const BLOCK_ELEMENTS: &[&str] = &[
     "p",
@@ -408,7 +399,7 @@ const BLOCK_ELEMENTS: &[&str] = &[
 ];
 
 /// An HTML page's title and readable text, one block per line.
-pub fn html_to_text(html: &str) -> (Option<String>, String) {
+fn html_to_text(html: &str) -> (Option<String>, String) {
     let lower = html.to_ascii_lowercase();
     let title = lower.find("<title").and_then(|i| {
         let start = i + lower[i..].find('>')? + 1;
@@ -447,12 +438,6 @@ pub fn html_to_text(html: &str) -> (Option<String>, String) {
             let end_tag = format!("</{name}");
             i = lower[i..]
                 .find(&end_tag)
-                .and_then(|e| lower[i + e..].find('>').map(|c| i + e + c + 1))
-                .unwrap_or(html.len());
-        } else if name == "title" && !tag.starts_with('/') {
-            // Already taken as the title; don't repeat it as body text.
-            i = lower[i..]
-                .find("</title")
                 .and_then(|e| lower[i + e..].find('>').map(|c| i + e + c + 1))
                 .unwrap_or(html.len());
         } else if BLOCK_ELEMENTS.contains(&name.as_str()) {
@@ -522,13 +507,12 @@ fn decode_entities(s: &str) -> String {
     out
 }
 
-// Counted in words, like transcript chunks: about 1.3 wordpieces per word
-// keeps a passage inside the embedding model's 256-wordpiece window.
-const CHUNK_WORDS: usize = 160;
-const OVERLAP_WORDS: usize = 30;
+// Sized like transcript chunks, to fit the embedding model's window.
+const CHUNK_WORDS: usize = crate::chunking::TARGET_CHUNK_TOKENS;
+const OVERLAP_WORDS: usize = crate::chunking::OVERLAP_TOKENS;
 /// Passages past this in one document are dropped; it keeps one huge file
 /// from monopolising the search model.
-pub const MAX_CHUNKS_PER_DOCUMENT: usize = 2_000;
+const MAX_CHUNKS_PER_DOCUMENT: usize = 2_000;
 
 /// Splits sections into overlapping passages of about `CHUNK_WORDS` words,
 /// breaking between lines where possible. Passages never span sections, so

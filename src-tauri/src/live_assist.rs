@@ -5,9 +5,9 @@
 
 use crate::db::{AskFilters, Database};
 use crate::llm::{ChatMessage, LlmRegistry};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 /// Turns on Live Assist cards while recording. Off unless turned on.
 pub const SETTING_KEY: &str = "live_assist";
@@ -26,7 +26,7 @@ const SMALL_TALK: &[&str] = &[
     "does that make sense",
     "how are you doing",
     "how is everyone doing",
-    "how's everyone doing",
+    "hows everyone doing",
     "how was your weekend",
     "is that okay",
     "is that ok",
@@ -51,12 +51,7 @@ pub fn extract_question(text: &str) -> Option<String> {
     }
     sentences.into_iter().rev().find_map(|sentence| {
         let question = sentence.strip_suffix('?')?.trim();
-        let normalized: String = question
-            .to_lowercase()
-            .chars()
-            .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '\'')
-            .collect();
-        let normalized = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
+        let normalized = normalize_question(question);
         let words = normalized.split(' ').count();
         (words >= MIN_QUESTION_WORDS && !SMALL_TALK.iter().any(|s| normalized.ends_with(s)))
             .then(|| format!("{question}?"))
@@ -95,61 +90,50 @@ pub async fn answer(
     query_embedding: &[f32],
     automatic: bool,
 ) -> Result<Option<LiveAssistCard>> {
-    let has_knowledge = db.has_knowledge()?;
+    // Each index is searched once; the closest passage by meaning decides
+    // whether an unprompted card is worth showing.
     let no_filters = AskFilters::default();
+    let (documents_by_meaning, documents_by_keywords) = if db.has_knowledge()? {
+        (
+            db.search_knowledge_similar(query_embedding, 8, &[], &[])?,
+            db.search_knowledge_keywords(question, 8, &[], &[])?,
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let other_meetings = |chunks: Vec<crate::db::ChunkSearchResult>| -> Vec<_> {
+        chunks
+            .into_iter()
+            .filter(|c| c.meeting_id != meeting_id)
+            .collect()
+    };
+    let meetings_by_meaning =
+        other_meetings(db.search_similar_chunks(query_embedding, 10, &no_filters)?);
+    let meetings_by_keywords =
+        other_meetings(db.search_chunks_by_keywords(question, 10, &no_filters)?);
     if automatic {
-        let best_document = if has_knowledge {
-            db.search_knowledge_similar(query_embedding, 1, &[], &[])?
-                .first()
-                .map(|h| h.distance)
-        } else {
-            None
-        };
-        let best_meeting = db
-            .search_similar_chunks(query_embedding, 3, &no_filters)?
-            .into_iter()
-            .find(|c| c.meeting_id != meeting_id)
-            .map(|c| c.distance);
-        let best = best_document
-            .into_iter()
-            .chain(best_meeting)
+        let best = documents_by_meaning
+            .iter()
+            .map(|h| h.distance)
+            .chain(meetings_by_meaning.iter().map(|c| c.distance))
             .fold(f64::MAX, f64::min);
         if best > MAX_AUTOMATIC_DISTANCE {
             return Ok(None);
         }
     }
-
-    let documents = if has_knowledge {
-        crate::knowledge::search(db, query_embedding, question, &[], &[], 4)?
-    } else {
-        Vec::new()
-    };
-    let meetings: Vec<_> =
-        crate::ops::hybrid_search(db, query_embedding, question, &no_filters, 5)?
-            .into_iter()
-            .filter(|c| c.meeting_id != meeting_id)
-            .take(3)
-            .collect();
-    if automatic && documents.is_empty() && meetings.is_empty() {
-        return Ok(None);
-    }
-
-    let mut sources: Vec<Value> = documents
-        .iter()
-        .map(crate::knowledge::source_json)
-        .collect();
-    sources.extend(meetings.iter().map(|m| {
-        json!({
-            "meeting_id": m.meeting_id,
-            "meeting_title": m.meeting_title,
-            "start_ms": m.start_ms,
-            "end_ms": m.end_ms,
-        })
-    }));
-    let card = |answer: Option<String>, sources: Vec<Value>| LiveAssistCard {
+    let documents =
+        crate::ops::reciprocal_rank_fusion([documents_by_meaning, documents_by_keywords], 4, |h| {
+            &h.chunk_id
+        });
+    let meetings =
+        crate::ops::reciprocal_rank_fusion([meetings_by_meaning, meetings_by_keywords], 3, |c| {
+            &c.chunk_id
+        });
+    let (excerpts, sources) = crate::ops::passages_context(&meetings, &documents);
+    let card = |answer: Option<&str>, sources: Vec<Value>| LiveAssistCard {
         id: uuid::Uuid::new_v4().to_string(),
         question: question.to_string(),
-        answer,
+        answer: answer.map(str::to_string),
         sources,
         automatic,
     };
@@ -157,22 +141,13 @@ pub async fn answer(
     let Some((llm, provider, model)) = llm else {
         return Ok(Some(card(None, sources)));
     };
-    if documents.is_empty() && meetings.is_empty() {
+    if sources.is_empty() {
         return Ok(Some(card(
-            Some("Nothing in your documents or past meetings covers this yet.".into()),
+            Some("Nothing in your documents or past meetings covers this yet."),
             sources,
         )));
     }
 
-    let mut excerpts = vec![crate::knowledge::prompt_context(&documents)];
-    excerpts.extend(meetings.iter().map(|m| {
-        format!(
-            "---\n[Meeting: \"{}\", {}]\n{}\n",
-            m.meeting_title,
-            crate::summarization::format_ms(m.start_ms),
-            m.chunk_text
-        )
-    }));
     let recent = crate::ops::recent_transcript(&db.get_transcript(meeting_id)?, RECENT_MINUTES);
     let system = format!(
         "You are Live Assist in Nootle, helping the user (\"You\" in the transcript) during a \
@@ -181,9 +156,8 @@ pub async fn answer(
          aloud, with the specifics (numbers, names, dates). Cite each fact as [Document title, \
          page] or [Meeting Title, timestamp]. If the excerpts don't answer the question, reply \
          with exactly {NO_ANSWER}.\n\n\
-         EXCERPTS:\n{}\n\n\
+         EXCERPTS:\n{excerpts}\n\n\
          THE LAST FEW MINUTES OF THE MEETING:\n{}{}{}",
-        excerpts.join("\n"),
         crate::summarization::format_transcript(&recent),
         crate::calendar::context_section(db, meeting_id),
         crate::dictionary::glossary(db),
@@ -198,22 +172,30 @@ pub async fn answer(
             content: question.to_string(),
         },
     ];
-    let reply = llm
-        .get_provider(provider)
-        .ok_or_else(|| anyhow!("Provider '{provider}' not found"))?
-        .chat(messages, model)
-        .await?;
+    let reply = crate::ops::chat(llm, provider, model, messages).await?;
     let reply = reply.trim();
     if reply.is_empty() || reply.contains(NO_ANSWER) {
         if automatic {
             return Ok(None);
         }
         return Ok(Some(card(
-            Some("Nothing in your documents or past meetings answers this.".into()),
+            Some("Nothing in your documents or past meetings answers this."),
             sources,
         )));
     }
-    Ok(Some(card(Some(reply.to_string()), sources)))
+    Ok(Some(card(Some(reply), sources)))
+}
+
+/// A question reduced to its words, to spot one asked again.
+pub fn normalize_question(question: &str) -> String {
+    question
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]

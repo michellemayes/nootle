@@ -10,9 +10,9 @@ use crate::db::{
     NewKnowledgeDocument,
 };
 use anyhow::{anyhow, bail, Context, Result};
-use serde::Serialize;
+
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -35,7 +35,7 @@ const SKIPPED_DIRS: &[&str] = &[
 pub type Embed<'a> = dyn FnMut(&[String]) -> Result<Vec<Vec<f32>>> + 'a;
 
 /// Checks a new source and returns its canonical location and display name.
-pub fn validate_source(kind: &str, location: &str) -> Result<(String, String)> {
+fn validate_source(kind: &str, location: &str) -> Result<(String, String)> {
     let location = location.trim();
     match kind {
         "folder" | "file" => {
@@ -55,11 +55,8 @@ pub fn validate_source(kind: &str, location: &str) -> Result<(String, String)> {
                     );
                 }
             }
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.to_string_lossy().into_owned());
-            Ok((path.to_string_lossy().into_owned(), name))
+            let location = path.to_string_lossy().into_owned();
+            Ok((location.clone(), display_name(&location)))
         }
         "url" => {
             let url = url::Url::parse(location).context("That isn't a valid web address")?;
@@ -97,15 +94,15 @@ pub fn add_source(
 }
 
 /// Sources being indexed now, so a periodic pass never races a manual one.
-static INDEXING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+static INDEXING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
 struct IndexingGuard(String);
 
 impl IndexingGuard {
     fn begin(source_id: &str) -> Option<Self> {
-        let mut active = INDEXING.lock().unwrap_or_else(|e| e.into_inner());
-        active
-            .get_or_insert_with(HashSet::new)
+        INDEXING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(source_id.to_string())
             .then(|| Self(source_id.to_string()))
     }
@@ -113,14 +110,15 @@ impl IndexingGuard {
 
 impl Drop for IndexingGuard {
     fn drop(&mut self) {
-        if let Some(active) = INDEXING.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
-            active.remove(&self.0);
-        }
+        INDEXING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.0);
     }
 }
 
 /// What an indexing pass did.
-#[derive(Debug, Default, Clone, Serialize, PartialEq)]
+#[derive(Debug, Default)]
 pub struct IndexReport {
     pub indexed: usize,
     pub unchanged: usize,
@@ -133,8 +131,9 @@ pub struct IndexReport {
 
 /// Brings a source's index up to date: reads new and changed files (or
 /// re-fetches a page once a day), and drops files that are gone. With
-/// `force`, everything is read again. Blocking; web pages are fetched on the
-/// current Tokio runtime, so call it from `spawn_blocking`.
+/// `force`, everything is read again. The caller marks the source as
+/// indexing; this records how the pass ended. Blocking; web pages are
+/// fetched on the current Tokio runtime, so call it from `spawn_blocking`.
 pub fn index_source(
     db: &Database,
     source_id: &str,
@@ -148,7 +147,7 @@ pub fn index_source(
         });
     };
     let source = db.get_knowledge_source(source_id)?;
-    db.set_knowledge_source_status(source_id, "indexing", None)?;
+
     let result = index_documents(db, &source, force, embed);
     let (status, error) = match &result {
         Ok(report) if report.failed.is_empty() => ("ready", None),
@@ -246,7 +245,7 @@ fn index_documents(
 
 /// The readable files under `root`, skipping hidden files, symlinks and
 /// folders of build output, in a stable order.
-pub fn files_in(root: &Path) -> Vec<PathBuf> {
+fn files_in(root: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
         if depth > MAX_DEPTH || out.len() >= MAX_FILES_PER_FOLDER {
             return;

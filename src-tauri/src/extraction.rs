@@ -55,10 +55,10 @@ fn format_transcript(db: &Database, meeting_id: &str) -> anyhow::Result<String> 
     if transcript.is_empty() {
         anyhow::bail!("No transcript found for meeting {}", meeting_id);
     }
-    Ok(crate::summarization::format_transcript(&transcript)
-        + &crate::snapshots::context_section(db, meeting_id)
-        + &crate::calendar::context_section(db, meeting_id)
-        + &crate::dictionary::glossary(db))
+    Ok(
+        crate::summarization::llm_transcript(db, meeting_id, &transcript)
+            + &crate::dictionary::glossary(db),
+    )
 }
 
 pub fn strip_code_fences_pub(s: &str) -> &str {

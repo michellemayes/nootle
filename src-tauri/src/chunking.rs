@@ -7,8 +7,8 @@ use anyhow::Context;
 // Counted in words. English runs about 1.3 wordpieces per word, so a chunk
 // stays inside the embedding model's 256-wordpiece window instead of having
 // its second half silently cut off.
-const TARGET_CHUNK_TOKENS: usize = 160;
-const OVERLAP_TOKENS: usize = 30;
+pub(crate) const TARGET_CHUNK_TOKENS: usize = 160;
+pub(crate) const OVERLAP_TOKENS: usize = 30;
 
 fn token_count(text: &str) -> usize {
     text.split_whitespace().count()
