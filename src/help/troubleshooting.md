@@ -23,6 +23,11 @@ Common issues and how to fix them.
 - Transcription quality depends on audio clarity. Reduce background noise when possible.
 - Speaker identification works best with 2-4 distinct speakers.
 
+**Speakers aren't named from the call:**
+- Nootle reads names off the call window only when it has Screen Recording permission (Settings → Permissions) and **Names from the call** is on (Settings → Recording).
+- Keep the call window visible with people's names showing (Zoom's gallery or speaker view both work). Names on a shared screen are ignored.
+- A speaker is named automatically only when it's certain: in a 1:1, or when everyone else's voice is already remembered. Otherwise click the speaker's name in the transcript and pick a name from the call. With **Remember voices** on, they're named for you next time.
+
 ## LLM Provider Errors
 
 **"No LLM provider configured":**

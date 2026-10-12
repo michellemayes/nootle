@@ -28,6 +28,7 @@ import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
 import { useScratchPad } from "@/hooks/useScratchPad";
 import { useSnapshots } from "@/hooks/useSnapshots";
+import { useCallNames } from "@/hooks/useCallNames";
 import { SnapshotsSection } from "@/components/SnapshotsSection";
 import { toast } from "@/components/Toaster";
 import {
@@ -1123,13 +1124,16 @@ export function MeetingDetail() {
     setEditingTitle(false);
   }, [meeting, titleDraft, refreshMeeting]);
 
-  const handleSpeakerRename = useCallback(async () => {
+  // Names read off the call window, offered while renaming a speaker.
+  const speakerSuggestions = useCallNames(id ?? null, speakerEdit !== null);
+
+  const handleSpeakerRename = useCallback(async (name?: string) => {
     if (!speakerEdit) return;
     const { segmentId, draft } = speakerEdit;
     setSpeakerEdit(null);
     const from = segments.find((s) => s.id === segmentId)?.speaker_label;
     if (from === undefined) return;
-    const to = draft.trim();
+    const to = (name ?? draft).trim();
     if (!to || to === from) return;
     try {
       await renameSpeaker(from, to);
@@ -1535,10 +1539,11 @@ export function MeetingDetail() {
                             seg={seg}
                             speaker={
                               speakerEdit?.segmentId === seg.id ? (
+                              <>
                               <Input
                                 value={speakerEdit.draft}
                                 onChange={(e) => setSpeakerEdit({ ...speakerEdit, draft: e.target.value })}
-                                onBlur={handleSpeakerRename}
+                                onBlur={() => handleSpeakerRename()}
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") handleSpeakerRename();
                                   if (e.key === "Escape") setSpeakerEdit(null);
@@ -1547,6 +1552,23 @@ export function MeetingDetail() {
                                 className={`inline-flex font-semibold ${speakerColor} mr-1.5 h-6 w-32 px-1 py-0 text-sm`}
                                 autoFocus
                               />
+                              {speakerSuggestions.map((name) => (
+                                <Button
+                                  key={name}
+                                  variant="outline"
+                                  size="xs"
+                                  // Before the input's blur saves the draft.
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSpeakerRename(name);
+                                  }}
+                                  title={`Seen in the call: rename ${seg.speaker_label} to ${name}`}
+                                  className="mr-1.5"
+                                >
+                                  {name}
+                                </Button>
+                              ))}
+                              </>
                             ) : (
                               <button
                                 type="button"

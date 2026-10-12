@@ -1346,6 +1346,17 @@ impl Database {
                  meeting_id TEXT PRIMARY KEY REFERENCES meetings(id) ON DELETE CASCADE,
                  noted_at TEXT NOT NULL
              );",
+            // 5: names read off the call window's video tiles, which name
+            // the meeting's speakers and are offered when renaming one.
+            "CREATE TABLE meeting_call_names (
+                 meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                 name TEXT NOT NULL,
+                 position INTEGER NOT NULL,
+                 PRIMARY KEY (meeting_id, name)
+             );
+             -- Whether a meeting's fingerprint was folded into the remembered
+             -- voice of its speaker's name, so renaming them can take it out.
+             ALTER TABLE meeting_voices ADD COLUMN learned INTEGER NOT NULL DEFAULT 0;",
         ];
 
         let current: usize =
@@ -2483,40 +2494,87 @@ impl Database {
             .optional()?)
     }
 
-    // --- Remembered voices ---
+    // --- Names from the call window ---
 
-    /// Replaces the stored fingerprints of these speakers in a meeting.
-    pub fn save_meeting_voices(
-        &self,
-        meeting_id: &str,
-        voices: &[(String, Vec<f32>)],
-    ) -> Result<()> {
+    /// Replaces the names read off a meeting's call window, in order.
+    pub fn set_call_names(&self, meeting_id: &str, names: &[String]) -> Result<()> {
         let mut conn = self.lock_conn()?;
         let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM meeting_call_names WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT INTO meeting_voices (meeting_id, speaker_label, embedding) VALUES (?1, ?2, ?3)
-                 ON CONFLICT(meeting_id, speaker_label) DO UPDATE SET embedding = excluded.embedding",
+                "INSERT INTO meeting_call_names (meeting_id, name, position) VALUES (?1, ?2, ?3)",
             )?;
-            for (label, embedding) in voices {
-                stmt.execute(params![meeting_id, label, f32_slice_to_bytes(embedding)])?;
+            for (position, name) in names.iter().enumerate() {
+                stmt.execute(params![meeting_id, name, position as i64])?;
             }
         }
         tx.commit()?;
         Ok(())
     }
 
-    /// Removes and returns a speaker's fingerprint in a meeting.
-    pub fn take_meeting_voice(&self, meeting_id: &str, label: &str) -> Result<Option<Vec<f32>>> {
+    /// Names read off a meeting's call window, most seen first.
+    pub fn get_call_names(&self, meeting_id: &str) -> Result<Vec<String>> {
         let conn = self.lock_conn()?;
-        let bytes: Option<Vec<u8>> = conn
+        let mut stmt = conn.prepare_cached(
+            "SELECT name FROM meeting_call_names WHERE meeting_id = ?1 ORDER BY position",
+        )?;
+        let names = stmt
+            .query_map(params![meeting_id], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(names)
+    }
+
+    // --- Remembered voices ---
+
+    /// Replaces the stored fingerprints of these speakers in a meeting;
+    /// `learned` says they're now part of their names' remembered voices.
+    pub fn save_meeting_voices(
+        &self,
+        meeting_id: &str,
+        voices: &[(String, Vec<f32>)],
+        learned: bool,
+    ) -> Result<()> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO meeting_voices (meeting_id, speaker_label, embedding, learned) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(meeting_id, speaker_label) DO UPDATE
+                 SET embedding = excluded.embedding, learned = excluded.learned",
+            )?;
+            for (label, embedding) in voices {
+                stmt.execute(params![
+                    meeting_id,
+                    label,
+                    f32_slice_to_bytes(embedding),
+                    learned
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Removes and returns a speaker's fingerprint in a meeting, and whether
+    /// it had been learned as their name's remembered voice.
+    pub fn take_meeting_voice(
+        &self,
+        meeting_id: &str,
+        label: &str,
+    ) -> Result<Option<(Vec<f32>, bool)>> {
+        let conn = self.lock_conn()?;
+        Ok(conn
             .query_row(
-                "DELETE FROM meeting_voices WHERE meeting_id = ?1 AND speaker_label = ?2 RETURNING embedding",
+                "DELETE FROM meeting_voices WHERE meeting_id = ?1 AND speaker_label = ?2
+                 RETURNING embedding, learned",
                 params![meeting_id, label],
-                |row| row.get(0),
+                |row| Ok((bytes_to_f32s(&row.get::<_, Vec<u8>>(0)?), row.get(1)?)),
             )
-            .optional()?;
-        Ok(bytes.map(|b| bytes_to_f32s(&b)))
+            .optional()?)
     }
 
     /// `name`'s remembered voice and how many meetings it was learned from.
@@ -2571,6 +2629,12 @@ impl Database {
     pub fn delete_voice_profile(&self, id: &str) -> Result<()> {
         let conn = self.lock_conn()?;
         conn.execute("DELETE FROM voice_profiles WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn delete_voice_profile_named(&self, name: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute("DELETE FROM voice_profiles WHERE name = ?1", params![name])?;
         Ok(())
     }
 
