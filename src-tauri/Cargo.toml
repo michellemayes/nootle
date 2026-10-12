@@ -50,12 +50,9 @@ hound = "3.5"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 # Decodes imported recordings (mp3, m4a, mp4, mov, wav, flac, ogg, …).
 symphonia = { version = "0.5", features = ["aac", "alac", "isomp4", "mp3", "aiff", "caf"] }
-cidre = { version = "0.14", features = ["av"], optional = true }
 ort = { version = "2.0.0-rc.11", features = ["coreml", "ndarray"] }
 ndarray = "0.16"
 rustfft = "6"
-block2 = "0.6"
-objc2 = "0.6"
 rmcp = { version = "3.5", features = ["server", "transport-io", "client", "auth", "reqwest-native-tls", "transport-streamable-http-client-reqwest"] }
 schemars = "1.0"
 tauri-plugin-updater = "2"
@@ -64,8 +61,14 @@ tauri-plugin-process = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-notification = "2"
 url = "2"
+unicode-normalization = "0.1"
 log = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+cidre = { version = "0.14", features = ["av"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"

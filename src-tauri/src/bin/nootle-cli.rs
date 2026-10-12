@@ -127,7 +127,12 @@ enum Commands {
         action: LlmAction,
     },
     /// Serve Nootle's MCP server over stdio, for Claude Code and other MCP clients
-    Mcp,
+    Mcp {
+        /// Offer only tools that read: no editing, deleting, or sending
+        /// meetings to integrations
+        #[arg(long)]
+        read_only: bool,
+    },
     /// List and manage chat conversations
     Chat {
         #[command(subcommand)]
@@ -224,6 +229,12 @@ enum MeetingsAction {
         /// Write to this file instead of stdout
         #[arg(long, short)]
         output: Option<std::path::PathBuf>,
+    },
+    /// Write every meeting into a folder as Markdown files you own
+    ExportAll {
+        /// Folder to write into (created if missing)
+        #[arg(long)]
+        dir: std::path::PathBuf,
     },
     /// Rename a speaker throughout a meeting's transcript
     RenameSpeaker {
@@ -998,8 +1009,8 @@ fn main() {
         Err(e) => print_error(&format!("Failed to open database at {db_path}: {e}")),
     };
 
-    if let Commands::Mcp = cli.command {
-        if let Err(e) = nootle_app_lib::mcp::serve_stdio(db) {
+    if let Commands::Mcp { read_only } = cli.command {
+        if let Err(e) = nootle_app_lib::mcp::serve_stdio(db, read_only) {
             print_error(&e.to_string());
         }
         return;
@@ -1421,7 +1432,7 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
         Commands::Llm { action } => match action {
             LlmAction::Models => print_json(&LlmRegistry::detect(db).all_models(), pretty),
         },
-        Commands::Mcp => unreachable!("served from main"),
+        Commands::Mcp { .. } => unreachable!("served from main"),
         Commands::Chat { action } => match action {
             ChatAction::Conversations => {
                 let convos = db.list_chat_conversations()?;
@@ -1475,6 +1486,8 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
                 RecordAction::Toggle { title } => ("toggle", title),
             };
             let mut url = url::Url::parse(&format!("nootle://record/{path}"))?;
+            url.query_pairs_mut()
+                .append_pair("token", &nootle_app_lib::remote::token(db)?);
             if let Some(title) = title {
                 url.query_pairs_mut().append_pair("title", title);
             }
@@ -1485,7 +1498,7 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
                     format!("Couldn't run `open` (recording control is macOS-only): {e}")
                 })?;
             if !status.success() {
-                return Err(format!("`open {url}` failed; is Nootle installed?").into());
+                return Err("`open nootle://…` failed; is Nootle installed?".into());
             }
             let enabled = db
                 .get_setting(nootle_app_lib::remote::ENABLED_SETTING)?
@@ -1560,6 +1573,13 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
                 Some(path) => std::fs::write(path, content)?,
                 None => print!("{content}"),
             }
+        }
+        MeetingsAction::ExportAll { dir } => {
+            let count = nootle_app_lib::export::export_all_markdown(db, dir)?;
+            print_json(
+                &serde_json::json!({ "exported": count, "dir": dir }),
+                pretty,
+            );
         }
         MeetingsAction::RenameSpeaker { id, from, to } => {
             // Rebuild the search index too, if there is one and the model is

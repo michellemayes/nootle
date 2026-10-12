@@ -4,8 +4,11 @@ use crate::db::{Database, TranscriptChunk};
 use crate::embedding::EmbeddingEngine;
 use anyhow::Context;
 
-const TARGET_CHUNK_TOKENS: usize = 500;
-const OVERLAP_TOKENS: usize = 50;
+// Counted in words. English runs about 1.3 wordpieces per word, so a chunk
+// stays inside the embedding model's 256-wordpiece window instead of having
+// its second half silently cut off.
+const TARGET_CHUNK_TOKENS: usize = 160;
+const OVERLAP_TOKENS: usize = 30;
 
 fn token_count(text: &str) -> usize {
     text.split_whitespace().count()
@@ -26,8 +29,19 @@ pub fn chunk_segments(
     let mut speakers: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut overlap_start_idx: usize = 0;
 
+    // The speaker is named only where they change, so a turn of several
+    // sentences doesn't spend the chunk's budget repeating the name.
+    let line = |i: usize| -> String {
+        let seg = &segments[i];
+        let same_speaker = i > 0 && segments[i - 1].speaker_label == seg.speaker_label;
+        if same_speaker {
+            seg.text.clone()
+        } else {
+            format!("{}: {}", seg.speaker_label, seg.text)
+        }
+    };
     for (i, seg) in segments.iter().enumerate() {
-        let seg_text = format!("{}: {}", seg.speaker_label, seg.text);
+        let seg_text = line(i);
         let seg_tokens = token_count(&seg_text);
 
         if current_tokens + seg_tokens > TARGET_CHUNK_TOKENS && current_tokens > 0 {
@@ -49,13 +63,17 @@ pub fn chunk_segments(
             let mut j = i;
             while j > overlap_start_idx && overlap_tokens < OVERLAP_TOKENS {
                 let prev = &segments[j - 1];
-                overlap_tokens += token_count(&format!("{}: {}", prev.speaker_label, prev.text));
+                overlap_tokens += token_count(&prev.text);
                 j -= 1;
             }
             overlap_start_idx = i;
 
-            for s in &segments[j..i] {
-                let t = format!("{}: {}\n", s.speaker_label, s.text);
+            for (k, s) in segments.iter().enumerate().take(i).skip(j) {
+                let t = if k == j {
+                    format!("{}: {}\n", s.speaker_label, s.text)
+                } else {
+                    format!("{}\n", line(k))
+                };
                 current_tokens += token_count(&t);
                 current_text.push_str(&t);
                 speakers.insert(s.speaker_label.clone());
@@ -67,9 +85,15 @@ pub fn chunk_segments(
             };
         }
 
+        let seg_text = if current_text.is_empty() {
+            // A chunk always opens by naming its speaker.
+            format!("{}: {}", seg.speaker_label, seg.text)
+        } else {
+            seg_text
+        };
         current_text.push_str(&seg_text);
         current_text.push('\n');
-        current_tokens += seg_tokens;
+        current_tokens += token_count(&seg_text);
         chunk_end_ms = seg.end_ms;
         speakers.insert(seg.speaker_label.clone());
     }

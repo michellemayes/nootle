@@ -38,7 +38,8 @@ fn main() {
         std::fs::create_dir_all(&app_dir).unwrap();
         let db_path = app_dir.join("nootle.db");
         let db = nootle_app_lib::db::Database::new(db_path.to_str().unwrap()).unwrap();
-        if let Err(e) = nootle_app_lib::mcp::serve_stdio(db) {
+        let read_only = std::env::args().any(|a| a == "--read-only");
+        if let Err(e) = nootle_app_lib::mcp::serve_stdio(db, read_only) {
             eprintln!("Nootle MCP server stopped: {e}");
             std::process::exit(1);
         }

@@ -14,14 +14,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible } from "@/components/Collapsible";
 import { PageHeader } from "@/components/PageHeader";
 import { McpSetup } from "@/components/McpSetup";
+import { CopyButton } from "@/components/CopyButton";
 import { DictionaryManager } from "@/components/DictionaryManager";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
 import { INSIGHT_ICONS } from "@/lib/insightIcons";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
-import { useModelDownload, MODELS_REQUIRING_AUTH } from "@/hooks/useModelDownload";
+import { useModelDownload } from "@/hooks/useModelDownload";
 import { useTheme } from "@/hooks/useTheme";
+import { useBooleanSetting } from "@/hooks/useBooleanSetting";
+import { plural } from "@/lib/utils";
 
 import { useInsightTypes } from "@/hooks/useInsightTypes";
 import { useAppVersion } from "@/hooks/useAppVersion";
@@ -739,21 +742,213 @@ function InsightTypesManager() {
 }
 
 
+interface VoiceProfile {
+  id: string;
+  name: string;
+  samples: number;
+  updated_at: string;
+}
+
+/** "Remember voices": off by default because a voice fingerprint is
+ * biometric data. Lists what's remembered, each deletable. */
+function RememberedVoices() {
+  const [enabled, setEnabled] = useBooleanSetting("remember_voices", false);
+  const [voices, setVoices] = useState<VoiceProfile[]>([]);
+
+  const refresh = useCallback(() => {
+    invoke<VoiceProfile[]>("list_voice_profiles").then(setVoices).catch(() => {});
+  }, []);
+  useEffect(refresh, [refresh]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium">Remember voices</p>
+          <p className="text-sm text-muted-foreground">
+            When you rename a speaker, Nootle learns their voice and names them in later
+            meetings. Voice fingerprints stay in Nootle's database on this Mac and are never
+            uploaded
+          </p>
+        </div>
+        <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Remember voices" />
+      </div>
+      {voices.length > 0 && (
+        <div className="rounded-md bg-muted/50 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              {plural(voices.length, "remembered voice")}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                await invoke("forget_all_voices");
+                refresh();
+              }}
+            >
+              Forget all
+            </Button>
+          </div>
+          <ul className="divide-y">
+            {voices.map((v) => (
+              <li key={v.id} className="flex items-center justify-between py-1.5 text-sm">
+                <span>
+                  {v.name}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    learned from {plural(v.samples, "meeting")}
+                  </span>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Forget ${v.name}'s voice`}
+                  onClick={async () => {
+                    await invoke("delete_voice_profile", { id: v.id });
+                    refresh();
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Privacy: the consent reminder, its message, and local-only mode. */
+function PrivacyCard() {
+  const [reminder, setReminder] = useBooleanSetting("consent_reminder", true);
+  const [localOnly, setLocalOnly] = useBooleanSetting("local_only", false);
+  const [message, setMessage] = useState("");
+  const [defaultMessage, setDefaultMessage] = useState("");
+  useEffect(() => {
+    invoke<string | null>("get_app_setting", { key: "consent_message" })
+      .then((v) => setMessage(v ?? ""))
+      .catch(() => {});
+    invoke<{ default_message: string }>("get_consent_reminder")
+      .then((r) => setDefaultMessage(r.default_message))
+      .catch(() => {});
+  }, []);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Privacy</CardTitle>
+        <CardDescription>Consent and where meeting content may go</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Consent reminder</p>
+            <p className="text-sm text-muted-foreground">
+              When a recording starts, remind me to tell everyone, with a message to paste into
+              the meeting chat. Many places require everyone's consent to record
+            </p>
+          </div>
+          <Switch checked={reminder} onCheckedChange={setReminder} aria-label="Consent reminder" />
+        </div>
+        {reminder && (
+          <Textarea
+            value={message}
+            maxLength={600}
+            placeholder={defaultMessage}
+            onChange={(e) => setMessage(e.target.value)}
+            onBlur={() =>
+              invoke("set_app_setting", { key: "consent_message", value: message }).catch(() => {})
+            }
+            className="text-sm"
+            rows={2}
+            aria-label="Consent message"
+          />
+        )}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Local-only mode</p>
+            <p className="text-sm text-muted-foreground">
+              Meeting content never leaves this Mac: summaries and chat use only local models
+              (Ollama), and workflows don't send anything to integrations. Recording and
+              transcription are always local
+            </p>
+          </div>
+          <Switch checked={localOnly} onCheckedChange={setLocalOnly} aria-label="Local-only mode" />
+        </div>
+        <ExportAllMeetings />
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Your notes as plain files: every meeting as Markdown in a folder. */
+function ExportAllMeetings() {
+  const [result, setResult] = useState<string | null>(null);
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium">Your data</p>
+        <p className="text-sm text-muted-foreground">
+          {result ??
+            "Export every meeting as a Markdown file: summaries, action items, notes and transcript. Import transcripts from Otter, Fathom, Granola or Zoom from the Meetings page"}
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={async () => {
+          const dir = await open({ directory: true, multiple: false });
+          if (typeof dir !== "string") return;
+          try {
+            const count = await invoke<number>("export_all_meetings", { dir });
+            setResult(`Exported ${plural(count, "meeting")} to ${dir}`);
+          } catch (err) {
+            setResult(String(err));
+          }
+        }}
+      >
+        Export all…
+      </Button>
+    </div>
+  );
+}
+
+/** A ready-to-use start link with this install's secret token, so a web
+ * page can't start a recording just by opening a nootle:// link. */
+function UrlControlLink() {
+  const [token, setToken] = useState<string | null>(null);
+  useEffect(() => {
+    invoke<string>("get_remote_control_token").then(setToken).catch(() => {});
+  }, []);
+  if (!token) return null;
+  const link = `nootle://record/start?token=${token}`;
+  return (
+    <div className="space-y-1.5 rounded-md bg-muted/50 p-3">
+      <p className="text-xs text-muted-foreground">
+        Links must include this Mac's token. <code>nootle-cli record</code> adds it for you; for
+        your own scripts, copy a link and swap <code>start</code> for <code>stop</code>,{" "}
+        <code>toggle</code>, or <code>status</code>.
+      </p>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate text-xs">{link}</code>
+        <CopyButton text={link} variant="button" label="Copy link" />
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { storedProviders, storeKey, deleteKey } = useApiKeys();
   const { providers: llmProviders } = useLLM();
   const { theme, toggleTheme } = useTheme();
   const version = useAppVersion();
   const [searchParams] = useSearchParams();
-  const [denoiseEnabled, setDenoiseEnabled] = useState(true);
   const [detectionEnabled, setDetectionEnabled] = useState(true);
   const [remoteControlEnabled, setRemoteControlEnabled] = useState(false);
   const [snapshotsEnabled, setSnapshotsEnabled] = useState(false);
 
   useEffect(() => {
-    invoke<string | null>("get_app_setting", { key: "denoise_enabled" })
-      .then((val) => setDenoiseEnabled(val !== "false"))
-      .catch(() => {});
     invoke<string | null>("get_app_setting", { key: "detection_enabled" })
       .then((val) => setDetectionEnabled(val !== "false"))
       .catch(() => {});
@@ -764,14 +959,6 @@ export function SettingsPage() {
       .then((val) => setSnapshotsEnabled(val === "true"))
       .catch(() => {});
   }, []);
-
-  const toggleDenoise = async (enabled: boolean) => {
-    setDenoiseEnabled(enabled);
-    await invoke("set_app_setting", {
-      key: "denoise_enabled",
-      value: String(enabled),
-    });
-  };
 
   const toggleDetection = async (enabled: boolean) => {
     setDetectionEnabled(enabled);
@@ -849,22 +1036,9 @@ export function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Recording</CardTitle>
-                <CardDescription>How audio is captured and cleaned up</CardDescription>
+                <CardDescription>How meetings are captured</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Noise cancellation</p>
-                    <p className="text-sm text-muted-foreground">
-                      Clean up audio before transcription for better accuracy
-                    </p>
-                  </div>
-                  <Switch
-                    checked={denoiseEnabled}
-                    onCheckedChange={toggleDenoise}
-                    aria-label="Noise cancellation"
-                  />
-                </div>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">Auto-detect meetings</p>
@@ -904,8 +1078,11 @@ export function SettingsPage() {
                     aria-label="Allow URL control"
                   />
                 </div>
+                {remoteControlEnabled && <UrlControlLink />}
+                <RememberedVoices />
               </CardContent>
             </Card>
+            <PrivacyCard />
             <PermissionsCard />
           </div>
         </TabsContent>
@@ -1156,7 +1333,6 @@ function ModelManagementCard() {
       <CardContent>
         <div className="divide-y">
           {diskStatus
-            .filter((model) => !MODELS_REQUIRING_AUTH.has(model.model_id))
             .map((model) => {
             const regModel = registry.find((r) => r.id === model.model_id);
             const isThisModelDownloading =

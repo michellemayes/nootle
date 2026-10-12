@@ -1,5 +1,5 @@
 use nootle_app_lib::db::{
-    Database, NewLinearTicket, NewMeeting, NewRecipe, NewSummary, NewTemplate,
+    AskFilters, Database, NewLinearTicket, NewMeeting, NewRecipe, NewSummary, NewTemplate,
     NewTranscriptSegment, TranscriptChunk, UpdateTemplate,
 };
 
@@ -640,7 +640,15 @@ fn test_similar_chunks_date_to_includes_whole_day() {
     db.insert_chunk_embedding("c1", &embedding).unwrap();
 
     let hits = db
-        .search_similar_chunks(&embedding, 5, &[], Some(day), Some(day))
+        .search_similar_chunks(
+            &embedding,
+            5,
+            &AskFilters {
+                date_from: Some(day.to_string()),
+                date_to: Some(day.to_string()),
+                ..Default::default()
+            },
+        )
         .unwrap();
     assert_eq!(hits.len(), 1, "a meeting on the end date must match");
 }
@@ -682,4 +690,181 @@ fn test_rename_speaker_drops_stale_search_chunks() {
         1
     );
     assert!(!db.has_meeting_chunks(&meeting.id).unwrap());
+}
+
+#[test]
+fn test_hybrid_search_finds_exact_terms_the_vectors_miss() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Infra sync".to_string(),
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    let chunk = |id: &str, text: &str| TranscriptChunk {
+        id: id.to_string(),
+        meeting_id: meeting.id.clone(),
+        chunk_index: 0,
+        text: text.to_string(),
+        start_ms: 0,
+        end_ms: 1000,
+        speaker_labels: "[]".to_string(),
+    };
+    let query = vec![1.0f32; 384];
+    let mut far = vec![-1.0f32; 384];
+    far[0] = 1.0;
+    db.insert_embedded_chunks(&[
+        (
+            chunk("close", "We talked about the weather."),
+            query.clone(),
+        ),
+        (
+            chunk("exact", "Ticket NOO-482 blocks the Kubernetes upgrade."),
+            far,
+        ),
+    ])
+    .unwrap();
+
+    let keyword_hits = db
+        .search_chunks_by_keywords("What's blocking NOO-482?", 5, &AskFilters::default())
+        .unwrap();
+    assert_eq!(keyword_hits[0].chunk_id, "exact");
+
+    let filters = nootle_app_lib::ops::AskFilters::default();
+    let hits =
+        nootle_app_lib::ops::hybrid_search(&db, &query, "What's blocking NOO-482?", &filters, 2)
+            .unwrap();
+    let ids: Vec<&str> = hits.iter().map(|h| h.chunk_id.as_str()).collect();
+    assert_eq!(ids[0], "exact", "a passage both indexes rank first wins");
+    assert!(ids.contains(&"close"));
+}
+
+#[test]
+fn test_keyword_search_ignores_fts_syntax_in_questions() {
+    let db = Database::new_in_memory().unwrap();
+    for q in ["\"unbalanced", "NEAR(", "*", "a OR", "?!"] {
+        assert!(
+            db.search_chunks_by_keywords(q, 5, &AskFilters::default())
+                .is_ok(),
+            "{q}"
+        );
+    }
+}
+
+#[test]
+fn test_deleting_a_meeting_removes_its_keyword_index() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Gone".to_string(),
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    db.insert_embedded_chunks(&[(
+        TranscriptChunk {
+            id: "c1".to_string(),
+            meeting_id: meeting.id.clone(),
+            chunk_index: 0,
+            text: "zebra".to_string(),
+            start_ms: 0,
+            end_ms: 1,
+            speaker_labels: "[]".to_string(),
+        },
+        vec![0.1f32; 384],
+    )])
+    .unwrap();
+    db.delete_meeting_chunks(&meeting.id).unwrap();
+    assert!(db
+        .search_chunks_by_keywords("zebra", 5, &AskFilters::default())
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn test_reopening_a_database_does_not_rerun_migrations() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("nootle.db");
+    let path = path.to_str().unwrap();
+    let meeting_id = {
+        let db = Database::new(path).unwrap();
+        let meeting = db
+            .create_meeting(NewMeeting {
+                title: "Kept".to_string(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        db.insert_embedded_chunks(&[(
+            TranscriptChunk {
+                id: "c1".to_string(),
+                meeting_id: meeting.id.clone(),
+                chunk_index: 0,
+                text: "indexed after the tokenizer fix".to_string(),
+                start_ms: 0,
+                end_ms: 1,
+                speaker_labels: "[]".to_string(),
+            },
+            vec![0.1f32; 384],
+        )])
+        .unwrap();
+        meeting.id
+    };
+    let db = Database::new(path).unwrap();
+    assert!(
+        db.has_meeting_chunks(&meeting_id).unwrap(),
+        "the one-time re-index migration must not wipe a fresh index"
+    );
+}
+
+#[test]
+fn test_consent_is_noted_once() {
+    let db = Database::new_in_memory().unwrap();
+    let meeting = db
+        .create_meeting(NewMeeting {
+            title: "Call".to_string(),
+            calendar_event_id: None,
+            template_id: None,
+        })
+        .unwrap();
+    assert_eq!(db.consent_noted_at(&meeting.id).unwrap(), None);
+    let first = db.note_consent(&meeting.id).unwrap();
+    assert_eq!(
+        db.note_consent(&meeting.id).unwrap(),
+        first,
+        "the first time is kept"
+    );
+    assert_eq!(db.consent_noted_at(&meeting.id).unwrap(), Some(first));
+}
+
+#[test]
+fn test_people_are_named_speakers_across_meetings() {
+    let db = Database::new_in_memory().unwrap();
+    for (title, speakers) in [("One", ["Priya", "Speaker 2"]), ("Two", ["Priya", "You"])] {
+        let meeting = db
+            .create_meeting(NewMeeting {
+                title: title.to_string(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        for (i, speaker) in speakers.iter().enumerate() {
+            db.create_transcript_segment(NewTranscriptSegment {
+                meeting_id: meeting.id.clone(),
+                speaker_label: speaker.to_string(),
+                text: "hi".to_string(),
+                start_ms: i as i64 * 1000,
+                end_ms: i as i64 * 1000 + 1000,
+                confidence: 1.0,
+            })
+            .unwrap();
+        }
+    }
+    let people = db.list_people().unwrap();
+    assert_eq!(people.len(), 1, "You and Speaker N aren't people");
+    assert_eq!(people[0].name, "Priya");
+    assert_eq!(people[0].meeting_count, 2);
+    assert_eq!(people[0].talk_time_ms, 2000);
+    assert_eq!(db.meetings_with("Priya").unwrap().len(), 2);
 }

@@ -23,7 +23,7 @@ const softwareApplication = JSON.stringify({
     "Speaker identification",
     "AI summaries and chat",
     "Local and private processing",
-    "Noise cancellation",
+    "Crash-safe recording",
     "Search across meetings",
     "Auto-detection of Zoom, Teams, Google Meet",
     "Workflows and integrations with Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, and email",

@@ -9,6 +9,7 @@ import { HowItWorks } from "@/components/HowItWorks";
 import { SystemRequirements } from "@/components/SystemRequirements";
 import { FAQ } from "@/components/FAQ";
 import { SponsorCTA } from "@/components/SponsorCTA";
+import { SiteFooter } from "@/components/SiteFooter";
 
 export default function Home() {
   return (
@@ -25,31 +26,7 @@ export default function Home() {
       <SystemRequirements />
       <FAQ />
       <SponsorCTA />
-      <footer className="py-8 text-center text-[var(--color-text-secondary)] text-sm">
-        <p>
-          Made by{" "}
-          <a
-            href="https://michellemayes.me"
-            className="underline hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:rounded-sm"
-          >
-            Michelle Mayes
-          </a>
-          {" "}&middot;{" "}
-          <a
-            href="https://github.com/michellemayes/nootle"
-            className="underline hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:rounded-sm"
-          >
-            GitHub
-          </a>
-          {" "}&middot;{" "}
-          <a
-            href="/privacy"
-            className="underline hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:rounded-sm"
-          >
-            Privacy
-          </a>
-        </p>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

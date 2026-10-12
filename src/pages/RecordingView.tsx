@@ -17,6 +17,7 @@ import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Kbd } from "@/components/Kbd";
 import { AudioLevelMeter } from "@/components/AudioLevelMeter";
+import { Markdown } from "@/components/Markdown";
 import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { Square, ArrowLeft, ArrowDown, ChevronDown, ChevronRight, FileText, MicOff, Pause, Play, ScanLine } from "lucide-react";
 
@@ -45,6 +46,99 @@ const LiveSegments = memo(function LiveSegments({
     </div>
   ));
 });
+
+interface ConsentReminderState {
+  enabled: boolean;
+  message: string;
+  noted_at: string | null;
+}
+
+/** Many places require everyone's consent to record a call, and a recorder
+ * with no bot in the call gives nobody a visual cue. This reminds you to say
+ * so, with a message to paste into the meeting chat. */
+function ConsentReminder({ meetingId }: { meetingId: string }) {
+  const [state, setState] = useState<ConsentReminderState | null>(null);
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    invoke<ConsentReminderState>("get_consent_reminder", { meetingId })
+      .then(setState)
+      .catch(() => {});
+  }, [meetingId]);
+  if (!state?.enabled || state.noted_at || hidden) return null;
+
+  const noted = () => {
+    invoke<string>("note_consent", { meetingId })
+      .then((noted_at) => setState((s) => (s ? { ...s, noted_at } : s)))
+      .catch(() => {});
+  };
+  return (
+    <div className="flex items-center gap-3 border-b bg-muted/40 px-6 py-2 text-xs">
+      <span className="flex-1 text-muted-foreground">
+        Let everyone know they're being recorded. Paste this into the meeting chat:{" "}
+        <span className="text-foreground">"{state.message}"</span>
+      </span>
+      <Button
+        size="xs"
+        variant="secondary"
+        onClick={async () => {
+          await navigator.clipboard.writeText(state.message).catch(() => {});
+          noted();
+        }}
+      >
+        Copy message
+      </Button>
+      <Button size="xs" variant="ghost" onClick={noted} title="Mark that you told them">
+        I told them
+      </Button>
+      <Button size="xs" variant="ghost" onClick={() => setHidden(true)} aria-label="Hide reminder">
+        ×
+      </Button>
+    </div>
+  );
+}
+
+/** "What did I miss?": a few bullets on the last five minutes, for when
+ * you stepped away or drifted off. */
+function CatchUp({ meetingId }: { meetingId: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "done">("idle");
+  const [text, setText] = useState("");
+  const ask = async () => {
+    setState("loading");
+    try {
+      setText(await invoke<string>("catch_up", { meetingId, minutes: 5 }));
+    } catch (err) {
+      setText(String(err));
+    }
+    setState("done");
+  };
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={ask}
+        disabled={state === "loading"}
+        title="Summarize the last five minutes"
+      >
+        {state === "loading" ? "Catching up…" : "What did I miss?"}
+      </Button>
+      {state === "done" && (
+        <div
+          role="status"
+          className="absolute right-6 top-14 z-20 w-96 rounded-lg border bg-popover p-4 text-sm shadow-lg"
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <p className="font-medium">The last five minutes</p>
+            <Button size="xs" variant="ghost" onClick={() => setState("idle")} aria-label="Close">
+              ×
+            </Button>
+          </div>
+          <Markdown content={text} />
+        </div>
+      )}
+    </>
+  );
+}
 
 interface TranscriptionStatus {
   meeting_id: string;
@@ -252,7 +346,7 @@ export function RecordingView() {
   return (
     <div className="flex flex-1 flex-col">
       {/* Header bar: recording indicator, title, timer, waveform, stop */}
-      <div className="flex items-center gap-4 border-b px-6 py-3">
+      <div className="relative flex items-center gap-4 border-b px-6 py-3">
         <div className="flex items-center gap-2">
           <span
             className={
@@ -337,10 +431,12 @@ export function RecordingView() {
           </span>
         )}
 
+        <span className="ml-auto" />
+        {currentMeeting && isRecording && !isCompact && <CatchUp meetingId={currentMeeting.id} />}
+
         <Button
           size="sm"
           variant="outline"
-          className="ml-auto"
           onClick={() => setPaused(!isPaused).catch(() => {})}
           disabled={!isRecording || stopping}
           title={isPaused ? "Resume recording" : "Pause recording. Nothing is recorded or transcribed until you resume"}
@@ -360,6 +456,8 @@ export function RecordingView() {
           {!isCompact && !stopping && <Kbd onSolid className="ml-1">⌘↵</Kbd>}
         </Button>
       </div>
+
+      {currentMeeting && isRecording && <ConsentReminder meetingId={currentMeeting.id} />}
 
       {silent && (
         <div

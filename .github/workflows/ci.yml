@@ -27,6 +27,67 @@ jobs:
               - 'Cargo.lock'
               - '.github/workflows/ci.yml'
 
+  # Type-checks and builds the frontend on every PR, not just Rust changes.
+  check-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: 9
+      - name: Frontend checks
+        run: bash scripts/ci-frontend.sh
+
+  # Fast feedback on the platform-independent backend (search, pipeline,
+  # database, LLM plumbing). macOS-only capture is covered by check-rust.
+  test-rust-linux:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libasound2-dev libssl-dev pkg-config
+      - name: Run tests
+        run: cd src-tauri && cargo test
+
+  # Runs a short two-speaker call through the real transcription, speaker
+  # and search models and checks word error rate and speaker labels, so an
+  # ML change that quietly breaks transcripts fails here instead of shipping.
+  golden-models:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: golden-release
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libasound2-dev libssl-dev pkg-config
+      - name: Cache models
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: ~/test-models
+          key: test-models-${{ hashFiles('scripts/fetch-test-models.sh') }}
+      - name: Fetch models
+        run: bash scripts/fetch-test-models.sh ~/test-models
+      - name: Golden tests
+        run: cd src-tauri && XDG_DATA_HOME=~/test-models cargo test --release --test models_test -- --ignored --nocapture
+
   check-rust:
     needs: changes
     if: needs.changes.outputs.rust == 'true'

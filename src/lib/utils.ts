@@ -102,3 +102,8 @@ export function isInteractiveTarget(target: EventTarget | null): boolean {
   if (!el || el === document.body) return false;
   return isTypingTarget(el) || el.closest("button, a[href], [role]:not([role=tabpanel])") !== null;
 }
+
+/** "1 meeting", "3 meetings". */
+export function plural(count: number, word: string): string {
+  return `${count} ${count === 1 ? word : `${word}s`}`;
+}

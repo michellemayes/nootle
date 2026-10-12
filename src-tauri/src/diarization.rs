@@ -150,6 +150,17 @@ impl DiarizationEngine {
         Ok(decode_powerset(logits))
     }
 
+    /// Unit-length voice fingerprint of `samples`, or `None` when there's
+    /// too little audio to tell voices apart.
+    pub fn voice_embedding(&mut self, samples: &[f32]) -> anyhow::Result<Option<Vec<f32>>> {
+        if samples.len() < MIN_EMBED_SAMPLES {
+            return Ok(None);
+        }
+        let emb = self.embed(samples)?;
+        let norm = l2_norm(&emb);
+        Ok((norm > 0.0).then(|| emb.iter().map(|x| x / norm).collect()))
+    }
+
     /// 256-d voice fingerprint of `samples`.
     fn embed(&mut self, samples: &[f32]) -> anyhow::Result<Vec<f32>> {
         let (feats, n_frames) = fbank(samples);
@@ -163,11 +174,21 @@ impl DiarizationEngine {
 }
 
 /// Label for whoever is at this Mac's microphone during a call.
-const SELF_LABEL: &str = "You";
+pub const SELF_LABEL: &str = "You";
 /// Label when diarization isn't available to tell remote speakers apart.
-const UNKNOWN_LABEL: &str = "Speaker";
+pub const UNKNOWN_LABEL: &str = "Speaker";
+
+/// Whether `label` is one Nootle assigned ("You", "Speaker", "Speaker 3")
+/// rather than a name the user gave.
+pub fn is_automatic_label(label: &str) -> bool {
+    label == SELF_LABEL
+        || label == UNKNOWN_LABEL
+        || label
+            .strip_prefix("Speaker ")
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
 /// RMS above which a stream is taken to carry speech.
-const SPEECH_RMS: f32 = 0.005;
+pub const SPEECH_RMS: f32 = 0.005;
 /// How much louder the mic must be than system audio for a chunk to be the
 /// local user. Remote voices leaking from the speakers into the mic arrive
 /// far quieter than the digital system audio they came from.
@@ -177,7 +198,7 @@ const CALL_EVIDENCE_CHUNKS: u32 = 3;
 
 /// Where a chunk's speech came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Source {
+pub enum Source {
     /// This Mac's user, on the microphone during a call.
     Local,
     /// Call participants, heard through system audio.
@@ -245,7 +266,7 @@ impl SpeakerAttributor {
     }
 }
 
-fn classify(in_call: bool, mic_rms: f32, system_rms: f32) -> Source {
+pub fn classify(in_call: bool, mic_rms: f32, system_rms: f32) -> Source {
     if !in_call {
         Source::Room
     } else if mic_rms > system_rms * LOCAL_MARGIN {
@@ -255,7 +276,7 @@ fn classify(in_call: bool, mic_rms: f32, system_rms: f32) -> Source {
     }
 }
 
-fn speaker_label(index: usize) -> String {
+pub fn speaker_label(index: usize) -> String {
     format!("Speaker {}", index + 1)
 }
 
@@ -368,12 +389,114 @@ impl SpeakerClusters {
     }
 }
 
+/// Cosine similarity two voices need to be merged by [`cluster_voices`].
+/// Offline clustering compares whole-utterance fingerprints, which are less
+/// noisy than the live window's, so it can afford to be a little stricter.
+pub const OFFLINE_SIMILARITY: f32 = 0.55;
+
+/// Groups unit-length voice fingerprints into speakers by average-linkage
+/// agglomerative clustering: repeatedly merge the two most similar groups
+/// until no pair is at least `threshold` similar. Returns each input's
+/// cluster, numbered by first appearance.
+pub fn cluster_voices(embeddings: &[&[f32]], threshold: f32) -> Vec<usize> {
+    let n = embeddings.len();
+    let mut sim = vec![0.0f32; n * n];
+    for i in 0..n {
+        for j in i + 1..n {
+            let s = cosine_similarity(embeddings[i], embeddings[j]);
+            sim[i * n + j] = s;
+            sim[j * n + i] = s;
+        }
+    }
+    let mut size = vec![1usize; n];
+    let mut alive = vec![true; n];
+    // Each live cluster's most similar neighbour, so finding the next merge
+    // is a scan of n entries rather than n² pairs.
+    let nearest_of = |i: usize, sim: &[f32], alive: &[bool]| -> Option<(usize, f32)> {
+        (0..n)
+            .filter(|&k| k != i && alive[k])
+            .map(|k| (k, sim[i * n + k]))
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+    };
+    let mut nearest: Vec<Option<(usize, f32)>> =
+        (0..n).map(|i| nearest_of(i, &sim, &alive)).collect();
+    let mut parent: Vec<usize> = (0..n).collect();
+
+    loop {
+        let best = (0..n)
+            .filter(|&i| alive[i])
+            .filter_map(|i| nearest[i].map(|(j, s)| (i, j, s)))
+            .max_by(|a, b| a.2.total_cmp(&b.2));
+        let Some((i, j, _)) = best.filter(|b| b.2 >= threshold) else {
+            break;
+        };
+        // Average linkage (Lance–Williams): the merged cluster's similarity
+        // to k is the size-weighted mean of the two it replaces.
+        let (ni, nj) = (size[i] as f32, size[j] as f32);
+        for k in (0..n).filter(|&k| alive[k] && k != i && k != j) {
+            let merged = (ni * sim[i * n + k] + nj * sim[j * n + k]) / (ni + nj);
+            sim[i * n + k] = merged;
+            sim[k * n + i] = merged;
+        }
+        alive[j] = false;
+        size[i] += size[j];
+        parent[j] = i;
+        for k in (0..n).filter(|&k| alive[k]) {
+            let stale = k == i || matches!(nearest[k], Some((m, _)) if m == i || m == j);
+            if stale {
+                nearest[k] = nearest_of(k, &sim, &alive);
+            } else if nearest[k].is_none_or(|(_, best)| sim[k * n + i] > best) {
+                nearest[k] = Some((i, sim[k * n + i]));
+            }
+        }
+    }
+
+    // Each point's surviving cluster, numbered by first appearance.
+    let root = |mut i: usize| {
+        while parent[i] != i {
+            i = parent[i];
+        }
+        i
+    };
+    let mut number = std::collections::HashMap::new();
+    (0..n)
+        .map(|i| {
+            let next = number.len();
+            *number.entry(root(i)).or_insert(next)
+        })
+        .collect()
+}
+
+/// Unit-length mean voice of each cluster from [`cluster_voices`].
+pub fn centroids(embeddings: &[&[f32]], clusters: &[usize]) -> Vec<Vec<f32>> {
+    let count = clusters.iter().max().map_or(0, |m| m + 1);
+    let dim = embeddings.first().map_or(0, |e| e.len());
+    let mut sums = vec![vec![0.0f32; dim]; count];
+    for (e, &c) in embeddings.iter().zip(clusters) {
+        for (acc, x) in sums[c].iter_mut().zip(e.iter()) {
+            *acc += x;
+        }
+    }
+    for sum in &mut sums {
+        normalize(sum);
+    }
+    sums
+}
+
+/// Scales `v` to unit length (leaves a zero vector alone).
+pub fn normalize(v: &mut [f32]) {
+    let norm = l2_norm(v);
+    if norm > 0.0 {
+        v.iter_mut().for_each(|x| *x /= norm);
+    }
+}
+
 fn l2_norm(v: &[f32]) -> f32 {
     v.iter().map(|x| x * x).sum::<f32>().sqrt()
 }
 
 /// Compute cosine similarity between two vectors.
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
     }
@@ -614,6 +737,46 @@ mod tests {
         let mut attributor = SpeakerAttributor::new(None, true);
         let talk = vec![0.1f32; 320];
         assert_eq!(attributor.label(&talk, &[], &talk), UNKNOWN_LABEL);
+    }
+
+    #[test]
+    fn test_cluster_voices_groups_by_similarity() {
+        let a = vec![1.0, 0.0, 0.0];
+        let a2 = vec![0.95, 0.31, 0.0];
+        let b = vec![0.0, 0.0, 1.0];
+        let b2 = vec![0.0, 0.3, 0.95];
+        assert_eq!(
+            cluster_voices(&[&b, &a, &b2, &a2], OFFLINE_SIMILARITY),
+            vec![0, 1, 0, 1]
+        );
+        assert_eq!(cluster_voices(&[], OFFLINE_SIMILARITY), Vec::<usize>::new());
+        assert_eq!(cluster_voices(&[&a, &b], 0.99), vec![0, 1]);
+    }
+
+    #[test]
+    fn test_cluster_voices_scales_to_long_meetings() {
+        let voices: Vec<Vec<f32>> = (0..400)
+            .map(|i| {
+                let mut v = vec![0.0f32; 256];
+                v[i % 4] = 1.0;
+                v[100 + i % 7] = 0.1;
+                v
+            })
+            .collect();
+        let started = std::time::Instant::now();
+        let refs: Vec<&[f32]> = voices.iter().map(Vec::as_slice).collect();
+        let clusters = cluster_voices(&refs, OFFLINE_SIMILARITY);
+        assert_eq!(clusters.iter().max(), Some(&3));
+        assert!(started.elapsed().as_secs() < 10, "{:?}", started.elapsed());
+    }
+
+    #[test]
+    fn test_automatic_labels() {
+        assert!(is_automatic_label("You"));
+        assert!(is_automatic_label("Speaker"));
+        assert!(is_automatic_label("Speaker 12"));
+        assert!(!is_automatic_label("Speaker Priya"));
+        assert!(!is_automatic_label("Priya"));
     }
 
     #[test]

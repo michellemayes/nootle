@@ -6,75 +6,95 @@ use std::collections::HashMap;
 
 use crate::db::SentimentSegment;
 
+/// A pause longer than this ends a speaker's turn even if nobody else
+/// spoke in between.
+pub(crate) const MAX_TURN_GAP_MS: i64 = 3_000;
+
+/// One stretch of a single speaker talking.
+#[derive(Debug, Clone, PartialEq)]
+struct Turn<'a> {
+    speaker: &'a str,
+    start_ms: i64,
+    end_ms: i64,
+    /// Time actually spent speaking, without the pauses between sentences.
+    speech_ms: i64,
+}
+
+/// Merges consecutive sentences by the same speaker into turns. Transcript
+/// segments are single sentences, so counting them as turns would make
+/// every monologue a few seconds long.
+fn turns<'a>(segments: impl IntoIterator<Item = (&'a str, i64, i64)>) -> Vec<Turn<'a>> {
+    let mut sorted: Vec<(&str, i64, i64)> = segments.into_iter().collect();
+    sorted.sort_by_key(|s| s.1);
+    let mut turns: Vec<Turn> = Vec::new();
+    for (speaker, start, end) in sorted {
+        match turns.last_mut() {
+            Some(t) if t.speaker == speaker && start - t.end_ms <= MAX_TURN_GAP_MS => {
+                t.end_ms = t.end_ms.max(end);
+                t.speech_ms += end - start;
+            }
+            _ => turns.push(Turn {
+                speaker,
+                start_ms: start,
+                end_ms: end,
+                speech_ms: end - start,
+            }),
+        }
+    }
+    turns
+}
+
 /// Compute talk-time analytics from transcript segments.
 pub fn compute_speaker_analytics(db: &Database, meeting_id: &str) -> Result<Vec<SpeakerAnalytics>> {
     let transcripts = db.get_transcript(meeting_id)?;
-    if transcripts.is_empty() {
-        return Ok(vec![]);
-    }
+    Ok(speaker_analytics(
+        meeting_id,
+        transcripts
+            .iter()
+            .map(|s| (s.speaker_label.as_str(), s.start_ms, s.end_ms)),
+    ))
+}
 
-    let mut speaker_segments: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
-    for seg in &transcripts {
-        speaker_segments
-            .entry(seg.speaker_label.clone())
-            .or_default()
-            .push((seg.start_ms, seg.end_ms));
-    }
-
-    for segments in speaker_segments.values_mut() {
-        segments.sort_by_key(|s| s.0);
-    }
-
-    let mut results = Vec::new();
-    for (speaker, segments) in &speaker_segments {
-        let talk_time_ms: i64 = segments.iter().map(|(s, e)| e - s).sum();
-        let turn_count = segments.len() as i64;
-        let avg_turn_length_ms = if turn_count > 0 {
-            talk_time_ms / turn_count
-        } else {
-            0
-        };
-        let longest_monologue_ms = segments.iter().map(|(s, e)| e - s).max().unwrap_or(0);
-
-        results.push(SpeakerAnalytics {
-            id: uuid::Uuid::new_v4().to_string(),
-            meeting_id: meeting_id.to_string(),
-            speaker_label: speaker.clone(),
-            talk_time_ms,
-            turn_count,
-            interruption_count: 0,
-            avg_turn_length_ms,
-            longest_monologue_ms,
-        });
-    }
-
-    // Compute interruptions: if a new speaker starts within 500ms of the previous
-    // speaker's end, count it as an interruption by the new speaker.
-    let mut all_segments: Vec<(&str, i64, i64)> = transcripts
-        .iter()
-        .map(|s| (s.speaker_label.as_str(), s.start_ms, s.end_ms))
-        .collect();
-    all_segments.sort_by_key(|s| s.1);
-
-    let mut interruption_counts: HashMap<String, i64> = HashMap::new();
-    for window in all_segments.windows(2) {
-        let (prev_speaker, _, prev_end) = window[0];
-        let (curr_speaker, curr_start, _) = window[1];
-        if prev_speaker != curr_speaker && curr_start < prev_end + 500 {
-            *interruption_counts
-                .entry(curr_speaker.to_string())
-                .or_default() += 1;
+fn speaker_analytics<'a>(
+    meeting_id: &str,
+    segments: impl IntoIterator<Item = (&'a str, i64, i64)>,
+) -> Vec<SpeakerAnalytics> {
+    let turns = turns(segments);
+    let mut by_speaker: Vec<(&str, Vec<&Turn>)> = Vec::new();
+    for turn in &turns {
+        match by_speaker.iter_mut().find(|(s, _)| *s == turn.speaker) {
+            Some((_, list)) => list.push(turn),
+            None => by_speaker.push((turn.speaker, vec![turn])),
         }
     }
 
-    for analytics in &mut results {
-        analytics.interruption_count = interruption_counts
-            .get(&analytics.speaker_label)
-            .copied()
-            .unwrap_or(0);
+    // Someone interrupts when their turn starts before the previous
+    // speaker's has ended.
+    let mut interruptions: HashMap<&str, i64> = HashMap::new();
+    for pair in turns.windows(2) {
+        if pair[1].start_ms < pair[0].end_ms {
+            *interruptions.entry(pair[1].speaker).or_default() += 1;
+        }
     }
 
-    Ok(results)
+    by_speaker
+        .into_iter()
+        .map(|(speaker, list)| {
+            let turn_count = list.len() as i64;
+            let talk_time_ms: i64 = list.iter().map(|t| t.speech_ms).sum();
+            let spans: Vec<i64> = list.iter().map(|t| t.end_ms - t.start_ms).collect();
+            SpeakerAnalytics {
+                id: uuid::Uuid::new_v4().to_string(),
+                meeting_id: meeting_id.to_string(),
+                speaker_label: speaker.to_string(),
+                talk_time_ms,
+                turn_count,
+                interruption_count: interruptions.get(speaker).copied().unwrap_or(0),
+                avg_turn_length_ms: spans.iter().sum::<i64>() / turn_count.max(1),
+                longest_monologue_ms: spans.iter().copied().max().unwrap_or(0),
+            }
+        })
+        .collect()
 }
 
 /// Compute engagement metrics from speaker analytics and transcript texts.
@@ -220,7 +240,7 @@ pub async fn analyze_sentiment(
             }
         };
         let Some(items) = parse_sentiment_batch(&response) else {
-            tracing::warn!("Failed to parse sentiment JSON: {response}");
+            tracing::warn!("Failed to parse sentiment JSON ({} chars)", response.len());
             last_error = Some("Could not parse sentiment response from the model".into());
             continue;
         };
@@ -296,6 +316,40 @@ fn extract_json_array(s: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sentences_by_one_speaker_form_one_turn() {
+        let stats = speaker_analytics(
+            "m",
+            [
+                ("Priya", 0, 4_000),
+                ("Priya", 4_500, 9_000),
+                ("Priya", 9_600, 15_000),
+                ("You", 16_000, 18_000),
+                ("Priya", 25_000, 27_000),
+            ],
+        );
+        let priya = stats.iter().find(|s| s.speaker_label == "Priya").unwrap();
+        assert_eq!(priya.turn_count, 2);
+        assert_eq!(priya.longest_monologue_ms, 15_000);
+        assert_eq!(priya.talk_time_ms, 4_000 + 4_500 + 5_400 + 2_000);
+        assert_eq!(priya.interruption_count, 0);
+    }
+
+    #[test]
+    fn only_overlapping_turns_count_as_interruptions() {
+        let stats = speaker_analytics(
+            "m",
+            [("A", 0, 5_000), ("B", 4_000, 6_000), ("A", 6_200, 8_000)],
+        );
+        let get = |s: &str| stats.iter().find(|x| x.speaker_label == s).unwrap();
+        assert_eq!(get("B").interruption_count, 1);
+        assert_eq!(
+            get("A").interruption_count,
+            0,
+            "a reply after a pause isn't one"
+        );
+    }
 
     #[test]
     fn parses_fenced_sentiment_array() {

@@ -265,26 +265,25 @@ async fn download_single_file(
 
     drop(out_file);
 
-    // Verify SHA-256 if provided
-    if !file.sha256.is_empty() {
-        emit_progress(
-            app,
-            model_id,
-            DownloadState::Verifying,
-            file.local_name,
-            downloaded,
-            file.size_bytes,
-            (cumulative_bytes + file.size_bytes) as f64 / total_bytes as f64,
-        );
+    // Every registry file is pinned (a registry test enforces it), so nothing
+    // unverified ever lands in the models folder.
+    emit_progress(
+        app,
+        model_id,
+        DownloadState::Verifying,
+        file.local_name,
+        downloaded,
+        file.size_bytes,
+        (cumulative_bytes + file.size_bytes) as f64 / total_bytes as f64,
+    );
 
-        let hash = hash_file(&part_path).await?;
-        if hash != file.sha256 {
-            let _ = std::fs::remove_file(&part_path);
-            return Err(format!(
-                "SHA-256 mismatch for {}: expected {}, got {}",
-                file.local_name, file.sha256, hash
-            ));
-        }
+    let hash = hash_file(&part_path).await?;
+    if hash != file.sha256 {
+        let _ = std::fs::remove_file(&part_path);
+        return Err(format!(
+            "SHA-256 mismatch for {}: expected {}, got {}",
+            file.local_name, file.sha256, hash
+        ));
     }
 
     // Atomic rename .part -> final

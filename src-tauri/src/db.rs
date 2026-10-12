@@ -242,6 +242,134 @@ pub struct ChunkSearchResult {
     pub distance: f64,
 }
 
+/// Appends Ask's label and date filters to a chunk query over meetings `m`.
+fn push_meeting_filters(
+    sql: &mut String,
+    params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+    filters: &AskFilters,
+) {
+    let label_ids = &filters.label_ids;
+    if !label_ids.is_empty() {
+        let placeholders: Vec<String> = (0..label_ids.len())
+            .map(|i| format!("?{}", params.len() + i + 1))
+            .collect();
+        sql.push_str(&format!(
+            " AND m.id IN (SELECT meeting_id FROM meeting_labels WHERE label_id IN ({}))",
+            placeholders.join(", ")
+        ));
+        for label_id in label_ids {
+            params.push(Box::new(label_id.clone()));
+        }
+    }
+    if let Some(from) = &filters.date_from {
+        sql.push_str(&format!(" AND m.start_time >= ?{}", params.len() + 1));
+        params.push(Box::new(from.clone()));
+    }
+    if let Some(to) = &filters.date_to {
+        sql.push_str(&format!(" AND m.start_time <= ?{}", params.len() + 1));
+        // A bare YYYY-MM-DD would sort before every RFC3339 timestamp on
+        // that day, so make the end date inclusive.
+        let to = if to.len() == 10 {
+            format!("{to}T23:59:59.999999999Z")
+        } else {
+            to.to_string()
+        };
+        params.push(Box::new(to));
+    }
+}
+
+fn query_chunks(
+    conn: &Connection,
+    sql: &str,
+    params: &[Box<dyn rusqlite::types::ToSql>],
+) -> Result<Vec<ChunkSearchResult>> {
+    let mut stmt = conn.prepare(sql)?;
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let results = stmt
+        .query_map(param_refs.as_slice(), |row| {
+            Ok(ChunkSearchResult {
+                chunk_id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                meeting_title: row.get(2)?,
+                chunk_text: row.get(3)?,
+                start_ms: row.get(4)?,
+                end_ms: row.get(5)?,
+                speaker_labels: row.get(6)?,
+                distance: row.get(7)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(results)
+}
+
+/// An FTS5 query matching any word of a natural-language question. Each word
+/// is quoted, so punctuation and FTS operators in the question are inert.
+/// `None` when the question has no searchable words.
+fn fts_any_terms(query: &str) -> Option<String> {
+    let terms: Vec<String> = query
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.chars().count() >= 2)
+        .map(|w| format!("\"{w}\""))
+        .collect();
+    (!terms.is_empty()).then(|| terms.join(" OR "))
+}
+
+/// Someone you've met: a name you gave a speaker in at least one meeting.
+#[derive(Debug, Clone, Serialize)]
+pub struct Person {
+    pub name: String,
+    pub meeting_count: i64,
+    pub last_met: String,
+    /// Time they spent talking, across all meetings.
+    pub talk_time_ms: i64,
+    pub open_action_items: i64,
+}
+
+const MEETING_COLUMNS: &str = "id, title, start_time, end_time, audio_path, status, \
+    calendar_event_id, raw_notes, enriched_notes, template_id, created_at, updated_at";
+
+fn meeting_from_row(row: &rusqlite::Row) -> rusqlite::Result<Meeting> {
+    Ok(Meeting {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        start_time: row.get(2)?,
+        end_time: row.get(3)?,
+        audio_path: row.get(4)?,
+        status: row.get(5)?,
+        calendar_event_id: row.get(6)?,
+        raw_notes: row.get(7)?,
+        enriched_notes: row.get(8)?,
+        template_id: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
+}
+
+/// A remembered voice: a name and the mean fingerprint of their speech.
+#[derive(Debug, Clone, Serialize)]
+pub struct VoiceProfile {
+    pub id: String,
+    pub name: String,
+    #[serde(skip)]
+    pub embedding: Vec<f32>,
+    /// How many meetings the fingerprint was learned from.
+    pub samples: i64,
+    pub updated_at: String,
+}
+
+fn bytes_to_f32s(bytes: &[u8]) -> Vec<f32> {
+    let (chunks, _) = bytes.as_chunks::<4>();
+    chunks.iter().map(|b| f32::from_le_bytes(*b)).collect()
+}
+
+/// Filters for questions asked across all meetings.
+#[derive(Debug, Default)]
+pub struct AskFilters {
+    pub label_ids: Vec<String>,
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+}
+
 /// Convert a f32 slice to a little-endian byte vector for sqlite-vec.
 fn f32_slice_to_bytes(v: &[f32]) -> Vec<u8> {
     v.iter().flat_map(|f| f.to_le_bytes()).collect()
@@ -1168,6 +1296,73 @@ impl Database {
             ",
         )?;
 
+        Self::run_versioned_migrations(conn)?;
+
+        Ok(())
+    }
+
+    /// One-time data migrations, each applied once and in order, tracked in
+    /// `PRAGMA user_version`. Schema additions that are safe to repeat stay
+    /// in `initialize`; anything that rewrites data belongs here so it can't
+    /// run twice.
+    fn run_versioned_migrations(conn: &Connection) -> Result<()> {
+        const MIGRATIONS: &[&str] = &[
+            // 1: the search index was built with a tokenizer that turned most
+            // words into [UNK]: drop it so every meeting is re-embedded, and
+            // add a keyword index over the chunks so Ask finds exact names,
+            // numbers and jargon that embeddings blur together.
+            "DELETE FROM chunk_embeddings;
+             DELETE FROM transcript_chunks;
+             CREATE VIRTUAL TABLE chunks_fts USING fts5(
+                 text, content='transcript_chunks', content_rowid='rowid'
+             );
+             CREATE TRIGGER transcript_chunks_ai AFTER INSERT ON transcript_chunks BEGIN
+                 INSERT INTO chunks_fts(rowid, text) VALUES (new.rowid, new.text);
+             END;
+             CREATE TRIGGER transcript_chunks_ad AFTER DELETE ON transcript_chunks BEGIN
+                 INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+             END;",
+            // 2: speaker analytics counted every sentence as a turn. Drop
+            // them; they're recomputed from the transcript when next viewed.
+            "DELETE FROM meeting_analytics;
+             DELETE FROM meeting_engagement;",
+            // 3: remembered voices (opt-in), and each meeting's speaker
+            // fingerprints so naming a speaker can teach Nootle their voice.
+            "CREATE TABLE meeting_voices (
+                 meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                 speaker_label TEXT NOT NULL,
+                 embedding BLOB NOT NULL,
+                 PRIMARY KEY (meeting_id, speaker_label)
+             );
+             CREATE TABLE voice_profiles (
+                 id TEXT PRIMARY KEY,
+                 name TEXT NOT NULL UNIQUE,
+                 embedding BLOB NOT NULL,
+                 samples INTEGER NOT NULL DEFAULT 1,
+                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+             );",
+            // 4: when you told a meeting's participants they were recorded.
+            "CREATE TABLE meeting_consent (
+                 meeting_id TEXT PRIMARY KEY REFERENCES meetings(id) ON DELETE CASCADE,
+                 noted_at TEXT NOT NULL
+             );",
+        ];
+
+        let current: usize =
+            conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? as usize;
+        for (i, sql) in MIGRATIONS.iter().enumerate().skip(current) {
+            let version = i + 1;
+            conn.execute_batch("BEGIN")?;
+            let result = conn.execute_batch(&format!("{sql}\nPRAGMA user_version = {version};"));
+            match result {
+                Ok(()) => conn.execute_batch("COMMIT")?,
+                Err(e) => {
+                    let _ = conn.execute_batch("ROLLBACK");
+                    return Err(e.into());
+                }
+            }
+            tracing::info!("Applied database migration {version}");
+        }
         Ok(())
     }
 
@@ -1481,18 +1676,20 @@ impl Database {
         Ok(())
     }
 
-    /// Fix any meetings stuck in "recording" or "transcribing" status from a previous crash.
-    /// Sets them to "summarized" with end_time = now so they appear as completed.
-    pub fn cleanup_stale_recordings(&self) -> Result<usize> {
-        let conn = self.lock_conn()?;
-        let now = chrono::Utc::now().to_rfc3339();
-
-        let count = conn.execute(
-            "UPDATE meetings SET status = 'summarized', end_time = COALESCE(end_time, ?1), updated_at = ?1 WHERE status IN ('recording', 'transcribing')",
-            params![now],
-        )?;
-
-        Ok(count)
+    /// Meetings a previous run left recording or transcribing: the app quit
+    /// or crashed before their pipeline finished.
+    pub fn interrupted_meetings(&self) -> Result<Vec<Meeting>> {
+        let ids: Vec<String> = {
+            let conn = self.lock_conn()?;
+            let mut stmt = conn.prepare(
+                "SELECT id FROM meetings WHERE status IN ('recording', 'transcribing') ORDER BY start_time",
+            )?;
+            let ids = stmt
+                .query_map([], |row| row.get(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            ids
+        };
+        ids.iter().map(|id| self.get_meeting(id)).collect()
     }
 
     pub fn delete_meeting(&self, id: &str) -> Result<()> {
@@ -2067,6 +2264,45 @@ impl Database {
         })
     }
 
+    /// Stores several segments in one transaction.
+    pub fn create_transcript_segments(
+        &self,
+        new: Vec<NewTranscriptSegment>,
+    ) -> Result<Vec<TranscriptSegment>> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        let mut stored = Vec::with_capacity(new.len());
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO transcripts (id, meeting_id, speaker_label, text, start_ms, end_ms, confidence)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )?;
+            for n in new {
+                let id = uuid::Uuid::new_v4().to_string();
+                stmt.execute(params![
+                    id,
+                    n.meeting_id,
+                    n.speaker_label,
+                    n.text,
+                    n.start_ms,
+                    n.end_ms,
+                    n.confidence
+                ])?;
+                stored.push(TranscriptSegment {
+                    id,
+                    meeting_id: n.meeting_id,
+                    speaker_label: n.speaker_label,
+                    text: n.text,
+                    start_ms: n.start_ms,
+                    end_ms: n.end_ms,
+                    confidence: n.confidence,
+                });
+            }
+        }
+        tx.commit()?;
+        Ok(stored)
+    }
+
     /// Relabel every transcript line spoken by `from` in a meeting. Renaming
     /// onto an existing label merges the two speakers. Returns lines changed.
     /// Renames a speaker in one meeting. Search chunks quote speaker names,
@@ -2109,11 +2345,43 @@ impl Database {
         .ok_or_else(|| NootleError::Other(format!("Transcript segment not found: {}", id)))
     }
 
+    /// Sets each segment's speaker in one transaction, e.g. after the
+    /// post-meeting speaker pass. Search chunks quote speaker names, so they
+    /// are dropped for the next embedding pass to rebuild.
+    pub fn relabel_transcript(&self, meeting_id: &str, labels: &[(String, String)]) -> Result<()> {
+        self.update_segments(meeting_id, "speaker_label", labels)
+    }
+
+    /// Removes a meeting's transcript (and its search chunks), so it can be
+    /// transcribed again from the recording.
+    pub fn delete_transcript(&self, meeting_id: &str) -> Result<()> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM transcripts WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
+        Self::delete_meeting_chunks_with(&tx, meeting_id)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Rewrites segment texts of one meeting in a single transaction. Search
     /// chunks are dropped so the next embedding pass picks up the new text.
     pub fn replace_transcript_texts(
         &self,
         meeting_id: &str,
+        updates: &[(String, String)],
+    ) -> Result<()> {
+        self.update_segments(meeting_id, "text", updates)
+    }
+
+    /// Sets `column` of each `(segment id, value)` in one transaction and
+    /// drops the meeting's now-stale search chunks.
+    fn update_segments(
+        &self,
+        meeting_id: &str,
+        column: &'static str,
         updates: &[(String, String)],
     ) -> Result<()> {
         if updates.is_empty() {
@@ -2122,15 +2390,194 @@ impl Database {
         let mut conn = self.lock_conn()?;
         let tx = conn.transaction()?;
         {
-            let mut stmt = tx.prepare_cached(
-                "UPDATE transcripts SET text = ?1 WHERE id = ?2 AND meeting_id = ?3",
-            )?;
-            for (id, text) in updates {
-                stmt.execute(params![text, id, meeting_id])?;
+            let mut stmt = tx.prepare_cached(&format!(
+                "UPDATE transcripts SET {column} = ?1 WHERE id = ?2 AND meeting_id = ?3"
+            ))?;
+            for (id, value) in updates {
+                stmt.execute(params![value, id, meeting_id])?;
             }
         }
         Self::delete_meeting_chunks_with(&tx, meeting_id)?;
         tx.commit()?;
+        Ok(())
+    }
+
+    // --- People ---
+
+    /// Everyone you've named as a speaker ("You" and "Speaker N" aren't
+    /// people), most recently met first.
+    pub fn list_people(&self) -> Result<Vec<Person>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT t.speaker_label, COUNT(DISTINCT t.meeting_id), MAX(m.start_time),
+                    SUM(t.end_ms - t.start_ms), COALESCE(MAX(open.n), 0)
+             FROM transcripts t
+             JOIN meetings m ON m.id = t.meeting_id
+             LEFT JOIN (SELECT assignee COLLATE NOCASE AS assignee, COUNT(*) AS n
+                        FROM action_items WHERE status = 'open'
+                        GROUP BY assignee COLLATE NOCASE) open
+                    ON open.assignee = t.speaker_label COLLATE NOCASE
+             WHERE m.status != 'archived'
+             GROUP BY t.speaker_label
+             ORDER BY MAX(m.start_time) DESC",
+        )?;
+        let people = stmt
+            .query_map([], |row| {
+                Ok(Person {
+                    name: row.get(0)?,
+                    meeting_count: row.get(1)?,
+                    last_met: row.get(2)?,
+                    talk_time_ms: row.get(3)?,
+                    open_action_items: row.get(4)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<Person>, _>>()?;
+        Ok(people
+            .into_iter()
+            .filter(|p| !crate::diarization::is_automatic_label(&p.name))
+            .collect())
+    }
+
+    /// Meetings someone spoke in, newest first.
+    pub fn meetings_with(&self, name: &str) -> Result<Vec<Meeting>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {MEETING_COLUMNS} FROM meetings m
+             WHERE m.status != 'archived'
+               AND EXISTS (SELECT 1 FROM transcripts t
+                           WHERE t.meeting_id = m.id AND t.speaker_label = ?1)
+             ORDER BY m.start_time DESC"
+        ))?;
+        let meetings = stmt
+            .query_map(params![name], meeting_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(meetings)
+    }
+
+    // --- Recording consent ---
+
+    /// Records that participants were told about the recording (first time
+    /// only), returning when.
+    pub fn note_consent(&self, meeting_id: &str) -> Result<String> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_consent (meeting_id, noted_at) VALUES (?1, ?2)",
+            params![meeting_id, chrono::Utc::now().to_rfc3339()],
+        )?;
+        Ok(conn.query_row(
+            "SELECT noted_at FROM meeting_consent WHERE meeting_id = ?1",
+            params![meeting_id],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// When participants were told about the recording, if they were.
+    pub fn consent_noted_at(&self, meeting_id: &str) -> Result<Option<String>> {
+        let conn = self.lock_conn()?;
+        Ok(conn
+            .query_row(
+                "SELECT noted_at FROM meeting_consent WHERE meeting_id = ?1",
+                params![meeting_id],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    // --- Remembered voices ---
+
+    /// Replaces the stored fingerprints of these speakers in a meeting.
+    pub fn save_meeting_voices(
+        &self,
+        meeting_id: &str,
+        voices: &[(String, Vec<f32>)],
+    ) -> Result<()> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO meeting_voices (meeting_id, speaker_label, embedding) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(meeting_id, speaker_label) DO UPDATE SET embedding = excluded.embedding",
+            )?;
+            for (label, embedding) in voices {
+                stmt.execute(params![meeting_id, label, f32_slice_to_bytes(embedding)])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Removes and returns a speaker's fingerprint in a meeting.
+    pub fn take_meeting_voice(&self, meeting_id: &str, label: &str) -> Result<Option<Vec<f32>>> {
+        let conn = self.lock_conn()?;
+        let bytes: Option<Vec<u8>> = conn
+            .query_row(
+                "DELETE FROM meeting_voices WHERE meeting_id = ?1 AND speaker_label = ?2 RETURNING embedding",
+                params![meeting_id, label],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(bytes.map(|b| bytes_to_f32s(&b)))
+    }
+
+    /// `name`'s remembered voice and how many meetings it was learned from.
+    pub fn get_voice_profile(&self, name: &str) -> Result<Option<(Vec<f32>, i64)>> {
+        let conn = self.lock_conn()?;
+        Ok(conn
+            .query_row(
+                "SELECT embedding, samples FROM voice_profiles WHERE name = ?1",
+                params![name],
+                |row| Ok((bytes_to_f32s(&row.get::<_, Vec<u8>>(0)?), row.get(1)?)),
+            )
+            .optional()?)
+    }
+
+    /// Creates or replaces `name`'s remembered voice.
+    pub fn save_voice_profile(&self, name: &str, embedding: &[f32], samples: i64) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "INSERT INTO voice_profiles (id, name, embedding, samples, updated_at)
+             VALUES (?1, ?2, ?3, ?4, datetime('now'))
+             ON CONFLICT(name) DO UPDATE SET embedding = excluded.embedding,
+                 samples = excluded.samples, updated_at = excluded.updated_at",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                name,
+                f32_slice_to_bytes(embedding),
+                samples
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_voice_profiles(&self) -> Result<Vec<VoiceProfile>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, embedding, samples, updated_at FROM voice_profiles ORDER BY name COLLATE NOCASE",
+        )?;
+        let profiles = stmt
+            .query_map([], |row| {
+                Ok(VoiceProfile {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    embedding: bytes_to_f32s(&row.get::<_, Vec<u8>>(2)?),
+                    samples: row.get(3)?,
+                    updated_at: row.get(4)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(profiles)
+    }
+
+    pub fn delete_voice_profile(&self, id: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute("DELETE FROM voice_profiles WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Forgets every remembered voice and every meeting's fingerprints.
+    pub fn forget_all_voices(&self) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute_batch("DELETE FROM voice_profiles; DELETE FROM meeting_voices;")?;
         Ok(())
     }
 
@@ -2806,12 +3253,18 @@ impl Database {
         &self,
         query_embedding: &[f32],
         limit: usize,
-        label_ids: &[String],
-        date_from: Option<&str>,
-        date_to: Option<&str>,
+        filters: &AskFilters,
     ) -> Result<Vec<ChunkSearchResult>> {
         let conn = self.lock_conn()?;
-        let query_bytes = f32_slice_to_bytes(query_embedding);
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        params.push(Box::new(f32_slice_to_bytes(query_embedding)));
+        // Over-fetch 4x when filters are active so post-filter still yields enough results.
+        // With strict filters on a small dataset, the caller may receive fewer than `limit` rows.
+        let filtered = !filters.label_ids.is_empty()
+            || filters.date_from.is_some()
+            || filters.date_to.is_some();
+        let k = if filtered { limit * 4 } else { limit };
+        params.push(Box::new(k as i64));
 
         // First get KNN results from vec0, then join with metadata and apply filters.
         let mut sql = String::from(
@@ -2822,74 +3275,39 @@ impl Database {
              WHERE ce.embedding MATCH ?1
              AND ce.k = ?2",
         );
+        push_meeting_filters(&mut sql, &mut params, filters);
+        sql.push_str(&format!(
+            " ORDER BY ce.distance LIMIT ?{}",
+            params.len() + 1
+        ));
+        params.push(Box::new(limit as i64));
+        query_chunks(&conn, &sql, &params)
+    }
 
-        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        param_values.push(Box::new(query_bytes));
-        // Over-fetch 4x when filters are active so post-filter still yields enough results.
-        // With strict filters on a small dataset, the caller may receive fewer than `limit` rows.
-        let k = if label_ids.is_empty() && date_from.is_none() && date_to.is_none() {
-            limit as i64
-        } else {
-            (limit as i64) * 4
+    /// Chunks matching any of `query`'s words, best BM25 match first. The
+    /// `distance` field holds the BM25 rank (lower is better).
+    pub fn search_chunks_by_keywords(
+        &self,
+        query: &str,
+        limit: usize,
+        filters: &AskFilters,
+    ) -> Result<Vec<ChunkSearchResult>> {
+        let Some(match_expr) = fts_any_terms(query) else {
+            return Ok(Vec::new());
         };
-        param_values.push(Box::new(k));
-
-        if !label_ids.is_empty() {
-            let placeholders: Vec<String> = label_ids
-                .iter()
-                .enumerate()
-                .map(|(i, _)| format!("?{}", param_values.len() + i + 1))
-                .collect();
-            sql.push_str(&format!(
-                " AND m.id IN (SELECT meeting_id FROM meeting_labels WHERE label_id IN ({}))",
-                placeholders.join(", ")
-            ));
-            for label_id in label_ids {
-                param_values.push(Box::new(label_id.clone()));
-            }
-        }
-
-        if let Some(from) = date_from {
-            sql.push_str(&format!(" AND m.start_time >= ?{}", param_values.len() + 1));
-            param_values.push(Box::new(from.to_string()));
-        }
-
-        if let Some(to) = date_to {
-            sql.push_str(&format!(" AND m.start_time <= ?{}", param_values.len() + 1));
-            // A bare YYYY-MM-DD would sort before every RFC3339 timestamp on
-            // that day, so make the end date inclusive.
-            let to = if to.len() == 10 {
-                format!("{to}T23:59:59.999999999Z")
-            } else {
-                to.to_string()
-            };
-            param_values.push(Box::new(to));
-        }
-
-        let limit_param_idx = param_values.len() + 1;
-        sql.push_str(&format!(" ORDER BY ce.distance LIMIT ?{}", limit_param_idx));
-        param_values.push(Box::new(limit as i64));
-
-        let mut stmt = conn.prepare(&sql)?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            param_values.iter().map(|p| p.as_ref()).collect();
-
-        let results = stmt
-            .query_map(param_refs.as_slice(), |row| {
-                Ok(ChunkSearchResult {
-                    chunk_id: row.get(0)?,
-                    meeting_id: row.get(1)?,
-                    meeting_title: row.get(2)?,
-                    chunk_text: row.get(3)?,
-                    start_ms: row.get(4)?,
-                    end_ms: row.get(5)?,
-                    speaker_labels: row.get(6)?,
-                    distance: row.get(7)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
-        Ok(results)
+        let conn = self.lock_conn()?;
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(match_expr)];
+        let mut sql = String::from(
+            "SELECT tc.id, tc.meeting_id, m.title, tc.text, tc.start_ms, tc.end_ms, tc.speaker_labels, fts.rank
+             FROM chunks_fts fts
+             JOIN transcript_chunks tc ON tc.rowid = fts.rowid
+             JOIN meetings m ON m.id = tc.meeting_id
+             WHERE chunks_fts MATCH ?1",
+        );
+        push_meeting_filters(&mut sql, &mut params, filters);
+        sql.push_str(&format!(" ORDER BY fts.rank LIMIT ?{}", params.len() + 1));
+        params.push(Box::new(limit as i64));
+        query_chunks(&conn, &sql, &params)
     }
 
     pub fn get_embedding_status(&self) -> Result<(u32, u32)> {

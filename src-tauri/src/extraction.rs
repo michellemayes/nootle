@@ -55,20 +55,7 @@ fn format_transcript(db: &Database, meeting_id: &str) -> anyhow::Result<String> 
     if transcript.is_empty() {
         anyhow::bail!("No transcript found for meeting {}", meeting_id);
     }
-    let lines = transcript
-        .iter()
-        .map(|s| {
-            let total_seconds = s.start_ms / 1000;
-            let minutes = total_seconds / 60;
-            let seconds = total_seconds % 60;
-            format!(
-                "[{:02}:{:02}] {}: {}",
-                minutes, seconds, s.speaker_label, s.text
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    Ok(lines
+    Ok(crate::summarization::format_transcript(&transcript)
         + &crate::snapshots::context_section(db, meeting_id)
         + &crate::dictionary::glossary(db))
 }
@@ -150,7 +137,11 @@ pub async fn extract_insights(
     let extracted = match parse_extraction_response(cleaned, &types) {
         Ok(e) => e,
         Err(e) => {
-            tracing::error!("Failed to parse extraction response: {e}\nRaw: {response}");
+            // The response quotes the meeting, so it stays out of the log file.
+            tracing::error!(
+                "Failed to parse extraction response ({} chars): {e}",
+                response.len()
+            );
             let _ = db.update_extraction_run_status(&run.id, "failed");
             anyhow::bail!("Failed to parse extraction response: {e}");
         }

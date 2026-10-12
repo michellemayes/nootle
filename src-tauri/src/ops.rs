@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 use crate::db::{
     ChatConversation, Database, InsightWithActionItem, Label, Meeting, NewRecipe, Recipe,
-    SentimentSegment,
+    SentimentSegment, TranscriptSegment,
 };
 use crate::dictionary::DictionaryEntry;
 use crate::embedding::EmbeddingEngine;
@@ -29,6 +29,7 @@ pub fn delete_meeting(db: &Database, id: &str) -> Result<()> {
     let _ = db.delete_meeting_chunks(id);
     db.delete_meeting(id)?;
     if let Some(path) = audio_path {
+        let _ = std::fs::remove_file(crate::audio::writer::stems_path(path.as_ref()));
         let _ = std::fs::remove_file(path);
     }
     if let Ok(dir) = recordings_dir() {
@@ -58,8 +59,10 @@ pub const API_KEY_PROVIDERS: &[&str] = &[
 pub const SUMMARIZATION_PROVIDER_SETTING: &str = "summarization_provider";
 /// On/off settings the app's settings screen changes.
 pub const TOGGLE_SETTINGS: &[&str] = &[
-    "denoise_enabled",
     "detection_enabled",
+    crate::voices::SETTING_KEY,
+    crate::llm::LOCAL_ONLY_SETTING,
+    CONSENT_REMINDER_SETTING,
     crate::remote::ENABLED_SETTING,
     crate::dictionary::AUTO_LEARN_SETTING,
     crate::snapshots::SETTING_KEY,
@@ -69,15 +72,27 @@ pub const TOGGLE_SETTINGS: &[&str] = &[
 /// on stays a decision made by the user.
 pub const AGENT_LOCKED_SETTINGS: &[&str] = &[
     crate::remote::ENABLED_SETTING,
+    crate::voices::SETTING_KEY,
+    crate::llm::LOCAL_ONLY_SETTING,
     crate::snapshots::SETTING_KEY,
 ];
+
+/// Reminds you to tell people they're being recorded when a recording
+/// starts. On unless turned off.
+pub const CONSENT_REMINDER_SETTING: &str = "consent_reminder";
+/// The message the reminder offers to copy into the meeting chat.
+pub const CONSENT_MESSAGE_SETTING: &str = "consent_message";
+pub const DEFAULT_CONSENT_MESSAGE: &str = "Heads up: I'm recording and transcribing this call \
+     with Nootle so I can take notes. The recording stays on my computer. Let me know if you'd \
+     rather I didn't.";
+const MAX_CONSENT_MESSAGE_CHARS: usize = 600;
 
 /// Settings the app, CLI, and MCP server can read and change.
 pub fn editable_settings() -> impl Iterator<Item = &'static str> {
     TOGGLE_SETTINGS
         .iter()
         .copied()
-        .chain([SUMMARIZATION_PROVIDER_SETTING])
+        .chain([SUMMARIZATION_PROVIDER_SETTING, CONSENT_MESSAGE_SETTING])
 }
 
 pub fn validate_one_of(what: &str, value: &str, allowed: &[&str]) -> Result<()> {
@@ -124,10 +139,14 @@ fn validate_setting_key(key: &str) -> Result<()> {
 /// summarization provider any name ("" for automatic).
 pub fn validate_setting(key: &str, value: &str) -> Result<()> {
     validate_setting_key(key)?;
-    if key == SUMMARIZATION_PROVIDER_SETTING {
-        return Ok(());
+    match key {
+        SUMMARIZATION_PROVIDER_SETTING => Ok(()),
+        CONSENT_MESSAGE_SETTING if value.chars().count() > MAX_CONSENT_MESSAGE_CHARS => Err(
+            anyhow!("The consent message can be at most {MAX_CONSENT_MESSAGE_CHARS} characters"),
+        ),
+        CONSENT_MESSAGE_SETTING => Ok(()),
+        _ => validate_one_of("value", value, &["true", "false"]),
     }
-    validate_one_of("value", value, &["true", "false"])
 }
 
 /// One editable setting's value; `None` when unset.
@@ -148,6 +167,9 @@ pub fn set_setting(db: &Database, key: &str, value: &str) -> Result<String> {
     let value = value.trim();
     validate_setting(key, value)?;
     db.set_setting(key, value)?;
+    if key == crate::llm::LOCAL_ONLY_SETTING {
+        crate::llm::set_local_only(value == "true");
+    }
     Ok(value.to_string())
 }
 
@@ -462,12 +484,14 @@ pub fn try_load_embedding_engine() -> Option<EmbeddingEngine> {
         .and_then(Result::ok)
 }
 
-/// The meetings "index everything" covers: those not archived and not yet
+/// The meetings "index everything" covers: those not archived, not still
+/// being recorded or transcribed (their transcript isn't final), and not yet
 /// indexed.
 pub fn meetings_to_index(db: &Database) -> Result<Vec<String>> {
     let mut ids = Vec::new();
     for meeting in db.list_meetings(None, false, None)? {
-        if !db.has_meeting_chunks(&meeting.id)? {
+        let in_progress = matches!(meeting.status.as_str(), "recording" | "transcribing");
+        if !in_progress && !db.has_meeting_chunks(&meeting.id)? {
             ids.push(meeting.id);
         }
     }
@@ -548,6 +572,9 @@ pub fn rename_speaker(
         return Err(anyhow!("Speaker name can't be empty"));
     }
     let changed = db.rename_speaker(meeting_id, from, to)?;
+    if let Err(e) = crate::voices::learn_from_rename(db, meeting_id, from, to) {
+        tracing::warn!("Couldn't learn {to}'s voice: {e}");
+    }
     if let Err(e) = refresh_analytics(db, meeting_id) {
         tracing::warn!("Failed to compute analytics for {meeting_id}: {e}");
     }
@@ -586,6 +613,8 @@ pub fn resolve_model(
     provider: Option<&str>,
     model: Option<&str>,
 ) -> Result<(String, String)> {
+    // A long-running CLI or MCP process sees the app's latest choice.
+    crate::llm::sync_local_only(db);
     let available = || match llm.provider_names() {
         names if names.is_empty() => "none".to_string(),
         names => names.join(", "),
@@ -631,6 +660,54 @@ async fn chat(
         .await
 }
 
+/// The last `minutes` of a meeting's transcript, for catching up.
+pub fn recent_transcript(segments: &[TranscriptSegment], minutes: i64) -> Vec<TranscriptSegment> {
+    let Some(latest) = segments.iter().map(|s| s.end_ms).max() else {
+        return Vec::new();
+    };
+    let since = latest - minutes * 60_000;
+    segments
+        .iter()
+        .filter(|s| s.end_ms > since)
+        .cloned()
+        .collect()
+}
+
+/// "What did I miss?": a few bullets on the last `minutes` of a meeting
+/// (usually one still being recorded), calling out anything put to the
+/// user, using the automatic summary model.
+pub async fn catch_up(
+    db: &Database,
+    llm: &LlmRegistry,
+    meeting_id: &str,
+    minutes: i64,
+) -> Result<String> {
+    let recent = recent_transcript(&db.get_transcript(meeting_id)?, minutes);
+    if recent.is_empty() {
+        return Ok("Nothing has been transcribed yet.".into());
+    }
+    crate::llm::sync_local_only(db);
+    let model = pick_auto_model(db, llm)
+        .ok_or_else(|| anyhow!("Add an AI provider in Settings to catch up on a meeting"))?;
+    let messages = vec![
+        ChatMessage {
+            role: "system".into(),
+            content: format!(
+                "You help someone who stepped away from a live meeting catch up. In 3–5 short \
+                 bullets, say what was discussed in the last {minutes} minutes. Then, if \
+                 anyone asked \"You\" a question, assigned \"You\" something, or is waiting \
+                 on \"You\", add a line starting \"For you:\". Be brief; no preamble.{}",
+                crate::dictionary::glossary(db)
+            ),
+        },
+        ChatMessage {
+            role: "user".into(),
+            content: crate::summarization::format_transcript(&recent),
+        },
+    ];
+    chat(llm, &model.provider, &model.id, messages).await
+}
+
 /// Merges a meeting's notes with details from its transcript and saves the
 /// result as the meeting's enriched notes.
 pub async fn enrich_notes(
@@ -646,12 +723,7 @@ pub async fn enrich_notes(
         .filter(|n| !n.trim().is_empty())
         .ok_or_else(|| anyhow!("No notes to enrich"))?;
 
-    let transcript_text = db
-        .get_transcript(meeting_id)?
-        .iter()
-        .map(|s| format!("{}: {}", s.speaker_label, s.text))
-        .collect::<Vec<_>>()
-        .join("\n")
+    let transcript_text = crate::summarization::format_transcript(&db.get_transcript(meeting_id)?)
         + &crate::snapshots::context_section(db, meeting_id);
 
     let system_prompt = format!(
@@ -717,18 +789,53 @@ pub async fn analyze_sentiment(
     Ok(segments)
 }
 
-/// Filters for questions asked across all meetings.
-#[derive(Debug, Default)]
-pub struct AskFilters {
-    pub label_ids: Vec<String>,
-    pub date_from: Option<String>,
-    pub date_to: Option<String>,
-}
+pub use crate::db::AskFilters;
 
 /// Embeds a question for `rag_chat`. Separate so callers sharing an engine
 /// can release it before the slow LLM call.
 pub fn embed_question(engine: &mut EmbeddingEngine, message: &str) -> Result<Vec<f32>> {
     engine.embed(message).context("Failed to embed query")
+}
+
+/// Passages for a question from both the vector index (meaning) and the
+/// keyword index (exact names, numbers and jargon), merged with Reciprocal
+/// Rank Fusion so a passage either one ranks highly makes the cut.
+pub fn hybrid_search(
+    db: &Database,
+    query_embedding: &[f32],
+    question: &str,
+    filters: &AskFilters,
+    limit: usize,
+) -> Result<Vec<crate::db::ChunkSearchResult>> {
+    let candidates = limit * 2;
+    let by_meaning = db.search_similar_chunks(query_embedding, candidates, filters)?;
+    let by_keywords = db.search_chunks_by_keywords(question, candidates, filters)?;
+    Ok(reciprocal_rank_fusion([by_meaning, by_keywords], limit))
+}
+
+/// Scores each passage 1/(60 + rank) per list it appears in and keeps the
+/// best `limit`. 60 is the constant from the original RRF paper; it stops a
+/// single first place from outweighing broad agreement.
+fn reciprocal_rank_fusion<const N: usize>(
+    lists: [Vec<crate::db::ChunkSearchResult>; N],
+    limit: usize,
+) -> Vec<crate::db::ChunkSearchResult> {
+    const K: f64 = 60.0;
+    let mut scored: Vec<(f64, crate::db::ChunkSearchResult)> = Vec::new();
+    for list in lists {
+        for (rank, result) in list.into_iter().enumerate() {
+            let score = 1.0 / (K + rank as f64 + 1.0);
+            match scored
+                .iter_mut()
+                .find(|(_, r)| r.chunk_id == result.chunk_id)
+            {
+                Some((total, _)) => *total += score,
+                None => scored.push((score, result)),
+            }
+        }
+    }
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+    scored.into_iter().take(limit).map(|(_, r)| r).collect()
 }
 
 /// Answers a question from the most relevant transcript passages across all
@@ -745,13 +852,7 @@ pub async fn rag_chat(
     model: &str,
     filters: &AskFilters,
 ) -> Result<(String, Vec<Value>)> {
-    let results = db.search_similar_chunks(
-        query_embedding,
-        10,
-        &filters.label_ids,
-        filters.date_from.as_deref(),
-        filters.date_to.as_deref(),
-    )?;
+    let results = hybrid_search(db, query_embedding, message, filters, 10)?;
 
     if results.is_empty() {
         return Ok((
@@ -964,8 +1065,8 @@ mod tests {
 
     #[test]
     fn settings_are_allow_listed_and_toggles_are_boolean() {
-        assert!(validate_setting("denoise_enabled", "true").is_ok());
-        assert!(validate_setting("denoise_enabled", "yes").is_err());
+        assert!(validate_setting("detection_enabled", "true").is_ok());
+        assert!(validate_setting("detection_enabled", "yes").is_err());
         assert!(validate_setting(SUMMARIZATION_PROVIDER_SETTING, "anthropic").is_ok());
         assert!(validate_setting(SUMMARIZATION_PROVIDER_SETTING, "").is_ok());
         assert!(validate_setting("theme", "dark").is_err());
@@ -1180,20 +1281,50 @@ mod tests {
         assert_eq!(report.failed[0].meeting_id, "b");
 
         let (db, id) = db_with_meeting();
+        assert!(
+            meetings_to_index(&db).unwrap().is_empty(),
+            "a meeting still recording has no final transcript to index"
+        );
+        db.update_meeting_status(&id, "summarized").unwrap();
         assert_eq!(meetings_to_index(&db).unwrap(), vec![id]);
+    }
+
+    #[test]
+    fn catching_up_reads_only_the_recent_minutes() {
+        let seg = |start_ms: i64| TranscriptSegment {
+            id: start_ms.to_string(),
+            meeting_id: "m".into(),
+            speaker_label: "A".into(),
+            text: "x".into(),
+            start_ms,
+            end_ms: start_ms + 1_000,
+            confidence: 1.0,
+        };
+        let segments = [seg(0), seg(400_000), seg(590_000)];
+        let recent = recent_transcript(&segments, 5);
+        assert_eq!(recent.len(), 2);
+        assert!(recent_transcript(&[], 5).is_empty());
+    }
+
+    #[test]
+    fn consent_message_is_free_text_within_a_limit() {
+        assert!(validate_setting(CONSENT_MESSAGE_SETTING, "We're recording, OK?").is_ok());
+        assert!(validate_setting(CONSENT_MESSAGE_SETTING, &"x".repeat(601)).is_err());
+        assert!(validate_setting(CONSENT_REMINDER_SETTING, "maybe").is_err());
+        assert!(AGENT_LOCKED_SETTINGS.contains(&crate::llm::LOCAL_ONLY_SETTING));
     }
 
     #[test]
     fn settings_and_api_keys() {
         let db = Database::new_in_memory().unwrap();
         assert_eq!(
-            set_setting(&db, "denoise_enabled", " true ").unwrap(),
+            set_setting(&db, "detection_enabled", " true ").unwrap(),
             "true"
         );
-        assert!(set_setting(&db, "denoise_enabled", "on").is_err());
+        assert!(set_setting(&db, "detection_enabled", "on").is_err());
         assert!(get_setting(&db, "theme").is_err());
         let settings = settings_map(&db).unwrap();
-        assert_eq!(settings["denoise_enabled"], "true");
+        assert_eq!(settings["detection_enabled"], "true");
         assert!(settings[SUMMARIZATION_PROVIDER_SETTING].is_null());
 
         store_api_key(&db, "linear", "lin_123").unwrap();

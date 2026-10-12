@@ -3,7 +3,7 @@
 // With `--features system-audio`: real cidre-based capture.
 // Without: silent stub so the project always compiles.
 
-#[cfg(feature = "system-audio")]
+#[cfg(all(target_os = "macos", feature = "system-audio"))]
 mod core_audio_impl {
     use anyhow::Context;
     use ringbuf::traits::{Consumer, Producer, Split};
@@ -164,7 +164,7 @@ mod core_audio_impl {
     }
 }
 
-#[cfg(not(feature = "system-audio"))]
+#[cfg(not(all(target_os = "macos", feature = "system-audio")))]
 mod fallback_impl {
     use ringbuf::traits::{Consumer, Split};
     use ringbuf::HeapRb;
@@ -217,13 +217,13 @@ mod fallback_impl {
     }
 }
 
-#[cfg(feature = "system-audio")]
+#[cfg(all(target_os = "macos", feature = "system-audio"))]
 pub use core_audio_impl::SystemAudioCapture;
 
-#[cfg(not(feature = "system-audio"))]
+#[cfg(not(all(target_os = "macos", feature = "system-audio")))]
 pub use fallback_impl::SystemAudioCapture;
 
-#[cfg(all(test, not(feature = "system-audio")))]
+#[cfg(all(test, not(all(target_os = "macos", feature = "system-audio"))))]
 mod tests {
     use super::*;
 
