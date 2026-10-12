@@ -2506,7 +2506,7 @@ impl Database {
         )?;
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT OR IGNORE INTO meeting_call_names (meeting_id, name, position) VALUES (?1, ?2, ?3)",
+                "INSERT INTO meeting_call_names (meeting_id, name, position) VALUES (?1, ?2, ?3)",
             )?;
             for (position, name) in names.iter().enumerate() {
                 stmt.execute(params![meeting_id, name, position as i64])?;

@@ -749,10 +749,28 @@ interface VoiceProfile {
   updated_at: string;
 }
 
+/** "Names from the call": reads names off the call window's video tiles to
+ * name speakers. On by default; only runs with Screen Recording allowed. */
+function CallNames() {
+  const [enabled, setEnabled] = useBooleanSetting("call_names_enabled", true);
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium">Names from the call</p>
+        <p className="text-sm text-muted-foreground">
+          During a call, read the names on people's video tiles (Zoom, Meet, Teams, …) on this
+          Mac and use them to name speakers. Only the names are kept. Needs Screen Recording
+          permission
+        </p>
+      </div>
+      <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Names from the call" />
+    </div>
+  );
+}
+
 /** "Remember voices": off by default because a voice fingerprint is
  * biometric data. Lists what's remembered, each deletable. */
 function RememberedVoices() {
-  const [callNames, setCallNames] = useBooleanSetting("call_names_enabled", true);
   const [enabled, setEnabled] = useBooleanSetting("remember_voices", false);
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
 
@@ -763,17 +781,6 @@ function RememberedVoices() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium">Names from the call</p>
-          <p className="text-sm text-muted-foreground">
-            During a call, read the names on people's video tiles (Zoom, Meet, Teams, …) on this
-            Mac and use them to name speakers. Only the names are kept. Needs Screen Recording
-            permission
-          </p>
-        </div>
-        <Switch checked={callNames} onCheckedChange={setCallNames} aria-label="Names from the call" />
-      </div>
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium">Remember voices</p>
@@ -1091,6 +1098,7 @@ export function SettingsPage() {
                   />
                 </div>
                 {remoteControlEnabled && <UrlControlLink />}
+                <CallNames />
                 <RememberedVoices />
               </CardContent>
             </Card>

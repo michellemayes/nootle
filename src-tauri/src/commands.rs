@@ -588,22 +588,21 @@ pub async fn start_recording(
         ));
     }
 
-    if crate::snapshots::enabled(&db) {
-        session.set_snapshotter(crate::snapshots::Snapshotter::start(
+    // Names only with Screen Recording already allowed: checking never
+    // prompts, unlike Snapshots, which the user turned on knowingly.
+    let jobs = crate::snapshots::Jobs {
+        snapshots: crate::snapshots::enabled(&db),
+        names: crate::call_names::enabled(&db) && crate::permissions::check_screen_recording(),
+    };
+    if jobs.snapshots || jobs.names {
+        session.set_call_watcher(crate::snapshots::CallWatcher::start(
             db.inner().clone(),
             app.clone(),
             meeting.id.clone(),
             crate::snapshots::dir_for(&recordings_dir, &meeting.id),
             session.is_paused_flag(),
             session.recorded_clock(),
-        ));
-    }
-    // Only with Screen Recording already allowed: checking never prompts.
-    if crate::call_names::enabled(&db) && crate::permissions::check_screen_recording() {
-        session.set_call_name_reader(crate::call_names::CallNameReader::start(
-            db.inner().clone(),
-            meeting.id.clone(),
-            session.is_paused_flag(),
+            jobs,
         ));
     }
 
@@ -1067,14 +1066,10 @@ pub async fn stop_recording(
 
     let meeting_id = session.meeting_id().to_string();
     let audio_path = session.audio_path().to_string_lossy().to_string();
-    // Snapshots finish first so they're all stored before the transcript
-    // (and so post-meeting summaries) is complete.
-    if let Some(snapshotter) = session.take_snapshotter() {
-        let _ = tokio::task::spawn_blocking(move || snapshotter.stop()).await;
-    }
-    // Likewise the call's names, before the speaker pass reads them.
-    if let Some(reader) = session.take_call_name_reader() {
-        let _ = tokio::task::spawn_blocking(move || reader.stop()).await;
+    // Snapshots and the call's names finish first so they're all stored
+    // before the speaker pass and post-meeting summaries read them.
+    if let Some(watcher) = session.take_call_watcher() {
+        let _ = tokio::task::spawn_blocking(move || watcher.stop()).await;
     }
     session.stop();
 
@@ -2086,10 +2081,20 @@ pub async fn set_app_setting(
         .map_err(|e| e.to_string())
 }
 
-/// Names read off the meeting's call window, offered when renaming a speaker.
+/// Names read off the meeting's call window that no speaker has yet,
+/// offered when renaming a speaker.
 #[tauri::command(async)]
 pub fn get_call_names(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<String>, String> {
-    db.get_call_names(&meeting_id).map_err(|e| e.to_string())
+    let speakers: Vec<String> = db
+        .get_transcript(&meeting_id)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|s| s.speaker_label)
+        .collect();
+    let names = crate::call_names::for_meeting(&db, &meeting_id);
+    Ok(crate::call_names::unclaimed(&names, &speakers)
+        .cloned()
+        .collect())
 }
 
 #[tauri::command(async)]

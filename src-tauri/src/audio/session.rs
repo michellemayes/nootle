@@ -78,8 +78,7 @@ pub struct RecordingSession {
     audio_tx: Option<mpsc::Sender<AudioChunk>>,
     audio_rx: Option<mpsc::Receiver<AudioChunk>>,
     capture_handle: Option<std::thread::JoinHandle<()>>,
-    snapshotter: Option<crate::snapshots::Snapshotter>,
-    call_name_reader: Option<crate::call_names::CallNameReader>,
+    call_watcher: Option<crate::snapshots::CallWatcher>,
 }
 
 impl RecordingSession {
@@ -106,8 +105,7 @@ impl RecordingSession {
             audio_tx: Some(audio_tx),
             audio_rx: Some(audio_rx),
             capture_handle: None,
-            snapshotter: None,
-            call_name_reader: None,
+            call_watcher: None,
         })
     }
 
@@ -186,20 +184,12 @@ impl RecordingSession {
         self.capture_handle.take()
     }
 
-    pub fn set_snapshotter(&mut self, snapshotter: crate::snapshots::Snapshotter) {
-        self.snapshotter = Some(snapshotter);
+    pub fn set_call_watcher(&mut self, watcher: crate::snapshots::CallWatcher) {
+        self.call_watcher = Some(watcher);
     }
 
-    pub fn take_snapshotter(&mut self) -> Option<crate::snapshots::Snapshotter> {
-        self.snapshotter.take()
-    }
-
-    pub fn set_call_name_reader(&mut self, reader: crate::call_names::CallNameReader) {
-        self.call_name_reader = Some(reader);
-    }
-
-    pub fn take_call_name_reader(&mut self) -> Option<crate::call_names::CallNameReader> {
-        self.call_name_reader.take()
+    pub fn take_call_watcher(&mut self) -> Option<crate::snapshots::CallWatcher> {
+        self.call_watcher.take()
     }
 
     pub fn take_audio_tx(&mut self) -> Option<mpsc::Sender<AudioChunk>> {

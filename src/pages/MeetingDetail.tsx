@@ -28,6 +28,7 @@ import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
 import { useScratchPad } from "@/hooks/useScratchPad";
 import { useSnapshots } from "@/hooks/useSnapshots";
+import { useCallNames } from "@/hooks/useCallNames";
 import { SnapshotsSection } from "@/components/SnapshotsSection";
 import { toast } from "@/components/Toaster";
 import {
@@ -1124,16 +1125,7 @@ export function MeetingDetail() {
   }, [meeting, titleDraft, refreshMeeting]);
 
   // Names read off the call window, offered while renaming a speaker.
-  const editingSpeaker = speakerEdit !== null;
-  const [callNames, setCallNames] = useState<string[]>([]);
-  useEffect(() => {
-    if (!editingSpeaker || !id) return;
-    invoke<string[]>("get_call_names", { meetingId: id }).then(setCallNames).catch(() => {});
-  }, [editingSpeaker, id]);
-  const speakerSuggestions = useMemo(() => {
-    const used = new Set(segments.map((s) => s.speaker_label));
-    return callNames.filter((name) => !used.has(name));
-  }, [callNames, segments]);
+  const speakerSuggestions = useCallNames(id ?? null, speakerEdit !== null);
 
   const handleSpeakerRename = useCallback(async (name?: string) => {
     if (!speakerEdit) return;
@@ -1561,19 +1553,20 @@ export function MeetingDetail() {
                                 autoFocus
                               />
                               {speakerSuggestions.map((name) => (
-                                <button
+                                <Button
                                   key={name}
-                                  type="button"
+                                  variant="outline"
+                                  size="xs"
                                   // Before the input's blur saves the draft.
                                   onMouseDown={(e) => {
                                     e.preventDefault();
                                     handleSpeakerRename(name);
                                   }}
                                   title={`Seen in the call: rename ${seg.speaker_label} to ${name}`}
-                                  className="mr-1.5 rounded-full border px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                                  className="mr-1.5"
                                 >
                                   {name}
-                                </button>
+                                </Button>
                               ))}
                               </>
                             ) : (

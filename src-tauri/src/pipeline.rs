@@ -374,7 +374,7 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
 
     // Remembered voices name who they can; then the names read off the
     // call window may name the one voice left.
-    let call_names = db.get_call_names(meeting_id).unwrap_or_default();
+    let call_names = crate::call_names::for_meeting(db, meeting_id);
     let mut named_from_call = None;
     let (labels, speaker_voices) = assign_speakers(&segments, &sources, &voices, |centroids| {
         let mut names = crate::voices::recognize(db, centroids);

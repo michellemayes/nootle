@@ -298,15 +298,25 @@ fn format_context(snapshots: &[Snapshot]) -> String {
 // Running alongside a recording
 // ---------------------------------------------------------------------------
 
-/// Background capture for one recording. Stopping waits for the thread so
-/// every snapshot is stored before post-meeting processing reads them.
-pub struct Snapshotter {
+/// What the call watcher does during a recording.
+#[derive(Clone, Copy)]
+pub struct Jobs {
+    /// Keep pictures of what's shared on screen.
+    pub snapshots: bool,
+    /// Read people's names off the call window (see [`crate::call_names`]).
+    pub names: bool,
+}
+
+/// Background capture of the meeting window for one recording. Stopping
+/// waits for the thread so every snapshot and name is stored before
+/// post-meeting processing reads them.
+pub struct CallWatcher {
     /// Dropping it wakes and ends the thread.
     stop: mpsc::Sender<()>,
     handle: std::thread::JoinHandle<()>,
 }
 
-impl Snapshotter {
+impl CallWatcher {
     pub fn start(
         db: Arc<Database>,
         app: tauri::AppHandle,
@@ -314,6 +324,7 @@ impl Snapshotter {
         dir: PathBuf,
         is_paused: Arc<AtomicBool>,
         clock: RecordedClock,
+        jobs: Jobs,
     ) -> Self {
         let (stop, stopped) = mpsc::channel();
         let run = Run {
@@ -325,17 +336,20 @@ impl Snapshotter {
             clock,
             stopped,
         };
-        let handle = std::thread::spawn(move || run.run());
+        let handle = std::thread::spawn(move || run.run(jobs));
         Self { stop, handle }
     }
 
     pub fn stop(self) {
         drop(self.stop);
         if self.handle.join().is_err() {
-            tracing::error!("Snapshot thread panicked");
+            tracing::error!("Call watcher thread panicked");
         }
     }
 }
+
+/// Names are read every this many polls: who's in a call changes slowly.
+const NAME_POLLS: u32 = 3;
 
 struct Run {
     db: Arc<Database>,
@@ -347,52 +361,81 @@ struct Run {
     stopped: mpsc::Receiver<()>,
 }
 
+/// Where snapshot-taking is up to across polls.
+#[derive(Default)]
+struct SnapshotState {
+    gate: ChangeGate,
+    last_words: HashSet<String>,
+    taken: usize,
+    own_share: bool,
+}
+
 impl Run {
-    fn run(self) {
+    fn run(self, mut jobs: Jobs) {
         let mut capturer = match platform::Capturer::new() {
             Ok(c) => c,
             Err(e) => {
-                tracing::warn!("Snapshots unavailable: {e:#}");
+                tracing::warn!("Meeting window capture unavailable: {e:#}");
                 return;
             }
         };
-        if let Err(e) = std::fs::create_dir_all(&self.dir) {
-            tracing::warn!("Can't create snapshot folder: {e}");
+        if jobs.snapshots {
+            if let Err(e) = std::fs::create_dir_all(&self.dir) {
+                tracing::warn!("Can't create snapshot folder: {e}");
+                jobs.snapshots = false;
+            }
+        }
+
+        let mut snapshots = SnapshotState::default();
+        let mut names = jobs.names.then(crate::call_names::NameReader::default);
+        let mut polls: u32 = 0;
+        while self.wait() {
+            polls = polls.wrapping_add(1);
+            if jobs.snapshots && snapshots.taken < MAX_PER_MEETING {
+                self.snapshot(&mut capturer, &mut snapshots);
+            }
+            if let Some(names) = names.as_mut().filter(|_| polls.is_multiple_of(NAME_POLLS)) {
+                if let Some(frame) = self.capture(&mut capturer, crate::call_names::CAPTURE_EDGE) {
+                    names.read(&self.db, &self.meeting_id, &frame);
+                }
+            }
+        }
+        if jobs.snapshots {
+            tracing::info!(
+                "Took {} snapshots for meeting {}",
+                snapshots.taken,
+                self.meeting_id
+            );
+        }
+    }
+
+    /// One poll of snapshot-taking: a small frame to see whether the view
+    /// has settled on something new, then a full one to read and keep.
+    fn snapshot(&self, capturer: &mut platform::Capturer, state: &mut SnapshotState) {
+        let Some(thumb) = self.capture(capturer, THUMB_EDGE) else {
+            state.gate.reset();
+            return;
+        };
+        // Switching to or from the user's own share starts over, so the
+        // new view must hold still across two polls before it's read.
+        if thumb.own_share != state.own_share {
+            state.own_share = thumb.own_share;
+            state.gate.reset();
+        }
+        let Ok(sig) = Signature::from_image(&thumb.jpeg) else {
+            return;
+        };
+        if !state.gate.observe(sig) {
             return;
         }
-
-        let mut gate = ChangeGate::default();
-        let mut last_words = HashSet::new();
-        let mut taken = 0;
-        let mut own_share = false;
-
-        while self.wait() && taken < MAX_PER_MEETING {
-            let Some(thumb) = self.capture(&mut capturer, THUMB_EDGE) else {
-                gate.reset();
-                continue;
-            };
-            // Switching to or from the user's own share starts over, so the
-            // new view must hold still across two polls before it's read.
-            if thumb.own_share != own_share {
-                own_share = thumb.own_share;
-                gate.reset();
-            }
-            let Ok(sig) = Signature::from_image(&thumb.jpeg) else {
-                continue;
-            };
-            if !gate.observe(sig) {
-                continue;
-            }
-            let Some(frame) = self.capture(&mut capturer, SNAPSHOT_EDGE) else {
-                continue;
-            };
-            match self.examine(&frame, &mut last_words) {
-                Ok(true) => taken += 1,
-                Ok(false) => {}
-                Err(e) => tracing::warn!("Snapshot failed: {e:#}"),
-            }
+        let Some(frame) = self.capture(capturer, SNAPSHOT_EDGE) else {
+            return;
+        };
+        match self.examine(&frame, &mut state.last_words) {
+            Ok(true) => state.taken += 1,
+            Ok(false) => {}
+            Err(e) => tracing::warn!("Snapshot failed: {e:#}"),
         }
-        tracing::info!("Took {taken} snapshots for meeting {}", self.meeting_id);
     }
 
     /// Sleep until the next poll. False once the recording has stopped.
@@ -413,7 +456,7 @@ impl Run {
         capturer
             .capture_meeting_window(&call, max_edge)
             .unwrap_or_else(|e| {
-                tracing::debug!("Snapshot capture failed: {e:#}");
+                tracing::debug!("Meeting window capture failed: {e:#}");
                 None
             })
     }
@@ -446,13 +489,11 @@ impl Run {
     }
 }
 
-/// A line of text read off an image, with where it sits as fractions of
-/// the image's size (Vision's coordinates: the origin is bottom-left).
+/// A line of text read off an image, with its size as fractions of the
+/// image's.
 #[derive(Debug, Clone)]
 pub struct TextLine {
     pub text: String,
-    pub x: f64,
-    pub y: f64,
     pub width: f64,
     pub height: f64,
 }
@@ -608,7 +649,7 @@ pub(crate) mod platform {
     }
 
     /// Each line of text in the image and where it is, top to bottom.
-    pub fn recognize_lines(path: &Path) -> anyhow::Result<Vec<TextLine>> {
+    fn recognize_lines(path: &Path) -> anyhow::Result<Vec<TextLine>> {
         let url = ns::Url::with_fs_path_str(&path.to_string_lossy(), false);
         let handler = vn::ImageRequestHandler::with_url(&url, None);
         let mut request = vn::RecognizeTextRequest::new();
@@ -626,16 +667,24 @@ pub(crate) mod platform {
             .iter()
             .filter_map(|obs| {
                 let text = obs.top_candidates(1).first()?.string().to_string();
-                let rect = obs.bounding_box();
+                let size = obs.bounding_box().size;
                 Some(TextLine {
                     text,
-                    x: rect.origin.x,
-                    y: rect.origin.y,
-                    width: rect.size.width,
-                    height: rect.size.height,
+                    width: size.width,
+                    height: size.height,
                 })
             })
             .collect())
+    }
+
+    /// Each line of text in a JPEG, top to bottom. Vision reads from a file,
+    /// so the image passes through a temporary one.
+    pub fn recognize_jpeg(jpeg: &[u8]) -> anyhow::Result<Vec<TextLine>> {
+        let path = std::env::temp_dir().join(format!("nootle-{}.jpg", uuid::Uuid::new_v4()));
+        std::fs::write(&path, jpeg)?;
+        let lines = recognize_lines(&path);
+        let _ = std::fs::remove_file(&path);
+        lines
     }
 
     /// The Mac account's full name, e.g. "Priya Patel".
@@ -671,7 +720,7 @@ pub(crate) mod platform {
         Ok(String::new())
     }
 
-    pub fn recognize_lines(_path: &Path) -> anyhow::Result<Vec<TextLine>> {
+    pub fn recognize_jpeg(_jpeg: &[u8]) -> anyhow::Result<Vec<TextLine>> {
         Ok(Vec::new())
     }
 

@@ -9,20 +9,15 @@
 //! each voice named this way is learned for later calls on any app.
 
 use crate::db::Database;
-use crate::snapshots::{platform, shows_screen_share, TextLine};
+use crate::snapshots::{platform, shows_screen_share, Capture, TextLine};
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
-use std::time::Duration;
 
 /// App setting that turns reading names from the call window on. On unless
 /// set to "false"; it only runs when Screen Recording is already allowed.
 pub const SETTING_KEY: &str = "call_names_enabled";
 
-/// How often the meeting window is read.
-const POLL_INTERVAL: Duration = Duration::from_secs(8);
 /// Longest edge of the frame read: enough for small name labels.
-const CAPTURE_EDGE: f64 = 1600.0;
+pub const CAPTURE_EDGE: f64 = 1600.0;
 /// A name counts once it has been on screen this many times and in this
 /// share of looks, so passing text (a chat message, a notification) isn't
 /// taken for someone in the call.
@@ -198,16 +193,13 @@ impl Roster {
         }
     }
 
-    /// Names that stayed on screen, most seen first, leaving out `you` and
-    /// anything matching `exclude` (e.g. the meeting's own title).
-    pub fn names(&self, you: &str, exclude: &str) -> Vec<String> {
+    /// Names that stayed on screen, most seen first, leaving out `you`.
+    pub fn names(&self, you: &str) -> Vec<String> {
         let mut names: Vec<&(String, u32)> = self
             .seen
             .values()
             .filter(|(_, n)| *n >= MIN_SIGHTINGS && *n as f64 >= MIN_SHARE * self.looks as f64)
-            .filter(|(name, _)| {
-                !same_person(name, you) && !name.eq_ignore_ascii_case(exclude.trim())
-            })
+            .filter(|(name, _)| !same_person(name, you))
             .collect();
         names.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         names.into_iter().map(|(name, _)| name.clone()).collect()
@@ -218,6 +210,28 @@ impl Roster {
 // Naming the meeting's voices
 // ---------------------------------------------------------------------------
 
+/// The names read off a meeting's call window, leaving out its title (some
+/// apps show it in name-sized text).
+pub fn for_meeting(db: &Database, meeting_id: &str) -> Vec<String> {
+    let title = db
+        .get_meeting(meeting_id)
+        .map(|m| m.title)
+        .unwrap_or_default();
+    let mut names = db.get_call_names(meeting_id).unwrap_or_default();
+    names.retain(|n| !n.eq_ignore_ascii_case(title.trim()));
+    names
+}
+
+/// The call's names that aren't any of `speakers` yet: who's left to name.
+pub fn unclaimed<'a>(
+    call_names: &'a [String],
+    speakers: &'a [String],
+) -> impl Iterator<Item = &'a String> {
+    call_names
+        .iter()
+        .filter(|name| !speakers.iter().any(|s| same_person(s, name)))
+}
+
 /// Puts a name from the call on a voice nobody recognised, when exactly one
 /// voice is unnamed and exactly one person in the call is unaccounted for.
 /// Anything less certain is left as "Speaker N" for the user to name (the
@@ -226,10 +240,9 @@ impl Roster {
 pub fn fill_in(names: &mut [Option<String>], call_names: &[String]) -> Option<usize> {
     let mut unnamed = (0..names.len()).filter(|&i| names[i].is_none());
     let voice = unnamed.next().filter(|_| unnamed.next().is_none())?;
-    let mut unclaimed = call_names
-        .iter()
-        .filter(|candidate| !names.iter().flatten().any(|n| same_person(n, candidate)));
-    let name = unclaimed.next().filter(|_| unclaimed.next().is_none())?;
+    let named: Vec<String> = names.iter().flatten().cloned().collect();
+    let mut left = unclaimed(call_names, &named);
+    let name = left.next().filter(|_| left.next().is_none())?;
     names[voice] = Some(name.clone());
     Some(voice)
 }
@@ -238,87 +251,47 @@ pub fn fill_in(names: &mut [Option<String>], call_names: &[String]) -> Option<us
 // Running alongside a recording
 // ---------------------------------------------------------------------------
 
-/// Reads names from the call window for one recording. Stopping waits for
-/// the thread so the names are stored before the post-meeting speaker pass.
-pub struct CallNameReader {
-    /// Dropping it wakes and ends the thread.
-    stop: mpsc::Sender<()>,
-    handle: std::thread::JoinHandle<()>,
+/// Reads names off the call window over one recording, storing them as
+/// they change so a meeting recovered after a crash still has them.
+pub struct NameReader {
+    roster: Roster,
+    /// The Mac account's name, to leave the user's own tile out.
+    you: String,
+    stored: Vec<String>,
 }
 
-impl CallNameReader {
-    pub fn start(db: Arc<Database>, meeting_id: String, is_paused: Arc<AtomicBool>) -> Self {
-        let (stop, stopped) = mpsc::channel();
-        let handle = std::thread::spawn(move || run(&db, &meeting_id, &is_paused, &stopped));
-        Self { stop, handle }
-    }
-
-    pub fn stop(self) {
-        drop(self.stop);
-        if self.handle.join().is_err() {
-            tracing::error!("Call name reader panicked");
+impl Default for NameReader {
+    fn default() -> Self {
+        Self {
+            roster: Roster::default(),
+            you: platform::full_user_name(),
+            stored: Vec::new(),
         }
     }
 }
 
-fn run(db: &Database, meeting_id: &str, is_paused: &AtomicBool, stopped: &mpsc::Receiver<()>) {
-    let mut capturer = match platform::Capturer::new() {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::debug!("Call names unavailable: {e:#}");
+impl NameReader {
+    pub fn read(&mut self, db: &Database, meeting_id: &str, frame: &Capture) {
+        // While the user shares their own screen, the frame is that screen,
+        // not anyone's tile.
+        if frame.own_share {
             return;
         }
-    };
-    let you = platform::full_user_name();
-    let path = std::env::temp_dir().join(format!("nootle-call-names-{meeting_id}.jpg"));
-    let mut roster = Roster::default();
-    let mut stored: Vec<String> = Vec::new();
-
-    while matches!(
-        stopped.recv_timeout(POLL_INTERVAL),
-        Err(mpsc::RecvTimeoutError::Timeout)
-    ) {
-        if is_paused.load(Ordering::Acquire) {
-            continue;
-        }
-        let Some(call) = crate::detection::meeting_app_using_mic() else {
-            continue;
-        };
-        // While the user shares their own screen, the capture is of that
-        // screen, not of anyone's tile.
-        let frame = match capturer.capture_meeting_window(&call, CAPTURE_EDGE) {
-            Ok(Some(frame)) if !frame.own_share => frame,
-            Ok(_) => continue,
-            Err(e) => {
-                tracing::debug!("Call name capture failed: {e:#}");
-                continue;
-            }
-        };
-        let lines = std::fs::write(&path, &frame.jpeg)
-            .map_err(anyhow::Error::from)
-            .and_then(|()| platform::recognize_lines(&path));
-        let _ = std::fs::remove_file(&path);
-        match lines {
-            Ok(lines) => roster.observe(&lines),
+        match platform::recognize_jpeg(&frame.jpeg) {
+            Ok(lines) => self.roster.observe(&lines),
             Err(e) => {
                 tracing::debug!("Call name recognition failed: {e:#}");
-                continue;
+                return;
             }
         }
-
-        let title = db
-            .get_meeting(meeting_id)
-            .map(|m| m.title)
-            .unwrap_or_default();
-        let names = roster.names(&you, &title);
-        if names != stored {
+        let names = self.roster.names(&self.you);
+        if names != self.stored {
             match db.set_call_names(meeting_id, &names) {
-                Ok(()) => stored = names,
+                Ok(()) => self.stored = names,
                 Err(e) => tracing::warn!("Couldn't store call names: {e}"),
             }
         }
     }
-    tracing::info!("Read {} names from the call window", stored.len());
 }
 
 #[cfg(test)]
@@ -328,8 +301,6 @@ mod tests {
     fn label(text: &str) -> TextLine {
         TextLine {
             text: text.into(),
-            x: 0.05,
-            y: 0.1,
             width: 0.15,
             height: 0.02,
         }
@@ -386,9 +357,8 @@ mod tests {
             }
             roster.observe(&lines);
         }
-        assert_eq!(roster.names("", ""), ["Priya Patel", "Sam Lee"]);
-        assert_eq!(roster.names("Sam Lee", ""), ["Priya Patel"]);
-        assert_eq!(roster.names("", "priya patel"), ["Sam Lee"]);
+        assert_eq!(roster.names(""), ["Priya Patel", "Sam Lee"]);
+        assert_eq!(roster.names("Sam Lee"), ["Priya Patel"]);
     }
 
     #[test]
@@ -405,7 +375,7 @@ mod tests {
                 label("Roadmap Review"),
             ]);
         }
-        assert_eq!(roster.names("", ""), ["Sam Lee"]);
+        assert_eq!(roster.names(""), ["Sam Lee"]);
     }
 
     #[test]
