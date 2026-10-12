@@ -2,6 +2,7 @@
 //! show what's next, name recordings after the meeting they capture, and
 //! offer the call link.
 
+use crate::db::{Database, MeetingCalendarContext};
 use chrono::{DateTime, Duration, Utc};
 use serde::Serialize;
 
@@ -17,6 +18,10 @@ pub struct CalendarEvent {
     /// Zoom, Meet, Teams, … link found in the event's URL, location or notes.
     pub meeting_url: Option<String>,
     pub attendee_count: usize,
+    /// Names of invitees who have one in the calendar.
+    pub attendees: Vec<String>,
+    /// The event's description, which usually holds the agenda.
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -66,6 +71,61 @@ fn pick_current(events: Vec<CalendarEvent>, now: DateTime<Utc>) -> Option<Calend
         .filter(|(start, end, _)| *start <= now + Duration::minutes(EARLY_START) && *end > now)
         .min_by_key(|(start, _, _)| (*start - now).num_seconds().abs())
         .map(|(_, _, e)| e)
+}
+
+/// The event with this identifier, if it's within a day of now: recordings
+/// are started from the upcoming list, so that's where it will be.
+pub fn event_by_id(id: &str) -> Option<CalendarEvent> {
+    if crate::permissions::check_calendar() != "granted" {
+        return None;
+    }
+    let now = Utc::now();
+    events_between(now - Duration::days(1), now + Duration::days(1))
+        .into_iter()
+        .find(|e| e.id == id)
+}
+
+/// Agendas past this are cut: invites often carry pages of dial-in numbers.
+const MAX_AGENDA_CHARS: usize = 1_500;
+
+impl From<&CalendarEvent> for MeetingCalendarContext {
+    fn from(event: &CalendarEvent) -> Self {
+        MeetingCalendarContext {
+            title: event.title.clone(),
+            attendees: event.attendees.clone(),
+            agenda: event
+                .notes
+                .as_deref()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(|n| crate::ops::truncate_at_word_boundary(n, MAX_AGENDA_CHARS, "…")),
+        }
+    }
+}
+
+/// The calendar event a meeting was recorded for, for an LLM prompt: its
+/// title, who was invited and its agenda. Empty when it had none.
+pub fn context_section(db: &Database, meeting_id: &str) -> String {
+    match db.get_meeting_calendar_context(meeting_id) {
+        Ok(Some(context)) => format_context(&context),
+        _ => String::new(),
+    }
+}
+
+fn format_context(context: &MeetingCalendarContext) -> String {
+    let mut out = format!(
+        "\n\nThe calendar event for this meeting: \"{}\"",
+        context.title
+    );
+    if !context.attendees.is_empty() {
+        out.push_str(&format!("\nInvited: {}", context.attendees.join(", ")));
+    }
+    if let Some(agenda) = &context.agenda {
+        out.push_str(&format!(
+            "\nEvent description (often the agenda):\n{agenda}"
+        ));
+    }
+    out
 }
 
 fn parse(rfc3339: &str) -> Option<DateTime<Utc>> {
@@ -195,6 +255,19 @@ mod eventkit {
                 Some(a) => msg_send![a, count],
                 None => 0,
             };
+            let mut attendee_names = Vec::new();
+            if let Some(list) = attendees.as_ref() {
+                for j in 0..attendee_count {
+                    let participant: *mut AnyObject = msg_send![list, objectAtIndex: j];
+                    if let Some(participant) = participant.as_ref() {
+                        if let Some(name) =
+                            ns_string(msg_send![participant, name]).filter(|n| !n.trim().is_empty())
+                        {
+                            attendee_names.push(name);
+                        }
+                    }
+                }
+            }
 
             let meeting_url = find_meeting_url(
                 [url.as_deref(), location.as_deref(), notes.as_deref()]
@@ -212,6 +285,8 @@ mod eventkit {
                 location,
                 meeting_url,
                 attendee_count,
+                attendees: attendee_names,
+                notes: notes.filter(|n| !n.trim().is_empty()),
             });
         }
         Some(events)
@@ -251,7 +326,35 @@ mod tests {
             location: None,
             meeting_url: None,
             attendee_count: 0,
+            attendees: Vec::new(),
+            notes: None,
         }
+    }
+
+    #[test]
+    fn keeps_a_meetings_calendar_context() {
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(crate::db::NewMeeting {
+                title: "Roadmap".into(),
+                calendar_event_id: Some("e1".into()),
+                template_id: None,
+            })
+            .unwrap();
+        assert_eq!(context_section(&db, &meeting.id), "");
+
+        let mut planning = event("Roadmap review", Utc::now(), 30);
+        planning.attendees = vec!["Ana Lima".into(), "Sam Ortiz".into()];
+        planning.notes = Some(format!("  1. Q3 goals\n2. Hiring  {}", "x ".repeat(2_000)));
+        let context = MeetingCalendarContext::from(&planning);
+        assert!(context.agenda.as_ref().unwrap().chars().count() <= MAX_AGENDA_CHARS + 1);
+        db.save_meeting_calendar_context(&meeting.id, &context)
+            .unwrap();
+
+        let section = context_section(&db, &meeting.id);
+        assert!(section.contains("\"Roadmap review\""));
+        assert!(section.contains("Invited: Ana Lima, Sam Ortiz"));
+        assert!(section.contains("1. Q3 goals\n2. Hiring"));
     }
 
     #[test]

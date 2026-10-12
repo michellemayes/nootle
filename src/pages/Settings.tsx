@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useSearchParams } from "react-router-dom";
+import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -819,6 +819,24 @@ function RememberedVoices() {
   );
 }
 
+/** Live Assist answers questions heard while recording from your documents and past meetings. */
+function LiveAssistSetting() {
+  const [enabled, setEnabled] = useBooleanSetting("live_assist", false);
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium">Live Assist</p>
+        <p className="text-sm text-muted-foreground">
+          While recording, answer questions people ask using your{" "}
+          <RouterLink to="/knowledge" className="underline">knowledge base</RouterLink> and past meetings,
+          with sources. You can always ask Live Assist yourself from the recording screen
+        </p>
+      </div>
+      <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Live Assist" />
+    </div>
+  );
+}
+
 /** Privacy: the consent reminder, its message, and local-only mode. */
 function PrivacyCard() {
   const [reminder, setReminder] = useBooleanSetting("consent_reminder", true);
@@ -1065,6 +1083,7 @@ export function SettingsPage() {
                     aria-label="Snapshots"
                   />
                 </div>
+                <LiveAssistSetting />
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">Allow URL control</p>

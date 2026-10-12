@@ -16,7 +16,9 @@ pub mod extraction;
 pub mod github_cli;
 pub mod http;
 pub mod import;
+pub mod knowledge;
 pub mod linear;
+pub mod live_assist;
 pub mod llm;
 pub mod mcp;
 pub mod meeting_popup;
@@ -339,6 +341,19 @@ pub fn run() {
                     }
                 });
             }
+            // Keep the knowledge base current: a pass shortly after launch,
+            // then every half hour, reading only files that changed.
+            {
+                let handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    loop {
+                        commands::refresh_knowledge(&handle);
+                        tokio::time::sleep(std::time::Duration::from_secs(30 * 60)).await;
+                    }
+                });
+            }
+
             let db_for_detection = app.state::<Arc<db::Database>>().inner().clone();
 
             // Spawn polling task for meeting detection
@@ -490,6 +505,16 @@ pub fn run() {
             commands::save_meeting_notes,
             commands::save_enriched_notes,
             commands::enrich_meeting_notes,
+            commands::list_knowledge_sources,
+            commands::add_knowledge_source,
+            commands::remove_knowledge_source,
+            commands::update_knowledge_source_tags,
+            commands::reindex_knowledge,
+            commands::list_knowledge_documents,
+            commands::list_knowledge_tags,
+            commands::search_knowledge,
+            commands::open_knowledge_document,
+            commands::live_assist,
             commands::compute_meeting_analytics,
             commands::compute_meeting_sentiment,
             commands::get_meeting_analytics,

@@ -190,6 +190,15 @@ struct AskFilterArgs {
     /// Only search meetings on or before this date (YYYY-MM-DD)
     #[arg(long)]
     to: Option<String>,
+    /// Search meetings only, leaving out knowledge-base documents
+    #[arg(long, conflicts_with = "knowledge_only")]
+    meetings_only: bool,
+    /// Search knowledge-base documents only
+    #[arg(long)]
+    knowledge_only: bool,
+    /// Only documents from knowledge sources with this tag; repeatable
+    #[arg(long = "tag")]
+    tags: Vec<String>,
 }
 
 #[derive(Subcommand)]
@@ -984,6 +993,12 @@ fn ask(
         label_ids: ops::find_label_ids(db, &filters.labels)?,
         date_from: filters.from.clone(),
         date_to: filters.to.clone(),
+        scope: match (filters.meetings_only, filters.knowledge_only) {
+            (true, _) => ops::AskScope::Meetings,
+            (_, true) => ops::AskScope::Knowledge,
+            _ => ops::AskScope::All,
+        },
+        tags: filters.tags.clone(),
     };
     let embedding = ops::embed_question(&mut ops::load_embedding_engine()?, question)?;
     let (llm, provider, model) = llm(db, llm_args)?;
@@ -1676,7 +1691,7 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
         }
         MeetingsAction::EnrichNotes { id, llm: llm_args } => {
             let (llm, provider, model) = llm(db, llm_args)?;
-            let enriched = block_on(ops::enrich_notes(db, &llm, id, &provider, &model))?;
+            let enriched = block_on(ops::enrich_notes(db, &llm, id, &provider, &model, None))?;
             print_text("enriched_notes", &enriched, pretty);
         }
     }

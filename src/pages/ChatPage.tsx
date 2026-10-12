@@ -15,7 +15,8 @@ import { useChatConversations, useChatMessages } from "@/hooks/useChatHistory";
 import { useLabels } from "@/hooks/useLabels";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useCompactMode } from "@/contexts/CompactModeContext";
-import type { ChatSource, GlobalChatResponse } from "@/types";
+import { useKnowledgeTags } from "@/hooks/useKnowledge";
+import type { AskScope, ChatSource, GlobalChatResponse } from "@/types";
 import { Plus, Trash2, MessageSquare, PanelLeftOpen, PanelLeftClose } from "lucide-react";
 import { SourceCitation } from "@/components/SourceCitation";
 
@@ -39,6 +40,9 @@ export function ChatPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [selectedLabel, setSelectedLabel] = useState("");
+  const [scope, setScope] = useState<AskScope>("all");
+  const [selectedTag, setSelectedTag] = useState("");
+  const knowledgeTags = useKnowledgeTags();
   const [dateFromValue, setDateFromValue] = useState("");
   const [dateToValue, setDateToValue] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -97,6 +101,8 @@ export function ChatPage() {
         labelIds: selectedLabel ? [selectedLabel] : [],
         dateFrom: getDateFrom(),
         dateTo: getDateTo(),
+        scope,
+        tags: selectedTag ? [selectedTag] : [],
       });
       await Promise.all([refreshMessages(), refreshConvos()]);
     } catch (err) {
@@ -248,6 +254,31 @@ export function ChatPage() {
           )}
           <Select
             size="xs"
+            value={scope}
+            onChange={(e) => setScope(e.target.value as AskScope)}
+            aria-label="Answer from"
+          >
+            <option value="all">Meetings &amp; documents</option>
+            <option value="meetings">Meetings only</option>
+            <option value="knowledge">Documents only</option>
+          </Select>
+          {scope !== "meetings" && knowledgeTags.length > 0 && (
+            <Select
+              size="xs"
+              value={selectedTag}
+              onChange={(e) => setSelectedTag(e.target.value)}
+              aria-label="Filter documents by tag"
+            >
+              <option value="">All document tags</option>
+              {knowledgeTags.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </Select>
+          )}
+          {scope !== "knowledge" && (
+          <>
+          <Select
+            size="xs"
             value={selectedLabel}
             onChange={(e) => setSelectedLabel(e.target.value)}
             aria-label="Filter by label"
@@ -272,6 +303,8 @@ export function ChatPage() {
             className="h-7 w-auto px-2 text-xs"
             aria-label="To date"
           />
+          </>
+          )}
         </div>
 
         {/* Messages area */}
@@ -279,7 +312,7 @@ export function ChatPage() {
           <EmptyState
             icon={MessageSquare}
             title="No conversation selected"
-            description="Ask questions across all of your meetings. Answers cite the meetings they came from."
+            description="Ask questions across your meetings and documents. Answers cite the meetings and documents they came from."
             action={
               <Button size="sm" onClick={handleNewConversation}>
                 <Plus /> New conversation
@@ -292,7 +325,7 @@ export function ChatPage() {
               {dbMessages.length === 0 && !pendingHere && (
                 <div className="mx-auto flex h-full w-full max-w-md">
                   <SuggestedPrompts
-                    intro="Ask a question across all of your meetings."
+                    intro="Ask a question across your meetings and documents."
                     prompts={LIBRARY_PROMPTS}
                     onPick={(prompt) => handleSend(prompt)}
                     disabled={loading || !selectedProvider || !selectedModel}
@@ -313,7 +346,7 @@ export function ChatPage() {
                             <SourceCitation
                               key={i}
                               source={s}
-                              onClick={() => navigate(`/meeting/${s.meeting_id}`)}
+                              onOpenMeeting={(id) => navigate(`/meeting/${id}`)}
                             />
                           ))}
                         </div>
@@ -342,7 +375,7 @@ export function ChatPage() {
                 </p>
               ) : (
                 <ChatComposer
-                  placeholder="Ask about your meetings…"
+                  placeholder="Ask about your meetings and documents…"
                   value={input}
                   onChange={setInput}
                   onSend={() => handleSend()}

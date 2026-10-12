@@ -664,6 +664,110 @@ export const LIVE_TRANSCRIPT = TRANSCRIPT.slice(0, 6).map((s) => ({
   meeting_id: "m-live",
 }));
 
+const KNOWLEDGE_SOURCES = [
+  {
+    id: "ks-research",
+    kind: "folder",
+    location: "/Users/sam/Documents/Onboarding Research",
+    name: "Onboarding Research",
+    tags: ["Onboarding", "Research"],
+    status: "ready",
+    error: null,
+    last_indexed_at: day(28, 9, 0),
+    created_at: day(20, 9, 0),
+    document_count: 14,
+  },
+  {
+    id: "ks-metrics",
+    kind: "file",
+    location: "/Users/sam/Documents/Q3 Funnel Metrics.xlsx",
+    name: "Q3 Funnel Metrics.xlsx",
+    tags: ["Onboarding"],
+    status: "ready",
+    error: null,
+    last_indexed_at: day(28, 9, 0),
+    created_at: day(22, 9, 0),
+    document_count: 1,
+  },
+  {
+    id: "ks-guidelines",
+    kind: "url",
+    location: "https://developer.apple.com/design/human-interface-guidelines/privacy",
+    name: "developer.apple.com/design/human-interface-guidelines/privacy",
+    tags: [],
+    status: "ready",
+    error: null,
+    last_indexed_at: day(28, 9, 0),
+    created_at: day(24, 9, 0),
+    document_count: 1,
+  },
+];
+
+const KNOWLEDGE_DOCUMENTS = [
+  {
+    id: "kd-study",
+    source_id: "ks-research",
+    location: "/Users/sam/Documents/Onboarding Research/Usability study — permissions.pdf",
+    title: "Usability study — permissions",
+    kind: "pdf",
+    indexed_at: day(28, 9, 0),
+    chunk_count: 18,
+  },
+  {
+    id: "kd-deck",
+    source_id: "ks-research",
+    location: "/Users/sam/Documents/Onboarding Research/Onboarding v2 review.pptx",
+    title: "Onboarding v2 review",
+    kind: "pptx",
+    indexed_at: day(28, 9, 0),
+    chunk_count: 12,
+  },
+];
+
+const KNOWLEDGE_HITS = [
+  {
+    chunk_id: "kc-1",
+    document_id: "kd-study",
+    document_title: "Usability study — permissions",
+    document_kind: "pdf",
+    location: KNOWLEDGE_DOCUMENTS[0].location,
+    locator: "Page 4",
+    text: "7 of 12 participants hesitated at the screen-recording prompt. Most opened the docs link and did not come back; the three who saw a one-line explanation above the button all continued.",
+    source_name: "Onboarding Research",
+    tags: ["Onboarding", "Research"],
+  },
+  {
+    chunk_id: "kc-2",
+    document_id: "kd-deck",
+    document_title: "Onboarding v2 review",
+    document_kind: "pptx",
+    location: KNOWLEDGE_DOCUMENTS[1].location,
+    locator: "Slide 6",
+    text: "Permissions step: 31% drop-off (was 24% in v1). Hypothesis: the docs link pulls people out of the flow.",
+    source_name: "Onboarding Research",
+    tags: ["Onboarding", "Research"],
+  },
+];
+
+const LIVE_ASSIST_CARD = {
+  id: "la-1",
+  question: "What did the usability study find about the permissions screen?",
+  answer:
+    "7 of 12 participants hesitated at the screen-recording prompt, and everyone who saw a one-line explanation above the button continued [Usability study — permissions, Page 4].",
+  sources: [
+    {
+      type: "document",
+      document_id: "kd-study",
+      document_title: "Usability study — permissions",
+      document_kind: "pdf",
+      locator: "Page 4",
+      location: KNOWLEDGE_DOCUMENTS[0].location,
+      snippet: KNOWLEDGE_HITS[0].text,
+    },
+  ],
+  automatic: true,
+};
+
 /**
  * Command name -> response. Anything not listed here resolves to `null`, which
  * is enough for the fire-and-forget commands the screenshots never trigger.
@@ -702,6 +806,12 @@ export const FIXTURES = {
 
   list_chat_conversations: CONVERSATIONS,
   list_chat_messages: CHAT_MESSAGES,
+
+  list_knowledge_sources: KNOWLEDGE_SOURCES,
+  list_knowledge_tags: ["Onboarding", "Research"],
+  list_knowledge_documents: KNOWLEDGE_DOCUMENTS,
+  search_knowledge: KNOWLEDGE_HITS,
+  live_assist: LIVE_ASSIST_CARD,
   get_embedding_status: { embedded: 6, total: 6, model_available: true },
 
   list_llm_models: MODELS,

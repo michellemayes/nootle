@@ -283,9 +283,9 @@ export function GlobalChatPanel() {
                             <SourceCitation
                               key={j}
                               source={source}
-                              onClick={() => {
+                              onOpenMeeting={(id) => {
                                 setOpen(false);
-                                navigate(`/meeting/${source.meeting_id}`);
+                                navigate(`/meeting/${id}`);
                               }}
                             />
                           ))}
@@ -311,7 +311,7 @@ export function GlobalChatPanel() {
             {/* Input */}
             <ChatComposer
               className="p-3"
-              placeholder="Ask about your meetings…"
+              placeholder="Ask about your meetings and documents…"
               value={input}
               onChange={setInput}
               onSend={() => handleSend()}

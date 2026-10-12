@@ -34,9 +34,11 @@ pub fn format_transcript(segments: &[TranscriptSegment]) -> String {
 }
 
 /// The transcript as the LLM reads it: speech, then any text read off shared
-/// screens (see `snapshots`).
+/// screens (see `snapshots`), then the meeting's calendar event.
 fn llm_transcript(db: &Database, meeting_id: &str, segments: &[TranscriptSegment]) -> String {
-    format_transcript(segments) + &crate::snapshots::context_section(db, meeting_id)
+    format_transcript(segments)
+        + &crate::snapshots::context_section(db, meeting_id)
+        + &crate::calendar::context_section(db, meeting_id)
 }
 
 /// How much transcript a provider reads in one prompt before it's condensed

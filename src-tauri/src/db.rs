@@ -362,12 +362,198 @@ fn bytes_to_f32s(bytes: &[u8]) -> Vec<f32> {
     chunks.iter().map(|b| f32::from_le_bytes(*b)).collect()
 }
 
-/// Filters for questions asked across all meetings.
+/// Filters for questions asked across all meetings and the knowledge base.
+/// Label and date filters narrow meetings; `tags` narrows documents.
 #[derive(Debug, Default)]
 pub struct AskFilters {
     pub label_ids: Vec<String>,
     pub date_from: Option<String>,
     pub date_to: Option<String>,
+    pub scope: AskScope,
+    pub tags: Vec<String>,
+}
+
+/// What a question is answered from.
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum AskScope {
+    #[default]
+    All,
+    Meetings,
+    Knowledge,
+}
+
+impl AskScope {
+    pub fn meetings(self) -> bool {
+        self != AskScope::Knowledge
+    }
+    pub fn knowledge(self) -> bool {
+        self != AskScope::Meetings
+    }
+}
+
+/// A folder, file or web page in the knowledge base.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeSource {
+    pub id: String,
+    /// "folder", "file" or "url".
+    pub kind: String,
+    /// A path, or a URL for web pages.
+    pub location: String,
+    pub name: String,
+    pub tags: Vec<String>,
+    /// "pending", "indexing", "ready" or "error".
+    pub status: String,
+    pub error: Option<String>,
+    pub last_indexed_at: Option<String>,
+    pub created_at: String,
+    pub document_count: i64,
+}
+
+/// One indexed file or page of a knowledge source.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeDocument {
+    pub id: String,
+    pub source_id: String,
+    pub location: String,
+    pub title: String,
+    /// The format: "pdf", "docx", "pptx", "xlsx", "markdown", "text", "web", …
+    pub kind: String,
+    /// Size and modification time, to skip unchanged files cheaply.
+    pub signature: String,
+    pub content_hash: String,
+    pub indexed_at: String,
+    pub chunk_count: i64,
+}
+
+/// A document as it's (re)indexed.
+#[derive(Debug, Clone, Copy)]
+pub struct NewKnowledgeDocument<'a> {
+    pub source_id: &'a str,
+    pub location: &'a str,
+    pub title: &'a str,
+    pub kind: &'a str,
+    pub signature: &'a str,
+    pub content_hash: &'a str,
+}
+
+/// A passage of a document, ready to store with its embedding.
+#[derive(Debug, Clone)]
+pub struct NewKnowledgeChunk {
+    /// Where in the document: "Page 3", "Slide 2", "Sheet: Budget".
+    pub locator: Option<String>,
+    pub text: String,
+}
+
+/// A knowledge-base passage matching a search.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeHit {
+    pub chunk_id: String,
+    pub document_id: String,
+    pub document_title: String,
+    pub document_kind: String,
+    pub location: String,
+    pub locator: Option<String>,
+    pub text: String,
+    pub source_name: String,
+    pub tags: Vec<String>,
+    /// Vector distance, or BM25 rank for keyword matches (lower is better).
+    pub distance: f64,
+}
+
+/// The calendar event a meeting was recorded for.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct MeetingCalendarContext {
+    pub title: String,
+    pub attendees: Vec<String>,
+    /// The event's notes, which usually hold the agenda.
+    pub agenda: Option<String>,
+}
+
+/// Appends knowledge filters (tags, formats) to a query over sources `s`
+/// and documents `d`.
+fn push_knowledge_filters(
+    sql: &mut String,
+    params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+    tags: &[String],
+    kinds: &[String],
+) {
+    if !tags.is_empty() {
+        let placeholders: Vec<String> = (0..tags.len())
+            .map(|i| format!("?{}", params.len() + i + 1))
+            .collect();
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM json_each(s.tags) WHERE json_each.value IN ({}))",
+            placeholders.join(", ")
+        ));
+        for tag in tags {
+            params.push(Box::new(tag.clone()));
+        }
+    }
+    if !kinds.is_empty() {
+        let placeholders: Vec<String> = (0..kinds.len())
+            .map(|i| format!("?{}", params.len() + i + 1))
+            .collect();
+        sql.push_str(&format!(" AND d.kind IN ({})", placeholders.join(", ")));
+        for kind in kinds {
+            params.push(Box::new(kind.clone()));
+        }
+    }
+}
+
+fn query_knowledge_hits(
+    conn: &Connection,
+    sql: &str,
+    params: &[Box<dyn rusqlite::types::ToSql>],
+) -> Result<Vec<KnowledgeHit>> {
+    let mut stmt = conn.prepare(sql)?;
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let hits = stmt
+        .query_map(param_refs.as_slice(), |row| {
+            Ok(KnowledgeHit {
+                chunk_id: row.get(0)?,
+                document_id: row.get(1)?,
+                document_title: row.get(2)?,
+                document_kind: row.get(3)?,
+                location: row.get(4)?,
+                locator: row.get(5)?,
+                text: row.get(6)?,
+                source_name: row.get(7)?,
+                tags: parse_tags(&row.get::<_, String>(8)?),
+                distance: row.get(9)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(hits)
+}
+
+fn parse_tags(json: &str) -> Vec<String> {
+    serde_json::from_str(json).unwrap_or_default()
+}
+
+const KNOWLEDGE_HIT_COLUMNS: &str =
+    "kc.id, d.id, d.title, d.kind, d.location, kc.locator, kc.text, \
+    s.name, s.tags";
+
+const KNOWLEDGE_SOURCE_COLUMNS: &str = "s.id, s.kind, s.location, s.name, s.tags, s.status, \
+    s.error, s.last_indexed_at, s.created_at, \
+    (SELECT COUNT(*) FROM knowledge_documents d WHERE d.source_id = s.id)";
+
+fn knowledge_source_from_row(row: &rusqlite::Row) -> rusqlite::Result<KnowledgeSource> {
+    Ok(KnowledgeSource {
+        id: row.get(0)?,
+        kind: row.get(1)?,
+        location: row.get(2)?,
+        name: row.get(3)?,
+        tags: parse_tags(&row.get::<_, String>(4)?),
+        status: row.get(5)?,
+        error: row.get(6)?,
+        last_indexed_at: row.get(7)?,
+        created_at: row.get(8)?,
+        document_count: row.get(9)?,
+    })
 }
 
 /// Convert a f32 slice to a little-endian byte vector for sqlite-vec.
@@ -1346,6 +1532,59 @@ impl Database {
                  meeting_id TEXT PRIMARY KEY REFERENCES meetings(id) ON DELETE CASCADE,
                  noted_at TEXT NOT NULL
              );",
+            // 5: the knowledge base (folders, files and web pages you point
+            // Nootle at, searchable alongside meetings), and the calendar
+            // event a meeting was recorded for, so its agenda and attendees
+            // can ground notes and answers.
+            "CREATE TABLE knowledge_sources (
+                 id TEXT PRIMARY KEY,
+                 kind TEXT NOT NULL,
+                 location TEXT NOT NULL UNIQUE,
+                 name TEXT NOT NULL,
+                 tags TEXT NOT NULL DEFAULT '[]',
+                 status TEXT NOT NULL DEFAULT 'pending',
+                 error TEXT,
+                 last_indexed_at TEXT,
+                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
+             );
+             CREATE TABLE knowledge_documents (
+                 id TEXT PRIMARY KEY,
+                 source_id TEXT NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+                 location TEXT NOT NULL,
+                 title TEXT NOT NULL,
+                 kind TEXT NOT NULL,
+                 signature TEXT NOT NULL,
+                 content_hash TEXT NOT NULL,
+                 indexed_at TEXT NOT NULL,
+                 UNIQUE (source_id, location)
+             );
+             CREATE TABLE knowledge_chunks (
+                 id TEXT PRIMARY KEY,
+                 document_id TEXT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+                 chunk_index INTEGER NOT NULL,
+                 locator TEXT,
+                 text TEXT NOT NULL
+             );
+             CREATE INDEX idx_knowledge_chunks_document ON knowledge_chunks(document_id);
+             CREATE VIRTUAL TABLE knowledge_embeddings USING vec0(
+                 chunk_id TEXT PRIMARY KEY,
+                 embedding float[384]
+             );
+             CREATE VIRTUAL TABLE knowledge_fts USING fts5(
+                 text, content='knowledge_chunks', content_rowid='rowid'
+             );
+             CREATE TRIGGER knowledge_chunks_ai AFTER INSERT ON knowledge_chunks BEGIN
+                 INSERT INTO knowledge_fts(rowid, text) VALUES (new.rowid, new.text);
+             END;
+             CREATE TRIGGER knowledge_chunks_ad AFTER DELETE ON knowledge_chunks BEGIN
+                 INSERT INTO knowledge_fts(knowledge_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+             END;
+             CREATE TABLE meeting_calendar_context (
+                 meeting_id TEXT PRIMARY KEY REFERENCES meetings(id) ON DELETE CASCADE,
+                 title TEXT NOT NULL,
+                 attendees TEXT NOT NULL DEFAULT '[]',
+                 agenda TEXT
+             );",
         ];
 
         let current: usize =
@@ -1696,6 +1935,10 @@ impl Database {
         let conn = self.lock_conn()?;
 
         conn.execute("DELETE FROM meetings WHERE id = ?1", params![id])?;
+        conn.execute(
+            "DELETE FROM meeting_calendar_context WHERE meeting_id = ?1",
+            params![id],
+        )?;
 
         Ok(())
     }
@@ -3337,6 +3580,387 @@ impl Database {
             |row| row.get(0),
         )?;
         Ok(count > 0)
+    }
+
+    // ---- Knowledge base ----
+
+    pub fn create_knowledge_source(
+        &self,
+        kind: &str,
+        location: &str,
+        name: &str,
+        tags: &[String],
+    ) -> Result<KnowledgeSource> {
+        let conn = self.lock_conn()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO knowledge_sources (id, kind, location, name, tags, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, kind, location, name, serde_json::to_string(tags)?, now],
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::SqliteFailure(f, _)
+                if f.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                NootleError::Other(format!("{location} is already in your knowledge base"))
+            }
+            e => e.into(),
+        })?;
+        Self::get_knowledge_source_with(&conn, &id)
+    }
+
+    pub fn list_knowledge_sources(&self) -> Result<Vec<KnowledgeSource>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {KNOWLEDGE_SOURCE_COLUMNS} FROM knowledge_sources s ORDER BY s.name COLLATE NOCASE"
+        ))?;
+        let sources = stmt
+            .query_map([], knowledge_source_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(sources)
+    }
+
+    pub fn get_knowledge_source(&self, id: &str) -> Result<KnowledgeSource> {
+        let conn = self.lock_conn()?;
+        Self::get_knowledge_source_with(&conn, id)
+    }
+
+    fn get_knowledge_source_with(conn: &Connection, id: &str) -> Result<KnowledgeSource> {
+        conn.query_row(
+            &format!("SELECT {KNOWLEDGE_SOURCE_COLUMNS} FROM knowledge_sources s WHERE s.id = ?1"),
+            params![id],
+            knowledge_source_from_row,
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                NootleError::Other(format!("Knowledge source {id} not found"))
+            }
+            e => e.into(),
+        })
+    }
+
+    pub fn update_knowledge_source_tags(&self, id: &str, tags: &[String]) -> Result<()> {
+        let conn = self.lock_conn()?;
+        let changed = conn.execute(
+            "UPDATE knowledge_sources SET tags = ?1 WHERE id = ?2",
+            params![serde_json::to_string(tags)?, id],
+        )?;
+        if changed == 0 {
+            return Err(NootleError::Other(format!(
+                "Knowledge source {id} not found"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Records an indexing pass starting ("indexing") or ending ("ready" or
+    /// "error"); a finished pass also stamps `last_indexed_at`.
+    pub fn set_knowledge_source_status(
+        &self,
+        id: &str,
+        status: &str,
+        error: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.lock_conn()?;
+        let finished = (status != "indexing").then(|| chrono::Utc::now().to_rfc3339());
+        conn.execute(
+            "UPDATE knowledge_sources
+             SET status = ?1, error = ?2, last_indexed_at = COALESCE(?3, last_indexed_at)
+             WHERE id = ?4",
+            params![status, error, finished, id],
+        )?;
+        Ok(())
+    }
+
+    /// Deletes a source with its documents, passages and embeddings.
+    pub fn delete_knowledge_source(&self, id: &str) -> Result<()> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM knowledge_embeddings WHERE chunk_id IN (
+                SELECT kc.id FROM knowledge_chunks kc
+                JOIN knowledge_documents d ON d.id = kc.document_id
+                WHERE d.source_id = ?1
+            )",
+            params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM knowledge_chunks WHERE document_id IN (
+                SELECT id FROM knowledge_documents WHERE source_id = ?1
+            )",
+            params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM knowledge_documents WHERE source_id = ?1",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM knowledge_sources WHERE id = ?1", params![id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn list_knowledge_documents(&self, source_id: &str) -> Result<Vec<KnowledgeDocument>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT d.id, d.source_id, d.location, d.title, d.kind, d.signature, d.content_hash,
+                    d.indexed_at,
+                    (SELECT COUNT(*) FROM knowledge_chunks kc WHERE kc.document_id = d.id)
+             FROM knowledge_documents d WHERE d.source_id = ?1
+             ORDER BY d.title COLLATE NOCASE",
+        )?;
+        let docs = stmt
+            .query_map(params![source_id], |row| {
+                Ok(KnowledgeDocument {
+                    id: row.get(0)?,
+                    source_id: row.get(1)?,
+                    location: row.get(2)?,
+                    title: row.get(3)?,
+                    kind: row.get(4)?,
+                    signature: row.get(5)?,
+                    content_hash: row.get(6)?,
+                    indexed_at: row.get(7)?,
+                    chunk_count: row.get(8)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(docs)
+    }
+
+    /// The location of a document, for opening it.
+    pub fn get_knowledge_document_location(&self, id: &str) -> Result<(String, String)> {
+        let conn = self.lock_conn()?;
+        conn.query_row(
+            "SELECT d.location, s.kind FROM knowledge_documents d
+             JOIN knowledge_sources s ON s.id = d.source_id WHERE d.id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                NootleError::Other(format!("Knowledge document {id} not found"))
+            }
+            e => e.into(),
+        })
+    }
+
+    /// Replaces a document's passages and embeddings (adding the document if
+    /// it's new) in one transaction, so a search never sees half of it.
+    pub fn replace_knowledge_document(
+        &self,
+        doc: &NewKnowledgeDocument,
+        chunks: &[(NewKnowledgeChunk, Vec<f32>)],
+    ) -> Result<String> {
+        let NewKnowledgeDocument {
+            source_id,
+            location,
+            title,
+            kind,
+            signature,
+            content_hash,
+        } = *doc;
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        if let Some(old_id) = tx
+            .query_row(
+                "SELECT id FROM knowledge_documents WHERE source_id = ?1 AND location = ?2",
+                params![source_id, location],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+        {
+            Self::delete_knowledge_document_with(&tx, &old_id)?;
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        tx.execute(
+            "INSERT INTO knowledge_documents
+                 (id, source_id, location, title, kind, signature, content_hash, indexed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                id,
+                source_id,
+                location,
+                title,
+                kind,
+                signature,
+                content_hash,
+                chrono::Utc::now().to_rfc3339()
+            ],
+        )?;
+        {
+            let mut insert_chunk = tx.prepare_cached(
+                "INSERT INTO knowledge_chunks (id, document_id, chunk_index, locator, text)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
+            let mut insert_embedding = tx.prepare_cached(
+                "INSERT INTO knowledge_embeddings (chunk_id, embedding) VALUES (?1, ?2)",
+            )?;
+            for (i, (chunk, embedding)) in chunks.iter().enumerate() {
+                let chunk_id = uuid::Uuid::new_v4().to_string();
+                insert_chunk.execute(params![chunk_id, id, i as i64, chunk.locator, chunk.text])?;
+                insert_embedding.execute(params![chunk_id, f32_slice_to_bytes(embedding)])?;
+            }
+        }
+        tx.commit()?;
+        Ok(id)
+    }
+
+    /// Notes that a document changed on disk without its content changing
+    /// (it was touched or copied), so it isn't read again next pass.
+    pub fn update_knowledge_document_signature(&self, id: &str, signature: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE knowledge_documents SET signature = ?1 WHERE id = ?2",
+            params![signature, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_knowledge_document(&self, id: &str) -> Result<()> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        Self::delete_knowledge_document_with(&tx, id)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn delete_knowledge_document_with(conn: &Connection, id: &str) -> Result<()> {
+        conn.execute(
+            "DELETE FROM knowledge_embeddings WHERE chunk_id IN (
+                SELECT id FROM knowledge_chunks WHERE document_id = ?1
+            )",
+            params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM knowledge_chunks WHERE document_id = ?1",
+            params![id],
+        )?;
+        conn.execute("DELETE FROM knowledge_documents WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Whether the knowledge base has anything to search.
+    pub fn has_knowledge(&self) -> Result<bool> {
+        let conn = self.lock_conn()?;
+        Ok(conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM knowledge_chunks)",
+            [],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Every tag used on a knowledge source, alphabetically.
+    pub fn list_knowledge_tags(&self) -> Result<Vec<String>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT json_each.value FROM knowledge_sources, json_each(knowledge_sources.tags)
+             ORDER BY json_each.value COLLATE NOCASE",
+        )?;
+        let tags = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(tags)
+    }
+
+    /// Knowledge passages closest in meaning to `query_embedding`.
+    pub fn search_knowledge_similar(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+        tags: &[String],
+        kinds: &[String],
+    ) -> Result<Vec<KnowledgeHit>> {
+        let conn = self.lock_conn()?;
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
+            vec![Box::new(f32_slice_to_bytes(query_embedding))];
+        // Over-fetch when filtering, as for meetings.
+        let k = if tags.is_empty() && kinds.is_empty() {
+            limit
+        } else {
+            limit * 4
+        };
+        params.push(Box::new(k as i64));
+        let mut sql = format!(
+            "SELECT {KNOWLEDGE_HIT_COLUMNS}, ke.distance
+             FROM knowledge_embeddings ke
+             JOIN knowledge_chunks kc ON kc.id = ke.chunk_id
+             JOIN knowledge_documents d ON d.id = kc.document_id
+             JOIN knowledge_sources s ON s.id = d.source_id
+             WHERE ke.embedding MATCH ?1 AND ke.k = ?2"
+        );
+        push_knowledge_filters(&mut sql, &mut params, tags, kinds);
+        sql.push_str(&format!(
+            " ORDER BY ke.distance LIMIT ?{}",
+            params.len() + 1
+        ));
+        params.push(Box::new(limit as i64));
+        query_knowledge_hits(&conn, &sql, &params)
+    }
+
+    /// Knowledge passages matching any of `query`'s words, best BM25 first.
+    pub fn search_knowledge_keywords(
+        &self,
+        query: &str,
+        limit: usize,
+        tags: &[String],
+        kinds: &[String],
+    ) -> Result<Vec<KnowledgeHit>> {
+        let Some(match_expr) = fts_any_terms(query) else {
+            return Ok(Vec::new());
+        };
+        let conn = self.lock_conn()?;
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(match_expr)];
+        let mut sql = format!(
+            "SELECT {KNOWLEDGE_HIT_COLUMNS}, fts.rank
+             FROM knowledge_fts fts
+             JOIN knowledge_chunks kc ON kc.rowid = fts.rowid
+             JOIN knowledge_documents d ON d.id = kc.document_id
+             JOIN knowledge_sources s ON s.id = d.source_id
+             WHERE knowledge_fts MATCH ?1"
+        );
+        push_knowledge_filters(&mut sql, &mut params, tags, kinds);
+        sql.push_str(&format!(" ORDER BY fts.rank LIMIT ?{}", params.len() + 1));
+        params.push(Box::new(limit as i64));
+        query_knowledge_hits(&conn, &sql, &params)
+    }
+
+    pub fn save_meeting_calendar_context(
+        &self,
+        meeting_id: &str,
+        context: &MeetingCalendarContext,
+    ) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO meeting_calendar_context (meeting_id, title, attendees, agenda)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                meeting_id,
+                context.title,
+                serde_json::to_string(&context.attendees)?,
+                context.agenda
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_meeting_calendar_context(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Option<MeetingCalendarContext>> {
+        let conn = self.lock_conn()?;
+        Ok(conn
+            .query_row(
+                "SELECT title, attendees, agenda FROM meeting_calendar_context WHERE meeting_id = ?1",
+                params![meeting_id],
+                |row| {
+                    Ok(MeetingCalendarContext {
+                        title: row.get(0)?,
+                        attendees: parse_tags(&row.get::<_, String>(1)?),
+                        agenda: row.get(2)?,
+                    })
+                },
+            )
+            .optional()?)
     }
 
     pub fn delete_meeting_chunks(&self, meeting_id: &str) -> Result<()> {

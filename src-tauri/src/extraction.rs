@@ -57,6 +57,7 @@ fn format_transcript(db: &Database, meeting_id: &str) -> anyhow::Result<String> 
     }
     Ok(crate::summarization::format_transcript(&transcript)
         + &crate::snapshots::context_section(db, meeting_id)
+        + &crate::calendar::context_section(db, meeting_id)
         + &crate::dictionary::glossary(db))
 }
 
