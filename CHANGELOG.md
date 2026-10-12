@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-10-12
+
+### Features
+
+- Knowledge base, Live Assist, and smarter note enrichment (#175) ([d378665](https://github.com/michellemayes/nootle/commit/d3786653ae61943ed5263ace17346e508a724ff8))
+
 ## [0.6.0] - 2026-10-12
 
 ### Features
