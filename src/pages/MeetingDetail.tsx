@@ -756,15 +756,37 @@ function NotesPanel({
     );
   };
 
-  if (!rawNotes) {
+  const enrichButton = (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 text-xs"
+        onClick={handleEnrich}
+        disabled={enriching || !selectedProvider || !selectedModel}
+      >
+        <Sparkles className={`h-3 w-3 mr-1 ${enriching ? "animate-pulse" : ""}`} />
+        {enriching ? "Enriching…" : "Enrich with AI"}
+      </Button>
+      {enrichError && <span className="text-xs text-destructive">{enrichError}</span>}
+    </>
+  );
+
+  if (!rawNotes && !enrichedNotes) {
     if (scratchNotes.length > 0 || snapshots.length > 0) {
       return (
-        <ScrollArea className="flex-1">
-          <div className="p-5 space-y-4">
-            {renderQuickNotes()}
-            {snapshotsSection}
-          </div>
-        </ScrollArea>
+        <div className="flex flex-1 flex-col min-h-0">
+          {/* Quick notes alone can be expanded into full notes. */}
+          {scratchNotes.length > 0 && (
+            <div className="flex items-center gap-2 border-b px-5 py-2">{enrichButton}</div>
+          )}
+          <ScrollArea className="flex-1">
+            <div className="p-5 space-y-4">
+              {renderQuickNotes()}
+              {snapshotsSection}
+            </div>
+          </ScrollArea>
+        </div>
       );
     }
     return (
@@ -776,30 +798,14 @@ function NotesPanel({
     );
   }
 
-  const displayContent = enrichedNotes ?? rawNotes;
+  const displayContent = enrichedNotes ?? rawNotes ?? "";
   const hasEnriched = !!enrichedNotes;
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
       {/* Toolbar */}
       <div className="flex items-center gap-2 border-b px-5 py-2">
-        {!hasEnriched && (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 text-xs"
-              onClick={handleEnrich}
-              disabled={enriching || !selectedProvider || !selectedModel}
-            >
-              <Sparkles className={`h-3 w-3 mr-1 ${enriching ? "animate-pulse" : ""}`} />
-              {enriching ? "Enriching…" : "Enrich with AI"}
-            </Button>
-            {enrichError && (
-              <span className="text-xs text-destructive">{enrichError}</span>
-            )}
-          </>
-        )}
+        {!hasEnriched && enrichButton}
         {hasEnriched && rawNotes && (
           <div className="flex rounded-md border text-xs overflow-hidden">
             <button

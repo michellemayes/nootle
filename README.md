@@ -23,7 +23,7 @@
 
 ---
 
-Nootle captures your meetings — microphone and system audio — transcribes them in real time with speaker identification, and lets you chat with an AI about what was said. No cloud recording service needed.
+Nootle captures your meetings — microphone and system audio — transcribes them in real time with speaker identification, and lets you chat with an AI about what was said. Point it at your project folders and docs and it answers questions from those too, even live during a call. No cloud recording service needed.
 
 > **A note on privacy.** Recording and transcription are always local — meeting audio is never uploaded, and transcripts live only on your Mac. AI summaries and chat use whichever LLM provider you point Nootle at: pick **Ollama** (with a local model) to keep everything on-device, or use OpenAI, Anthropic, Google, Groq, OpenRouter, or AWS Bedrock with your own API key. You can also route through the **Claude Code CLI** (`claude -p`) or **Codex CLI** to reuse an existing Claude or ChatGPT subscription instead of an API key. Nootle is fully local end-to-end only when you use a local AI model. Turn on **Local-only mode** (Settings → Privacy) to enforce that: only local models can see meeting content, and workflows won't send anything to integrations.
 
@@ -36,13 +36,14 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 | Tells speakers apart, remembers names | ✅ free | "Me / Them" on desktop | ✅ | Pro |
 | Any AI, including local models (Ollama) or your Claude / ChatGPT subscription | ✅ | ❌ | ❌ | ✅ |
 | Full history as plain files you own | ✅ | Limited free history; encrypted local cache | Paid plans | ✅ |
+| Answers from your own docs, live in the call (local knowledge base) | ✅ | ❌ | ❌ | ❌ |
 | MCP server and CLI for agents | ✅ (read-only mode available) | MCP on paid plans | MCP (enterprise) | — |
 | Open source | ✅ MIT | ❌ | ❌ | Open core |
 | Price | Free | Free / $14 a month | Free / from $8.33 a month | Free / about $10 a month |
 
 Competitor details are as of October 2026 and change often; check their sites.
 
-**No telemetry.** Nootle sends no analytics, crash reports, or usage data anywhere. The only network calls are the AI provider you pick, model downloads from Hugging Face (each hash-checked), integrations you set up, and the update check against GitHub Releases.
+**No telemetry.** Nootle sends no analytics, crash reports, or usage data anywhere. The only network calls are the AI provider you pick, model downloads from Hugging Face (each hash-checked), integrations you set up, web pages you add to your knowledge base (fetched at most once a day), and the update check against GitHub Releases.
 
 ## Screenshots
 
@@ -111,6 +112,10 @@ Competitor details are as of October 2026 and change often; check their sites.
 - **Live audio levels** — microphone and system-audio level bars in the recording bar show that sound is coming in, and a warning appears if Nootle hears nothing for 20 seconds (a muted mic or the wrong input). The live transcript follows along as people speak; scroll up to re-read and **Jump to live** brings you back
 - **Consent reminder** — Nootle joins no call as a bot, so nobody gets a visual cue that they're being recorded. When a recording starts, a reminder offers a message to paste into the meeting chat (edit it in Settings → Privacy), and notes that you told everyone. Many places require everyone's consent to record
 - **People** — everyone you've named in a transcript, with how often and how recently you've met, every meeting together, and the action items they own
+- **Knowledge base** — on the **Knowledge** page, add project folders, files, and web pages (PDF, Word, PowerPoint, Excel, Markdown, plain text, CSV, HTML, and `.webloc` / `.url` bookmarks). Nootle reads them on your Mac, splits them into passages, and indexes them with the same on-device search model as your meetings; files never leave your Mac. Folders are re-checked every half hour and only changed files are read again; web pages are re-fetched at most once a day. Tag sources (e.g. *Customer A*, *Research*), filter by tag or file type, and search by meaning or keyword; click a result to open the document. A Google Drive for desktop folder works too, though native Google Docs there are only links, so download or export them first. Scanned PDFs without a text layer can't be read yet
+- **Ask your meetings and documents** — Chat answers from your meetings and your knowledge base together, citing each meeting moment and each document's page, slide, or sheet; pick **Meetings only** or **Documents only**, or filter documents by tag. Click a document citation to open it
+- **Live Assist** — while recording, a side panel answers questions from your documents and past meetings. Type a question any time, or turn on **Auto** (or Settings → Recording → **Live Assist**) and when someone asks something in the meeting that your documents or past meetings can answer, a card appears with a short answer you could say aloud and its sources. Small talk ("can everyone see my screen?") is ignored, and Live Assist stays quiet when nothing relevant is found. Without an AI model selected, cards show the passages found
+- **Shorthand notes, expanded** — jot terse notes while recording (they're saved as you type, so leaving the page mid-meeting loses nothing). When the meeting ends, Nootle automatically expands your notes and quick notes into full notes from the transcript, using the calendar event's agenda and the most relevant passages from your knowledge base. Your original notes stay one click away (**Original** / **Enriched**)
 - **What did I miss?** — while recording, one click summarizes the last five minutes and calls out anything someone asked or assigned you
 - **Pause and resume** — go off the record mid-meeting; nothing is recorded or transcribed while paused, and the timer counts only recorded time
 - **Plays well with Zoom's audio device** — if `ZoomAudioDevice` (or a similar virtual device, like Teams Audio or BlackHole) has become your default input, Nootle records from your real microphone instead
@@ -124,7 +129,7 @@ Competitor details are as of October 2026 and change often; check their sites.
 - **Find in transcript** — press ⌘F in a meeting to highlight every match in the transcript; ↵ and ⇧↵ step through them
 - **Insight extraction** — decisions, action items, and key moments are extracted automatically once a recording finishes transcribing. On the Insights page, filter action items by who owns them; overdue and due-today items are called out
 - **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, or your existing Claude / ChatGPT subscription via the Claude Code (`claude -p`) and Codex CLIs
-- **Calendar** — with calendar access, the Meetings page shows what's up next with one-click **Record** and **Join** (Zoom, Meet, Teams, Webex, and more), and a recording started during an event is named after it. When you've met before (same title, or the same calendar event), each event shows when you last met, links to those notes, and lists the action items still open from that series
+- **Calendar** — with calendar access, the Meetings page shows what's up next with one-click **Record** and **Join** (Zoom, Meet, Teams, Webex, and more), and a recording started during an event is named after it. The event's agenda (its description) and the names of those invited are kept with the recording and given to the AI for summaries, notes, insights, and Live Assist. When you've met before (same title, or the same calendar event), each event shows when you last met, links to those notes, and lists the action items still open from that series
 - **Meeting detection** — turn on **Auto-detect meetings** in Settings and a small pop-up appears in the top-right corner of your screen when a call starts (Zoom, Teams, Webex, Slack, FaceTime, Discord, or a browser call like Google Meet using your mic). It floats over the meeting app even when Nootle's window is closed: click **Record** to start, or dismiss it (it also goes away on its own after 45 seconds)
 - **Runs in the background** — closing the window (⌘W) keeps Nootle running, so recordings and meeting detection continue; click the Dock icon to bring it back, ⌘Q to quit
 - **URL scheme** — start and stop recordings from other apps or scripts via `nootle://` links (opt-in)
@@ -219,6 +224,10 @@ nootle-cli meetings summarize <meeting-id>
 nootle-cli meetings ask <meeting-id> "What did we decide about pricing?"
 nootle-cli ask "Who owns the Q3 launch?"
 
+# Ask only your knowledge base, or only documents tagged "Research"
+nootle-cli ask "What's our refund policy?" --knowledge-only
+nootle-cli ask "What did the study find?" --tag Research
+
 # Tag a meeting and mark an action item done
 nootle-cli meetings label <meeting-id> --add Customer
 nootle-cli actions update <action-item-id> --status done
@@ -274,7 +283,7 @@ claude mcp add --scope user nootle -- /Applications/Nootle.app/Contents/MacOS/no
 
 The server supports MCP 2026-07-28 and the older handshake-based versions. Older setups that run the app with `--mcp` keep working, and the app serves MCP instead of opening whenever an MCP client launches it over stdio.
 
-The server has the same features as the CLI, except API keys, recording control, and the calendar: reading, searching, and editing meetings, labels, notes, action items, and the dictionary; summaries, insights, Ask, and other LLM features; and workflows, integrations, summary templates, and insight types. So you can ask an agent things like *"Tag last week's customer calls and summarize what they asked for"* or *"Set up a workflow that posts meeting recaps to #eng"*. Large results come in pages, and tools that delete things ask Claude to confirm with you first.
+The server has the same features as the CLI, except API keys, recording control, and the calendar: reading, searching, and editing meetings, labels, notes, action items, and the dictionary; searching your knowledge base (`search_knowledge`, `list_knowledge_sources`), which `ask_meetings` also answers from; summaries, insights, Ask, and other LLM features; and workflows, integrations, summary templates, and insight types. So you can ask an agent things like *"Tag last week's customer calls and summarize what they asked for"* or *"Set up a workflow that posts meeting recaps to #eng"*. Large results come in pages, and tools that delete things ask Claude to confirm with you first.
 
 To give an agent read access only, add `--read-only`: it can search and read your meetings but can't edit, delete, or send anything to an integration. Meeting text comes from everyone in the meeting, so this is the safer choice for agents that act on what they read.
 

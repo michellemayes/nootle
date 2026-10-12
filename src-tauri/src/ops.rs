@@ -3,7 +3,7 @@
 //! re-indexing after a speaker rename, the same prompts for LLM features.
 //! Nothing here needs a running app; callers emit any UI events themselves.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 
 use crate::db::{
@@ -66,6 +66,7 @@ pub const TOGGLE_SETTINGS: &[&str] = &[
     crate::remote::ENABLED_SETTING,
     crate::dictionary::AUTO_LEARN_SETTING,
     crate::snapshots::SETTING_KEY,
+    crate::live_assist::SETTING_KEY,
 ];
 /// Settings the MCP server refuses to change. URL control lets other apps
 /// start recordings and snapshots capture shared screens, so turning either
@@ -648,7 +649,7 @@ pub fn detect_llm(
     Ok((llm, provider, model))
 }
 
-async fn chat(
+pub(crate) async fn chat(
     llm: &LlmRegistry,
     provider: &str,
     model: &str,
@@ -708,35 +709,96 @@ pub async fn catch_up(
     chat(llm, &model.provider, &model.id, messages).await
 }
 
-/// Merges a meeting's notes with details from its transcript and saves the
-/// result as the meeting's enriched notes.
+/// A meeting's notes as one text: what was typed, then the timestamped
+/// quick notes. Empty when it has neither.
+pub fn meeting_notes(db: &Database, meeting_id: &str) -> Result<String> {
+    let mut notes = db
+        .get_meeting(meeting_id)?
+        .raw_notes
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let quick_notes = db.get_scratch_notes(meeting_id)?;
+    if !quick_notes.is_empty() {
+        notes.push_str(&format!(
+            "\n\nQuick notes, with when in the meeting they were taken:\n{}",
+            crate::summarization::format_scratch_notes(&quick_notes)
+        ));
+    }
+    Ok(notes.trim().to_string())
+}
+
+/// The embedding of a meeting's title and notes, for finding related
+/// documents. None when the knowledge base is empty, there are no notes, or
+/// the search model can't load, since notes are still enriched without it.
+pub fn notes_embedding(
+    db: &Database,
+    engine: &mut Option<EmbeddingEngine>,
+    meeting_id: &str,
+) -> Option<Vec<f32>> {
+    if !db.has_knowledge().unwrap_or(false) {
+        return None;
+    }
+    let notes = meeting_notes(db, meeting_id)
+        .ok()
+        .filter(|n| !n.is_empty())?;
+    let title = db.get_meeting(meeting_id).ok()?.title;
+    let engine = loaded_embedding_engine(engine).ok()?;
+    embed_question(engine, &format!("{title}\n{notes}")).ok()
+}
+
+/// Merges a meeting's notes (typed shorthand and timestamped quick notes)
+/// with details from its transcript, calendar event and, given the notes'
+/// embedding from `notes_embedding`, the closest knowledge-base passages,
+/// and saves the result as the meeting's enriched notes.
 pub async fn enrich_notes(
     db: &Database,
     llm: &LlmRegistry,
     meeting_id: &str,
     provider: &str,
     model: &str,
+    notes_embedding: Option<&[f32]>,
 ) -> Result<String> {
-    let meeting = db.get_meeting(meeting_id)?;
-    let raw_notes = meeting
-        .raw_notes
-        .filter(|n| !n.trim().is_empty())
-        .ok_or_else(|| anyhow!("No notes to enrich"))?;
+    let notes = meeting_notes(db, meeting_id)?;
+    if notes.is_empty() {
+        bail!("No notes to enrich");
+    }
 
-    let transcript_text = crate::summarization::format_transcript(&db.get_transcript(meeting_id)?)
-        + &crate::snapshots::context_section(db, meeting_id);
+    let transcript_text =
+        crate::summarization::llm_transcript(db, meeting_id, &db.get_transcript(meeting_id)?);
+    // By meaning only: a keyword query built from every word of the notes
+    // would match nearly every passage.
+    let documents = match notes_embedding {
+        Some(embedding) => db.search_knowledge_similar(embedding, 5, &[], &[])?,
+        None => Vec::new(),
+    };
+    let documents_section = if documents.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\nRELATED PASSAGES FROM THE USER'S DOCUMENTS (use only where they clarify a note; \
+             cite as [Document title, page]):\n{}",
+            crate::knowledge::prompt_context(&documents)
+        )
+    };
 
     let system_prompt = format!(
         "You are enriching meeting notes using the full transcript into a single merged document. \
          Output in markdown format. Keep the user's original notes as the backbone structure. \
+         The notes are often terse shorthand: fragments, abbreviations, arrows, initials. Work out \
+         what each one refers to in the transcript and expand it into a clear point with the \
+         specifics: who said what, numbers, decisions, next steps and owners. \
          Wrap the user's original note content in [[highlight]]...[[/highlight]] markers so it stands out. \
          Expand each note point with details, context, and supporting information from the transcript. \
+         Never invent details that aren't in the transcript, calendar event or documents. \
          The result should read as one cohesive document — not two separate sections. \
-         Maintain the same topic order as the original notes.\n\n\
-         TRANSCRIPT:\n{}\n\n\
+         Maintain the same topic order as the original notes; place quick notes where they \
+         fit by time.\n\n\
+         TRANSCRIPT:\n{}{}\n\n\
          USER'S NOTES:\n{}{}",
         transcript_text,
-        raw_notes,
+        documents_section,
+        notes,
         crate::dictionary::glossary(db)
     );
     let messages = vec![
@@ -789,7 +851,7 @@ pub async fn analyze_sentiment(
     Ok(segments)
 }
 
-pub use crate::db::AskFilters;
+pub use crate::db::{AskFilters, AskScope};
 
 /// Embeds a question for `rag_chat`. Separate so callers sharing an engine
 /// can release it before the slow LLM call.
@@ -810,25 +872,28 @@ pub fn hybrid_search(
     let candidates = limit * 2;
     let by_meaning = db.search_similar_chunks(query_embedding, candidates, filters)?;
     let by_keywords = db.search_chunks_by_keywords(question, candidates, filters)?;
-    Ok(reciprocal_rank_fusion([by_meaning, by_keywords], limit))
+    Ok(reciprocal_rank_fusion(
+        [by_meaning, by_keywords],
+        limit,
+        |r| &r.chunk_id,
+    ))
 }
 
 /// Scores each passage 1/(60 + rank) per list it appears in and keeps the
 /// best `limit`. 60 is the constant from the original RRF paper; it stops a
-/// single first place from outweighing broad agreement.
-fn reciprocal_rank_fusion<const N: usize>(
-    lists: [Vec<crate::db::ChunkSearchResult>; N],
+/// single first place from outweighing broad agreement. `id` names a passage
+/// across lists.
+pub(crate) fn reciprocal_rank_fusion<T, const N: usize>(
+    lists: [Vec<T>; N],
     limit: usize,
-) -> Vec<crate::db::ChunkSearchResult> {
+    id: impl Fn(&T) -> &str,
+) -> Vec<T> {
     const K: f64 = 60.0;
-    let mut scored: Vec<(f64, crate::db::ChunkSearchResult)> = Vec::new();
+    let mut scored: Vec<(f64, T)> = Vec::new();
     for list in lists {
         for (rank, result) in list.into_iter().enumerate() {
             let score = 1.0 / (K + rank as f64 + 1.0);
-            match scored
-                .iter_mut()
-                .find(|(_, r)| r.chunk_id == result.chunk_id)
-            {
+            match scored.iter_mut().find(|(_, r)| id(r) == id(&result)) {
                 Some((total, _)) => *total += score,
                 None => scored.push((score, result)),
             }
@@ -836,6 +901,42 @@ fn reciprocal_rank_fusion<const N: usize>(
     }
     scored.sort_by(|a, b| b.0.total_cmp(&a.0));
     scored.into_iter().take(limit).map(|(_, r)| r).collect()
+}
+
+/// Meeting and document passages formatted for a prompt, each headed with
+/// how to cite it, and the same passages as sources for the answer.
+pub(crate) fn passages_context(
+    meetings: &[crate::db::ChunkSearchResult],
+    documents: &[crate::db::KnowledgeHit],
+) -> (String, Vec<Value>) {
+    let mut context: Vec<String> = meetings
+        .iter()
+        .map(|m| {
+            format!(
+                "---\n[Meeting: \"{}\", {}]\n{}\n",
+                m.meeting_title,
+                crate::summarization::format_ms(m.start_ms),
+                m.chunk_text
+            )
+        })
+        .collect();
+    let mut sources: Vec<Value> = meetings
+        .iter()
+        .map(|m| {
+            json!({
+                "type": "meeting",
+                "meeting_id": m.meeting_id,
+                "meeting_title": m.meeting_title,
+                "start_ms": m.start_ms,
+                "end_ms": m.end_ms,
+            })
+        })
+        .collect();
+    if !documents.is_empty() {
+        context.push(crate::knowledge::prompt_context(documents));
+        sources.extend(documents.iter().map(crate::knowledge::source_json));
+    }
+    (context.join("\n"), sources)
 }
 
 /// Answers a question from the most relevant transcript passages across all
@@ -852,39 +953,50 @@ pub async fn rag_chat(
     model: &str,
     filters: &AskFilters,
 ) -> Result<(String, Vec<Value>)> {
-    let results = hybrid_search(db, query_embedding, message, filters, 10)?;
+    let search_knowledge = filters.scope.knowledge() && db.has_knowledge()?;
+    let (meeting_limit, knowledge_limit) = match (filters.scope.meetings(), search_knowledge) {
+        (true, true) => (8, 6),
+        (true, false) => (10, 0),
+        (false, _) => (0, 10),
+    };
+    let results = if meeting_limit > 0 {
+        hybrid_search(db, query_embedding, message, filters, meeting_limit)?
+    } else {
+        Vec::new()
+    };
+    let documents = if knowledge_limit > 0 {
+        crate::knowledge::search(
+            db,
+            query_embedding,
+            message,
+            &filters.tags,
+            &[],
+            knowledge_limit,
+        )?
+    } else {
+        Vec::new()
+    };
 
-    if results.is_empty() {
+    if results.is_empty() && documents.is_empty() {
         return Ok((
-            "I couldn't find any relevant transcript passages for your question. Try adjusting your filters or asking a different question.".into(),
+            "I couldn't find anything relevant in your meetings or documents. Try adjusting your filters or asking a different question.".into(),
             Vec::new(),
         ));
     }
 
-    let mut context_parts = Vec::new();
-    let mut sources = Vec::new();
-    for result in &results {
-        let timestamp = crate::summarization::format_ms(result.start_ms);
-        context_parts.push(format!(
-            "---\n[Meeting: \"{}\", {}]\n{}\n",
-            result.meeting_title, timestamp, result.chunk_text
-        ));
-        sources.push(json!({
-            "meeting_id": result.meeting_id,
-            "meeting_title": result.meeting_title,
-            "start_ms": result.start_ms,
-            "end_ms": result.end_ms,
-        }));
-    }
+    let (context, sources) = passages_context(&results, &documents);
 
     let system_prompt = format!(
-        "You are Nootle, an AI assistant that answers questions about the user's meetings.\n\n\
-         Below are relevant excerpts from the user's meeting transcripts. Each excerpt \
-         includes the meeting title and timestamp. Use ONLY these excerpts to answer.\n\
-         When you reference information, cite the source as [Meeting Title, timestamp].\n\n\
+        "You are Nootle, an AI assistant that answers questions about the user's meetings \
+         and documents.\n\n\
+         Below are relevant excerpts from the user's meeting transcripts and documents. Each \
+         meeting excerpt includes the meeting title and timestamp; each document excerpt its \
+         title and page or section. Use ONLY these excerpts to answer.\n\
+         When you reference information, cite the source as [Meeting Title, timestamp] or \
+         [Document title, page].\n\n\
          {}\n\
          Answer the user's question based on these excerpts. Be concise.{}",
-        context_parts.join("\n"),
+        context,
         crate::dictionary::glossary(db)
     );
 

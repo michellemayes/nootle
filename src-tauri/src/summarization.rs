@@ -33,10 +33,25 @@ pub fn format_transcript(segments: &[TranscriptSegment]) -> String {
         .join("\n")
 }
 
+/// Quick notes as prompt lines: `- [00:12:34] "note"`.
+pub(crate) fn format_scratch_notes(notes: &[crate::db::ScratchNote]) -> String {
+    notes
+        .iter()
+        .map(|n| format!("- [{}] \"{}\"", format_ms(n.timestamp_ms), n.content))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The transcript as the LLM reads it: speech, then any text read off shared
-/// screens (see `snapshots`).
-fn llm_transcript(db: &Database, meeting_id: &str, segments: &[TranscriptSegment]) -> String {
-    format_transcript(segments) + &crate::snapshots::context_section(db, meeting_id)
+/// screens (see `snapshots`), then the meeting's calendar event.
+pub(crate) fn llm_transcript(
+    db: &Database,
+    meeting_id: &str,
+    segments: &[TranscriptSegment],
+) -> String {
+    format_transcript(segments)
+        + &crate::snapshots::context_section(db, meeting_id)
+        + &crate::calendar::context_section(db, meeting_id)
 }
 
 /// How much transcript a provider reads in one prompt before it's condensed
@@ -145,13 +160,9 @@ pub async fn summarize_meeting(
     let notes_section = if scratch_notes.is_empty() {
         String::new()
     } else {
-        let formatted: Vec<String> = scratch_notes
-            .iter()
-            .map(|n| format!("- [{}] \"{}\"", format_ms(n.timestamp_ms), n.content))
-            .collect();
         format!(
             "\n\nThe user highlighted these moments during the meeting:\n{}\n\nGive extra attention to these highlighted topics in your summary.",
-            formatted.join("\n")
+            format_scratch_notes(&scratch_notes)
         )
     };
 

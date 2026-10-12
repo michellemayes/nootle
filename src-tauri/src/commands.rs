@@ -514,19 +514,25 @@ pub async fn start_recording(
     // A recording started without a title takes the name of the calendar
     // event happening now, like the meeting it's capturing.
     // Only a placeholder title is replaced by one generated from the transcript.
-    let (title, calendar_event_id, placeholder) =
-        if title.trim().is_empty() && calendar_event_id.is_none() {
-            match tokio::task::spawn_blocking(crate::calendar::current_event)
-                .await
-                .ok()
-                .flatten()
-            {
-                Some(event) => (event.title, Some(event.id), false),
-                None => (fallback_title(), None, true),
-            }
-        } else {
-            (title, calendar_event_id, false)
-        };
+    // The event's agenda and attendees are kept to ground notes, summaries
+    // and Live Assist.
+    let unnamed = title.trim().is_empty();
+    let event = if unnamed && calendar_event_id.is_none() {
+        tokio::task::spawn_blocking(crate::calendar::current_event)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    let (title, calendar_event_id, placeholder) = if unnamed && calendar_event_id.is_none() {
+        match &event {
+            Some(event) => (event.title.clone(), Some(event.id.clone()), false),
+            None => (fallback_title(), None, true),
+        }
+    } else {
+        (title, calendar_event_id, false)
+    };
 
     let meeting = db
         .create_meeting(NewMeeting {
@@ -535,6 +541,21 @@ pub async fn start_recording(
             template_id,
         })
         .map_err(|e| e.to_string())?;
+    // An event picked from Up next is looked up after the recording starts,
+    // so starting doesn't wait on the calendar.
+    let db_for_event = db.inner().clone();
+    let meeting_id = meeting.id.clone();
+    let event_id = meeting.calendar_event_id.clone();
+    tokio::task::spawn_blocking(move || {
+        let event = event.or_else(|| crate::calendar::event_by_id(&event_id?));
+        if let Some(event) = event {
+            if let Err(e) =
+                db_for_event.save_meeting_calendar_context(&meeting_id, &(&event).into())
+            {
+                tracing::warn!("Failed to save the meeting's calendar event: {e}");
+            }
+        }
+    });
 
     // Create recording session — rollback meeting if this fails
     let recordings_dir = recordings_dir()?;
@@ -815,6 +836,7 @@ async fn finish_meeting(
     {
         let db = db.clone();
         let meeting_id = meeting_id.clone();
+        let embedding_state = embedding_state.clone();
         tokio::task::spawn_blocking(move || {
             let mut engine_lock = embedding_state.blocking_lock();
             if let Ok(engine) = crate::ops::loaded_embedding_engine(&mut engine_lock) {
@@ -847,6 +869,8 @@ async fn finish_meeting(
                 Err(e) => tracing::warn!("Failed to update meeting status to summarized: {e}"),
             }
         }
+        // After the summary, so a local model isn't asked for both at once.
+        auto_enrich_notes(&db, &llm_state, &embedding_state, &app, &meeting_id).await;
     };
     if segment_count == 0 {
         summarize.await;
@@ -2185,6 +2209,8 @@ pub async fn send_chat_message(
     label_ids: Vec<String>,
     date_from: Option<String>,
     date_to: Option<String>,
+    scope: Option<crate::ops::AskScope>,
+    tags: Option<Vec<String>>,
 ) -> Result<serde_json::Value, String> {
     let query_embedding = {
         let mut engine = lock_embedding_engine(&embedding_state).await?;
@@ -2194,6 +2220,8 @@ pub async fn send_chat_message(
         label_ids,
         date_from,
         date_to,
+        scope: scope.unwrap_or_default(),
+        tags: tags.unwrap_or_default(),
     };
     let llm = llm.read().await;
     crate::ops::send_chat_message(
@@ -2245,15 +2273,73 @@ pub fn save_enriched_notes(
 pub async fn enrich_meeting_notes(
     db: State<'_, DbState>,
     llm: State<'_, LlmState>,
+    embedding_state: State<'_, EmbeddingState>,
     meeting_id: String,
     provider: String,
     model: String,
 ) -> Result<String, String> {
     validate_provider(&provider)?;
+    let notes_embedding = embed_notes(&db, &embedding_state, &meeting_id).await;
     let llm = llm.read().await;
-    crate::ops::enrich_notes(&db, &llm, &meeting_id, &provider, &model)
-        .await
-        .map_err(|e| e.to_string())
+    crate::ops::enrich_notes(
+        &db,
+        &llm,
+        &meeting_id,
+        &provider,
+        &model,
+        notes_embedding.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// `ops::notes_embedding` off the async runtime, since loading the search
+/// model takes seconds.
+async fn embed_notes(db: &DbState, state: &EmbeddingState, meeting_id: &str) -> Option<Vec<f32>> {
+    let (db, state, meeting_id) = (db.clone(), state.clone(), meeting_id.to_string());
+    tokio::task::spawn_blocking(move || {
+        crate::ops::notes_embedding(&db, &mut state.blocking_lock(), &meeting_id)
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Enriches the notes taken during a meeting as soon as it ends, as long as
+/// there are notes and they haven't been enriched yet. The original notes
+/// are kept beside the enriched ones.
+async fn auto_enrich_notes(
+    db: &DbState,
+    llm_state: &LlmState,
+    embedding_state: &EmbeddingState,
+    app: &tauri::AppHandle,
+    meeting_id: &str,
+) {
+    let Ok(meeting) = db.get_meeting(meeting_id) else {
+        return;
+    };
+    let has_notes = crate::ops::meeting_notes(db, meeting_id).is_ok_and(|n| !n.is_empty());
+    if !has_notes || meeting.enriched_notes.is_some_and(|n| !n.trim().is_empty()) {
+        return;
+    }
+    let Some(model) = pick_auto_model(db, &*llm_state.read().await) else {
+        return;
+    };
+    let notes_embedding = embed_notes(db, embedding_state, meeting_id).await;
+    let llm = llm_state.read().await;
+    match crate::ops::enrich_notes(
+        db,
+        &llm,
+        meeting_id,
+        &model.provider,
+        &model.id,
+        notes_embedding.as_deref(),
+    )
+    .await
+    {
+        Ok(_) => emit_meeting_updated(db, app, meeting_id),
+        Err(e) => tracing::warn!("Auto-enriching notes failed: {e}"),
+    }
 }
 
 #[tauri::command]
@@ -2483,4 +2569,236 @@ mod tests {
         assert!(title.starts_with("Meeting "));
         assert!(title.len() > "Meeting ".len());
     }
+}
+
+// ---- Knowledge base ----
+
+/// Indexes knowledge sources in the background, one after another, and tells
+/// the window as each starts and finishes. With `force`, unchanged files
+/// are read again.
+pub(crate) fn spawn_knowledge_indexing(
+    app: tauri::AppHandle,
+    source_ids: Vec<String>,
+    force: bool,
+) {
+    if source_ids.is_empty() {
+        return;
+    }
+    let db = app.state::<DbState>().inner().clone();
+    let embedding_state = app.state::<EmbeddingState>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let model_missing = !crate::embedding::EmbeddingEngine::is_available();
+        for id in source_ids {
+            let _ = if model_missing {
+                db.set_knowledge_source_status(
+                    &id,
+                    "error",
+                    Some("Download the search model in Settings → Models to index documents."),
+                )
+            } else {
+                db.set_knowledge_source_status(&id, "indexing", None)
+            };
+            let _ = app.emit("knowledge-updated", &id);
+            if model_missing {
+                continue;
+            }
+            // The engine is released every few passages, so Ask and Live
+            // Assist never wait long behind a big document.
+            let mut embed = |texts: &[String]| -> anyhow::Result<Vec<Vec<f32>>> {
+                let mut embeddings = Vec::with_capacity(texts.len());
+                for batch in texts.chunks(16) {
+                    let mut slot = embedding_state.blocking_lock();
+                    let engine = crate::ops::loaded_embedding_engine(&mut slot)?;
+                    for text in batch {
+                        embeddings.push(engine.embed(text)?);
+                    }
+                }
+                Ok(embeddings)
+            };
+            match crate::knowledge::index_source(&db, &id, force, &mut embed) {
+                Ok(report) if !report.skipped => tracing::info!(
+                    "Indexed knowledge source {id}: {} read, {} unchanged, {} removed, {} failed",
+                    report.indexed,
+                    report.unchanged,
+                    report.removed,
+                    report.failed.len()
+                ),
+                Ok(_) => {}
+                Err(e) => tracing::warn!("Failed to index knowledge source {id}: {e:#}"),
+            }
+            let _ = app.emit("knowledge-updated", &id);
+        }
+    });
+}
+
+/// Every knowledge source, for a periodic pass that picks up changed files.
+pub(crate) fn refresh_knowledge(app: &tauri::AppHandle) {
+    let db = app.state::<DbState>().inner().clone();
+    let ids = db
+        .list_knowledge_sources()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| s.id)
+        .collect();
+    spawn_knowledge_indexing(app.clone(), ids, false);
+}
+
+#[tauri::command(async)]
+pub fn list_knowledge_sources(db: State<'_, DbState>) -> Result<Vec<KnowledgeSource>, String> {
+    db.list_knowledge_sources().map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn add_knowledge_source(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    kind: String,
+    location: String,
+    tags: Vec<String>,
+) -> Result<KnowledgeSource, String> {
+    let source =
+        crate::knowledge::add_source(&db, &kind, &location, &tags).map_err(|e| e.to_string())?;
+    spawn_knowledge_indexing(app, vec![source.id.clone()], false);
+    Ok(source)
+}
+
+#[tauri::command(async)]
+pub fn remove_knowledge_source(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_knowledge_source(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn update_knowledge_source_tags(
+    db: State<'_, DbState>,
+    id: String,
+    tags: Vec<String>,
+) -> Result<(), String> {
+    db.update_knowledge_source_tags(&id, &crate::knowledge::clean_tags(&tags))
+        .map_err(|e| e.to_string())
+}
+
+/// Reads a source again from scratch, or every source (only what changed)
+/// when `id` is omitted.
+#[tauri::command(async)]
+pub fn reindex_knowledge(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    id: Option<String>,
+) -> Result<(), String> {
+    match id {
+        Some(id) => {
+            db.get_knowledge_source(&id).map_err(|e| e.to_string())?;
+            spawn_knowledge_indexing(app, vec![id], true);
+        }
+        None => refresh_knowledge(&app),
+    }
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn list_knowledge_documents(
+    db: State<'_, DbState>,
+    source_id: String,
+) -> Result<Vec<KnowledgeDocument>, String> {
+    db.list_knowledge_documents(&source_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn list_knowledge_tags(db: State<'_, DbState>) -> Result<Vec<String>, String> {
+    db.list_knowledge_tags().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn search_knowledge(
+    db: State<'_, DbState>,
+    embedding_state: State<'_, EmbeddingState>,
+    query: String,
+    tags: Vec<String>,
+    kinds: Vec<String>,
+) -> Result<Vec<KnowledgeHit>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let embedding = {
+        let mut engine = lock_embedding_engine(&embedding_state).await?;
+        crate::ops::embed_question(&mut engine, &query).map_err(|e| e.to_string())?
+    };
+    crate::knowledge::search(&db, &embedding, &query, &tags, &kinds, 20).map_err(|e| e.to_string())
+}
+
+/// Opens a knowledge document in its own app (or a page in the browser).
+#[tauri::command(async)]
+pub fn open_knowledge_document(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    id: String,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let (location, source_kind) = db
+        .get_knowledge_document_location(&id)
+        .map_err(|e| e.to_string())?;
+    if source_kind == "url" {
+        app.opener().open_url(location, None::<&str>)
+    } else {
+        app.opener().open_path(location, None::<&str>)
+    }
+    .map_err(|e| e.to_string())
+}
+
+/// Live Assist for a meeting being recorded. Automatic calls pass each new
+/// transcript segment and get a card only when it asks a question that the
+/// knowledge base or past meetings can answer; typed questions always get
+/// one. Without a provider, cards list sources only. `asked` holds the
+/// questions already on cards.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn live_assist(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    embedding_state: State<'_, EmbeddingState>,
+    meeting_id: String,
+    text: String,
+    automatic: bool,
+    provider: Option<String>,
+    model: Option<String>,
+    asked: Option<Vec<String>>,
+) -> Result<Option<crate::live_assist::LiveAssistCard>, String> {
+    let question = if automatic {
+        let asked: std::collections::HashSet<String> = asked
+            .unwrap_or_default()
+            .iter()
+            .map(|q| crate::live_assist::normalize_question(q))
+            .collect();
+        // A question already answered on a card isn't answered again.
+        match crate::live_assist::extract_question(&text) {
+            Some(q) if !asked.contains(&crate::live_assist::normalize_question(&q)) => q,
+            _ => return Ok(None),
+        }
+    } else {
+        let q = text.trim();
+        if q.is_empty() {
+            return Ok(None);
+        }
+        q.to_string()
+    };
+    let embedding = {
+        let mut engine = match lock_embedding_engine(&embedding_state).await {
+            Ok(engine) => engine,
+            // Unprompted cards quietly wait for the search model.
+            Err(_) if automatic => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        crate::ops::embed_question(&mut engine, &question).map_err(|e| e.to_string())?
+    };
+    let llm = llm.read().await;
+    let chosen = match (&provider, &model) {
+        (Some(p), Some(m)) if !p.is_empty() && !m.is_empty() => {
+            Some((&*llm, p.as_str(), m.as_str()))
+        }
+        _ => None,
+    };
+    crate::live_assist::answer(&db, chosen, &meeting_id, &question, &embedding, automatic)
+        .await
+        .map_err(|e| e.to_string())
 }

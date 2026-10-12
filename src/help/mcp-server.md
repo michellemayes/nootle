@@ -43,8 +43,9 @@ These send the meeting's transcript to an LLM provider, just like the same butto
 - **summarize_meeting** — summarize with a template, or with whatever Nootle would run after recording
 - **extract_insights** — pull out decisions, action items, and your custom insight types (`replace` redoes them)
 - **ask_meeting** — answer a question about one meeting
-- **ask_meetings** — answer a question from all your meetings, citing them. It can continue or save a conversation in the Ask view. Needs the search model, downloaded in Nootle's settings.
-- **enrich_notes** — merge your notes with details from the transcript
+- **ask_meetings** — answer a question from all your meetings and your knowledge base, citing them (`scope` picks `meetings` or `knowledge` only; `tags` narrows documents). It can continue or save a conversation in the Ask view. Needs the search model, downloaded in Nootle's settings.
+- **search_knowledge** / **list_knowledge_sources** — find passages in your knowledge-base documents, and list its folders, files, and pages
+- **enrich_notes** — expand your notes and quick notes with details from the transcript, the calendar event, and related documents
 - **analyze_sentiment** — score the meeting's sentiment over time
 - **list_recipes**, **create_recipe**, **update_recipe**, **run_recipe** — reusable prompts like `/email`, run on a meeting
 

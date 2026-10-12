@@ -417,8 +417,27 @@ pub struct AskMeetingsParams {
     /// Only meetings starting on or before this date
     #[serde(default)]
     pub date_to: Option<String>,
+    /// Answer from "all" (meetings and the knowledge base, the default),
+    /// "meetings" or "knowledge"
+    #[serde(default)]
+    pub scope: ops::AskScope,
+    /// Only knowledge-base documents from sources with any of these tags
+    #[serde(default)]
+    pub tags: Vec<String>,
     #[serde(flatten)]
     pub llm: LlmChoice,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SearchKnowledgeParams {
+    /// What to look for, in plain words
+    pub query: String,
+    /// Only sources with any of these tags
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Only these formats: pdf, docx, pptx, xlsx, markdown, text, html, web
+    #[serde(default)]
+    pub kinds: Vec<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -1439,8 +1458,41 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "List knowledge sources",
+        description = "List the folders, files and web pages in the user's knowledge base, with their tags, indexing status and document counts.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    fn list_knowledge_sources(&self) -> Result<CallToolResult, McpError> {
+        respond(self.db.list_knowledge_sources())
+    }
+
+    #[tool(
+        title = "Search knowledge base",
+        description = "Find the passages in the user's own documents (the folders, files and web pages in Nootle's knowledge base) most relevant to a query, by meaning and keyword. Each result names its document, page or slide, and file path or URL.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn search_knowledge(
+        &self,
+        Parameters(p): Parameters<SearchKnowledgeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let (db, engine) = (self.db.clone(), self.engine.clone());
+        respond(
+            blocking(move || {
+                let embedding = {
+                    let mut slot = engine.blocking_lock();
+                    ops::embed_question(ops::loaded_embedding_engine(&mut slot)?, &p.query)?
+                };
+                Ok(crate::knowledge::search(
+                    &db, &embedding, &p.query, &p.tags, &p.kinds, 10,
+                )?)
+            })
+            .await,
+        )
+    }
+
+    #[tool(
         title = "Ask across meetings",
-        description = "Answer a question from the most relevant passages across meetings indexed with embed_meetings, citing them. Can continue or save a conversation in Nootle's Ask view.",
+        description = "Answer a question from the most relevant passages across meetings indexed with embed_meetings and the user's knowledge-base documents, citing them. Can continue or save a conversation in Nootle's Ask view.",
         annotations(destructive_hint = false, open_world_hint = true)
     )]
     async fn ask_meetings(
@@ -1467,6 +1519,8 @@ impl NootleMcpServer {
                     label_ids: p.label_ids,
                     date_from: p.date_from,
                     date_to: p.date_to,
+                    scope: p.scope,
+                    tags: p.tags,
                 };
                 Ok::<_, NootleError>(
                     ops::ask(
@@ -1503,8 +1557,20 @@ impl NootleMcpServer {
         respond(
             async {
                 let (llm, provider, model) = self.llm(&p.llm).await?;
-                let notes =
-                    ops::enrich_notes(&self.db, &llm, &p.meeting_id, &provider, &model).await?;
+                let (db, engine, id) = (self.db.clone(), self.engine.clone(), p.meeting_id.clone());
+                let embedding = blocking(move || {
+                    Ok(ops::notes_embedding(&db, &mut engine.blocking_lock(), &id))
+                })
+                .await?;
+                let notes = ops::enrich_notes(
+                    &self.db,
+                    &llm,
+                    &p.meeting_id,
+                    &provider,
+                    &model,
+                    embedding.as_deref(),
+                )
+                .await?;
                 Ok::<_, NootleError>(json!({ "enriched_notes": notes }))
             }
             .await,

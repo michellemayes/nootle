@@ -22,6 +22,22 @@ The recording is saved locally and appears in your **Meetings** library. If you 
 
 With calendar access, a recording started while an event is underway (or about to start) takes the event's name. The **Up next** list on the Meetings page shows your next events with a **Record** button, plus **Join** when the event has a Zoom, Meet, Teams, or Webex link.
 
+## Notes While You Record
+
+Type shorthand in the notes area while you record: fragments, arrows, initials are all fine. Notes are saved as you type. When the meeting ends, Nootle expands them, along with your quick notes (⌘⇧N), into full notes from the transcript, using the calendar event's agenda and related passages from your knowledge base. Open the meeting's **Notes** tab and switch between **Original** and **Enriched**.
+
+## Knowledge Base
+
+The **Knowledge** page holds the folders, files, and web pages Nootle can draw on. Click **Add folder** or **Add files**, or paste a web address. Nootle reads PDF, Word, PowerPoint, Excel, Markdown, text, CSV, and HTML files, plus `.webloc` and `.url` bookmarks, and indexes them on your Mac with the search model (Settings → Models). Your files never leave your Mac.
+
+- Folders are checked for changes every half hour; click **Check for changes** to do it now, or the refresh button on a source to read it all again.
+- Add tags to a source, then filter search results and Chat answers by tag.
+- Chat answers from your meetings and documents together, citing the page or slide. Pick **Documents only** or **Meetings only** at the top of Chat.
+
+## Live Assist
+
+While recording, the **Live Assist** panel beside your notes answers questions from your documents and past meetings, with sources. Type a question any time. Turn on **Auto** and when someone in the meeting asks something your knowledge base or past meetings can answer, the answer appears on its own. Live Assist ignores small talk and stays quiet when it finds nothing relevant. It uses the AI model selected in the sidebar.
+
 ## Snapshots
 
 Sometimes the thing worth remembering is on screen and never said out loud: a chart, a design, or the number on slide 4. Turn on **Snapshots** in Settings → General and, when someone shares their screen during a recorded call, Nootle snaps what they share into your notes, one picture for each new slide or page.
@@ -43,7 +59,7 @@ Already have a recording, like a voice memo, a Zoom cloud recording, or a video?
 | ⌘K | Command palette — jump to any meeting or page, start a recording, or ask a question across all meetings |
 | ⌘N | Start a recording (or return to the one in progress) |
 | ⌘↵ | Stop and save the current recording |
-| ⌘1 – ⌘6 | Meetings, Insights, Chat, Automations, Settings, Help |
+| ⌘1 – ⌘8 | Meetings, Insights, People, Chat, Knowledge, Automations, Settings, Help |
 | ⌘, | Settings |
 | / | Search the meeting library |
 | ⌘⇧N | Add a scratch note while recording |

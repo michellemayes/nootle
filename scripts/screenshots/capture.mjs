@@ -67,7 +67,7 @@ const SHOTS = [
       // the calendar event underway.
       await page.getByRole("button", { name: "Design Review — Onboarding Flow" }).waitFor();
       await page.getByLabel("Summary template").selectOption({ label: "Standard Summary" });
-      await page.getByPlaceholder("Take notes during the meeting…").fill(
+      await page.getByLabel("Meeting notes").fill(
         "Permissions screen is the big leak — 31% drop\n" +
           "Try inline copy instead of the docs link, one sentence above the button\n" +
           "Two variants if traffic allows, behind the existing flag\n\n" +

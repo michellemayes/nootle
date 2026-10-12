@@ -126,11 +126,72 @@ export interface LinearProject {
   name: string;
 }
 
-export interface ChatSource {
+export interface MeetingSource {
+  type?: "meeting";
   meeting_id: string;
   meeting_title: string;
   start_ms: number;
   end_ms: number;
+}
+
+export interface DocumentSource {
+  type: "document";
+  document_id: string;
+  document_title: string;
+  document_kind: string;
+  /** "Page 3", "Slide 2", "Sheet: Budget". */
+  locator: string | null;
+  location: string;
+  snippet: string;
+}
+
+/** A passage an answer drew on: a moment in a meeting, or part of a document. */
+export type ChatSource = MeetingSource | DocumentSource;
+
+/** What Ask answers from. */
+export type AskScope = "all" | "meetings" | "knowledge";
+
+export interface KnowledgeSource {
+  id: string;
+  kind: "folder" | "file" | "url";
+  location: string;
+  name: string;
+  tags: string[];
+  status: "pending" | "indexing" | "ready" | "error";
+  error: string | null;
+  last_indexed_at: string | null;
+  created_at: string;
+  document_count: number;
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  source_id: string;
+  location: string;
+  title: string;
+  kind: string;
+  indexed_at: string;
+  chunk_count: number;
+}
+
+export interface KnowledgeHit {
+  chunk_id: string;
+  document_id: string;
+  document_title: string;
+  document_kind: string;
+  location: string;
+  locator: string | null;
+  text: string;
+  source_name: string;
+  tags: string[];
+}
+
+export interface LiveAssistCard {
+  id: string;
+  question: string;
+  answer: string | null;
+  sources: ChatSource[];
+  automatic: boolean;
 }
 
 export interface GlobalChatResponse {

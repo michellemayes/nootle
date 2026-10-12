@@ -13,6 +13,7 @@ import type { TranscriptSegment } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ScratchPad } from "@/components/ScratchPad";
+import { LiveAssist } from "@/components/LiveAssist";
 import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Kbd } from "@/components/Kbd";
@@ -207,6 +208,8 @@ export function RecordingView() {
   latestNotesRef.current = notes;
   const latestTemplateRef = useRef(selectedTemplateId);
   latestTemplateRef.current = selectedTemplateId;
+  // What the meeting row holds, so notes are only written when they change.
+  const savedNotesRef = useRef("");
 
   // Start recording on mount
   useEffect(() => {
@@ -217,6 +220,11 @@ export function RecordingView() {
         if (live) {
           setTitle(live.title);
           setSelectedTemplateId(live.template_id ?? "");
+          // Notes are saved as they're typed, so they survive leaving the page.
+          if (live.raw_notes) {
+            savedNotesRef.current = live.raw_notes;
+            setNotes(live.raw_notes);
+          }
           return;
         }
         const meeting = await startRecording(
@@ -288,6 +296,22 @@ export function RecordingView() {
     saveDetails();
   }, [saveDetails]);
 
+  // Notes are saved a moment after typing stops, so leaving the page (or a
+  // crash) mid-meeting doesn't lose them.
+  const saveNotes = useCallback(async (meetingId: string) => {
+    const notes = latestNotesRef.current;
+    if (notes === savedNotesRef.current) return;
+    savedNotesRef.current = notes;
+    await invoke("save_meeting_notes", { id: meetingId, rawNotes: notes });
+  }, []);
+  useEffect(() => {
+    if (!currentMeeting) return;
+    const timer = setTimeout(() => {
+      saveNotes(currentMeeting.id).catch((err) => console.error("Failed to save notes:", err));
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [notes, currentMeeting, saveNotes]);
+
   useEffect(() => {
     localStorage.setItem(TRANSCRIPT_OPEN_KEY, String(transcriptOpen));
   }, [transcriptOpen]);
@@ -303,15 +327,12 @@ export function RecordingView() {
       // ⌘↵ can stop while the title field still has focus, before it commits.
       await saveDetails();
       const meeting = await stopRecording();
-      const notes = latestNotesRef.current;
-      if (notes.trim()) {
-        await invoke("save_meeting_notes", { id: meeting.id, rawNotes: notes });
-      }
+      await saveNotes(meeting.id);
       navigate(`/meeting/${meeting.id}`, { state: { justRecorded: true } });
     } catch {
       navigate("/");
     }
-  }, [stopping, saveDetails, stopRecording, navigate]);
+  }, [stopping, saveDetails, stopRecording, saveNotes, navigate]);
 
   // ⌘↵ wraps up the meeting from anywhere on the page, notes included.
   useEffect(() => {
@@ -472,16 +493,20 @@ export function RecordingView() {
         </div>
       )}
 
-      {/* Notes — full width, takes remaining space */}
-      <div className="flex-1 flex flex-col min-h-0">
+      {/* Notes take the remaining space, beside Live Assist */}
+      <div className="flex-1 flex min-h-0">
         <textarea
           ref={notesRef}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Take notes during the meeting…"
+          aria-label="Meeting notes"
+          placeholder="Jot shorthand as you go (e.g. “pricing → $12, Ana to confirm”). When the meeting ends, Nootle expands it into full notes from the transcript."
           className="flex-1 w-full bg-transparent p-6 text-sm leading-relaxed resize-none focus:outline-none placeholder:text-muted-foreground/40"
           autoFocus
         />
+        {currentMeeting && isRecording && !isCompact && (
+          <LiveAssist meetingId={currentMeeting.id} segments={segments} />
+        )}
       </div>
 
       <ScratchPad meetingId={currentMeeting?.id ?? null} elapsedMs={elapsed * 1000} />
