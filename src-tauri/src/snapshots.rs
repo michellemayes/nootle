@@ -446,6 +446,17 @@ impl Run {
     }
 }
 
+/// A line of text read off an image, with where it sits as fractions of
+/// the image's size (Vision's coordinates: the origin is bottom-left).
+#[derive(Debug, Clone)]
+pub struct TextLine {
+    pub text: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 /// One captured frame.
 pub struct Capture {
     pub jpeg: Vec<u8>,
@@ -458,8 +469,10 @@ pub struct Capture {
 // ---------------------------------------------------------------------------
 
 #[cfg(all(target_os = "macos", feature = "system-audio"))]
-mod platform {
-    use super::{hidden_while_sharing, is_call_app, pick_target, Capture, Target, WindowInfo};
+pub(crate) mod platform {
+    use super::{
+        hidden_while_sharing, is_call_app, pick_target, Capture, Target, TextLine, WindowInfo,
+    };
     use crate::detection::DetectedMeeting;
     use anyhow::{anyhow, Context};
     use cidre::{cf, cg, ns, sc, ut, vn};
@@ -590,6 +603,12 @@ mod platform {
 
     /// Text in the image, top to bottom, recognised on-device.
     pub fn recognize_text(path: &Path) -> anyhow::Result<String> {
+        let lines: Vec<String> = recognize_lines(path)?.into_iter().map(|l| l.text).collect();
+        Ok(lines.join("\n"))
+    }
+
+    /// Each line of text in the image and where it is, top to bottom.
+    pub fn recognize_lines(path: &Path) -> anyhow::Result<Vec<TextLine>> {
         let url = ns::Url::with_fs_path_str(&path.to_string_lossy(), false);
         let handler = vn::ImageRequestHandler::with_url(&url, None);
         let mut request = vn::RecognizeTextRequest::new();
@@ -601,23 +620,33 @@ mod platform {
             .map_err(|e| anyhow!("recognize text: {e:?}"))?;
 
         let Some(results) = request.results() else {
-            return Ok(String::new());
+            return Ok(Vec::new());
         };
-        let lines: Vec<String> = results
+        Ok(results
             .iter()
             .filter_map(|obs| {
-                obs.top_candidates(1)
-                    .first()
-                    .map(|c| c.string().to_string())
+                let text = obs.top_candidates(1).first()?.string().to_string();
+                let rect = obs.bounding_box();
+                Some(TextLine {
+                    text,
+                    x: rect.origin.x,
+                    y: rect.origin.y,
+                    width: rect.size.width,
+                    height: rect.size.height,
+                })
             })
-            .collect();
-        Ok(lines.join("\n"))
+            .collect())
+    }
+
+    /// The Mac account's full name, e.g. "Priya Patel".
+    pub fn full_user_name() -> String {
+        ns::full_user_name().to_string()
     }
 }
 
 #[cfg(not(all(target_os = "macos", feature = "system-audio")))]
-mod platform {
-    use super::Capture;
+pub(crate) mod platform {
+    use super::{Capture, TextLine};
     use crate::detection::DetectedMeeting;
     use std::path::Path;
 
@@ -640,6 +669,14 @@ mod platform {
 
     pub fn recognize_text(_path: &Path) -> anyhow::Result<String> {
         Ok(String::new())
+    }
+
+    pub fn recognize_lines(_path: &Path) -> anyhow::Result<Vec<TextLine>> {
+        Ok(Vec::new())
+    }
+
+    pub fn full_user_name() -> String {
+        String::new()
     }
 }
 

@@ -2,6 +2,7 @@ pub mod analytics;
 pub mod audio;
 pub mod automation;
 pub mod calendar;
+pub mod call_names;
 pub mod chunking;
 pub mod commands;
 pub mod connectors;
@@ -478,6 +479,7 @@ pub fn run() {
             commands::export_all_meetings,
             commands::get_consent_reminder,
             commands::note_consent,
+            commands::get_call_names,
             commands::list_voice_profiles,
             commands::delete_voice_profile,
             commands::forget_all_voices,

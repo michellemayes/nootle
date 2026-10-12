@@ -598,6 +598,14 @@ pub async fn start_recording(
             session.recorded_clock(),
         ));
     }
+    // Only with Screen Recording already allowed: checking never prompts.
+    if crate::call_names::enabled(&db) && crate::permissions::check_screen_recording() {
+        session.set_call_name_reader(crate::call_names::CallNameReader::start(
+            db.inner().clone(),
+            meeting.id.clone(),
+            session.is_paused_flag(),
+        ));
+    }
 
     *session_lock = Some(session);
 
@@ -1063,6 +1071,10 @@ pub async fn stop_recording(
     // (and so post-meeting summaries) is complete.
     if let Some(snapshotter) = session.take_snapshotter() {
         let _ = tokio::task::spawn_blocking(move || snapshotter.stop()).await;
+    }
+    // Likewise the call's names, before the speaker pass reads them.
+    if let Some(reader) = session.take_call_name_reader() {
+        let _ = tokio::task::spawn_blocking(move || reader.stop()).await;
     }
     session.stop();
 
@@ -2072,6 +2084,12 @@ pub async fn set_app_setting(
     crate::ops::set_setting(&db, &key, &value)
         .map(drop)
         .map_err(|e| e.to_string())
+}
+
+/// Names read off the meeting's call window, offered when renaming a speaker.
+#[tauri::command(async)]
+pub fn get_call_names(db: State<'_, DbState>, meeting_id: String) -> Result<Vec<String>, String> {
+    db.get_call_names(&meeting_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]

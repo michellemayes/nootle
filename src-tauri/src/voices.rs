@@ -57,22 +57,41 @@ pub fn remember_meeting_voices(db: &Database, meeting_id: &str, voices: &[(Strin
     if !enabled(db) {
         return;
     }
-    if let Err(e) = db.save_meeting_voices(meeting_id, voices) {
+    if let Err(e) = db.save_meeting_voices(meeting_id, voices, false) {
         tracing::warn!("Couldn't keep speaker fingerprints for {meeting_id}: {e}");
+    }
+}
+
+/// Learns the voice of a speaker the meeting named from the call window, so
+/// they're recognised in later meetings, including ones with no names on
+/// screen.
+pub fn learn_from_call(db: &Database, meeting_id: &str, name: &str, voice: &[f32]) {
+    if !enabled(db) {
+        return;
+    }
+    let learned = db
+        .save_meeting_voices(meeting_id, &[(name.to_string(), voice.to_vec())], true)
+        .and_then(|()| learn(db, name, voice));
+    if let Err(e) = learned {
+        tracing::warn!("Couldn't learn {name}'s voice: {e}");
     }
 }
 
 /// After a speaker is renamed in a meeting: their fingerprint follows the
 /// new name, and a real name ("Priya", not "Speaker 3") is learned as a
-/// remembered voice.
+/// remembered voice. If the old name had learned this voice (a wrong guess
+/// being corrected), it's taken back out of the old name's voice.
 pub fn learn_from_rename(db: &Database, meeting_id: &str, from: &str, to: &str) -> Result<()> {
-    let Some(voice) = db.take_meeting_voice(meeting_id, from)? else {
+    let Some((voice, learned)) = db.take_meeting_voice(meeting_id, from)? else {
         return Ok(());
     };
+    if learned {
+        unlearn(db, from, &voice)?;
+    }
     if is_automatic_label(to) || !enabled(db) {
         return Ok(());
     }
-    db.save_meeting_voices(meeting_id, &[(to.to_string(), voice.clone())])?;
+    db.save_meeting_voices(meeting_id, &[(to.to_string(), voice.clone())], true)?;
     learn(db, to, &voice)
 }
 
@@ -91,6 +110,24 @@ fn learn(db: &Database, name: &str, voice: &[f32]) -> Result<()> {
     };
     crate::diarization::normalize(&mut mean);
     db.save_voice_profile(name, &mean, samples)
+}
+
+/// Takes one meeting's fingerprint back out of `name`'s remembered voice,
+/// forgetting the voice if that was all it was learned from.
+fn unlearn(db: &Database, name: &str, voice: &[f32]) -> Result<()> {
+    match db.get_voice_profile(name)? {
+        Some((mean, n)) if n > 1 => {
+            let mut rest: Vec<f32> = mean
+                .iter()
+                .zip(voice)
+                .map(|(m, v)| m * n as f32 - v)
+                .collect();
+            crate::diarization::normalize(&mut rest);
+            db.save_voice_profile(name, &rest, n - 1)
+        }
+        Some(_) => db.delete_voice_profile_named(name),
+        None => Ok(()),
+    }
 }
 
 /// Every remembered voice, for Settings.
@@ -135,7 +172,7 @@ mod tests {
         remember_meeting_voices(&db, &id, &[("Speaker 1".into(), vec![1.0, 0.0])]);
         learn_from_rename(&db, &id, "Speaker 1", "Sam").unwrap();
         assert!(list(&db).unwrap().is_empty());
-        assert_eq!(db.take_meeting_voice(&id, "Speaker 1").unwrap(), None);
+        assert!(db.take_meeting_voice(&id, "Speaker 1").unwrap().is_none());
     }
 
     #[test]
@@ -156,5 +193,27 @@ mod tests {
         );
         db.forget_all_voices().unwrap();
         assert!(list(&db).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_voice_named_from_the_call_is_learned_and_a_correction_moves_it() {
+        let db = Database::new_in_memory().unwrap();
+        db.set_setting(SETTING_KEY, "true").unwrap();
+        let sam = vec![0.0, 1.0];
+        learn(&db, "Priya", &[1.0, 0.0]).unwrap();
+        let id = meeting(&db);
+        remember_meeting_voices(&db, &id, &[("Priya".into(), sam.clone())]);
+        learn_from_call(&db, &id, "Priya", &sam);
+        assert_eq!(list(&db).unwrap()[0].samples, 2);
+
+        // That was Sam, not Priya: Priya's voice goes back to what it was.
+        learn_from_rename(&db, &id, "Priya", "Sam").unwrap();
+        let names = recognize(&db, &[vec![1.0, 0.0], sam]);
+        assert_eq!(names, [Some("Priya".to_string()), Some("Sam".to_string())]);
+        assert!(list(&db).unwrap().iter().all(|v| v.samples == 1));
+
+        // A voice learned from only this meeting is forgotten outright.
+        learn_from_rename(&db, &id, "Sam", "Speaker 2").unwrap();
+        assert_eq!(list(&db).unwrap().len(), 1);
     }
 }

@@ -372,10 +372,19 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
         voices.push(voice);
     }
 
+    // Remembered voices name who they can; then the names read off the
+    // call window may name the one voice left.
+    let call_names = db.get_call_names(meeting_id).unwrap_or_default();
+    let mut named_from_call = None;
     let (labels, speaker_voices) = assign_speakers(&segments, &sources, &voices, |centroids| {
-        crate::voices::recognize(db, centroids)
+        let mut names = crate::voices::recognize(db, centroids);
+        named_from_call = crate::call_names::fill_in(&mut names, &call_names);
+        names
     });
     crate::voices::remember_meeting_voices(db, meeting_id, &speaker_voices);
+    if let Some((name, voice)) = named_from_call.and_then(|i| speaker_voices.get(i)) {
+        crate::voices::learn_from_call(db, meeting_id, name, voice);
+    }
     let changed: Vec<(String, String)> = segments
         .iter()
         .zip(labels)
