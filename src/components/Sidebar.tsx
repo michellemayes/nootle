@@ -27,10 +27,10 @@ export function Sidebar() {
     <aside
       className={cn("group/sidebar flex flex-col bg-sidebar backdrop-blur-xl backdrop-saturate-[1.8] border-r border-sidebar-border transition-[width] duration-200 ease-out", isCompact ? "w-12" : "w-60")}
     >
-      {/* Logo */}
+      {/* Logo. Also a window drag handle; the logo and name ignore clicks so they reach it. */}
       <div data-tauri-drag-region className={cn("relative flex items-center px-5 pt-10 pb-4", isCompact ? "justify-center px-2" : "gap-2")}>
-        <NootleLogo className="h-8 w-8 shrink-0 text-primary" aria-label="Nootle" />
-        {!isCompact && <span className="text-lg font-semibold tracking-tight">Nootle</span>}
+        <NootleLogo className="pointer-events-none h-8 w-8 shrink-0 text-primary" aria-label="Nootle" />
+        {!isCompact && <span className="pointer-events-none text-lg font-semibold tracking-tight">Nootle</span>}
         {!isAutoCompact && (
           <button
             onClick={toggleCollapsed}
