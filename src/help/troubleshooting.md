@@ -24,9 +24,10 @@ Common issues and how to fix them.
 - Speaker identification works best with 2-4 distinct speakers.
 
 **Speakers aren't named from the call:**
-- Nootle reads names off the call window only when it has Screen Recording permission (Settings → Permissions) and **Names from the call** is on (Settings → Recording).
-- Keep the call window visible with people's names showing (Zoom's gallery or speaker view both work). Names on a shared screen are ignored.
-- A speaker is named automatically only when it's certain: in a 1:1, or when everyone else's voice is already remembered. Otherwise click the speaker's name in the transcript and pick a name from the call. With **Remember voices** on, they're named for you next time.
+- Nootle reads names off the call window only when it has Screen Recording permission (Settings → Permissions) and **Names from the call** is on (Settings → Recording). It checks when a recording starts, so after allowing Screen Recording, quit and reopen Nootle before your next call.
+- Keep people's names showing in the call window (Zoom's gallery or speaker view both work). The window can be covered by other windows or full screen in its own Space, but not minimised. Names on a shared screen are ignored, and so are names cut short to fit a small tile ("Christopher Aber…"), so make the window bigger in a large call.
+- A speaker is named automatically only when it's certain: in a 1:1, everything said on the far end gets the other person's name (even without the Speaker Diarization model); in a bigger call, the last voice is named once everyone else's voice is remembered. Otherwise click the speaker's name in the transcript and pick a name from the call. With **Remember voices** on, they're named for you next time.
+- Still nothing? After the call, look for the line starting `Call names for meeting` in `~/Library/Logs/Nootle/nootle.log`. It lists the names read and how many looks found no call window.
 
 ## LLM Provider Errors
 

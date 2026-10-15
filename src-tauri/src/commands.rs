@@ -817,12 +817,18 @@ async fn finish_meeting(
         let meeting_id = meeting_id.clone();
         let app = app.clone();
         let _ = tokio::task::spawn_blocking(move || {
-            match crate::pipeline::rediarize(&db, &meeting_id, &audio_path) {
-                Ok(true) => {
-                    let _ = app.emit("transcript-replaced", &meeting_id);
-                }
-                Ok(false) => {}
-                Err(e) => tracing::warn!("Post-meeting speaker pass failed: {e:#}"),
+            let rediarized = crate::pipeline::rediarize(&db, &meeting_id, &audio_path)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("Post-meeting speaker pass failed: {e:#}");
+                    false
+                });
+            // Runs without a speaker model too, so a 1:1 is always named.
+            let named = crate::call_names::name_one_on_one(&db, &meeting_id).unwrap_or_else(|e| {
+                tracing::warn!("Naming the other side of a 1:1 failed: {e:#}");
+                false
+            });
+            if rediarized || named {
+                let _ = app.emit("transcript-replaced", &meeting_id);
             }
             // The stems only exist for this pass; the mixed recording stays
             // for playback.

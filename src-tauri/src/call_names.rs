@@ -5,10 +5,12 @@
 //! every few seconds, and names that stay on screen are kept with the
 //! meeting. The pictures themselves are thrown away at once. After the
 //! meeting, [`fill_in`] gives the one voice nobody recognised the one name
-//! nobody claimed, so a 1:1 is named outright, and with Remember voices on,
-//! each voice named this way is learned for later calls on any app.
+//! nobody claimed, and [`name_one_on_one`] names everyone on the far end of
+//! a 1:1 outright. With Remember voices on, each voice named this way is
+//! learned for later calls on any app.
 
 use crate::db::Database;
+use crate::diarization::{is_automatic_label, SELF_LABEL};
 use crate::snapshots::{platform, shows_screen_share, Capture, TextLine};
 use std::collections::{HashMap, HashSet};
 
@@ -16,13 +18,15 @@ use std::collections::{HashMap, HashSet};
 /// set to "false"; it only runs when Screen Recording is already allowed.
 pub const SETTING_KEY: &str = "call_names_enabled";
 
-/// Longest edge of the frame read: enough for small name labels.
-pub const CAPTURE_EDGE: f64 = 1600.0;
+/// Longest edge of the frame read: full Retina size for a typical call
+/// window, since name labels are small and Vision misreads scaled-down text.
+pub const CAPTURE_EDGE: f64 = 3200.0;
 /// A name counts once it has been on screen this many times and in this
 /// share of looks, so passing text (a chat message, a notification) isn't
-/// taken for someone in the call.
+/// taken for someone in the call. The share is low because speaker view
+/// often shows only whoever is talking.
 const MIN_SIGHTINGS: u32 = 3;
-const MIN_SHARE: f64 = 0.3;
+const MIN_SHARE: f64 = 0.1;
 /// Name labels are small: taller or wider text is a title or a slide.
 const MAX_LABEL_HEIGHT: f64 = 0.06;
 const MAX_LABEL_WIDTH: f64 = 0.45;
@@ -128,15 +132,25 @@ const NAME_PARTICLES: &[&str] = &[
 ];
 
 /// The participant name in a video tile's label, e.g. "Priya Patel" from
-/// "Priya Patel (she/her)", or None when the text isn't name-shaped.
+/// "Priya Patel (she/her)" or "🎤 Priya Patel" (the mute icon is read as a
+/// stray symbol), or None when the text isn't name-shaped. Labels cut short
+/// to fit a small tile ("Christopher Aber…") are left out rather than kept
+/// as a wrong name.
 fn name_label(text: &str) -> Option<String> {
     let name = text.split('(').next()?.trim();
+    if name.ends_with('…') || name.ends_with("..") {
+        return None;
+    }
+    let name = name.trim_matches(|c: char| !c.is_alphabetic());
     let words: Vec<&str> = name.split_whitespace().collect();
     if words.is_empty() || words.len() > 4 || name.chars().count() > 40 {
         return None;
     }
+    // Starts with a capital, or with a letter of a script without case.
     let is_name_word = |w: &str| {
-        w.chars().next().is_some_and(char::is_uppercase)
+        w.chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() && !c.is_lowercase())
             && w.chars().all(|c| c.is_alphabetic() || "-'’.".contains(c))
     };
     let shaped = is_name_word(words[0])
@@ -247,6 +261,44 @@ pub fn fill_in(names: &mut [Option<String>], call_names: &[String]) -> Option<us
     Some(voice)
 }
 
+/// The name for every unnamed remote speaker when the call window showed
+/// exactly one other person: in a 1:1, whoever spoke on the far end is
+/// them, however many voices the speaker pass split them into (and even
+/// with no speaker model at all). None unless the user's own lines were
+/// told apart as "You" (without system audio they're "Speaker" too), or
+/// when the transcript already names someone else, since then the call
+/// wasn't the 1:1 it looked like.
+fn one_on_one_name<'a>(labels: &[&str], call_names: &'a [String]) -> Option<&'a String> {
+    let [name] = call_names else {
+        return None;
+    };
+    if !labels.contains(&SELF_LABEL) {
+        return None;
+    }
+    let remote = labels.iter().filter(|&&l| l != SELF_LABEL);
+    let unnamed = remote.clone().any(|l| is_automatic_label(l));
+    let others_named = remote.clone().any(|l| !is_automatic_label(l) && !same_person(l, name));
+    (unnamed && !others_named).then_some(name)
+}
+
+/// After a 1:1 call, puts the other person's name on every remote line still
+/// labelled "Speaker" or "Speaker N". Returns whether the transcript changed.
+pub fn name_one_on_one(db: &Database, meeting_id: &str) -> anyhow::Result<bool> {
+    let segments = db.get_transcript(meeting_id)?;
+    let labels: Vec<&str> = segments.iter().map(|s| s.speaker_label.as_str()).collect();
+    let call_names = for_meeting(db, meeting_id);
+    let Some(name) = one_on_one_name(&labels, &call_names) else {
+        return Ok(false);
+    };
+    let changed: Vec<(String, String)> = segments
+        .iter()
+        .filter(|s| s.speaker_label != SELF_LABEL && is_automatic_label(&s.speaker_label))
+        .map(|s| (s.id.clone(), name.clone()))
+        .collect();
+    db.relabel_transcript(meeting_id, &changed)?;
+    Ok(!changed.is_empty())
+}
+
 // ---------------------------------------------------------------------------
 // Running alongside a recording
 // ---------------------------------------------------------------------------
@@ -258,6 +310,8 @@ pub struct NameReader {
     /// The Mac account's name, to leave the user's own tile out.
     you: String,
     stored: Vec<String>,
+    /// Looks that found no call window to read, for the log.
+    no_window: u32,
 }
 
 impl Default for NameReader {
@@ -266,11 +320,29 @@ impl Default for NameReader {
             roster: Roster::default(),
             you: platform::full_user_name(),
             stored: Vec::new(),
+            no_window: 0,
         }
     }
 }
 
 impl NameReader {
+    /// Notes a look that found no call window, e.g. while it's minimised.
+    pub fn missed(&mut self) {
+        self.no_window += 1;
+    }
+
+    /// Logs what the recording's names came to, so a call that yielded none
+    /// can be told apart from one whose window was never found.
+    pub fn log_summary(&self, meeting_id: &str) {
+        tracing::info!(
+            "Call names for meeting {meeting_id}: {:?} from {} looks at the call window \
+             ({} looks found no window)",
+            self.stored,
+            self.roster.looks,
+            self.no_window
+        );
+    }
+
     pub fn read(&mut self, db: &Database, meeting_id: &str, frame: &Capture) {
         // While the user shares their own screen, the frame is that screen,
         // not anyone's tile.
@@ -318,6 +390,9 @@ mod tests {
             name_label("Zoë O’Brien-Smith").as_deref(),
             Some("Zoë O’Brien-Smith")
         );
+        // Zoom's mute icon in front of the name, read as a symbol.
+        assert_eq!(name_label("% Priya Patel").as_deref(), Some("Priya Patel"));
+        assert_eq!(name_label("田中 太郎").as_deref(), Some("田中 太郎"));
         for ui in [
             "Mute",
             "Stop Video",
@@ -331,6 +406,8 @@ mod tests {
             "You",
             "the quarterly plan",
             "A",
+            "Christopher Aber…",
+            "Christopher Aber...",
         ] {
             assert_eq!(name_label(ui), None, "{ui}");
         }
@@ -389,6 +466,26 @@ mod tests {
         let mut names = vec![Some("Sam".to_string()), None];
         fill_in(&mut names, &["Sam Lee".into(), "Priya Patel".into()]);
         assert_eq!(names[1].as_deref(), Some("Priya Patel"));
+    }
+
+    #[test]
+    fn names_everyone_on_the_far_end_of_a_one_on_one() {
+        let priya = ["Priya Patel".to_string()];
+        // Split into two voices, or no speaker model at all.
+        let name = one_on_one_name(&["You", "Speaker 1", "Speaker 2"], &priya);
+        assert_eq!(name.map(String::as_str), Some("Priya Patel"));
+        let name = one_on_one_name(&["Speaker", "You"], &priya);
+        assert_eq!(name.map(String::as_str), Some("Priya Patel"));
+        // One voice already named her; the other split-off voice is her too.
+        assert!(one_on_one_name(&["You", "Priya", "Speaker 2"], &priya).is_some());
+        // Someone else spoke, so it wasn't a 1:1.
+        assert!(one_on_one_name(&["You", "Sam", "Speaker 1"], &priya).is_none());
+        // No system audio: the user's own lines are "Speaker" too.
+        assert!(one_on_one_name(&["Speaker"], &priya).is_none());
+        // Nothing left to name, or more than one person on screen.
+        assert!(one_on_one_name(&["You", "Priya Patel"], &priya).is_none());
+        let two = ["Priya Patel".to_string(), "Sam Lee".to_string()];
+        assert!(one_on_one_name(&["You", "Speaker 1"], &two).is_none());
     }
 
     #[test]
