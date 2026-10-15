@@ -12,8 +12,6 @@ pub enum ExportFormat {
     Text,
     Srt,
     Vtt,
-    /// Markdown without the transcript, for sharing a meeting's notes.
-    Notes,
 }
 
 impl ExportFormat {
@@ -35,20 +33,28 @@ impl ExportFormat {
 
 /// Render one meeting in `format`, reading whatever that format needs.
 pub fn export_meeting(db: &Database, meeting_id: &str, format: ExportFormat) -> Result<String> {
-    let segments = db.get_transcript(meeting_id)?;
     Ok(match format {
-        ExportFormat::Text => format_transcript(&segments) + "\n",
-        ExportFormat::Srt => to_srt(&segments),
-        ExportFormat::Vtt => to_vtt(&segments),
-        ExportFormat::Markdown => {
-            let meeting = db.get_meeting(meeting_id)?;
-            meeting_markdown(db, &meeting, &db.list_templates()?, &segments)?
-        }
-        ExportFormat::Notes => {
-            let meeting = db.get_meeting(meeting_id)?;
-            meeting_markdown(db, &meeting, &db.list_templates()?, &[])?
-        }
+        ExportFormat::Text => format_transcript(&db.get_transcript(meeting_id)?) + "\n",
+        ExportFormat::Srt => to_srt(&db.get_transcript(meeting_id)?),
+        ExportFormat::Vtt => to_vtt(&db.get_transcript(meeting_id)?),
+        ExportFormat::Markdown => meeting_as_markdown(db, meeting_id, true)?,
     })
+}
+
+/// One meeting as Markdown; without the transcript it's just the notes,
+/// summaries, and action items, which is what gets shared.
+pub fn meeting_as_markdown(
+    db: &Database,
+    meeting_id: &str,
+    include_transcript: bool,
+) -> Result<String> {
+    let meeting = db.get_meeting(meeting_id)?;
+    let segments = if include_transcript {
+        db.get_transcript(meeting_id)?
+    } else {
+        Vec::new()
+    };
+    meeting_markdown(db, &meeting, &db.list_templates()?, &segments)
 }
 
 /// A meeting as Markdown, naming each summary after its template.

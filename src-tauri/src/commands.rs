@@ -1453,15 +1453,10 @@ pub fn open_in_claude(
             .open_url(web.as_str(), None::<&str>)
             .map_err(|e| format!("Couldn't open Claude: {e}"))?;
     }
-    let rest = if prompt.complete {
-        None
-    } else {
-        Some(
-            crate::export::export_meeting(&db, &meeting_id, crate::export::ExportFormat::Markdown)
-                .map_err(|e| e.to_string())?,
-        )
-    };
-    Ok(ClaudeHandoff { desktop, rest })
+    Ok(ClaudeHandoff {
+        desktop,
+        rest: prompt.rest,
+    })
 }
 
 /// Calendar events in the next `hours` (default 12), for the home screen.

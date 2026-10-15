@@ -6,7 +6,8 @@
 //! Nootle runs no server, so the note lives somewhere the user controls.
 
 use crate::db::{Database, MeetingShare};
-use crate::export::ExportFormat;
+use crate::export::meeting_as_markdown;
+use std::sync::Arc;
 
 const GISTS_API: &str = "https://api.github.com/gists";
 
@@ -34,12 +35,24 @@ async fn github_token(db: &Database) -> Result<String, String> {
     }
 }
 
-fn gist_request(method: reqwest::Method, url: &str, token: &str) -> reqwest::RequestBuilder {
-    crate::http::CLIENT
+async fn send_gist(
+    method: reqwest::Method,
+    url: &str,
+    token: &str,
+    body: Option<serde_json::Value>,
+) -> Result<reqwest::Response, String> {
+    let mut request = crate::http::CLIENT
         .request(method, url)
         .bearer_auth(token)
         .header("User-Agent", "Nootle")
-        .header("Accept", "application/vnd.github+json")
+        .header("Accept", "application/vnd.github+json");
+    if let Some(body) = body {
+        request = request.json(&body);
+    }
+    request
+        .send()
+        .await
+        .map_err(|e| format!("Couldn't reach GitHub: {e}"))
 }
 
 /// GitHub's reason, with a hint for the usual cause: a token without `gist`.
@@ -64,12 +77,7 @@ fn shared_markdown(
     meeting_id: &str,
     include_transcript: bool,
 ) -> Result<String, String> {
-    let format = if include_transcript {
-        ExportFormat::Markdown
-    } else {
-        ExportFormat::Notes
-    };
-    let md = crate::export::export_meeting(db, meeting_id, format).map_err(|e| e.to_string())?;
+    let md = meeting_as_markdown(db, meeting_id, include_transcript).map_err(|e| e.to_string())?;
     Ok(format!(
         "{md}\n---\n\n_Shared from [Nootle](https://github.com/michellemayes/nootle)_\n"
     ))
@@ -78,34 +86,34 @@ fn shared_markdown(
 /// Creates the meeting's share link, or brings the existing one up to date
 /// with the meeting as it is now.
 pub async fn share_meeting(
-    db: &Database,
+    db: &Arc<Database>,
     meeting_id: &str,
     include_transcript: bool,
 ) -> Result<MeetingShare, String> {
     crate::llm::ensure_may_send_to_integrations(db)?;
-    let meeting = db.get_meeting(meeting_id).map_err(|e| e.to_string())?;
-    let content = shared_markdown(db, meeting_id, include_transcript)?;
-    let file_name = format!("{}.md", crate::workflows::sanitize_filename(&meeting.title));
+    // Before rendering the meeting, so a missing token fails fast.
     let token = github_token(db).await?;
-    let existing = db
-        .get_meeting_share(meeting_id)
-        .map_err(|e| e.to_string())?;
+    let (title, content, existing) = {
+        let (db, id) = (db.clone(), meeting_id.to_string());
+        tokio::task::spawn_blocking(move || -> Result<_, String> {
+            let title = db.get_meeting(&id).map_err(|e| e.to_string())?.title;
+            let content = shared_markdown(&db, &id, include_transcript)?;
+            let existing = db.get_meeting_share(&id).map_err(|e| e.to_string())?;
+            Ok((title, content, existing))
+        })
+        .await
+        .map_err(|e| e.to_string())??
+    };
+    let file_name = format!("{}.md", crate::workflows::sanitize_filename(&title));
 
     // Rename the old file rather than adding a second one beside it.
     if let Some(share) = &existing {
         let body = serde_json::json!({
-            "description": meeting.title,
+            "description": title,
             "files": { share.file_name.as_str(): { "filename": file_name, "content": content } },
         });
-        let resp = gist_request(
-            reqwest::Method::PATCH,
-            &format!("{GISTS_API}/{}", share.gist_id),
-            &token,
-        )
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Couldn't reach GitHub: {e}"))?;
+        let url = format!("{GISTS_API}/{}", share.gist_id);
+        let resp = send_gist(reqwest::Method::PATCH, &url, &token, Some(body)).await?;
         if resp.status().is_success() {
             return db
                 .save_meeting_share(
@@ -124,15 +132,11 @@ pub async fn share_meeting(
     }
 
     let body = serde_json::json!({
-        "description": meeting.title,
+        "description": title,
         "public": false,
         "files": { file_name.as_str(): { "content": content } },
     });
-    let resp = gist_request(reqwest::Method::POST, GISTS_API, &token)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Couldn't reach GitHub: {e}"))?;
+    let resp = send_gist(reqwest::Method::POST, GISTS_API, &token, Some(body)).await?;
     if !resp.status().is_success() {
         return Err(gist_error(resp).await);
     }
@@ -161,14 +165,8 @@ pub async fn unshare_meeting(db: &Database, meeting_id: &str) -> Result<(), Stri
 }
 
 async fn delete_gist(token: &str, gist_id: &str) -> Result<(), String> {
-    let resp = gist_request(
-        reqwest::Method::DELETE,
-        &format!("{GISTS_API}/{gist_id}"),
-        token,
-    )
-    .send()
-    .await
-    .map_err(|e| format!("Couldn't reach GitHub: {e}"))?;
+    let url = format!("{GISTS_API}/{gist_id}");
+    let resp = send_gist(reqwest::Method::DELETE, &url, token, None).await?;
     // Already deleted on GitHub counts as done.
     if resp.status().is_success() || resp.status() == reqwest::StatusCode::NOT_FOUND {
         Ok(())
@@ -180,16 +178,13 @@ async fn delete_gist(token: &str, gist_id: &str) -> Result<(), String> {
 /// Revokes a deleted meeting's share link in the background, so deleting a
 /// meeting never leaves its notes readable at an old link. Call before the
 /// meeting (and its share row) is deleted.
-pub fn revoke_after_delete(db: &std::sync::Arc<Database>, meeting_id: &str) {
+pub fn revoke_after_delete(db: &Arc<Database>, meeting_id: &str) {
     let Ok(Some(share)) = db.get_meeting_share(meeting_id) else {
         return;
     };
     let db = db.clone();
     tauri::async_runtime::spawn(async move {
-        let result = match github_token(&db).await {
-            Ok(token) => delete_gist(&token, &share.gist_id).await,
-            Err(e) => Err(e),
-        };
+        let result = async { delete_gist(&github_token(&db).await?, &share.gist_id).await }.await;
         if let Err(e) = result {
             tracing::warn!("Couldn't revoke share link {}: {e}", share.url);
         }
@@ -197,27 +192,19 @@ pub fn revoke_after_delete(db: &std::sync::Arc<Database>, meeting_id: &str) {
 }
 
 /// A first message for Claude about this meeting: its notes, plus as much of
-/// the transcript as fits in a link. `complete` is false when anything was
-/// left out, so the caller can offer the rest another way.
-#[derive(Debug, serde::Serialize)]
+/// the transcript as fits in a link. `rest` is the whole meeting when any of
+/// it was left out, so the caller can offer it another way.
+#[derive(Debug)]
 pub struct ClaudePrompt {
     pub prompt: String,
-    pub complete: bool,
+    pub rest: Option<String>,
 }
 
 pub fn claude_prompt(db: &Database, meeting_id: &str) -> Result<ClaudePrompt, String> {
-    if crate::llm::local_only_enabled(db) {
-        return Err(
-            "Local-only mode is on, so meetings aren't sent to Claude. Turn it off \
-                    in Settings → Privacy to do this."
-                .into(),
-        );
-    }
-    let meeting = db.get_meeting(meeting_id).map_err(|e| e.to_string())?;
-    let with_transcript = crate::export::export_meeting(db, meeting_id, ExportFormat::Markdown)
-        .map_err(|e| e.to_string())?;
-    let notes = crate::export::export_meeting(db, meeting_id, ExportFormat::Notes)
-        .map_err(|e| e.to_string())?;
+    crate::llm::ensure_may_send(db, "Claude")?;
+    let markdown = |include_transcript| {
+        meeting_as_markdown(db, meeting_id, include_transcript).map_err(|e| e.to_string())
+    };
     let link = db
         .get_meeting_share(meeting_id)
         .ok()
@@ -225,35 +212,31 @@ pub fn claude_prompt(db: &Database, meeting_id: &str) -> Result<ClaudePrompt, St
         .filter(|s| s.include_transcript)
         .map(|s| format!("The full notes and transcript are at {}\n\n", s.url))
         .unwrap_or_default();
-    Ok(build_claude_prompt(
-        &meeting.title,
-        &link,
-        &with_transcript,
-        &notes,
-    ))
+    build_claude_prompt(&link, markdown(true)?, || markdown(false))
 }
 
-fn build_claude_prompt(title: &str, link: &str, full: &str, notes: &str) -> ClaudePrompt {
-    let intro = format!(
-        "I'd like to keep discussing my meeting \"{title}\". Here are my notes from Nootle:\n\n"
-    );
+fn build_claude_prompt(
+    link: &str,
+    full: String,
+    notes: impl FnOnce() -> Result<String, String>,
+) -> Result<ClaudePrompt, String> {
+    let intro = "I'd like to keep discussing this meeting. Here are my notes from Nootle:\n\n";
     let outro = "\n\nRead them, then let's talk it through.";
     let budget = CLAUDE_PROMPT_MAX_CHARS
         .saturating_sub(intro.chars().count() + link.chars().count() + outro.chars().count());
-    let (body, complete) = if full.chars().count() <= budget {
-        (full.trim().to_string(), true)
-    } else {
-        let trimmed = "\n\n…(trimmed)";
-        let room = budget.saturating_sub(trimmed.chars().count());
-        (
-            crate::ops::truncate_at_word_boundary(notes, room, trimmed),
-            false,
-        )
-    };
-    ClaudePrompt {
-        prompt: format!("{intro}{link}{body}{outro}"),
-        complete,
+    if full.chars().nth(budget).is_none() {
+        return Ok(ClaudePrompt {
+            prompt: format!("{intro}{link}{}{outro}", full.trim()),
+            rest: None,
+        });
     }
+    let trimmed = "\n\n…(trimmed)";
+    let room = budget.saturating_sub(trimmed.chars().count());
+    let body = crate::ops::truncate_at_word_boundary(&notes()?, room, trimmed);
+    Ok(ClaudePrompt {
+        prompt: format!("{intro}{link}{body}{outro}"),
+        rest: Some(full),
+    })
 }
 
 /// Whether the Claude desktop app is installed, so a hand-off can open it
@@ -269,22 +252,27 @@ pub fn claude_desktop_installed() -> bool {
 mod tests {
     use super::*;
 
+    fn unused_notes() -> Result<String, String> {
+        panic!("notes are only built when the meeting doesn't fit")
+    }
+
     #[test]
     fn claude_prompt_keeps_a_short_meeting_whole() {
-        let p = build_claude_prompt("Sync", "", "# Sync\n\n## Transcript\n\nhi\n", "# Sync\n");
-        assert!(p.complete);
+        let full = "# Sync\n\n## Transcript\n\nhi\n".to_string();
+        let p = build_claude_prompt("", full, unused_notes).unwrap();
+        assert!(p.rest.is_none());
         assert!(p.prompt.contains("## Transcript"), "{}", p.prompt);
         assert!(p
             .prompt
-            .starts_with("I'd like to keep discussing my meeting \"Sync\""));
+            .starts_with("I'd like to keep discussing this meeting"));
     }
 
     #[test]
     fn claude_prompt_drops_a_long_transcript_and_fits_the_link() {
         let full = format!("# Sync\n\n## Transcript\n\n{}", "word ".repeat(5_000));
         let notes = format!("# Sync\n\n## Notes\n\n{}", "note ".repeat(5_000));
-        let p = build_claude_prompt("Sync", "", &full, &notes);
-        assert!(!p.complete);
+        let p = build_claude_prompt("", full.clone(), || Ok(notes)).unwrap();
+        assert_eq!(p.rest, Some(full));
         assert!(!p.prompt.contains("## Transcript"));
         assert!(p.prompt.contains("…(trimmed)"));
         assert!(p.prompt.chars().count() <= CLAUDE_PROMPT_MAX_CHARS);
@@ -320,7 +308,7 @@ mod tests {
 
     #[tokio::test]
     async fn sharing_is_refused_in_local_only_mode() {
-        let db = Database::new_in_memory().unwrap();
+        let db = Arc::new(Database::new_in_memory().unwrap());
         db.set_setting(crate::llm::LOCAL_ONLY_SETTING, "true")
             .unwrap();
         assert!(share_meeting(&db, "m", false).await.is_err());

@@ -87,12 +87,17 @@ pub fn sync_local_only(db: &crate::db::Database) {
 
 /// Refuses to send meeting content to an integration in local-only mode.
 pub fn ensure_may_send_to_integrations(db: &crate::db::Database) -> Result<(), String> {
+    ensure_may_send(db, "integrations")
+}
+
+/// Refuses to send meeting content off this Mac, to `destination`, in
+/// local-only mode.
+pub fn ensure_may_send(db: &crate::db::Database, destination: &str) -> Result<(), String> {
     if local_only_enabled(db) {
-        return Err(
-            "Local-only mode is on, so meetings aren't sent to integrations. Turn it off \
-                    in Settings → Privacy to do this."
-                .into(),
-        );
+        return Err(format!(
+            "Local-only mode is on, so meetings aren't sent to {destination}. Turn it off \
+             in Settings → Privacy to do this."
+        ));
     }
     Ok(())
 }
