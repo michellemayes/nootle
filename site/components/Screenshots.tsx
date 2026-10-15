@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useInView, useReducedMotion } from "framer-motion";
 import { AnimateIn } from "@/components/AnimateIn";
+import { EASE_OUT } from "@/components/motion";
 
 const SHOTS = [
   {
@@ -44,12 +45,26 @@ const SHOTS = [
   },
 ] as const;
 
+const AUTOPLAY_MS = 5000;
+
 export function Screenshots() {
-  const [active, setActive] = useState<(typeof SHOTS)[number]["id"]>("library");
-  const shot = SHOTS.find((s) => s.id === active) ?? SHOTS[0];
+  const [index, setIndex] = useState(0);
+  // Tours the tabs on its own until the visitor picks one.
+  const [autoplay, setAutoplay] = useState(true);
+  const sectionRef = useRef<HTMLElement>(null);
+  const inView = useInView(sectionRef, { amount: 0.4 });
+  const reduce = useReducedMotion();
+  const playing = autoplay && inView && !reduce;
+  const shot = SHOTS[index];
+
+  useEffect(() => {
+    if (!playing) return;
+    const id = setTimeout(() => setIndex((index + 1) % SHOTS.length), AUTOPLAY_MS);
+    return () => clearTimeout(id);
+  }, [playing, index]);
 
   return (
-    <section aria-label="Screenshots" className="py-24 px-6">
+    <section ref={sectionRef} aria-label="Screenshots" className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
         <AnimateIn>
           <h2 className="font-[family-name:var(--font-outfit)] text-4xl md:text-5xl font-bold text-center mb-4 text-[var(--color-text)]">
@@ -65,22 +80,46 @@ export function Screenshots() {
           aria-label="App screenshots"
           className="flex flex-wrap justify-center gap-2 mb-8"
         >
-          {SHOTS.map((s) => (
-            <button
-              key={s.id}
-              role="tab"
-              aria-selected={s.id === active}
-              aria-controls={`screenshot-${s.id}`}
-              onClick={() => setActive(s.id)}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${
-                s.id === active
-                  ? "bg-[var(--color-accent)] text-white"
-                  : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-elevated)]"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
+          {SHOTS.map((s, i) => {
+            const selected = i === index;
+            return (
+              <button
+                key={s.id}
+                role="tab"
+                aria-selected={selected}
+                aria-controls={`screenshot-${s.id}`}
+                onClick={() => {
+                  setAutoplay(false);
+                  setIndex(i);
+                }}
+                className={`relative rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${
+                  selected
+                    ? "text-white"
+                    : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-elevated)]"
+                }`}
+              >
+                {selected && (
+                  <motion.span
+                    layoutId="screenshot-tab"
+                    className="absolute inset-0 rounded-full bg-[var(--color-accent)]"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+                {selected && playing && (
+                  <span aria-hidden="true" className="absolute inset-x-4 bottom-1 h-0.5 overflow-hidden rounded-full">
+                    <motion.span
+                      key={`progress-${s.id}`}
+                      className="block h-full w-full origin-left bg-white/70"
+                      initial={{ scaleX: 0 }}
+                      animate={{ scaleX: 1 }}
+                      transition={{ duration: AUTOPLAY_MS / 1000, ease: "linear" }}
+                    />
+                  </span>
+                )}
+                <span className="relative">{s.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         <AnimateIn delay={0.1} className="relative mx-auto max-w-5xl">
@@ -89,10 +128,10 @@ export function Screenshots() {
               key={shot.id}
               id={`screenshot-${shot.id}`}
               role="tabpanel"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0, y: 12, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -12, scale: 0.98 }}
+              transition={{ duration: 0.3, ease: EASE_OUT }}
             >
               <Image
                 src={`/screenshots/${shot.id}-dark.png`}

@@ -1,4 +1,5 @@
 import { faqs } from "@/components/faq-data";
+import { RELEASES_URL } from "@/components/site-config";
 
 const SITE_URL = "https://nootle.ai";
 const SITE_NAME = "Nootle";
@@ -8,7 +9,7 @@ const softwareApplication = JSON.stringify({
   "@type": "SoftwareApplication",
   name: SITE_NAME,
   description:
-    "AI-powered meeting recorder for Mac. Real-time transcription, speaker identification, and AI chat. All local, all private.",
+    "AI-powered meeting recorder for Mac. Records calls without a bot, transcribes on your Mac with speaker identification, and answers from your meetings and documents, even live during a call.",
   url: SITE_URL,
   operatingSystem: "macOS",
   applicationCategory: "BusinessApplication",
@@ -17,17 +18,23 @@ const softwareApplication = JSON.stringify({
     price: "0",
     priceCurrency: "USD",
   },
-  downloadUrl: "https://github.com/michellemayes/nootle/releases",
+  downloadUrl: RELEASES_URL,
   featureList: [
-    "Real-time transcription",
-    "Speaker identification",
+    "Real-time transcription on your Mac",
+    "Speaker identification that remembers voices",
     "AI summaries and chat",
-    "Local and private processing",
+    "Local knowledge base of your documents",
+    "Live Assist answers during calls",
+    "Snapshots of shared screens",
+    "Shorthand notes expanded into full notes",
+    "Local-only mode and no telemetry",
     "Crash-safe recording",
-    "Search across meetings",
-    "Auto-detection of Zoom, Teams, Google Meet",
+    "Search across meetings and documents",
+    "Meeting detection for Zoom, Teams, Webex, Slack, FaceTime, Discord, and browser calls",
+    "Import recordings and transcripts from Otter, Fathom, Granola, Zoom, Teams, and Meet",
     "Workflows and integrations with Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, and email",
-    "Customizable summary templates with auto-apply rules",
+    "Customizable summary templates that run automatically",
+    "Use a Claude or ChatGPT subscription via the Claude Code and Codex CLIs",
     "CLI and developer tools",
     "MCP server for AI assistants",
   ],

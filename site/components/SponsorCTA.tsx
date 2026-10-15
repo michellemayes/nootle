@@ -1,5 +1,6 @@
 import { Heart } from "lucide-react";
 import { AnimateIn } from "@/components/AnimateIn";
+import { SPONSOR_URL } from "@/components/site-config";
 
 export function SponsorCTA() {
   return (
@@ -20,7 +21,7 @@ export function SponsorCTA() {
               supporting development.
             </p>
             <a
-              href="https://github.com/sponsors/michellemayes"
+              href={SPONSOR_URL}
               className="inline-flex items-center justify-center px-8 py-3 text-base font-semibold text-white rounded-full bg-[var(--color-sponsor)] hover:bg-[var(--color-sponsor-hover)] active:scale-[0.96] transition-[background-color,box-shadow,transform,scale] duration-200 hover:shadow-[0_0_30px_-5px_var(--color-sponsor)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-sponsor)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
             >
               <Heart

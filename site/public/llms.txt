@@ -4,7 +4,7 @@
 
 ## Product
 
-- Platform: macOS 14+
+- Platform: macOS 14+ on Apple Silicon (M1–M5)
 - Price: Free (open source, MIT license)
 - Download: https://github.com/michellemayes/nootle/releases
 - Website: https://nootle.ai
@@ -12,13 +12,23 @@
 
 ## Features
 
+- Records without a bot joining the call
 - Real-time transcription with speaker diarization using Parakeet via ONNX Runtime
-- Local AI summaries and chat (supports OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, and local Ollama)
-- Auto-detection of Zoom, Teams, Google Meet
-- Noise cancellation for cleaner audio
-- Semantic search across all meeting history
-- Customizable summary templates with auto-apply rules
+- Speaker names read from the call window, and optional voice memory that names people in later meetings
+- AI summaries and chat (supports OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, and Claude / ChatGPT subscriptions via the Claude Code and Codex CLIs)
+- Local-only mode, and no telemetry
+- Knowledge base: index project folders, documents (PDF, Word, PowerPoint, Excel, Markdown, CSV, HTML), and web pages on your Mac
+- Live Assist: answers questions from your documents and past meetings during a call
+- Snapshots of shared slides, designs, and charts, with on-device text recognition
+- Shorthand notes expanded into full notes after the meeting
+- "What did I miss?" recap of the last five minutes
+- Meeting detection for Zoom, Teams, Webex, Slack, FaceTime, Discord, and browser calls like Google Meet
+- Calendar: upcoming meetings with one-click Record and Join
+- Import audio/video recordings and transcripts from Otter, Fathom, Granola, Zoom, Teams, or Meet
+- Meaning-based and keyword search across all meetings and documents
+- Customizable summary templates that run automatically
 - Workflows that push summaries and action items to: Slack, Notion, Linear, GitHub, Confluence, Asana, Obsidian, Email
+- Export as Markdown, text, SRT, or WebVTT
 - CLI tool for querying meeting data from the terminal
 - MCP server for AI assistant integration
 - Automatic action item extraction
@@ -26,10 +36,11 @@
 
 ## How It Works
 
-1. Nootle detects when you join a meeting on Zoom, Teams, or Google Meet
-2. Records and transcribes in real time with speaker identification
-3. Generates AI summaries and lets you ask follow-up questions
-4. Pushes notes to Slack, Linear, Notion, or other connected tools
+1. Nootle detects when a call starts on Zoom, Teams, Webex, Slack, FaceTime, Discord, or in the browser
+2. Records and transcribes on your Mac in real time with speaker identification
+3. Live Assist answers questions from your documents and past meetings during the call
+4. Generates AI summaries, expands your notes, and lets you ask follow-up questions
+5. Pushes notes to Slack, Linear, Notion, or other connected tools
 
 ## Privacy
 
