@@ -244,7 +244,10 @@ export function RecordingView() {
   // meeting row holds, so only real changes are written.
   const savedRef = useRef<{ id: string; title: string; templateId: string } | null>(null);
   const hasPendingEditsRef = useRef(false);
-  const saveDetails = useCallback(async () => {
+  // Saves run one after another, so stopping waits for a template picked a
+  // moment earlier to be stored before the backend summarizes with it.
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const writeDetails = useCallback(async () => {
     if (!currentMeeting) {
       // Recording is still starting; the effect below saves once it exists.
       hasPendingEditsRef.current = true;
@@ -274,6 +277,10 @@ export function RecordingView() {
       console.error("Failed to save meeting details:", err),
     );
   }, [currentMeeting]);
+  const saveDetails = useCallback(() => {
+    saveQueueRef.current = saveQueueRef.current.then(writeDetails);
+    return saveQueueRef.current;
+  }, [writeDetails]);
 
   useEffect(() => {
     if (currentMeeting && hasPendingEditsRef.current) {
