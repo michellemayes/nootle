@@ -3,10 +3,8 @@ import { ChevronDown } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { SiteFooter } from "@/components/SiteFooter";
 import { AppleLogo } from "@/components/AppleLogo";
-
-const RELEASES_URL = "https://github.com/michellemayes/nootle/releases";
-const BREW_COMMAND =
-  "brew tap michellemayes/nootle https://github.com/michellemayes/nootle && brew install --cask nootle";
+import { CopyCommand } from "@/components/CopyCommand";
+import { RELEASES_URL } from "@/components/site-config";
 
 const outfit = "font-[family-name:var(--font-outfit)]";
 
@@ -241,9 +239,7 @@ export function LandingPage({ content }: { content: LandingContent }) {
             </p>
             <DownloadButton />
             <p className="mt-10 mb-3 text-sm text-[var(--color-text-secondary)]">Or install with Homebrew:</p>
-            <pre className="text-left text-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 overflow-x-auto">
-              <code className="select-all text-[var(--color-text)]">{BREW_COMMAND}</code>
-            </pre>
+            <CopyCommand />
           </div>
         </section>
       </main>

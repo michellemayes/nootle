@@ -34,11 +34,13 @@ export function FAQ() {
           {faqs.map((faq, i) => (
             <motion.div
               key={i}
-              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden"
+              className={`rounded-2xl border bg-[var(--color-bg)] overflow-hidden transition-colors duration-300 ${
+                openIndex === i ? "border-[var(--color-accent)]/50" : "border-[var(--color-border)]"
+              }`}
               initial={{ opacity: 0, y: 16 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.3, delay: i * 0.05 }}
+              transition={{ duration: 0.3, delay: Math.min(i, 6) * 0.05 }}
             >
               <button
                 onClick={() => setOpenIndex(openIndex === i ? null : i)}
@@ -49,20 +51,22 @@ export function FAQ() {
                   {faq.question}
                 </h3>
                 <ChevronDown
-                  className={`w-5 h-5 text-[var(--color-text-secondary)] shrink-0 transition-transform duration-200 ${
-                    openIndex === i ? "rotate-180" : ""
+                  className={`w-5 h-5 text-[var(--color-text-secondary)] shrink-0 transition-transform duration-300 ${
+                    openIndex === i ? "rotate-180 text-[var(--color-accent)]" : ""
                   }`}
                 />
               </button>
-              <div
-                className={`overflow-hidden transition-[max-height,padding] duration-200 ${
-                  openIndex === i ? "max-h-96 pb-6" : "max-h-0"
-                }`}
+              <motion.div
+                initial={false}
+                animate={openIndex === i ? { height: "auto", opacity: 1 } : { height: 0, opacity: 0 }}
+                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                inert={openIndex !== i}
+                className="overflow-hidden"
               >
-                <p className="px-6 text-[var(--color-text-secondary)] text-base leading-relaxed">
+                <p className="px-6 pb-6 text-[var(--color-text-secondary)] text-base leading-relaxed">
                   {faq.answer}
                 </p>
-              </div>
+              </motion.div>
             </motion.div>
           ))}
         </div>
