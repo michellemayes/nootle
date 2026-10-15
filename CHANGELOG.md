@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.2] - 2026-10-15
+
+### Bug Fixes
+
+- Keep panel content from running off the edge (#177) ([21d8038](https://github.com/michellemayes/nootle/commit/21d8038e541a7c92a149f9b5f6ac2065daa8064b))
+
 ## [0.7.1] - 2026-10-15
 
 ### Bug Fixes
