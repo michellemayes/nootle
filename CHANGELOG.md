@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.1] - 2026-10-15
+
+### Bug Fixes
+
+- Let the window be dragged by its title bar again (#176) ([51a44ab](https://github.com/michellemayes/nootle/commit/51a44abebed7066a3720a6e03cf4434f9975bd74))
+
 ## [0.7.0] - 2026-10-12
 
 ### Features
