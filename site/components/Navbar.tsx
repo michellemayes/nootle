@@ -19,7 +19,9 @@ export function Navbar() {
   const progress = useSpring(scrollYProgress, { stiffness: 200, damping: 40, restDelta: 0.001 });
   const [scrolled, setScrolled] = useState(false);
 
-  useMotionValueEvent(scrollY, "change", (y) => setScrolled(y > 12));
+  useMotionValueEvent(scrollY, "change", (y) => {
+    if (y > 12 !== scrolled) setScrolled(y > 12);
+  });
 
   return (
     <nav

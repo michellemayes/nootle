@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, type Variants } from "framer-motion";
 import { Check, X } from "lucide-react";
 import { AnimateIn } from "@/components/AnimateIn";
 
@@ -36,22 +36,34 @@ const rows: { label: string; cells: Cell[] }[] = [
   },
 ];
 
-function CellView({ cell, highlight, delay }: { cell: Cell; highlight: boolean; delay: number }) {
+// The table reveals in one pass: the body staggers its rows, and each row pops its icons.
+const bodyVariants: Variants = { hidden: {}, show: { transition: { staggerChildren: 0.04 } } };
+const rowVariants: Variants = { hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0, transition: { duration: 0.35 } } };
+const iconVariants: Variants = {
+  hidden: { scale: 0, rotate: -45 },
+  show: (column: number) => ({
+    scale: 1,
+    rotate: 0,
+    transition: { type: "spring", stiffness: 400, damping: 15, delay: column * 0.05 },
+  }),
+};
+
+const ICON_TONE = {
+  nootle: "bg-[var(--color-accent)] text-white",
+  yes: "bg-[var(--color-emerald)]/15 text-[var(--color-emerald)]",
+  no: "bg-[var(--color-border)]/60 text-[var(--color-text-secondary)]",
+};
+
+function CellView({ cell, column }: { cell: Cell; column: number }) {
+  const highlight = column === 0;
+  const tone = !cell.ok ? "no" : highlight ? "nootle" : "yes";
   return (
     <span className="flex flex-col items-center gap-1 text-center">
       {cell.ok !== undefined && (
         <motion.span
-          initial={{ scale: 0, rotate: -45 }}
-          whileInView={{ scale: 1, rotate: 0 }}
-          viewport={{ once: true }}
-          transition={{ type: "spring", stiffness: 400, damping: 15, delay }}
-          className={`flex w-6 h-6 items-center justify-center rounded-full ${
-            cell.ok
-              ? highlight
-                ? "bg-[var(--color-accent)] text-white"
-                : "bg-[var(--color-emerald)]/15 text-[var(--color-emerald)]"
-              : "bg-[var(--color-border)]/60 text-[var(--color-text-secondary)]"
-          }`}
+          variants={iconVariants}
+          custom={column}
+          className={`flex w-6 h-6 items-center justify-center rounded-full ${ICON_TONE[tone]}`}
         >
           {cell.ok ? <Check className="w-3.5 h-3.5" strokeWidth={3} /> : <X className="w-3.5 h-3.5" strokeWidth={3} />}
           <span className="sr-only">{cell.ok ? "Yes" : "No"}</span>
@@ -105,14 +117,16 @@ export function Comparison() {
                   ))}
                 </tr>
               </thead>
-              <tbody>
-                {rows.map((row, r) => (
+              <motion.tbody
+                variants={bodyVariants}
+                initial="hidden"
+                whileInView="show"
+                viewport={{ once: true, margin: "-40px" }}
+              >
+                {rows.map((row) => (
                   <motion.tr
                     key={row.label}
-                    initial={{ opacity: 0, y: 8 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true, margin: "-40px" }}
-                    transition={{ duration: 0.35, delay: r * 0.04 }}
+                    variants={rowVariants}
                     className="border-t border-[var(--color-border)] transition-colors hover:bg-[var(--color-surface-elevated)]/50"
                   >
                     <th scope="row" className="px-5 py-3.5 text-left font-medium text-[var(--color-text)]">
@@ -120,12 +134,12 @@ export function Comparison() {
                     </th>
                     {row.cells.map((cell, c) => (
                       <td key={c} className={`px-3 py-3.5 align-middle ${c === 0 ? "bg-[var(--color-accent)]/10" : ""}`}>
-                        <CellView cell={cell} highlight={c === 0} delay={r * 0.04 + c * 0.05} />
+                        <CellView cell={cell} column={c} />
                       </td>
                     ))}
                   </motion.tr>
                 ))}
-              </tbody>
+              </motion.tbody>
             </table>
           </div>
           <p className="mt-4 text-xs text-center text-[var(--color-text-secondary)]">

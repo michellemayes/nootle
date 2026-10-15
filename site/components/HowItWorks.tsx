@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { motion, useScroll, useSpring } from "framer-motion";
 import { AnimateIn } from "@/components/AnimateIn";
+import { EASE_OUT } from "@/components/motion";
 
 const steps = [
   {
@@ -58,7 +59,7 @@ export function HowItWorks() {
             className="absolute left-6 top-6 bottom-6 w-px origin-top"
             style={{
               scaleY: progress,
-              background: "linear-gradient(to bottom, #22d3ee, #8b5cf6, #f472b6, #34d399)",
+              background: `linear-gradient(to bottom, ${steps.map((s) => s.color).join(", ")})`,
             }}
           />
 
@@ -83,7 +84,7 @@ export function HowItWorks() {
                   initial={{ opacity: 0, x: 24 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true, margin: "-30% 0px" }}
-                  transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: 0.5, ease: EASE_OUT }}
                 >
                   <h3 className="font-[family-name:var(--font-outfit)] text-2xl font-bold mb-2 text-[var(--color-text)]">
                     {step.title}

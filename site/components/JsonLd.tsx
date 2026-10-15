@@ -1,4 +1,5 @@
 import { faqs } from "@/components/faq-data";
+import { RELEASES_URL } from "@/components/site-config";
 
 const SITE_URL = "https://nootle.ai";
 const SITE_NAME = "Nootle";
@@ -17,7 +18,7 @@ const softwareApplication = JSON.stringify({
     price: "0",
     priceCurrency: "USD",
   },
-  downloadUrl: "https://github.com/michellemayes/nootle/releases",
+  downloadUrl: RELEASES_URL,
   featureList: [
     "Real-time transcription on your Mac",
     "Speaker identification that remembers voices",

@@ -2,7 +2,6 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  BadgeCheck,
   BarChart3,
   Camera,
   Check,
@@ -15,18 +14,28 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { NameSwap, SourceChip, WaveBars } from "@/components/DemoParts";
+import { SPRING as spring } from "@/components/motion";
+import { AI_PROVIDERS } from "@/components/site-config";
 import { useLoopStep } from "@/components/useLoopStep";
 
 /* Small looping illustrations for the feature cards. They're decorative (the
    card text says the same thing), so each is hidden from assistive tech. With
    reduced motion each holds on its last, finished frame. */
 
-const spring = { type: "spring", stiffness: 280, damping: 24 } as const;
-
-function Stage({ children, stageRef }: { children: ReactNode; stageRef: React.Ref<HTMLDivElement> }) {
+function Stage({
+  children,
+  stageRef,
+  running,
+}: {
+  children: ReactNode;
+  stageRef: React.Ref<HTMLDivElement>;
+  running: boolean;
+}) {
   return (
     <div
       ref={stageRef}
+      data-running={running}
       aria-hidden="true"
       className="relative h-44 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
     >
@@ -36,9 +45,9 @@ function Stage({ children, stageRef }: { children: ReactNode; stageRef: React.Re
 }
 
 export function LiveAssistVignette() {
-  const { ref, step } = useLoopStep(5, 1500);
+  const { ref, step, running } = useLoopStep(5, 1500);
   return (
-    <Stage stageRef={ref}>
+    <Stage stageRef={ref} running={running}>
       <div className="grid h-full gap-4 sm:grid-cols-2">
         <div className="flex flex-col justify-end gap-2 text-xs">
           <p className="text-[var(--color-text-secondary)]">
@@ -80,8 +89,8 @@ export function LiveAssistVignette() {
                 <p className="text-xs text-[var(--color-text)] leading-snug">
                   30 days from purchase, prorated after that.
                 </p>
-                <p className="mt-2 inline-flex items-center gap-1 rounded bg-[var(--color-bg)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-secondary)]">
-                  <FileText className="w-3 h-3" /> Billing policy.docx · p. 2
+                <p className="mt-2">
+                  <SourceChip>Billing policy.docx · p. 2</SourceChip>
                 </p>
               </motion.div>
             )}
@@ -95,10 +104,10 @@ export function LiveAssistVignette() {
 const PRIVACY_ROWS = ["Meeting audio", "Transcripts & notes", "Voice fingerprints", "AI: Ollama (local)"];
 
 export function PrivacyVignette() {
-  const { ref, step } = useLoopStep(PRIVACY_ROWS.length + 2, 1100);
+  const { ref, step, running } = useLoopStep(PRIVACY_ROWS.length + 2, 1100);
   const on = step >= 1;
   return (
-    <Stage stageRef={ref}>
+    <Stage stageRef={ref} running={running}>
       <div className="flex items-center justify-between mb-3">
         <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text)]">
           <Lock className="w-3.5 h-3.5 text-[var(--color-emerald)]" /> Local-only mode
@@ -147,10 +156,10 @@ const FILES = [
 ];
 
 export function KnowledgeVignette() {
-  const { ref, step } = useLoopStep(FILES.length + 2, 900);
+  const { ref, step, running } = useLoopStep(FILES.length + 2, 900);
   const indexed = Math.min(step, FILES.length);
   return (
-    <Stage stageRef={ref}>
+    <Stage stageRef={ref} running={running}>
       <div className="flex items-center justify-between text-[11px] text-[var(--color-text-secondary)] mb-2">
         <span>Indexing on your Mac</span>
         <span className="tabular-nums">{Math.round((indexed / FILES.length) * 100)}%</span>
@@ -191,9 +200,9 @@ const VOICES = [
 ];
 
 export function SpeakersVignette() {
-  const { ref, step } = useLoopStep(VOICES.length + 2, 1200);
+  const { ref, step, running } = useLoopStep(VOICES.length + 2, 1200);
   return (
-    <Stage stageRef={ref}>
+    <Stage stageRef={ref} running={running}>
       <ul className="space-y-3">
         {VOICES.map((v, i) => {
           const named = step > i;
@@ -205,28 +214,16 @@ export function SpeakersVignette() {
               >
                 {named ? v.to[0] : i + 1}
               </span>
-              <span className="flex items-end gap-[2px] h-4 shrink-0">
-                {[0, 1, 2, 3, 4, 5].map((b) => (
-                  <span
-                    key={b}
-                    className="wave-bar w-[3px] h-full rounded-full"
-                    style={{ background: v.color, opacity: 0.7, animationDelay: `${-(b + i * 2) * 0.15}s` }}
-                  />
-                ))}
+              <WaveBars count={6} seed={i * 2} color={v.color} className="h-4 opacity-70" />
+              <span className="text-sm">
+                <NameSwap
+                  named={named}
+                  label={v.from}
+                  name={v.to}
+                  color={v.color}
+                  labelColor="var(--color-text-secondary)"
+                />
               </span>
-              <AnimatePresence mode="popLayout" initial={false}>
-                <motion.span
-                  key={named ? "to" : "from"}
-                  initial={{ opacity: 0, y: -8, filter: "blur(4px)" }}
-                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                  exit={{ opacity: 0, y: 8, filter: "blur(4px)" }}
-                  className="flex items-center gap-1 text-sm font-semibold"
-                  style={{ color: named ? v.color : "var(--color-text-secondary)" }}
-                >
-                  {named ? v.to : v.from}
-                  {named && <BadgeCheck className="w-3.5 h-3.5" />}
-                </motion.span>
-              </AnimatePresence>
             </li>
           );
         })}
@@ -246,11 +243,11 @@ const SLIDES = [
 
 export function SnapshotsVignette() {
   // Each slide is shown, snapped (the flash), then lands in the strip below.
-  const { ref, step } = useLoopStep(SLIDES.length + 1, 1300);
+  const { ref, step, running } = useLoopStep(SLIDES.length + 1, 1300);
   const current = SLIDES[Math.min(step, SLIDES.length - 1)];
   const captured = Math.min(step + 1, SLIDES.length);
   return (
-    <Stage stageRef={ref}>
+    <Stage stageRef={ref} running={running}>
       <div className="relative h-[5.5rem] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-3 overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div
@@ -323,76 +320,62 @@ function SlideBody({ kind }: { kind: "chart" | "design" | "text" }) {
   );
 }
 
+const ORIGINAL_NOTES = ["acme sso??", "pricing → ask jordan", "ship fri?"];
+const ENRICHED_NOTES = [
+  "• Acme needs SAML SSO (Okta) before rollout.",
+  "• Pricing: Jordan to confirm the annual discount by Wed.",
+  "• Ship date holds at Friday if SSO lands Thursday.",
+];
+
 export function EnrichVignette() {
-  const { ref, step } = useLoopStep(2, 2800);
+  const { ref, step, running } = useLoopStep(2, 2800);
   const enriched = step === 1;
   return (
-    <Stage stageRef={ref}>
+    <Stage stageRef={ref} running={running}>
       <div className="inline-flex rounded-lg bg-[var(--color-bg)] p-0.5 text-[11px] font-medium mb-3">
-        {["Original", "Enriched"].map((label, i) => (
-          <span key={label} className="relative px-2.5 py-1">
-            {(i === 1) === enriched && (
-              <motion.span
-                layoutId="enrich-pill"
-                className="absolute inset-0 rounded-md bg-[var(--color-surface-elevated)]"
-                transition={spring}
-              />
-            )}
-            <span className={`relative ${(i === 1) === enriched ? "text-[var(--color-text)]" : "text-[var(--color-text-secondary)]"}`}>
-              {label}
+        {["Original", "Enriched"].map((label, i) => {
+          const active = (i === 1) === enriched;
+          return (
+            <span key={label} className="relative px-2.5 py-1">
+              {active && (
+                <motion.span
+                  layoutId="enrich-pill"
+                  className="absolute inset-0 rounded-md bg-[var(--color-surface-elevated)]"
+                  transition={spring}
+                />
+              )}
+              <span className={`relative ${active ? "text-[var(--color-text)]" : "text-[var(--color-text-secondary)]"}`}>
+                {label}
+              </span>
             </span>
-          </span>
-        ))}
+          );
+        })}
       </div>
       <AnimatePresence mode="wait" initial={false}>
-        {enriched ? (
-          <motion.ul
-            key="enriched"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="space-y-1.5 text-xs text-[var(--color-text)] leading-snug"
-          >
-            <li>• Acme needs SAML SSO (Okta) before rollout. <span className="text-[var(--color-text-secondary)]">12:52</span></li>
-            <li>• Pricing: Jordan to confirm the annual discount by Wed.</li>
-            <li>• Ship date holds at Friday if SSO lands Thursday.</li>
-          </motion.ul>
-        ) : (
-          <motion.ul
-            key="original"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="space-y-1.5 font-mono text-xs text-[var(--color-text-secondary)]"
-          >
-            <li>acme sso??</li>
-            <li>pricing → ask jordan</li>
-            <li>ship fri?</li>
-          </motion.ul>
-        )}
+        <motion.ul
+          key={enriched ? "enriched" : "original"}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          className={`space-y-1.5 text-xs leading-snug ${
+            enriched ? "text-[var(--color-text)]" : "font-mono text-[var(--color-text-secondary)]"
+          }`}
+        >
+          {(enriched ? ENRICHED_NOTES : ORIGINAL_NOTES).map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </motion.ul>
       </AnimatePresence>
     </Stage>
   );
 }
 
-const PROVIDERS = [
-  "OpenAI",
-  "Anthropic",
-  "Google",
-  "Groq",
-  "OpenRouter",
-  "AWS Bedrock",
-  "Claude Code",
-  "Codex CLI",
-  "Ollama",
-];
-
 export function ProvidersVignette() {
-  const { ref, step } = useLoopStep(PROVIDERS.length, 900);
+  const { ref, step, running } = useLoopStep(AI_PROVIDERS.length, 900);
   return (
-    <Stage stageRef={ref}>
+    <Stage stageRef={ref} running={running}>
       <div className="flex flex-wrap gap-1.5">
-        {PROVIDERS.map((p, i) => (
+        {AI_PROVIDERS.map((p, i) => (
           <span key={p} className="relative rounded-full px-2.5 py-1 text-xs">
             {i === step && (
               <motion.span

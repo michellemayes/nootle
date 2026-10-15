@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence, useInView, useReducedMotion } from "framer-motion";
 import { AnimateIn } from "@/components/AnimateIn";
+import { EASE_OUT } from "@/components/motion";
 
 const SHOTS = [
   {
@@ -47,19 +48,18 @@ const SHOTS = [
 const AUTOPLAY_MS = 5000;
 
 export function Screenshots() {
-  const [active, setActive] = useState<(typeof SHOTS)[number]["id"]>("library");
+  const [index, setIndex] = useState(0);
   // Tours the tabs on its own until the visitor picks one.
   const [autoplay, setAutoplay] = useState(true);
   const sectionRef = useRef<HTMLElement>(null);
   const inView = useInView(sectionRef, { amount: 0.4 });
   const reduce = useReducedMotion();
   const playing = autoplay && inView && !reduce;
-  const index = SHOTS.findIndex((s) => s.id === active);
-  const shot = SHOTS[index] ?? SHOTS[0];
+  const shot = SHOTS[index];
 
   useEffect(() => {
     if (!playing) return;
-    const id = setTimeout(() => setActive(SHOTS[(index + 1) % SHOTS.length].id), AUTOPLAY_MS);
+    const id = setTimeout(() => setIndex((index + 1) % SHOTS.length), AUTOPLAY_MS);
     return () => clearTimeout(id);
   }, [playing, index]);
 
@@ -80,8 +80,8 @@ export function Screenshots() {
           aria-label="App screenshots"
           className="flex flex-wrap justify-center gap-2 mb-8"
         >
-          {SHOTS.map((s) => {
-            const selected = s.id === active;
+          {SHOTS.map((s, i) => {
+            const selected = i === index;
             return (
               <button
                 key={s.id}
@@ -90,7 +90,7 @@ export function Screenshots() {
                 aria-controls={`screenshot-${s.id}`}
                 onClick={() => {
                   setAutoplay(false);
-                  setActive(s.id);
+                  setIndex(i);
                 }}
                 className={`relative rounded-full px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${
                   selected
@@ -131,7 +131,7 @@ export function Screenshots() {
               initial={{ opacity: 0, y: 12, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -12, scale: 0.98 }}
-              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: 0.3, ease: EASE_OUT }}
             >
               <Image
                 src={`/screenshots/${shot.id}-dark.png`}

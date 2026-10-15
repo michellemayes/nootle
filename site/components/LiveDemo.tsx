@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { BadgeCheck, CheckSquare, FileText, Sparkles, Video } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { AnimatePresence, animate, motion } from "framer-motion";
+import { CheckSquare, Sparkles, Video } from "lucide-react";
+import { NameSwap, SourceChip, WaveBars } from "@/components/DemoParts";
+import { EASE_OUT } from "@/components/motion";
 import { useLoopStep } from "@/components/useLoopStep";
 
 /* A looping, scripted mock of Nootle mid-call: the transcript builds, speakers
@@ -30,20 +32,20 @@ const ANSWER_AT = 4;
 const ACTION_AT = 8;
 
 export function LiveDemo() {
-  const { ref, step, reduce } = useLoopStep(STEPS, STEP_MS);
-  const elapsed = useElapsed(749, !reduce);
+  const { ref, step, reduce, running } = useLoopStep(STEPS, STEP_MS);
   const visible = LINES.filter((l) => step >= l.at);
 
   return (
     <div
       ref={ref}
+      data-running={running}
       role="img"
       aria-label="Nootle recording a call: the live transcript names speakers from their voices, and Live Assist answers a question about the Acme pilot from the team's documents."
       className="relative mx-auto max-w-4xl text-left"
     >
       <div
         aria-hidden="true"
-        className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur shadow-[0_30px_80px_-30px_rgba(0,0,0,0.8)] overflow-hidden"
+        className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_30px_80px_-30px_rgba(0,0,0,0.8)] overflow-hidden"
       >
         {/* Title bar */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/60">
@@ -61,7 +63,7 @@ export function LiveDemo() {
             <Meter label="Call" seed={3} />
             <div className="flex items-center gap-1.5 rounded-full bg-[#ef4444]/15 px-2.5 py-1 text-xs font-semibold text-[#f87171] tabular-nums">
               <span className="rec-dot w-2 h-2 rounded-full bg-[#ef4444]" />
-              {formatTime(elapsed)}
+              <Clock start={749} running={running} />
             </div>
           </div>
         </div>
@@ -88,19 +90,29 @@ export function LiveDemo() {
                 {visible.map((line, i) => (
                   <motion.li
                     key={line.time}
-                    layout={!reduce}
+                    layout
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                    transition={{ duration: 0.35, ease: EASE_OUT }}
                     className="text-sm leading-snug"
                   >
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <SpeakerName speaker={line.speaker} step={step} />
+                    <div className="flex items-center gap-2 mb-0.5 text-xs">
+                      <NameSwap
+                        named={line.speaker.namedAt !== undefined && step >= line.speaker.namedAt}
+                        label={line.speaker.label}
+                        name={line.speaker.name ?? line.speaker.label}
+                        color={line.speaker.color}
+                        labelColor={line.speaker.color}
+                      />
                       <span className="text-[11px] tabular-nums text-[var(--color-text-secondary)]">{line.time}</span>
                     </div>
                     <p className="text-[var(--color-text)]">
-                      <Typewriter text={line.text} animate={!reduce} highlight={line.speaker === PRIYA && step >= QUESTION_AT} />
+                      <Typewriter
+                        text={line.text}
+                        typing={!reduce}
+                        highlight={line.speaker === PRIYA && step >= QUESTION_AT}
+                      />
                       {!reduce && i === visible.length - 1 && <span className="caret ml-0.5 text-[var(--color-accent)]">▍</span>}
                     </p>
                   </motion.li>
@@ -163,8 +175,8 @@ export function LiveDemo() {
                     They need SAML single sign-on through Okta before a company-wide rollout.
                   </p>
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    <Source>Acme pilot notes.pdf · p. 3</Source>
-                    <Source>Acme check-in · Sep 30</Source>
+                    <SourceChip>Acme pilot notes.pdf · p. 3</SourceChip>
+                    <SourceChip>Acme check-in · Sep 30</SourceChip>
                   </div>
                 </motion.div>
               )}
@@ -194,77 +206,61 @@ export function LiveDemo() {
   );
 }
 
-function SpeakerName({ speaker, step }: { speaker: Speaker; step: number }) {
-  const named = speaker.name && speaker.namedAt !== undefined && step >= speaker.namedAt;
+/** Types `text` out by writing to the DOM directly, so typing costs no React renders. */
+function Typewriter({ text, typing, highlight }: { text: string; typing: boolean; highlight: boolean }) {
+  const shownRef = useRef<HTMLSpanElement>(null);
+  const restRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const shown = shownRef.current;
+    const rest = restRef.current;
+    if (!typing || !shown || !rest) return;
+    const controls = animate(0, text.length, {
+      duration: text.length * 0.024,
+      ease: "linear",
+      onUpdate: (v) => {
+        const n = Math.round(v);
+        shown.textContent = text.slice(0, n);
+        rest.textContent = text.slice(n);
+      },
+    });
+    return () => controls.stop();
+  }, [typing, text]);
+
+  // The untyped remainder stays in the layout (invisible) so lines don't reflow as they type.
   return (
-    <span className="relative inline-flex items-center gap-1 text-xs font-semibold" style={{ color: speaker.color }}>
-      <AnimatePresence mode="popLayout" initial={false}>
-        <motion.span
-          key={named ? "name" : "label"}
-          initial={{ opacity: 0, y: -8, filter: "blur(4px)" }}
-          animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-          exit={{ opacity: 0, y: 8, filter: "blur(4px)" }}
-          transition={{ duration: 0.3 }}
-          className="inline-flex items-center gap-1"
-        >
-          {named ? speaker.name : speaker.label}
-          {named && <BadgeCheck className="w-3.5 h-3.5" />}
-        </motion.span>
-      </AnimatePresence>
+    <span className={`rounded transition-colors duration-500 ${highlight ? "bg-[var(--color-accent)]/20" : ""}`}>
+      <span ref={shownRef}>{typing ? "" : text}</span>
+      <span ref={restRef} className="opacity-0">
+        {typing ? text : ""}
+      </span>
     </span>
   );
 }
 
-function Typewriter({ text, animate, highlight }: { text: string; animate: boolean; highlight: boolean }) {
-  const [count, setCount] = useState(animate ? 0 : text.length);
+/** A running mm:ss timer that updates its own text node rather than re-rendering the demo. */
+function Clock({ start, running }: { start: number; running: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const seconds = useRef(start);
 
   useEffect(() => {
-    if (!animate) return;
+    if (!running) return;
     const id = setInterval(() => {
-      setCount((c) => {
-        if (c >= text.length) clearInterval(id);
-        return Math.min(c + 1, text.length);
-      });
-    }, 24);
+      seconds.current += 1;
+      if (ref.current) ref.current.textContent = formatTime(seconds.current);
+    }, 1000);
     return () => clearInterval(id);
-  }, [animate, text]);
+  }, [running]);
 
-  return (
-    <span
-      className={`rounded transition-colors duration-500 ${highlight ? "bg-[var(--color-accent)]/20" : ""}`}
-    >
-      {text.slice(0, count)}
-      <span className="opacity-0">{text.slice(count)}</span>
-    </span>
-  );
+  return <span ref={ref}>{formatTime(start)}</span>;
 }
 
 function Meter({ label, seed }: { label: string; seed: number }) {
   return (
     <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-[var(--color-text-secondary)]">
       {label}
-      <span className="flex items-end gap-[2px] h-3.5">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <span
-            key={i}
-            className="wave-bar w-[3px] h-full rounded-full bg-[var(--color-emerald)]"
-            style={{
-              animationDelay: `${-((i + seed) * 0.17)}s`,
-              animationDuration: `${0.8 + ((i * 7 + seed) % 5) * 0.12}s`,
-            }}
-          />
-        ))}
-      </span>
+      <WaveBars count={5} seed={seed} color="var(--color-emerald)" />
     </div>
-  );
-}
-
-function Source({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-bg)] px-2 py-0.5 text-[11px] text-[var(--color-text-secondary)]">
-      <FileText className="w-3 h-3" />
-      {children}
-    </span>
   );
 }
 
@@ -276,16 +272,6 @@ function Dots() {
       ))}
     </span>
   );
-}
-
-function useElapsed(start: number, running: boolean) {
-  const [seconds, setSeconds] = useState(start);
-  useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => setSeconds((s) => s + 1), 1000);
-    return () => clearInterval(id);
-  }, [running]);
-  return seconds;
 }
 
 function formatTime(total: number) {

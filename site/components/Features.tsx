@@ -11,8 +11,7 @@ import {
   SnapshotsVignette,
   SpeakersVignette,
 } from "@/components/FeatureVignettes";
-
-const outfit = "font-[family-name:var(--font-outfit)]";
+import { outfit } from "@/components/site-config";
 
 const spotlights: {
   id?: string;

@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { faqs } from "@/components/faq-data";
+import { EASE_OUT } from "@/components/motion";
 
 export function FAQ() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
@@ -59,7 +60,7 @@ export function FAQ() {
               <motion.div
                 initial={false}
                 animate={openIndex === i ? { height: "auto", opacity: 1 } : { height: 0, opacity: 0 }}
-                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                transition={{ duration: 0.3, ease: EASE_OUT }}
                 inert={openIndex !== i}
                 className="overflow-hidden"
               >

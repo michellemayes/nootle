@@ -18,18 +18,21 @@ const dmSans = DM_Sans({
   display: "swap",
 });
 
+const DESCRIPTION =
+  "Free, open-source AI meeting recorder for Mac. No bot in your calls, transcription on your Mac, speaker identification, and AI answers from your meetings and docs.";
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://nootle.ai"),
   title: "Nootle - AI Meeting Recorder for Mac",
   description:
-    "Free, open-source AI meeting recorder for Mac. No bot in your calls, transcription on your Mac, speaker identification, and AI answers from your meetings and docs. Download free.",
+    `${DESCRIPTION} Download free.`,
   alternates: {
     canonical: "/",
   },
   openGraph: {
     title: "Nootle - AI Meeting Recorder for Mac",
     description:
-      "Free, open-source AI meeting recorder for Mac. No bot in your calls, transcription on your Mac, speaker identification, and AI answers from your meetings and docs.",
+      DESCRIPTION,
     type: "website",
     url: "https://nootle.ai",
     siteName: "Nootle",
@@ -46,7 +49,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Nootle - AI Meeting Recorder for Mac",
     description:
-      "Free, open-source AI meeting recorder for Mac. No bot in your calls, transcription on your Mac, speaker identification, and AI answers from your meetings and docs.",
+      DESCRIPTION,
     images: ["/og-image.png"],
   },
   icons: {

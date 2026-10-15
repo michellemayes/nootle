@@ -99,6 +99,11 @@ body::after {
   animation: caret 1s step-end infinite;
 }
 
+/* Demos mark themselves data-running="false" offscreen so their loops stop. */
+[data-running="false"] :is(.wave-bar, .rec-dot, .caret) {
+  animation-play-state: paused;
+}
+
 /* Logo rows that drift sideways; hovering pauses them. Each row holds two
    identical groups, so sliding by half the width loops without a seam. */
 .marquee {
