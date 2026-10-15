@@ -16,6 +16,8 @@ import { Markdown } from "@/components/Markdown";
 import { NotesEditor } from "@/components/NotesEditor";
 import { AnalyticsPanel } from "@/components/AnalyticsPanel";
 import { ExportMenu } from "@/components/ExportMenu";
+import { ShareMenu } from "@/components/ShareMenu";
+import { OpenInClaudeButton } from "@/components/OpenInClaudeButton";
 import { useMeeting, updateMeetingTitle } from "@/hooks/useMeetings";
 import { useTranscript } from "@/hooks/useTranscripts";
 import { useSummaries } from "@/hooks/useSummaries";
@@ -1400,6 +1402,8 @@ export function MeetingDetail() {
             onViewRuns={() => setDetailTab("workflows")}
           />
           <ExportMenu meeting={meeting} />
+          <ShareMenu meeting={meeting} />
+          <OpenInClaudeButton meetingId={meeting.id} />
           {!chatOpen && (
             <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
               <MessageSquare className="h-4 w-4" /> Ask Nootle

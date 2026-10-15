@@ -12,6 +12,8 @@ pub enum ExportFormat {
     Text,
     Srt,
     Vtt,
+    /// Markdown without the transcript, for sharing a meeting's notes.
+    Notes,
 }
 
 impl ExportFormat {
@@ -41,6 +43,10 @@ pub fn export_meeting(db: &Database, meeting_id: &str, format: ExportFormat) -> 
         ExportFormat::Markdown => {
             let meeting = db.get_meeting(meeting_id)?;
             meeting_markdown(db, &meeting, &db.list_templates()?, &segments)?
+        }
+        ExportFormat::Notes => {
+            let meeting = db.get_meeting(meeting_id)?;
+            meeting_markdown(db, &meeting, &db.list_templates()?, &[])?
         }
     })
 }

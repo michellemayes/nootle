@@ -38,8 +38,8 @@ export const INTEGRATION_TYPES = [
   {
     type: "github", name: "GitHub",
     fields: [{ key: "token", label: "Token", placeholder: "ghp_..." }],
-    tokenUrl: "https://github.com/settings/tokens/new?scopes=repo&description=Nootle",
-    tokenHint: "The repo scope is pre-selected. Pick an expiration, generate the token, and copy it.",
+    tokenUrl: "https://github.com/settings/tokens/new?scopes=repo,gist&description=Nootle",
+    tokenHint: "The repo and gist scopes (gist is for share links) are pre-selected. Pick an expiration, generate the token, and copy it.",
   },
   {
     type: "linear", name: "Linear", signIn: true,

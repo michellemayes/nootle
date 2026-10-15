@@ -30,6 +30,7 @@ pub mod permissions;
 pub mod pipeline;
 pub mod remote;
 pub mod sandbox_migration;
+pub mod share;
 pub mod shell_env;
 pub mod snapshots;
 pub mod summarization;
@@ -445,6 +446,10 @@ pub fn run() {
             commands::import_extensions,
             commands::import_recording,
             commands::export_meeting,
+            commands::get_meeting_share,
+            commands::share_meeting,
+            commands::unshare_meeting,
+            commands::open_in_claude,
             commands::list_upcoming_events,
             commands::store_api_key,
             commands::has_api_key,

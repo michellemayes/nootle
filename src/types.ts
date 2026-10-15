@@ -290,6 +290,16 @@ export interface InsightWithActionItem {
   meeting_start_time: string | null;
 }
 
+/** A meeting's public share link: a secret gist in the user's GitHub account. */
+export interface MeetingShare {
+  meeting_id: string;
+  gist_id: string;
+  url: string;
+  file_name: string;
+  include_transcript: boolean;
+  updated_at: string;
+}
+
 export interface Integration {
   id: string;
   integration_type: string;

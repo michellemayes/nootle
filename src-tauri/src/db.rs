@@ -800,6 +800,17 @@ pub struct WorkflowRun {
     pub workflow_icon: Option<String>,
 }
 
+/// A meeting's public share link (see `share.rs`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeetingShare {
+    pub meeting_id: String,
+    pub gist_id: String,
+    pub url: String,
+    pub file_name: String,
+    pub include_transcript: bool,
+    pub updated_at: String,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -1599,6 +1610,16 @@ impl Database {
                  attendees TEXT NOT NULL DEFAULT '[]',
                  agenda TEXT
              );",
+            // 7: public share links, each a secret gist in the user's GitHub
+            // account, so a meeting's link can be updated or revoked later.
+            "CREATE TABLE meeting_shares (
+                 meeting_id TEXT PRIMARY KEY REFERENCES meetings(id) ON DELETE CASCADE,
+                 gist_id TEXT NOT NULL,
+                 url TEXT NOT NULL,
+                 file_name TEXT NOT NULL,
+                 include_transcript INTEGER NOT NULL DEFAULT 0,
+                 updated_at TEXT NOT NULL
+             );",
         ];
 
         let current: usize =
@@ -1953,7 +1974,67 @@ impl Database {
             "DELETE FROM meeting_calendar_context WHERE meeting_id = ?1",
             params![id],
         )?;
+        conn.execute(
+            "DELETE FROM meeting_shares WHERE meeting_id = ?1",
+            params![id],
+        )?;
 
+        Ok(())
+    }
+
+    // --- Share links ---
+
+    pub fn get_meeting_share(&self, meeting_id: &str) -> Result<Option<MeetingShare>> {
+        let conn = self.lock_conn()?;
+        Ok(conn
+            .query_row(
+                "SELECT meeting_id, gist_id, url, file_name, include_transcript, updated_at
+                 FROM meeting_shares WHERE meeting_id = ?1",
+                params![meeting_id],
+                |row| {
+                    Ok(MeetingShare {
+                        meeting_id: row.get(0)?,
+                        gist_id: row.get(1)?,
+                        url: row.get(2)?,
+                        file_name: row.get(3)?,
+                        include_transcript: row.get(4)?,
+                        updated_at: row.get(5)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    pub fn save_meeting_share(
+        &self,
+        meeting_id: &str,
+        gist_id: &str,
+        url: &str,
+        file_name: &str,
+        include_transcript: bool,
+    ) -> Result<MeetingShare> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.lock_conn()?.execute(
+            "INSERT OR REPLACE INTO meeting_shares
+                 (meeting_id, gist_id, url, file_name, include_transcript, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![meeting_id, gist_id, url, file_name, include_transcript, now],
+        )?;
+        Ok(MeetingShare {
+            meeting_id: meeting_id.into(),
+            gist_id: gist_id.into(),
+            url: url.into(),
+            file_name: file_name.into(),
+            include_transcript,
+            updated_at: now,
+        })
+    }
+
+    pub fn delete_meeting_share(&self, meeting_id: &str) -> Result<()> {
+        self.lock_conn()?.execute(
+            "DELETE FROM meeting_shares WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
         Ok(())
     }
 
