@@ -1,128 +1,179 @@
-import { Lock, Mic, MessageSquare, Lightbulb, Search, Volume2, Zap, SquareKanban, Terminal, LayoutTemplate, type LucideIcon } from "lucide-react";
+import type { ComponentType } from "react";
+import { Check } from "lucide-react";
 import { AnimateIn } from "@/components/AnimateIn";
+import { SpotlightCard } from "@/components/SpotlightCard";
+import {
+  EnrichVignette,
+  KnowledgeVignette,
+  LiveAssistVignette,
+  PrivacyVignette,
+  ProvidersVignette,
+  SnapshotsVignette,
+  SpeakersVignette,
+} from "@/components/FeatureVignettes";
+import { outfit } from "@/components/site-config";
 
-const features: {
-  icon: LucideIcon;
+const spotlights: {
+  id?: string;
   title: string;
   description: string;
-  color: string;
-  span?: string;
+  vignette: ComponentType;
+  span: string;
+  isNew?: boolean;
 }[] = [
   {
-    icon: Lock,
-    title: "Local & Private",
+    id: "live-assist",
+    title: "Live Assist answers mid-call",
     description:
-      "All audio recording and transcription happens entirely on your Mac using on-device machine learning. No meeting audio is ever sent to external servers, and transcripts and notes stay on your hardware. AI summaries and chat are only fully local if you choose Ollama as your provider — cloud providers (OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock) receive transcript context when you invoke them.",
-    color: "#34d399",
+      "While you record, a side panel listens for questions your documents or past meetings can answer and shows a short reply you could say aloud, with its sources. Type your own question any time. Small talk is ignored, and it stays quiet when nothing relevant turns up.",
+    vignette: LiveAssistVignette,
+    span: "md:col-span-4",
+    isNew: true,
+  },
+  {
+    title: "Local by default",
+    description:
+      "Recording and transcription always run on your Mac, and audio is never uploaded. Turn on Local-only mode and only local models can see meeting content. No telemetry, ever.",
+    vignette: PrivacyVignette,
     span: "md:col-span-2",
   },
   {
-    icon: Mic,
-    title: "Real-time Transcription",
+    title: "A knowledge base of your docs",
     description:
-      "Live speech-to-text powered by Parakeet via ONNX Runtime, running locally on your Mac. Automatic speaker diarization identifies who said what, so you can follow conversations clearly. Captures both your microphone and system audio simultaneously for complete meeting coverage.",
-    color: "#22d3ee",
+      "Add project folders, files, and web pages: PDF, Word, PowerPoint, Excel, Markdown, and more. Nootle indexes them on your Mac and answers from them alongside your meetings, citing the page or slide.",
+    vignette: KnowledgeVignette,
+    span: "md:col-span-2",
+    isNew: true,
+  },
+  {
+    title: "Speakers it remembers",
+    description:
+      "Every voice is told apart, and names are read from the call's video tiles. Turn on Remember voices and people you've named are recognised in later meetings, on any app or in person.",
+    vignette: SpeakersVignette,
     span: "md:col-span-2",
   },
   {
-    icon: MessageSquare,
-    title: "AI Summaries & Chat",
+    title: "Snapshots of shared screens",
     description:
-      "Get instant AI-generated summaries after every meeting, highlighting key decisions and outcomes. Ask follow-up questions about anything discussed — Nootle lets you chat with your meeting transcript using your choice of AI provider: OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, or local models via Ollama.",
-    color: "#8b5cf6",
+      "When someone shares slides, designs, or charts, Nootle snaps one picture per slide into your notes and reads the text on your Mac, so you can ask what the revenue chart said.",
+    vignette: SnapshotsVignette,
+    span: "md:col-span-2",
   },
   {
-    icon: Lightbulb,
-    title: "Smart Insights",
+    title: "Shorthand in, full notes out",
     description:
-      "Automatically extract decisions, action items, and key moments from every meeting. Nootle identifies what was agreed upon, what needs to happen next, and who is responsible — so nothing falls through the cracks after a busy day of calls.",
-    color: "#fbbf24",
+      "Jot terse notes while you talk. When the call ends, Nootle expands them from the transcript, the calendar agenda, and your knowledge base. Your originals stay one click away.",
+    vignette: EnrichVignette,
+    span: "md:col-span-3",
+    isNew: true,
   },
   {
-    icon: Search,
-    title: "Search Across Meetings",
+    title: "Any AI, including the one you pay for",
     description:
-      "Use AI-powered semantic search to ask questions across your entire meeting history. Instead of scrubbing through hours of recordings, just type a question like \"What did we decide about the launch date?\" and get the answer instantly with the relevant transcript context.",
-    color: "#f472b6",
+      "Use OpenAI, Anthropic, Google, Groq, OpenRouter, or AWS Bedrock with your own key, local models through Ollama, or your existing Claude or ChatGPT subscription through the Claude Code and Codex CLIs.",
+    vignette: ProvidersVignette,
+    span: "md:col-span-3",
+  },
+];
+
+const groups: { heading: string; items: { title: string; body: string }[] }[] = [
+  {
+    heading: "Capture",
+    items: [
+      { title: "Meeting detection", body: "A pop-up offers to record when a call starts on Zoom, Teams, Webex, Slack, FaceTime, Discord, or in the browser." },
+      { title: "Calendar up next", body: "One-click Record and Join, recordings named after the event, and what's still open from last time." },
+      { title: "Live audio levels", body: "Mic and call meters, plus a warning if Nootle hears nothing for 20 seconds." },
+      { title: "Pause and resume", body: "Go off the record mid-meeting. Nothing is captured while paused." },
+      { title: "Crash-safe recording", body: "Saved every few seconds and recovered on next launch if anything quits." },
+      { title: "Import anything", body: "Audio and video files, or transcripts from Otter, Fathom, Granola, Zoom, Teams, and Meet." },
+    ],
   },
   {
-    icon: Volume2,
-    title: "Crash-Safe Recording",
-    description:
-      "Your recording is saved every few seconds as you go. If your Mac or Nootle crashes mid-meeting, the meeting is transcribed again from its audio the next time you open Nootle and summarized as usual, so nothing quietly goes missing.",
-    color: "#22d3ee",
+    heading: "Understand",
+    items: [
+      { title: "Summaries and insights", body: "Decisions, action items with owners, and key moments from every meeting." },
+      { title: "Ask across everything", body: "Chat with every meeting and document at once, with citations you can click." },
+      { title: "What did I miss?", body: "One click recaps the last five minutes and anything asked of you." },
+      { title: "People", body: "Everyone you meet, how often, and the action items they own." },
+      { title: "A dictionary that learns", body: "Fix a misheard name once and it's right in every future meeting." },
+      { title: "Synced playback", body: "Click any line or timestamp to hear that moment, at up to 2× speed." },
+    ],
   },
   {
-    icon: Zap,
-    title: "Auto-Detection",
-    description:
-      "Nootle automatically detects when you join a meeting on Zoom, Microsoft Teams, or Google Meet and offers to start recording. No manual setup required — just join your call and Nootle handles the rest, so you never miss an important conversation.",
-    color: "#fbbf24",
-  },
-  {
-    icon: SquareKanban,
-    title: "Workflows & Integrations",
-    description:
-      "Push meeting notes and action items to the tools you already use. Build workflows that send summaries to Slack, create Linear, GitHub, or Asana tickets, update Notion or Confluence pages, save Markdown to Obsidian, or email a recap — with one click or fully automated per template.",
-    color: "#5E6AD2",
-  },
-  {
-    icon: LayoutTemplate,
-    title: "Customizable Templates",
-    description:
-      "Tailor summaries to how you actually work. Create templates with custom sections and prompts for standups, 1:1s, interviews, or sales calls, and use auto-apply rules so the right template runs automatically based on meeting context.",
-    color: "#fbbf24",
-  },
-  {
-    icon: Terminal,
-    title: "CLI & Developer Tools",
-    description:
-      "Query your meetings from the terminal with Nootle's built-in CLI. An MCP server enables AI assistant integration, letting tools like Claude or GPT access your meeting data for deeper analysis and automated workflows.",
-    color: "#34d399",
+    heading: "Act and own",
+    items: [
+      { title: "Workflows", body: "Send summaries and tasks to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email." },
+      { title: "Templates", body: "Summary formats for 1:1s, standups, or interviews that run on their own." },
+      { title: "MCP server and CLI", body: "Let Claude Code and other agents read meetings and set up automations." },
+      { title: "Plain files you own", body: "Export one meeting or all of them as Markdown, text, SRT, or WebVTT." },
+      { title: "Keyboard-first", body: "⌘K command palette, ⌘N to record from anywhere, and ? for every shortcut." },
+      { title: "Updates in one click", body: "New versions install themselves, never in the middle of a recording." },
+    ],
   },
 ];
 
 export function Features() {
   return (
-    <section id="features" aria-label="Meeting recording features" className="py-24 px-6 bg-[var(--color-surface)]">
+    <section id="features" aria-label="Meeting recording features" className="py-24 px-6 bg-[var(--color-surface)] scroll-mt-16">
       <div className="max-w-6xl mx-auto">
         <AnimateIn>
-          <h2 className="font-[family-name:var(--font-outfit)] text-4xl md:text-5xl font-bold text-center mb-4 text-[var(--color-text)]">
+          <h2 className={`${outfit} text-4xl md:text-5xl font-bold text-center mb-4 text-[var(--color-text)]`}>
             Meeting recording features
           </h2>
         </AnimateIn>
         <AnimateIn delay={0.1}>
-          <p className="text-center text-[var(--color-text-secondary)] text-lg mb-16 max-w-lg mx-auto">
-            Everything you need to capture, understand, and act on your meetings.
+          <p className="text-center text-[var(--color-text-secondary)] text-lg mb-16 max-w-xl mx-auto">
+            Everything you need to capture, understand, and act on your meetings, and now your docs too.
           </p>
         </AnimateIn>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {features.map((feature, i) => (
-            <AnimateIn
-              key={feature.title}
-              className={`group relative p-7 rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)] overflow-hidden transition-[transform,translate,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_-8px_var(--hover-glow)] ${feature.span || ""}`}
-              delay={i * 0.05}
-            >
-              <div
-                className="absolute top-0 left-0 right-0 h-px"
-                style={{ background: `linear-gradient(90deg, transparent, ${feature.color}40, transparent)` }}
-              />
-              <div
-                className="inline-flex items-center justify-center w-11 h-11 rounded-xl mb-4"
-                style={{ backgroundColor: `${feature.color}15` }}
-              >
-                <feature.icon
-                  className="w-5 h-5"
-                  style={{ color: feature.color }}
-                />
-              </div>
-              <h3 className="font-[family-name:var(--font-outfit)] text-lg font-bold mb-2 text-[var(--color-text)]">
-                {feature.title}
-              </h3>
-              <p className="text-[var(--color-text-secondary)] text-sm leading-relaxed">
-                {feature.description}
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+          {spotlights.map((feature, i) => {
+            const Vignette = feature.vignette;
+            return (
+              <AnimateIn key={feature.title} className={feature.span} delay={(i % 3) * 0.08}>
+                <SpotlightCard id={feature.id} className="p-5">
+                  <Vignette />
+                  <div className="px-1 pt-5 pb-1">
+                    <h3 className={`${outfit} flex items-center gap-2 text-lg font-bold mb-2 text-[var(--color-text)]`}>
+                      {feature.title}
+                      {feature.isNew && (
+                        <span className="rounded-full bg-[var(--color-accent)]/15 px-2 py-0.5 text-[11px] font-semibold text-[var(--color-accent)]">
+                          New
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-[var(--color-text-secondary)] text-sm leading-relaxed">{feature.description}</p>
+                  </div>
+                </SpotlightCard>
+              </AnimateIn>
+            );
+          })}
+        </div>
+
+        <AnimateIn className="mt-20 mb-10">
+          <h3 className={`${outfit} text-2xl md:text-3xl font-bold text-center text-[var(--color-text)]`}>
+            And everything around the call
+          </h3>
+        </AnimateIn>
+        <div className="grid gap-10 md:grid-cols-3">
+          {groups.map((group, g) => (
+            <AnimateIn key={group.heading} delay={g * 0.1}>
+              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">
+                {group.heading}
               </p>
+              <ul className="space-y-4">
+                {group.items.map((item) => (
+                  <li key={item.title} className="group flex gap-3">
+                    <span className="mt-0.5 flex w-5 h-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent)]/15 text-[var(--color-accent)] transition-transform duration-200 group-hover:scale-110 group-hover:rotate-12">
+                      <Check className="w-3 h-3" strokeWidth={3} />
+                    </span>
+                    <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
+                      <span className="font-semibold text-[var(--color-text)]">{item.title}.</span> {item.body}
+                    </p>
+                  </li>
+                ))}
+              </ul>
             </AnimateIn>
           ))}
         </div>

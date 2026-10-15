@@ -10,17 +10,17 @@ const requirements = [
   {
     icon: Cpu,
     label: "Processor",
-    value: "Apple Silicon (M1, M2, M3, M4)",
+    value: "Apple Silicon (M1, M2, M3, M4, M5)",
   },
   {
     icon: HardDrive,
     label: "Storage",
-    value: "200 MB for app, plus space for recordings",
+    value: "200 MB for the app, plus space for models and recordings",
   },
   {
     icon: Shield,
     label: "Permissions",
-    value: "Microphone and Screen Recording access",
+    value: "Microphone and Screen Recording (Calendar optional)",
   },
 ];
 

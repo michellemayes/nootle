@@ -13,10 +13,12 @@ export function Introduction() {
           <div className="space-y-5 text-[var(--color-text-secondary)] text-base leading-relaxed">
             <p>
               Nootle is a free, open-source AI meeting recorder designed exclusively for Mac.
-              It sits quietly in your menu bar and automatically detects when you join a call
-              on Zoom, Microsoft Teams, or Google Meet. Once recording begins, Nootle
+              It runs in the background and offers to record when a call starts on Zoom,
+              Microsoft Teams, Webex, Slack, FaceTime, Discord, or Google Meet in your
+              browser, with no bot joining the call. Once recording begins, Nootle
               transcribes the conversation in real time with automatic speaker identification
-              — so you always know who said what.
+              — so you always know who said what — and it can learn voices so people are
+              named for you in later meetings.
             </p>
             <p>
               What sets Nootle apart from cloud-based alternatives is that all audio
@@ -27,13 +29,18 @@ export function Introduction() {
               connection for the core recording and transcription features. AI summaries
               and chat are only fully local if you point Nootle at Ollama — when you pick a
               cloud provider, transcript context is sent to that provider with your own API
-              key.
+              key or your Claude or ChatGPT subscription. Local-only mode makes sure only
+              local models ever see meeting content.
             </p>
             <p>
-              After each meeting, Nootle generates AI-powered summaries, extracts action items,
-              and lets you ask follow-up questions about anything discussed. You choose your
-              AI provider — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, or a
-              fully local model via Ollama. Meeting insights can be automatically pushed to
+              Point Nootle at your project folders, documents, and web pages and it indexes
+              them on your Mac, so chat can answer from your meetings and your docs together.
+              During a call, Live Assist uses the same knowledge base to answer questions as
+              they come up. After each meeting, Nootle generates AI-powered summaries, expands
+              your shorthand notes, extracts action items, and lets you ask follow-up questions
+              about anything discussed. You choose your AI provider — OpenAI, Anthropic, Google,
+              Groq, OpenRouter, AWS Bedrock, a fully local model via Ollama, or the Claude Code
+              and Codex CLIs. Meeting insights can be automatically pushed to
               Slack, Notion, Linear, Confluence, GitHub, Asana, Obsidian, or email — and you
               can build custom templates and workflows so the right summary and the right
               follow-up actions run automatically for every meeting type.

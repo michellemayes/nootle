@@ -2,13 +2,9 @@ import type { Metadata } from "next";
 import { ChevronDown } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { SiteFooter } from "@/components/SiteFooter";
-import { AppleLogo } from "@/components/AppleLogo";
-
-const RELEASES_URL = "https://github.com/michellemayes/nootle/releases";
-const BREW_COMMAND =
-  "brew tap michellemayes/nootle https://github.com/michellemayes/nootle && brew install --cask nootle";
-
-const outfit = "font-[family-name:var(--font-outfit)]";
+import { CopyCommand } from "@/components/CopyCommand";
+import { DownloadButton } from "@/components/DownloadButton";
+import { outfit } from "@/components/site-config";
 
 export type LandingContent = {
   /** Short label above the headline, e.g. "Granola alternative". */
@@ -61,18 +57,6 @@ export function landingMetadata({
       images: ["/og-image.png"],
     },
   };
-}
-
-function DownloadButton() {
-  return (
-    <a
-      href={RELEASES_URL}
-      className="inline-flex items-center justify-center px-8 py-4 text-base font-semibold rounded-full bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] active:scale-[0.96] transition-[background-color,box-shadow,transform,scale] duration-200 hover:shadow-[0_0_30px_-5px_var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]"
-    >
-      <AppleLogo className="w-4 h-4 mr-2" />
-      Download for Mac
-    </a>
-  );
 }
 
 export function LandingPage({ content }: { content: LandingContent }) {
@@ -241,9 +225,7 @@ export function LandingPage({ content }: { content: LandingContent }) {
             </p>
             <DownloadButton />
             <p className="mt-10 mb-3 text-sm text-[var(--color-text-secondary)]">Or install with Homebrew:</p>
-            <pre className="text-left text-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 overflow-x-auto">
-              <code className="select-all text-[var(--color-text)]">{BREW_COMMAND}</code>
-            </pre>
+            <CopyCommand />
           </div>
         </section>
       </main>

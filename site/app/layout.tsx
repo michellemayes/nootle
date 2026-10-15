@@ -3,6 +3,7 @@ import { Outfit, DM_Sans } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import Script from "next/script";
 import { JsonLd } from "@/components/JsonLd";
+import { MotionProvider } from "@/components/MotionProvider";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -17,18 +18,21 @@ const dmSans = DM_Sans({
   display: "swap",
 });
 
+const DESCRIPTION =
+  "Free, open-source AI meeting recorder for Mac. No bot in your calls, transcription on your Mac, speaker identification, and AI answers from your meetings and docs.";
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://nootle.ai"),
   title: "Nootle - AI Meeting Recorder for Mac",
   description:
-    "Free, open-source AI meeting recorder for Mac. Real-time transcription, speaker identification, and AI chat — 100% local and private. Download free.",
+    `${DESCRIPTION} Download free.`,
   alternates: {
     canonical: "/",
   },
   openGraph: {
     title: "Nootle - AI Meeting Recorder for Mac",
     description:
-      "Free, open-source AI meeting recorder for Mac. Real-time transcription, speaker identification, and AI chat — 100% local and private.",
+      DESCRIPTION,
     type: "website",
     url: "https://nootle.ai",
     siteName: "Nootle",
@@ -45,7 +49,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Nootle - AI Meeting Recorder for Mac",
     description:
-      "Free, open-source AI meeting recorder for Mac. Real-time transcription, speaker identification, and AI chat — 100% local and private.",
+      DESCRIPTION,
     images: ["/og-image.png"],
   },
   icons: {
@@ -87,7 +91,7 @@ export default function RootLayout({
           Skip to content
         </a>
         <JsonLd />
-        {children}
+        <MotionProvider>{children}</MotionProvider>
         <Analytics />
       </body>
     </html>
