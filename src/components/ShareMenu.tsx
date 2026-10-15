@@ -11,8 +11,8 @@ import { formatDate } from "@/lib/utils";
 import type { Meeting, MeetingShare } from "@/types";
 
 /**
- * Creates, refreshes, or revokes a public link to the meeting's notes. The
- * link is a secret gist in the user's own GitHub account.
+ * Creates, refreshes, or revokes a link to the meeting's notes on nootle.ai.
+ * The note is encrypted on this Mac and only the link holds the key.
  */
 export function ShareMenu({ meeting }: { meeting: Meeting }) {
   const [share, setShare] = useState<MeetingShare | null>(null);
@@ -63,10 +63,10 @@ export function ShareMenu({ meeting }: { meeting: Meeting }) {
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 space-y-3">
         <div className="space-y-1">
-          <p className="text-sm font-medium">Public link</p>
+          <p className="text-sm font-medium">Share link</p>
           <p className="text-xs text-muted-foreground">
-            Anyone with the link can read this meeting's summaries, action items, and notes. It's a
-            secret gist in your GitHub account, so it's not listed or searchable.
+            Anyone with the link can read this meeting's summaries, action items, and notes. They're
+            encrypted on your Mac and only the link holds the key, so nootle.ai can't read them.
           </p>
         </div>
 

@@ -68,6 +68,8 @@ clap = { version = "4", features = ["derive", "env"] }
 pdf-extract = "0.12"
 zip = { version = "4", default-features = false, features = ["deflate"] }
 quick-xml = "0.38"
+aes-gcm = "0.10"
+base64 = "0.22"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"

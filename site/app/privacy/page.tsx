@@ -20,7 +20,7 @@ export default function PrivacyPage() {
             Privacy Policy
           </h1>
           <p className="text-[var(--color-text-secondary)] text-sm mb-12">
-            Last updated: April 14, 2026
+            Last updated: October 15, 2026
           </p>
 
           <section className="space-y-6 text-[var(--color-text-secondary)] text-base leading-relaxed">
@@ -32,7 +32,8 @@ export default function PrivacyPage() {
                 Nootle is a local-first AI meeting recorder for Mac. Your privacy is
                 fundamental to how Nootle is built. All audio recording, transcription,
                 and processing happens entirely on your Mac. No meeting data is sent to
-                external servers by Nootle.
+                external servers by Nootle, except notes you choose to share, which are
+                encrypted first (see Share links below).
               </p>
             </div>
 
@@ -102,6 +103,24 @@ export default function PrivacyPage() {
                 direction. This data transfer only happens when you explicitly trigger it
                 or configure automatic workflows. Nootle does not send data to any
                 integration without your configuration.
+              </p>
+            </div>
+
+            <div>
+              <h2 className="font-[family-name:var(--font-outfit)] text-2xl font-bold mb-4 text-[var(--color-text)]">
+                Share links
+              </h2>
+              <p>
+                When you share a meeting, the Nootle app encrypts its notes (AES-256-GCM)
+                on your Mac before uploading them to nootle.ai. The key is only in the
+                share link, after the <code>#</code>, and browsers never send that part
+                of a link to a server. So nootle.ai and Vercel, which hosts it, store
+                only encrypted data they can&apos;t read. Anyone you give the link to can
+                read the note in their browser.
+              </p>
+              <p className="mt-4">
+                Share pages don&apos;t load any analytics. Clicking Stop sharing in the
+                app, or deleting the meeting, deletes the encrypted note from nootle.ai.
               </p>
             </div>
 
