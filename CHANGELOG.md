@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- Share links for meeting notes and Continue in Claude (#178) ([c7e04e7](https://github.com/michellemayes/nootle/commit/c7e04e727aa98b7c5ba4570e649708e9992f941a))
+
+## [0.8.0] - 2026-10-15
+
+### Bug Fixes
+
+- Use the meeting type picked while recording for its summary (#180) ([49e9088](https://github.com/michellemayes/nootle/commit/49e90885c52ab2035fd5742e499391a6972b1fbc))
+
+### Features
+
+- **site:** Bring features up to date and add animations (#179) ([888b918](https://github.com/michellemayes/nootle/commit/888b9184ee070bf24314721470dbede4d1de8610))
+
 ## [0.7.2] - 2026-10-15
 
 ### Bug Fixes
