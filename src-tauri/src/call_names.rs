@@ -4,13 +4,12 @@
 //! While a call is recorded, the meeting window's text is read on this Mac
 //! every few seconds, and names that stay on screen are kept with the
 //! meeting. The pictures themselves are thrown away at once. After the
-//! meeting, [`fill_in`] gives the one voice nobody recognised the one name
-//! nobody claimed, and [`name_one_on_one`] names everyone on the far end of
-//! a 1:1 outright. With Remember voices on, each voice named this way is
+//! meeting, [`fill_in`] names everyone on the far end of a 1:1 outright,
+//! and in a bigger call gives the one voice nobody recognised the one name
+//! nobody claimed. With Remember voices on, each voice named this way is
 //! learned for later calls on any app.
 
 use crate::db::Database;
-use crate::diarization::{is_automatic_label, SELF_LABEL};
 use crate::snapshots::{platform, shows_screen_share, Capture, TextLine};
 use std::collections::{HashMap, HashSet};
 
@@ -23,10 +22,9 @@ pub const SETTING_KEY: &str = "call_names_enabled";
 pub const CAPTURE_EDGE: f64 = 3200.0;
 /// A name counts once it has been on screen this many times and in this
 /// share of looks, so passing text (a chat message, a notification) isn't
-/// taken for someone in the call. The share is low because speaker view
-/// often shows only whoever is talking.
+/// taken for someone in the call.
 const MIN_SIGHTINGS: u32 = 3;
-const MIN_SHARE: f64 = 0.1;
+const MIN_SHARE: f64 = 0.3;
 /// Name labels are small: taller or wider text is a title or a slide.
 const MAX_LABEL_HEIGHT: f64 = 0.06;
 const MAX_LABEL_WIDTH: f64 = 0.45;
@@ -246,57 +244,43 @@ pub fn unclaimed<'a>(
         .filter(|name| !speakers.iter().any(|s| same_person(s, name)))
 }
 
-/// Puts a name from the call on a voice nobody recognised, when exactly one
-/// voice is unnamed and exactly one person in the call is unaccounted for.
-/// Anything less certain is left as "Speaker N" for the user to name (the
-/// call's names are offered as suggestions then). Returns the index of the
-/// voice it named.
-pub fn fill_in(names: &mut [Option<String>], call_names: &[String]) -> Option<usize> {
-    let mut unnamed = (0..names.len()).filter(|&i| names[i].is_none());
-    let voice = unnamed.next().filter(|_| unnamed.next().is_none())?;
-    let named: Vec<String> = names.iter().flatten().cloned().collect();
-    let mut left = unclaimed(call_names, &named);
-    let name = left.next().filter(|_| left.next().is_none())?;
-    names[voice] = Some(name.clone());
-    Some(voice)
+/// The other person in a 1:1: the one name read off the call window.
+pub fn one_on_one(call_names: &[String]) -> Option<&String> {
+    match call_names {
+        [name] => Some(name),
+        _ => None,
+    }
 }
 
-/// The name for every unnamed remote speaker when the call window showed
-/// exactly one other person: in a 1:1, whoever spoke on the far end is
-/// them, however many voices the speaker pass split them into (and even
-/// with no speaker model at all). None unless the user's own lines were
-/// told apart as "You" (without system audio they're "Speaker" too), or
-/// when the transcript already names someone else, since then the call
-/// wasn't the 1:1 it looked like.
-fn one_on_one_name<'a>(labels: &[&str], call_names: &'a [String]) -> Option<&'a String> {
-    let [name] = call_names else {
-        return None;
-    };
-    if !labels.contains(&SELF_LABEL) {
+/// Puts names from the call on the voices nobody recognised. In a 1:1 every
+/// voice from the far end is the other person, however many the speaker
+/// pass split them into, unless one was recognised as someone else.
+/// Otherwise a name goes on the one voice left unnamed when exactly one
+/// person in the call is unaccounted for. Anything less certain is left as
+/// "Speaker N" for the user to name (the call's names are offered as
+/// suggestions then). `voices` must all be from the far end of a call.
+/// Returns the index of a voice it named.
+pub fn fill_in(voices: &mut [Option<String>], call_names: &[String]) -> Option<usize> {
+    let first_unnamed = voices.iter().position(Option::is_none)?;
+    if let Some(name) = one_on_one(call_names) {
+        if voices.iter().flatten().all(|n| same_person(n, name)) {
+            // Under the name a voice was already recognised as, if any, so
+            // they're one speaker.
+            let name = voices.iter().flatten().next().unwrap_or(name).clone();
+            for voice in voices.iter_mut().filter(|v| v.is_none()) {
+                *voice = Some(name.clone());
+            }
+            return Some(first_unnamed);
+        }
+    }
+    if voices.iter().filter(|v| v.is_none()).count() != 1 {
         return None;
     }
-    let remote = labels.iter().filter(|&&l| l != SELF_LABEL);
-    let unnamed = remote.clone().any(|l| is_automatic_label(l));
-    let others_named = remote.clone().any(|l| !is_automatic_label(l) && !same_person(l, name));
-    (unnamed && !others_named).then_some(name)
-}
-
-/// After a 1:1 call, puts the other person's name on every remote line still
-/// labelled "Speaker" or "Speaker N". Returns whether the transcript changed.
-pub fn name_one_on_one(db: &Database, meeting_id: &str) -> anyhow::Result<bool> {
-    let segments = db.get_transcript(meeting_id)?;
-    let labels: Vec<&str> = segments.iter().map(|s| s.speaker_label.as_str()).collect();
-    let call_names = for_meeting(db, meeting_id);
-    let Some(name) = one_on_one_name(&labels, &call_names) else {
-        return Ok(false);
-    };
-    let changed: Vec<(String, String)> = segments
-        .iter()
-        .filter(|s| s.speaker_label != SELF_LABEL && is_automatic_label(&s.speaker_label))
-        .map(|s| (s.id.clone(), name.clone()))
-        .collect();
-    db.relabel_transcript(meeting_id, &changed)?;
-    Ok(!changed.is_empty())
+    let named: Vec<String> = voices.iter().flatten().cloned().collect();
+    let mut left = unclaimed(call_names, &named);
+    let name = left.next().filter(|_| left.next().is_none())?;
+    voices[first_unnamed] = Some(name.clone());
+    Some(first_unnamed)
 }
 
 // ---------------------------------------------------------------------------
@@ -335,9 +319,9 @@ impl NameReader {
     /// can be told apart from one whose window was never found.
     pub fn log_summary(&self, meeting_id: &str) {
         tracing::info!(
-            "Call names for meeting {meeting_id}: {:?} from {} looks at the call window \
+            "Call names for meeting {meeting_id}: {} names from {} looks at the call window \
              ({} looks found no window)",
-            self.stored,
+            self.stored.len(),
             self.roster.looks,
             self.no_window
         );
@@ -469,23 +453,24 @@ mod tests {
     }
 
     #[test]
-    fn names_everyone_on_the_far_end_of_a_one_on_one() {
+    fn names_every_far_end_voice_of_a_one_on_one() {
         let priya = ["Priya Patel".to_string()];
-        // Split into two voices, or no speaker model at all.
-        let name = one_on_one_name(&["You", "Speaker 1", "Speaker 2"], &priya);
-        assert_eq!(name.map(String::as_str), Some("Priya Patel"));
-        let name = one_on_one_name(&["Speaker", "You"], &priya);
-        assert_eq!(name.map(String::as_str), Some("Priya Patel"));
-        // One voice already named her; the other split-off voice is her too.
-        assert!(one_on_one_name(&["You", "Priya", "Speaker 2"], &priya).is_some());
-        // Someone else spoke, so it wasn't a 1:1.
-        assert!(one_on_one_name(&["You", "Sam", "Speaker 1"], &priya).is_none());
-        // No system audio: the user's own lines are "Speaker" too.
-        assert!(one_on_one_name(&["Speaker"], &priya).is_none());
-        // Nothing left to name, or more than one person on screen.
-        assert!(one_on_one_name(&["You", "Priya Patel"], &priya).is_none());
-        let two = ["Priya Patel".to_string(), "Sam Lee".to_string()];
-        assert!(one_on_one_name(&["You", "Speaker 1"], &two).is_none());
+        // Her voice was split in two by the speaker pass.
+        let mut names = vec![None, None];
+        assert_eq!(fill_in(&mut names, &priya), Some(0));
+        assert_eq!(
+            names,
+            [Some("Priya Patel".into()), Some("Priya Patel".into())]
+        );
+        // One part was recognised as her already.
+        let mut names = vec![Some("Priya".to_string()), None];
+        assert_eq!(fill_in(&mut names, &priya), Some(1));
+        assert_eq!(names[1].as_deref(), Some("Priya"));
+        // Someone else spoke, so it wasn't the 1:1 it looked like: either
+        // unnamed voice could be Priya.
+        let mut names = vec![Some("Sam".to_string()), None, None];
+        assert_eq!(fill_in(&mut names, &priya), None);
+        assert_eq!(names[1..], [None, None]);
     }
 
     #[test]

@@ -322,9 +322,10 @@ const MIN_ANCHOR_MS: i64 = 1_500;
 const CALL_EVIDENCE_SENTENCES: usize = 3;
 
 /// Labels the speakers of a finished meeting again, comparing every
-/// sentence's voice with every other. Leaves the transcript alone (returns
-/// `false`) when the user has already named speakers, or when there's no
-/// recording or speaker model to work from.
+/// sentence's voice with every other. Without a speaker model, only a 1:1
+/// call can be named (everything on the far end is the other person). Leaves
+/// the transcript alone (returns `false`) when the user has already named
+/// speakers, or when there's no recording or speaker model to work from.
 pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<bool> {
     let segments = db.get_transcript(meeting_id)?;
     if segments.is_empty()
@@ -335,9 +336,11 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
     {
         return Ok(false);
     }
-    let Ok(mut engine) = DiarizationEngine::load() else {
+    let call_names = crate::call_names::for_meeting(db, meeting_id);
+    let engine = DiarizationEngine::load().ok();
+    if engine.is_none() && crate::call_names::one_on_one(&call_names).is_none() {
         return Ok(false);
-    };
+    }
     let mut recording = Recording::open(audio_path)?;
 
     // First pass: how loud each side is per sentence, which tells whether
@@ -354,6 +357,27 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
             .filter(|(_, system)| *system > crate::diarization::SPEECH_RMS)
             .count()
             >= CALL_EVIDENCE_SENTENCES;
+    // Names on the call window are only the far end's when this was a call.
+    let call_names = if in_call { call_names } else { Vec::new() };
+
+    let Some(mut engine) = engine else {
+        // No voices to tell the far end apart, but in a 1:1 it's all the
+        // other person.
+        let Some(name) = crate::call_names::one_on_one(&call_names) else {
+            return Ok(false);
+        };
+        let labels = segments
+            .iter()
+            .zip(&levels)
+            .map(
+                |(seg, &(mic, system))| match classify(in_call, mic, system) {
+                    Source::Remote => name.clone(),
+                    _ => seg.speaker_label.clone(),
+                },
+            )
+            .collect();
+        return relabel(db, meeting_id, &segments, labels);
+    };
 
     let mut sources = Vec::with_capacity(segments.len());
     let mut voices: Vec<Option<Vec<f32>>> = Vec::with_capacity(segments.len());
@@ -373,8 +397,7 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
     }
 
     // Remembered voices name who they can; then the names read off the
-    // call window may name the one voice left.
-    let call_names = crate::call_names::for_meeting(db, meeting_id);
+    // call window name the rest when it's certain who's who.
     let mut named_from_call = None;
     let (labels, speaker_voices) = assign_speakers(&segments, &sources, &voices, |centroids| {
         let mut names = crate::voices::recognize(db, centroids);
@@ -385,6 +408,16 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
     if let Some((name, voice)) = named_from_call.and_then(|i| speaker_voices.get(i)) {
         crate::voices::learn_from_call(db, meeting_id, name, voice);
     }
+    relabel(db, meeting_id, &segments, labels)
+}
+
+/// Stores each segment's new label. Returns whether any changed.
+fn relabel(
+    db: &Database,
+    meeting_id: &str,
+    segments: &[TranscriptSegment],
+    labels: Vec<String>,
+) -> Result<bool> {
     let changed: Vec<(String, String)> = segments
         .iter()
         .zip(labels)
@@ -521,6 +554,62 @@ mod tests {
             vec![None, Some("Priya".into())]
         });
         assert_eq!(labels, ["Speaker 1", "Priya"]);
+    }
+
+    #[test]
+    fn names_the_far_end_of_a_one_on_one_without_a_speaker_model() {
+        if DiarizationEngine::load().is_ok() {
+            return; // This covers the path without the model.
+        }
+        use crate::audio::AudioWriter;
+        let dir = tempfile::tempdir().unwrap();
+        let audio_path = dir.path().join("meeting.wav");
+        // You talk for a second, then the call does for three.
+        let second = SAMPLE_RATE as usize;
+        let tone = |on: bool| vec![if on { 0.3 } else { 0.0 }; second];
+        let mic = [tone(true), tone(false), tone(false), tone(false)].concat();
+        let system = [tone(false), tone(true), tone(true), tone(true)].concat();
+        let mut mixed = AudioWriter::new(&audio_path, SAMPLE_RATE).unwrap();
+        mixed.write_samples(&mic).unwrap();
+        mixed.finalize().unwrap();
+        let mut stems = AudioWriter::stereo(&stems_path(&audio_path), SAMPLE_RATE).unwrap();
+        stems.write_stereo(&mic, &system).unwrap();
+        stems.finalize().unwrap();
+
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(crate::db::NewMeeting {
+                title: "Catch-up".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        let line = |label: &str, start_ms: i64| NewTranscriptSegment {
+            meeting_id: meeting.id.clone(),
+            speaker_label: label.into(),
+            text: "hi".into(),
+            start_ms,
+            end_ms: start_ms + 1000,
+            confidence: 1.0,
+        };
+        db.create_transcript_segments(vec![
+            line("You", 0),
+            line("Speaker", 1000),
+            line("Speaker", 2000),
+            line("Speaker", 3000),
+        ])
+        .unwrap();
+        db.set_call_names(&meeting.id, &["Priya Patel".into()])
+            .unwrap();
+
+        assert!(rediarize(&db, &meeting.id, &audio_path).unwrap());
+        let labels: Vec<String> = db
+            .get_transcript(&meeting.id)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.speaker_label)
+            .collect();
+        assert_eq!(labels, ["You", "Priya Patel", "Priya Patel", "Priya Patel"]);
     }
 
     #[test]

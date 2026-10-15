@@ -817,7 +817,10 @@ mod tests {
             pick_target(std::slice::from_ref(&full_screen), &zoom),
             Some(Target::Meeting(0))
         );
-        let windows = [full_screen, window("us.zoom.xos", "Zoom Meeting", 900.0, 600.0)];
+        let windows = [
+            full_screen,
+            window("us.zoom.xos", "Zoom Meeting", 900.0, 600.0),
+        ];
         assert_eq!(pick_target(&windows, &zoom), Some(Target::Meeting(1)));
     }
 
