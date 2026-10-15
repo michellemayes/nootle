@@ -1038,7 +1038,13 @@ export function MeetingDetail() {
   const [speakerEdit, setSpeakerEdit] = useState<{ segmentId: string; draft: string } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [pickedTemplate, setPickedTemplate] = useState("");
+  // Until one is picked here, the template chosen while recording, so the
+  // summary is generated with it rather than the first one in the list.
+  const selectedTemplate =
+    pickedTemplate ||
+    (templates.find((t) => t.id === meeting?.template_id) ?? templates[0])?.id ||
+    "";
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const { isCompact } = useCompactMode();
   const [compactTranscript, setCompactTranscript] = useState(false);
@@ -1085,12 +1091,6 @@ export function MeetingDetail() {
   const isPlaying = useIsPlaying(audioElement);
   const [transcriptViewport, setTranscriptViewport] = useState<HTMLDivElement | null>(null);
   useFollowPlayback(audioElement, segments, transcriptViewport);
-
-  useEffect(() => {
-    if (templates.length > 0 && !selectedTemplate) {
-      setSelectedTemplate(templates[0].id);
-    }
-  }, [templates, selectedTemplate]);
 
   useEffect(() => {
     if (!id) return;
@@ -1653,7 +1653,7 @@ export function MeetingDetail() {
                 <Select
                   size="xs"
                   value={selectedTemplate}
-                  onChange={(e) => setSelectedTemplate(e.target.value)}
+                  onChange={(e) => setPickedTemplate(e.target.value)}
                   aria-label="Summary template"
                 >
                   <option value="">Template</option>
