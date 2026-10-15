@@ -43,7 +43,7 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 
 Competitor details are as of October 2026 and change often; check their sites.
 
-**No telemetry.** Nootle sends no analytics, crash reports, or usage data anywhere. The only network calls are the AI provider you pick, model downloads from Hugging Face (each hash-checked), integrations you set up, web pages you add to your knowledge base (fetched at most once a day), and the update check against GitHub Releases.
+**No telemetry.** Nootle sends no analytics, crash reports, or usage data anywhere. The only network calls are the AI provider you pick, model downloads from Hugging Face (each hash-checked), integrations you set up, share links you create (end-to-end encrypted on nootle.ai), web pages you add to your knowledge base (fetched at most once a day), and the update check against GitHub Releases.
 
 ## Screenshots
 
@@ -124,6 +124,8 @@ Competitor details are as of October 2026 and change often; check their sites.
 - **Bring your history** — import transcripts exported from Otter, Fathom, Granola, Zoom, Teams, or Meet (SRT, WebVTT, TXT, or Markdown) from the same **Import** button as recordings; Nootle titles, summarizes, and indexes them like any other meeting
 - **Your notes are files you own** — Settings → Privacy → **Export all…** (or `nootle-cli meetings export-all --dir ~/Notes/Meetings`) writes every meeting as a Markdown file
 - **Export** — save any meeting as Markdown (summaries, action items, notes, and transcript), a plain-text transcript, or SRT / WebVTT subtitles. Copying a summary keeps its formatting (headings, bold, lists) when pasted into Mail, Docs, or Notion, and the envelope button next to it starts a recap email
+- **Share links** — click **Share** on a meeting to get a `nootle.ai/s/…` link to its summaries, action items, and notes (the transcript only if you tick **Include the transcript**). Notes are end-to-end encrypted: Nootle encrypts them on your Mac and the key lives only in the link, after the `#`, which browsers never send to a server, so nootle.ai stores nothing it can read. Anyone you give the link to can read the note; **Stop sharing**, or deleting the meeting in the app, deletes it. Edits don't change the shared note until you click **Update link**. Off in Local-only mode
+- **Continue in Claude** — one click opens a new conversation in the Claude desktop app (or claude.ai if the app isn't installed) with the meeting's notes already in the message, so you can keep working on it there. If the transcript is too long to fit, Nootle copies the whole meeting to your clipboard to paste in. Off in Local-only mode
 - **AI summaries and chat** — every meeting is summarized automatically when it ends, and opens on its summary; ask questions about your meetings using your preferred LLM, or pick a suggested starter question
 - **Playback synced to the transcript** — the line being played is highlighted and kept in view; click any timestamp to play from there, skip back or forward 15 seconds, and change speed (1×–2×). Timestamps on quick notes, action items, and insights jump to that moment too
 - **Find in transcript** — press ⌘F in a meeting to highlight every match in the transcript; ↵ and ⇧↵ step through them

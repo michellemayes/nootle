@@ -290,6 +290,15 @@ export interface InsightWithActionItem {
   meeting_start_time: string | null;
 }
 
+/** A meeting's share link on nootle.ai; `url` carries the decryption key after `#`. */
+export interface MeetingShare {
+  meeting_id: string;
+  share_id: string;
+  url: string;
+  include_transcript: boolean;
+  updated_at: string;
+}
+
 export interface Integration {
   id: string;
   integration_type: string;

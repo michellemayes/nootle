@@ -800,6 +800,23 @@ pub struct WorkflowRun {
     pub workflow_icon: Option<String>,
 }
 
+/// A meeting's public share link on nootle.ai (see `share.rs`).
+#[derive(Debug, Clone, Serialize)]
+pub struct MeetingShare {
+    pub meeting_id: String,
+    pub share_id: String,
+    /// The link, with the decryption key in its #fragment.
+    pub url: String,
+    /// The note's AES-256 key, base64url.
+    #[serde(skip_serializing)]
+    pub key: String,
+    /// Lets this Mac update or delete the shared note.
+    #[serde(skip_serializing)]
+    pub token: String,
+    pub include_transcript: bool,
+    pub updated_at: String,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -1599,6 +1616,17 @@ impl Database {
                  attendees TEXT NOT NULL DEFAULT '[]',
                  agenda TEXT
              );",
+            // 7: public share links on nootle.ai, with the key and token
+            // needed to update or revoke each one later.
+            "CREATE TABLE meeting_shares (
+                 meeting_id TEXT PRIMARY KEY REFERENCES meetings(id) ON DELETE CASCADE,
+                 share_id TEXT NOT NULL,
+                 url TEXT NOT NULL,
+                 key TEXT NOT NULL,
+                 token TEXT NOT NULL,
+                 include_transcript INTEGER NOT NULL DEFAULT 0,
+                 updated_at TEXT NOT NULL
+             );",
         ];
 
         let current: usize =
@@ -1953,7 +1981,66 @@ impl Database {
             "DELETE FROM meeting_calendar_context WHERE meeting_id = ?1",
             params![id],
         )?;
+        conn.execute(
+            "DELETE FROM meeting_shares WHERE meeting_id = ?1",
+            params![id],
+        )?;
 
+        Ok(())
+    }
+
+    // --- Share links ---
+
+    pub fn get_meeting_share(&self, meeting_id: &str) -> Result<Option<MeetingShare>> {
+        let conn = self.lock_conn()?;
+        Ok(conn
+            .query_row(
+                "SELECT meeting_id, share_id, url, key, token, include_transcript, updated_at
+                 FROM meeting_shares WHERE meeting_id = ?1",
+                params![meeting_id],
+                |row| {
+                    Ok(MeetingShare {
+                        meeting_id: row.get(0)?,
+                        share_id: row.get(1)?,
+                        url: row.get(2)?,
+                        key: row.get(3)?,
+                        token: row.get(4)?,
+                        include_transcript: row.get(5)?,
+                        updated_at: row.get(6)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// Stores `share`, stamping it with the current time.
+    pub fn save_meeting_share(&self, share: MeetingShare) -> Result<MeetingShare> {
+        let share = MeetingShare {
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            ..share
+        };
+        self.lock_conn()?.execute(
+            "INSERT OR REPLACE INTO meeting_shares
+                 (meeting_id, share_id, url, key, token, include_transcript, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                share.meeting_id,
+                share.share_id,
+                share.url,
+                share.key,
+                share.token,
+                share.include_transcript,
+                share.updated_at
+            ],
+        )?;
+        Ok(share)
+    }
+
+    pub fn delete_meeting_share(&self, meeting_id: &str) -> Result<()> {
+        self.lock_conn()?.execute(
+            "DELETE FROM meeting_shares WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
         Ok(())
     }
 

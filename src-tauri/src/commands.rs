@@ -81,6 +81,7 @@ pub fn get_meeting(db: State<'_, DbState>, id: String) -> Result<Meeting, String
 
 #[tauri::command(async)]
 pub fn delete_meeting(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    crate::share::revoke_after_delete(db.inner(), &id);
     crate::ops::delete_meeting(&db, &id).map_err(|e| e.to_string())
 }
 
@@ -1396,6 +1397,66 @@ pub async fn export_meeting(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The meeting's public share link, if it has one.
+#[tauri::command(async)]
+pub fn get_meeting_share(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Option<MeetingShare>, String> {
+    db.get_meeting_share(&meeting_id).map_err(|e| e.to_string())
+}
+
+/// Creates or refreshes the meeting's public share link.
+#[tauri::command]
+pub async fn share_meeting(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    include_transcript: bool,
+) -> Result<MeetingShare, String> {
+    crate::share::share_meeting(&db, &meeting_id, include_transcript).await
+}
+
+/// Revokes the meeting's share link.
+#[tauri::command]
+pub async fn unshare_meeting(db: State<'_, DbState>, meeting_id: String) -> Result<(), String> {
+    crate::share::unshare_meeting(&db, &meeting_id).await
+}
+
+/// What `open_in_claude` did. `rest` is the whole meeting as Markdown when
+/// the link couldn't hold all of it, for the caller to put on the clipboard.
+#[derive(serde::Serialize)]
+pub struct ClaudeHandoff {
+    desktop: bool,
+    rest: Option<String>,
+}
+
+/// Starts a Claude conversation about the meeting: in the Claude desktop app
+/// when it's installed, otherwise on claude.ai.
+#[tauri::command(async)]
+pub fn open_in_claude(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<ClaudeHandoff, String> {
+    use tauri_plugin_opener::OpenerExt;
+    let prompt = crate::share::claude_prompt(&db, &meeting_id)?;
+    let mut web = url::Url::parse("https://claude.ai/new").expect("valid URL");
+    web.query_pairs_mut().append_pair("q", &prompt.prompt);
+    // The desktop app handles claude:// links to claude.ai pages.
+    let desktop_url = format!("claude://{}", &web.as_str()["https://".len()..]);
+    let desktop = crate::share::claude_desktop_installed()
+        && app.opener().open_url(&desktop_url, None::<&str>).is_ok();
+    if !desktop {
+        app.opener()
+            .open_url(web.as_str(), None::<&str>)
+            .map_err(|e| format!("Couldn't open Claude: {e}"))?;
+    }
+    Ok(ClaudeHandoff {
+        desktop,
+        rest: prompt.rest,
+    })
 }
 
 /// Calendar events in the next `hours` (default 12), for the home screen.
