@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const selectVariants = cva(
-  "w-full appearance-none rounded-md border border-input bg-transparent text-foreground shadow-xs outline-none transition-[color,box-shadow] dark:bg-input/30 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-popover [&>option]:text-popover-foreground",
+  "min-w-0 flex-1 appearance-none rounded-md border border-input bg-transparent text-foreground shadow-xs outline-none transition-[color,box-shadow] dark:bg-input/30 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-popover [&>option]:text-popover-foreground",
   {
     variants: {
       size: {
@@ -35,7 +35,7 @@ function Select({
   return (
     <div
       className={cn(
-        "relative inline-flex shrink-0 items-center",
+        "relative inline-flex min-w-0 shrink-0 items-center",
         containerClassName
       )}
     >
