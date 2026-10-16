@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- Stop the template picker overlapping the recording timer (#181) ([1475e17](https://github.com/michellemayes/nootle/commit/1475e17f1818603c1a6417746df778fac06cd878))
+
+## [0.9.1] - 2026-10-16
+
+### Bug Fixes
+
+- **speakers:** Name the other side of Zoom 1:1s and read more name labels (#182) ([e5858c4](https://github.com/michellemayes/nootle/commit/e5858c43d57f791a0f7b94d07d4dba950c494d35))
+
 ## [0.9.0] - 2026-10-15
 
 ### Features
