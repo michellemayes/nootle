@@ -4,9 +4,10 @@
 //! While a call is recorded, the meeting window's text is read on this Mac
 //! every few seconds, and names that stay on screen are kept with the
 //! meeting. The pictures themselves are thrown away at once. After the
-//! meeting, [`fill_in`] gives the one voice nobody recognised the one name
-//! nobody claimed, so a 1:1 is named outright, and with Remember voices on,
-//! each voice named this way is learned for later calls on any app.
+//! meeting, [`fill_in`] names everyone on the far end of a 1:1 outright,
+//! and in a bigger call gives the one voice nobody recognised the one name
+//! nobody claimed. With Remember voices on, each voice named this way is
+//! learned for later calls on any app.
 
 use crate::db::Database;
 use crate::snapshots::{platform, shows_screen_share, Capture, TextLine};
@@ -16,8 +17,9 @@ use std::collections::{HashMap, HashSet};
 /// set to "false"; it only runs when Screen Recording is already allowed.
 pub const SETTING_KEY: &str = "call_names_enabled";
 
-/// Longest edge of the frame read: enough for small name labels.
-pub const CAPTURE_EDGE: f64 = 1600.0;
+/// Longest edge of the frame read: full Retina size for a typical call
+/// window, since name labels are small and Vision misreads scaled-down text.
+pub const CAPTURE_EDGE: f64 = 3200.0;
 /// A name counts once it has been on screen this many times and in this
 /// share of looks, so passing text (a chat message, a notification) isn't
 /// taken for someone in the call.
@@ -128,15 +130,25 @@ const NAME_PARTICLES: &[&str] = &[
 ];
 
 /// The participant name in a video tile's label, e.g. "Priya Patel" from
-/// "Priya Patel (she/her)", or None when the text isn't name-shaped.
+/// "Priya Patel (she/her)" or "🎤 Priya Patel" (the mute icon is read as a
+/// stray symbol), or None when the text isn't name-shaped. Labels cut short
+/// to fit a small tile ("Christopher Aber…") are left out rather than kept
+/// as a wrong name.
 fn name_label(text: &str) -> Option<String> {
     let name = text.split('(').next()?.trim();
+    if name.ends_with('…') || name.ends_with("..") {
+        return None;
+    }
+    let name = name.trim_matches(|c: char| !c.is_alphabetic());
     let words: Vec<&str> = name.split_whitespace().collect();
     if words.is_empty() || words.len() > 4 || name.chars().count() > 40 {
         return None;
     }
+    // Starts with a capital, or with a letter of a script without case.
     let is_name_word = |w: &str| {
-        w.chars().next().is_some_and(char::is_uppercase)
+        w.chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() && !c.is_lowercase())
             && w.chars().all(|c| c.is_alphabetic() || "-'’.".contains(c))
     };
     let shaped = is_name_word(words[0])
@@ -232,19 +244,43 @@ pub fn unclaimed<'a>(
         .filter(|name| !speakers.iter().any(|s| same_person(s, name)))
 }
 
-/// Puts a name from the call on a voice nobody recognised, when exactly one
-/// voice is unnamed and exactly one person in the call is unaccounted for.
-/// Anything less certain is left as "Speaker N" for the user to name (the
-/// call's names are offered as suggestions then). Returns the index of the
-/// voice it named.
-pub fn fill_in(names: &mut [Option<String>], call_names: &[String]) -> Option<usize> {
-    let mut unnamed = (0..names.len()).filter(|&i| names[i].is_none());
-    let voice = unnamed.next().filter(|_| unnamed.next().is_none())?;
-    let named: Vec<String> = names.iter().flatten().cloned().collect();
+/// The other person in a 1:1: the one name read off the call window.
+pub fn one_on_one(call_names: &[String]) -> Option<&String> {
+    match call_names {
+        [name] => Some(name),
+        _ => None,
+    }
+}
+
+/// Puts names from the call on the voices nobody recognised. In a 1:1 every
+/// voice from the far end is the other person, however many the speaker
+/// pass split them into, unless one was recognised as someone else.
+/// Otherwise a name goes on the one voice left unnamed when exactly one
+/// person in the call is unaccounted for. Anything less certain is left as
+/// "Speaker N" for the user to name (the call's names are offered as
+/// suggestions then). `voices` must all be from the far end of a call.
+/// Returns the index of a voice it named.
+pub fn fill_in(voices: &mut [Option<String>], call_names: &[String]) -> Option<usize> {
+    let first_unnamed = voices.iter().position(Option::is_none)?;
+    if let Some(name) = one_on_one(call_names) {
+        if voices.iter().flatten().all(|n| same_person(n, name)) {
+            // Under the name a voice was already recognised as, if any, so
+            // they're one speaker.
+            let name = voices.iter().flatten().next().unwrap_or(name).clone();
+            for voice in voices.iter_mut().filter(|v| v.is_none()) {
+                *voice = Some(name.clone());
+            }
+            return Some(first_unnamed);
+        }
+    }
+    if voices.iter().filter(|v| v.is_none()).count() != 1 {
+        return None;
+    }
+    let named: Vec<String> = voices.iter().flatten().cloned().collect();
     let mut left = unclaimed(call_names, &named);
     let name = left.next().filter(|_| left.next().is_none())?;
-    names[voice] = Some(name.clone());
-    Some(voice)
+    voices[first_unnamed] = Some(name.clone());
+    Some(first_unnamed)
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +294,8 @@ pub struct NameReader {
     /// The Mac account's name, to leave the user's own tile out.
     you: String,
     stored: Vec<String>,
+    /// Looks that found no call window to read, for the log.
+    no_window: u32,
 }
 
 impl Default for NameReader {
@@ -266,11 +304,29 @@ impl Default for NameReader {
             roster: Roster::default(),
             you: platform::full_user_name(),
             stored: Vec::new(),
+            no_window: 0,
         }
     }
 }
 
 impl NameReader {
+    /// Notes a look that found no call window, e.g. while it's minimised.
+    pub fn missed(&mut self) {
+        self.no_window += 1;
+    }
+
+    /// Logs what the recording's names came to, so a call that yielded none
+    /// can be told apart from one whose window was never found.
+    pub fn log_summary(&self, meeting_id: &str) {
+        tracing::info!(
+            "Call names for meeting {meeting_id}: {} names from {} looks at the call window \
+             ({} looks found no window)",
+            self.stored.len(),
+            self.roster.looks,
+            self.no_window
+        );
+    }
+
     pub fn read(&mut self, db: &Database, meeting_id: &str, frame: &Capture) {
         // While the user shares their own screen, the frame is that screen,
         // not anyone's tile.
@@ -318,6 +374,9 @@ mod tests {
             name_label("Zoë O’Brien-Smith").as_deref(),
             Some("Zoë O’Brien-Smith")
         );
+        // Zoom's mute icon in front of the name, read as a symbol.
+        assert_eq!(name_label("% Priya Patel").as_deref(), Some("Priya Patel"));
+        assert_eq!(name_label("田中 太郎").as_deref(), Some("田中 太郎"));
         for ui in [
             "Mute",
             "Stop Video",
@@ -331,6 +390,8 @@ mod tests {
             "You",
             "the quarterly plan",
             "A",
+            "Christopher Aber…",
+            "Christopher Aber...",
         ] {
             assert_eq!(name_label(ui), None, "{ui}");
         }
@@ -389,6 +450,27 @@ mod tests {
         let mut names = vec![Some("Sam".to_string()), None];
         fill_in(&mut names, &["Sam Lee".into(), "Priya Patel".into()]);
         assert_eq!(names[1].as_deref(), Some("Priya Patel"));
+    }
+
+    #[test]
+    fn names_every_far_end_voice_of_a_one_on_one() {
+        let priya = ["Priya Patel".to_string()];
+        // Her voice was split in two by the speaker pass.
+        let mut names = vec![None, None];
+        assert_eq!(fill_in(&mut names, &priya), Some(0));
+        assert_eq!(
+            names,
+            [Some("Priya Patel".into()), Some("Priya Patel".into())]
+        );
+        // One part was recognised as her already.
+        let mut names = vec![Some("Priya".to_string()), None];
+        assert_eq!(fill_in(&mut names, &priya), Some(1));
+        assert_eq!(names[1].as_deref(), Some("Priya"));
+        // Someone else spoke, so it wasn't the 1:1 it looked like: either
+        // unnamed voice could be Priya.
+        let mut names = vec![Some("Sam".to_string()), None, None];
+        assert_eq!(fill_in(&mut names, &priya), None);
+        assert_eq!(names[1..], [None, None]);
     }
 
     #[test]

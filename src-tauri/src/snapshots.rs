@@ -116,8 +116,10 @@ fn is_own_share_indicator(w: &WindowInfo) -> bool {
 }
 
 /// What to capture: the display being shared while the user shares their
-/// own screen, otherwise the largest normal on-screen window of the app in
-/// the call whose title says it's the meeting.
+/// own screen, otherwise the largest normal window of the app in the call
+/// whose title says it's the meeting. A window on screen wins; failing
+/// that, one off screen still counts, e.g. a full-screen Zoom call in its
+/// own Space while the user takes notes in another.
 pub fn pick_target(windows: &[WindowInfo], call: &DetectedMeeting) -> Option<Target> {
     let app = &call.display_name;
     // Chat apps' floating windows aren't share bars.
@@ -131,9 +133,13 @@ pub fn pick_target(windows: &[WindowInfo], call: &DetectedMeeting) -> Option<Tar
     windows
         .iter()
         .enumerate()
-        .filter(|(_, w)| w.on_screen && w.layer == 0 && w.width >= 480.0 && w.height >= 320.0)
+        .filter(|(_, w)| w.layer == 0 && w.width >= 480.0 && w.height >= 320.0)
         .filter(|(_, w)| is_call_app(w, call) && is_meeting_title(app, &w.title))
-        .max_by(|(_, a), (_, b)| (a.width * a.height).total_cmp(&(b.width * b.height)))
+        .max_by(|(_, a), (_, b)| {
+            a.on_screen
+                .cmp(&b.on_screen)
+                .then((a.width * a.height).total_cmp(&(b.width * b.height)))
+        })
         .map(|(i, _)| Target::Meeting(i))
 }
 
@@ -395,10 +401,14 @@ impl Run {
                 self.snapshot(&mut capturer, &mut snapshots);
             }
             if let Some(names) = names.as_mut().filter(|_| polls.is_multiple_of(NAME_POLLS)) {
-                if let Some(frame) = self.capture(&mut capturer, crate::call_names::CAPTURE_EDGE) {
-                    names.read(&self.db, &self.meeting_id, &frame);
+                match self.capture(&mut capturer, crate::call_names::CAPTURE_EDGE) {
+                    Some(frame) => names.read(&self.db, &self.meeting_id, &frame),
+                    None => names.missed(),
                 }
             }
+        }
+        if let Some(names) = &names {
+            names.log_summary(&self.meeting_id);
         }
         if jobs.snapshots {
             tracing::info!(
@@ -644,17 +654,22 @@ pub(crate) mod platform {
 
     /// Text in the image, top to bottom, recognised on-device.
     pub fn recognize_text(path: &Path) -> anyhow::Result<String> {
-        let lines: Vec<String> = recognize_lines(path)?.into_iter().map(|l| l.text).collect();
+        let lines: Vec<String> = recognize_lines(path, true)?
+            .into_iter()
+            .map(|l| l.text)
+            .collect();
         Ok(lines.join("\n"))
     }
 
     /// Each line of text in the image and where it is, top to bottom.
-    fn recognize_lines(path: &Path) -> anyhow::Result<Vec<TextLine>> {
+    /// Language correction suits prose but turns unusual names into
+    /// dictionary words.
+    fn recognize_lines(path: &Path, correct: bool) -> anyhow::Result<Vec<TextLine>> {
         let url = ns::Url::with_fs_path_str(&path.to_string_lossy(), false);
         let handler = vn::ImageRequestHandler::with_url(&url, None);
         let mut request = vn::RecognizeTextRequest::new();
         request.set_recognition_level(vn::RequestTextRecognitionLevel::Accurate);
-        request.set_uses_lang_correction(true);
+        request.set_uses_lang_correction(correct);
         let requests = ns::Array::<vn::Request>::from_slice(&[&request]);
         handler
             .perform(&requests)
@@ -677,12 +692,13 @@ pub(crate) mod platform {
             .collect())
     }
 
-    /// Each line of text in a JPEG, top to bottom. Vision reads from a file,
-    /// so the image passes through a temporary one.
+    /// Each line of text in a JPEG, top to bottom, read as names (without
+    /// language correction). Vision reads from a file, so the image passes
+    /// through a temporary one.
     pub fn recognize_jpeg(jpeg: &[u8]) -> anyhow::Result<Vec<TextLine>> {
         let path = std::env::temp_dir().join(format!("nootle-{}.jpg", uuid::Uuid::new_v4()));
         std::fs::write(&path, jpeg)?;
-        let lines = recognize_lines(&path);
+        let lines = recognize_lines(&path, false);
         let _ = std::fs::remove_file(&path);
         lines
     }
@@ -787,11 +803,25 @@ mod tests {
     }
 
     #[test]
-    fn ignores_other_apps_and_hidden_windows() {
-        let mut hidden = window("com.microsoft.teams2", "Meeting", 1400.0, 900.0);
-        hidden.on_screen = false;
-        let windows = [hidden, window("us.zoom.xos", "Zoom Meeting", 1400.0, 900.0)];
+    fn ignores_other_apps() {
+        let windows = [window("us.zoom.xos", "Zoom Meeting", 1400.0, 900.0)];
         assert_eq!(pick_target(&windows, &call("com.microsoft.teams2")), None);
+    }
+
+    #[test]
+    fn prefers_an_on_screen_window_but_takes_one_in_another_space() {
+        let mut full_screen = window("us.zoom.xos", "Zoom Meeting", 1800.0, 1100.0);
+        full_screen.on_screen = false;
+        let zoom = call("us.zoom.xos");
+        assert_eq!(
+            pick_target(std::slice::from_ref(&full_screen), &zoom),
+            Some(Target::Meeting(0))
+        );
+        let windows = [
+            full_screen,
+            window("us.zoom.xos", "Zoom Meeting", 900.0, 600.0),
+        ];
+        assert_eq!(pick_target(&windows, &zoom), Some(Target::Meeting(1)));
     }
 
     #[test]
