@@ -106,7 +106,7 @@ export default function PrivacyPage() {
               </p>
             </div>
 
-            <div>
+            <div id="share-links" className="scroll-mt-24">
               <h2 className="font-[family-name:var(--font-outfit)] text-2xl font-bold mb-4 text-[var(--color-text)]">
                 Share links
               </h2>

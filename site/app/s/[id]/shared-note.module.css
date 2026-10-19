@@ -87,6 +87,7 @@
   color: var(--text);
 }
 .brand img {
+  flex-shrink: 0;
   width: 1.75rem;
   height: 1.75rem;
 }
@@ -94,6 +95,9 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+.lockInfo {
+  position: relative;
 }
 .lockPill {
   display: inline-flex;
@@ -104,15 +108,126 @@
   border: 1px solid var(--border);
   background: var(--paper);
   color: var(--text-3);
+  font: inherit;
   font-size: 0.8rem;
+  cursor: help;
+  transition: border-color 150ms, color 150ms;
+}
+.lockPill:hover,
+.lockInfo[data-open] .lockPill {
+  border-color: var(--accent-ring);
+  color: var(--text-2);
+}
+.lockShort {
+  display: none;
 }
 .lockPill svg {
   width: 0.85rem;
   height: 0.85rem;
   color: var(--s1);
 }
+
+/* Opens on hover for mice and on tap/Enter for everyone else. The top
+   padding bridges the gap so the pointer can move onto it. */
+.lockPopover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  width: 22rem;
+  padding-top: 0.5rem;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 150ms, transform 150ms, visibility 0s 150ms;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.lockCard {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+.lockCard > a {
+  display: inline-block;
+  margin-top: 0.75rem;
+}
+.lockInfo[data-open] .lockPopover {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition-delay: 0s;
+}
+@media (hover: hover) {
+  .lockInfo:hover .lockPopover {
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+    transition-delay: 0s;
+  }
+}
+.lockLead {
+  display: flex;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.lockLead svg {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.2rem;
+  color: var(--s1);
+}
+.lockHeading {
+  margin: 0.85rem 0 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.lockSteps {
+  padding-left: 1.1rem;
+  list-style: decimal;
+}
+.lockSteps li + li {
+  margin-top: 0.3rem;
+}
+
+/* "Get Nootle" strip above the notes */
+
+.getStrip {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 0.875rem;
+}
+.getStrip img {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+.getStrip p {
+  flex: 1;
+  margin: 0;
+}
+.getStrip strong {
+  color: var(--text);
+}
+.getStrip a {
+  white-space: nowrap;
+}
 .getButton {
   padding: 0.45rem 1rem;
+  white-space: nowrap;
   border-radius: 999px;
   background: var(--text);
   color: var(--paper);
@@ -259,6 +374,7 @@
 }
 .btn:focus-visible,
 .getButton:focus-visible,
+.lockPill:focus-visible,
 .transcript summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -405,7 +521,8 @@
 .note blockquote > :last-child {
   margin-bottom: 0;
 }
-.note code {
+.note code,
+.lockPopover code {
   padding: 0.1rem 0.35rem;
   border-radius: 0.35rem;
   background: var(--sunken);
@@ -815,14 +932,49 @@
     transform: none;
     border-radius: 0.75rem 0 0 0;
   }
-  .lockPill span {
+  .lockLong {
     display: none;
+  }
+  .lockShort {
+    display: inline;
+  }
+  /* Span the top bar rather than hang off the small pill. */
+  .topbar {
+    position: relative;
+  }
+  .lockInfo {
+    position: static;
+  }
+  .lockPopover {
+    top: calc(100% - 0.75rem);
+    left: 1rem;
+    right: 1rem;
+    width: auto;
+  }
+  .getStrip {
+    border-radius: 1rem;
+    font-size: 0.8125rem;
   }
   .skeleton {
     padding: 2rem 1.25rem;
   }
   .footer {
     align-items: flex-start;
+  }
+}
+
+/* Room for the pill, theme toggle and Get Nootle on the narrowest phones. */
+@media (max-width: 420px) {
+  .topbarEnd {
+    gap: 0.5rem;
+  }
+  .brandName {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 

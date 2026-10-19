@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- **site:** Redesign the shared notes page (#184) ([632926e](https://github.com/michellemayes/nootle/commit/632926e5a9de94283a5bd5efd89b02bd9b90712f))
+
+## [0.10.1] - 2026-10-19
+
+### Bug Fixes
+
+- Let the Live Assist panel scroll during recording (#185) ([1e781be](https://github.com/michellemayes/nootle/commit/1e781be18f8046679eb1c25a5a7bb30002b97432))
+
+## [0.10.0] - 2026-10-19
+
+### Features
+
+- Make share-link privacy clear on the site and in the app (#183) ([d14ef66](https://github.com/michellemayes/nootle/commit/d14ef660b57062e92bb46dd8e1335218ac341d2d))
+
 ## [0.9.2] - 2026-10-16
 
 ### Bug Fixes
