@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -13,6 +13,7 @@ import {
   Clock,
   Copy,
   Download,
+  KeyRound,
   Lock,
   MessageSquareText,
   Timer,
@@ -81,6 +82,81 @@ function Markdown({ children }: { children: string }) {
   );
 }
 
+/** The lock pill, with a popover explaining end-to-end encryption on hover or tap. */
+function EncryptionInfo() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onClick = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onClick);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onClick);
+    };
+  }, [open]);
+
+  return (
+    <div className={styles.lockInfo} ref={ref} data-open={open || undefined}>
+      <button
+        type="button"
+        className={styles.lockPill}
+        aria-expanded={open}
+        aria-controls="encryption-info"
+        aria-label="Private, end-to-end encrypted. What does this mean?"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Lock aria-hidden="true" />
+        <span className={styles.lockLong}>Private, end-to-end encrypted</span>
+        <span className={styles.lockShort}>Encrypted</span>
+      </button>
+      <div id="encryption-info" className={styles.lockPopover}>
+        <div className={styles.lockCard}>
+          <p className={styles.lockLead}>
+            <KeyRound aria-hidden="true" />
+            Only people with this link can read these notes. Not even nootle.ai can.
+          </p>
+          <p className={styles.lockHeading}>How it works</p>
+          <ol className={styles.lockSteps}>
+            <li>The sender&apos;s Mac encrypts the notes (AES-256-GCM) with a key made just for this link.</li>
+            <li>
+              nootle.ai stores only the scrambled copy. The key sits in the link after the <code>#</code>, a part
+              browsers never send to a server.
+            </li>
+            <li>Your browser downloads the scrambled copy and unlocks it with the key, right here on this page.</li>
+          </ol>
+          <p className={styles.lockHeading}>Why</p>
+          <p>
+            Meeting notes are private. Encrypting them before they leave the Mac means only people holding the link
+            can read them, and a breach of nootle.ai would expose nothing readable. Stop sharing deletes the copy.
+          </p>
+          <Link href="/privacy#share-links" className={styles.btnLink}>
+            Read the privacy policy →
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A slim strip above the notes for readers who don't know Nootle yet. */
+function GetNootle() {
+  return (
+    <aside className={styles.getStrip}>
+      <Image src="/nootle-icon.svg" alt="" width={20} height={20} />
+      <p>
+        Made with <strong>Nootle</strong>, the free AI notetaker for Mac. No bot joins your calls.
+      </p>
+      <a href={RELEASES_URL} className={styles.btnLink}>
+        Get Nootle →
+      </a>
+    </aside>
+  );
+}
+
 function Header() {
   return (
     <header className={styles.topbar}>
@@ -89,10 +165,7 @@ function Header() {
         Nootle
       </Link>
       <div className={styles.topbarEnd}>
-        <span className={styles.lockPill} title="Only people with this link can read it. The key never reaches nootle.ai.">
-          <Lock aria-hidden="true" />
-          <span>Private, end-to-end encrypted</span>
-        </span>
+        <EncryptionInfo />
         <a href={RELEASES_URL} className={styles.getButton}>
           Get Nootle
         </a>
@@ -350,16 +423,19 @@ export function SharedNote({ id }: { id: string }) {
           </div>
         )}
         {state.status === "ready" && (
-          <article className={styles.paper}>
-            <Hero note={state.note} />
-            <AskAi markdown={state.markdown} note={state.note} />
-            {state.note.body && (
-              <div className={styles.note}>
-                <Markdown>{state.note.body}</Markdown>
-              </div>
-            )}
-            {state.note.transcript && <Transcript transcript={state.note.transcript} />}
-          </article>
+          <>
+            <GetNootle />
+            <article className={styles.paper}>
+              <Hero note={state.note} />
+              <AskAi markdown={state.markdown} note={state.note} />
+              {state.note.body && (
+                <div className={styles.note}>
+                  <Markdown>{state.note.body}</Markdown>
+                </div>
+              )}
+              {state.note.transcript && <Transcript transcript={state.note.transcript} />}
+            </article>
+          </>
         )}
         {state.status !== "loading" && <NootleCta />}
       </main>
