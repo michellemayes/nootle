@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Lock } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -57,7 +58,10 @@ export function SharedNote({ id }: { id: string }) {
           <Link href="/" className="font-[family-name:var(--font-outfit)] font-semibold text-[var(--color-text)]">
             Nootle
           </Link>
-          <span>Shared meeting notes · end-to-end encrypted</span>
+          <span className="flex items-center gap-1.5">
+            <Lock className="h-3.5 w-3.5" aria-hidden />
+            Shared notes · private, end-to-end encrypted
+          </span>
         </header>
 
         {state.status === "loading" && <p className="text-[var(--color-text-secondary)]">Decrypting…</p>}

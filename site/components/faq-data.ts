@@ -55,8 +55,13 @@ export const faqs = [
       "Yes. Nootle combines meaning-based search with keyword search across your entire meeting history and knowledge base. Ask a question like \"What did we decide about the Q2 roadmap?\" or search for a ticket number or a customer's name, and Nootle finds the relevant passages.",
   },
   {
+    question: "Who can read a meeting I share?",
+    answer:
+      "Anyone you give the link to, and no one else. Share links are end-to-end encrypted: Nootle encrypts the notes on your Mac with a key of their own, uploads only the encrypted copy, and puts the key in the link after the #, a part browsers never send to a server. So nootle.ai stores nothing it can read. The transcript is left out unless you include it, and Stop sharing, or deleting the meeting, deletes the shared copy. Sharing is off in Local-only mode.",
+  },
+  {
     question: "Does Nootle collect analytics?",
     answer:
-      "No. The Nootle app sends no analytics, crash reports, or usage data anywhere. Its only network calls are the AI provider you pick, model downloads from Hugging Face, integrations you set up, web pages you add to your knowledge base, and the update check against GitHub Releases.",
+      "No. The Nootle app sends no analytics, crash reports, or usage data anywhere. Its only network calls are the AI provider you pick, model downloads from Hugging Face, integrations you set up, share links you create (end-to-end encrypted), web pages you add to your knowledge base, and the update check against GitHub Releases.",
   },
 ];

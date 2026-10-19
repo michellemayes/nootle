@@ -105,6 +105,7 @@ const groups: { heading: string; items: { title: string; body: string }[] }[] = 
       { title: "Workflows", body: "Send summaries and tasks to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email." },
       { title: "Templates", body: "Summary formats for 1:1s, standups, or interviews that run on their own." },
       { title: "MCP server and CLI", body: "Let Claude Code and other agents read meetings and set up automations." },
+      { title: "Private share links", body: "Share a meeting's notes with a link. They're end-to-end encrypted on your Mac, so only people with the link can read them, not even nootle.ai." },
       { title: "Plain files you own", body: "Export one meeting or all of them as Markdown, text, SRT, or WebVTT." },
       { title: "Keyboard-first", body: "⌘K command palette, ⌘N to record from anywhere, and ? for every shortcut." },
       { title: "Updates in one click", body: "New versions install themselves, never in the middle of a recording." },
