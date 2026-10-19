@@ -48,6 +48,7 @@ const content: LandingContent = {
         "The AI provider you choose. With Local-only mode, only local models on your Mac.",
       ],
       ["Workflows to other apps", "Only the ones you set up. With Local-only mode, nothing is sent."],
+      ["Share links", "Only the meetings you choose to share, end-to-end encrypted on your Mac, so nootle.ai can’t read them. Off in Local-only mode."],
       ["Analytics and crash reports", "None. The app doesn’t send them."],
     ],
   },

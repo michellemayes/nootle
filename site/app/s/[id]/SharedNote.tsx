@@ -91,7 +91,7 @@ function Header() {
       <div className={styles.topbarEnd}>
         <span className={styles.lockPill} title="Only people with this link can read it. The key never reaches nootle.ai.">
           <Lock aria-hidden="true" />
-          <span>End-to-end encrypted</span>
+          <span>Private, end-to-end encrypted</span>
         </span>
         <a href={RELEASES_URL} className={styles.getButton}>
           Get Nootle

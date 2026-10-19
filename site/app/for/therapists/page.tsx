@@ -48,6 +48,7 @@ const content: LandingContent = {
         "The AI provider you choose. With Local-only mode, only local models on your Mac.",
       ],
       ["Voice fingerprints", "Only created if you turn on Remember voices. Stored on your Mac and deletable."],
+      ["Share links", "Only the meetings you choose to share, end-to-end encrypted on your Mac, so nootle.ai can’t read them. Off in Local-only mode."],
       ["Analytics and crash reports", "None. The app doesn’t send them."],
     ],
   },
