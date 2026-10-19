@@ -24,6 +24,7 @@ import { SiClaude, SiOpenai } from "react-icons/si";
 import { DownloadButton } from "@/components/DownloadButton";
 import { RELEASES_URL } from "@/components/site-config";
 import { chatPrompt, initials, parseNote, type ParsedNote } from "./note";
+import { THEME_ATTR, THEME_KEY } from "./theme";
 import styles from "./shared-note.module.css";
 
 type State =
@@ -34,35 +35,23 @@ type State =
 const LOAD_FAILED = "Couldn't load this note. Try again in a moment.";
 
 type Theme = "light" | "dark";
-const THEME_KEY = "nootle-share-theme";
-
-// Kept in memory too, so the toggle still works where storage is blocked.
-let storedTheme: Theme | null = null;
 const themeListeners = new Set<() => void>();
 
-function readTheme(): Theme {
-  if (!storedTheme) {
-    try {
-      storedTheme = localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
-    } catch {
-      storedTheme = "light";
-    }
-  }
-  return storedTheme;
-}
+const readTheme = (): Theme => (document.documentElement.getAttribute(THEME_ATTR) === "dark" ? "dark" : "light");
 
 function subscribeTheme(onChange: () => void) {
   themeListeners.add(onChange);
   return () => themeListeners.delete(onChange);
 }
 
-/** Light like a document unless the reader has picked dark before. */
+/** Only the toggle and the screenshot depend on the theme; CSS does the rest. */
 function useTheme() {
   const theme = useSyncExternalStore(subscribeTheme, readTheme, () => "light" as const);
   const toggle = () => {
-    storedTheme = theme === "dark" ? "light" : "dark";
+    const next = theme === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute(THEME_ATTR, next);
     try {
-      localStorage.setItem(THEME_KEY, storedTheme);
+      localStorage.setItem(THEME_KEY, next);
     } catch {}
     themeListeners.forEach((l) => l());
   };
@@ -119,7 +108,8 @@ function Markdown({ children }: { children: string }) {
   );
 }
 
-function Header({ theme, onToggleTheme }: { theme: Theme; onToggleTheme: () => void }) {
+function Header() {
+  const [theme, toggleTheme] = useTheme();
   const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
   return (
     <header className={styles.topbar}>
@@ -132,7 +122,13 @@ function Header({ theme, onToggleTheme }: { theme: Theme; onToggleTheme: () => v
           <Lock aria-hidden="true" />
           <span>Private, end-to-end encrypted</span>
         </span>
-        <button type="button" className={styles.themeToggle} onClick={onToggleTheme} aria-label={label} title={label}>
+        <button
+          type="button"
+          className={`${styles.btn} ${styles.btnIcon} ${styles.themeToggle}`}
+          onClick={toggleTheme}
+          aria-label={label}
+          title={label}
+        >
           {theme === "dark" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
         </button>
         <a href={RELEASES_URL} className={styles.getButton}>
@@ -307,7 +303,8 @@ function Transcript({ transcript }: { transcript: NonNullable<ParsedNote["transc
 
 const SHOT_SIZES = "(max-width: 720px) 100vw, 32rem";
 
-function NootleCta({ theme }: { theme: Theme }) {
+function NootleCta() {
+  const [theme] = useTheme();
   const shot = (w: number) => `/screenshots/meeting-${theme}-${w}.webp`;
   return (
     <section className={styles.cta} aria-labelledby="cta-title">
@@ -365,7 +362,6 @@ function Skeleton() {
 
 export function SharedNote({ id }: { id: string }) {
   const [state, setState] = useState<State>({ status: "loading" });
-  const [theme, toggleTheme] = useTheme();
 
   useEffect(() => {
     openNote(id, window.location.hash.slice(1))
@@ -378,8 +374,8 @@ export function SharedNote({ id }: { id: string }) {
   }, [state]);
 
   return (
-    <div className={styles.page} data-theme={theme}>
-      <Header theme={theme} onToggleTheme={toggleTheme} />
+    <div className={styles.page}>
+      <Header />
       <main id="main-content" className={styles.main}>
         {state.status === "loading" && <Skeleton />}
         {state.status === "error" && (
@@ -400,7 +396,7 @@ export function SharedNote({ id }: { id: string }) {
             {state.note.transcript && <Transcript transcript={state.note.transcript} />}
           </article>
         )}
-        {state.status !== "loading" && <NootleCta theme={theme} />}
+        {state.status !== "loading" && <NootleCta />}
       </main>
       <footer className={styles.footer}>
         <Lock aria-hidden="true" />

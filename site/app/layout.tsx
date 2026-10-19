@@ -67,7 +67,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    // The shared-note page sets its theme on <html> before React loads.
+    <html lang="en" suppressHydrationWarning>
       <body className={`${outfit.variable} ${dmSans.variable} font-[family-name:var(--font-dm-sans)]`}>
         <a
           href="#main-content"

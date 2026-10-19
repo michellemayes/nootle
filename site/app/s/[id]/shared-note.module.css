@@ -1,5 +1,5 @@
 /* Shared meeting notes (/s/[id]). Light like a document by default, dark when
-   the reader picks it; the rest of the site stays dark either way. */
+   the reader picks it (see theme.ts); the rest of the site stays dark either way. */
 
 .page {
   --bg: #f6f5fa;
@@ -31,7 +31,7 @@
   color-scheme: light;
 }
 
-.page[data-theme="dark"] {
+:global(html[data-share-theme="dark"]) .page {
   --bg: var(--color-bg);
   --paper: #1a1724;
   --sunken: #15131e;
@@ -57,7 +57,7 @@
 :global(body):has(.page) {
   background: #f6f5fa;
 }
-:global(body):has(.page[data-theme="dark"]) {
+:global(html[data-share-theme="dark"] body):has(.page) {
   background: var(--color-bg);
 }
 
@@ -110,29 +110,6 @@
   width: 0.85rem;
   height: 0.85rem;
   color: var(--s1);
-}
-.themeToggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--paper);
-  color: var(--text-3);
-  cursor: pointer;
-  transition: transform 150ms, color 150ms;
-}
-.themeToggle:hover {
-  color: var(--text);
-}
-.themeToggle:active {
-  transform: scale(0.92);
-}
-.themeToggle svg {
-  width: 1rem;
-  height: 1rem;
 }
 .getButton {
   padding: 0.45rem 1rem;
@@ -281,7 +258,6 @@
   transform: scale(0.96);
 }
 .btn:focus-visible,
-.themeToggle:focus-visible,
 .getButton:focus-visible,
 .transcript summary:focus-visible {
   outline: 2px solid var(--accent);
@@ -304,6 +280,15 @@
 .btnIcon {
   width: 2.5rem;
   padding: 0;
+}
+.themeToggle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  color: var(--text-3);
+}
+.themeToggle:hover {
+  color: var(--text);
 }
 .btnLink {
   font-weight: 600;
