@@ -28,6 +28,7 @@ const softwareApplication = JSON.stringify({
     "Snapshots of shared screens",
     "Shorthand notes expanded into full notes",
     "Local-only mode and no telemetry",
+    "End-to-end encrypted share links",
     "Crash-safe recording",
     "Search across meetings and documents",
     "Meeting detection for Zoom, Teams, Webex, Slack, FaceTime, Discord, and browser calls",

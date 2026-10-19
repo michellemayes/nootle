@@ -57,7 +57,7 @@ export const faqs = [
   {
     question: "Who can read a meeting I share?",
     answer:
-      "Only people who have the link. Share links are end-to-end encrypted: Nootle encrypts the notes on your Mac with a key of their own, uploads only the encrypted copy, and puts the key in the link after the #, a part browsers never send to a server. So nootle.ai, and anyone running it, stores nothing it can read. The transcript is left out unless you include it, and Stop sharing, or deleting the meeting, deletes the shared copy.",
+      "Anyone you give the link to, and no one else. Share links are end-to-end encrypted: Nootle encrypts the notes on your Mac with a key of their own, uploads only the encrypted copy, and puts the key in the link after the #, a part browsers never send to a server. So nootle.ai stores nothing it can read. The transcript is left out unless you include it, and Stop sharing, or deleting the meeting, deletes the shared copy. Sharing is off in Local-only mode.",
   },
   {
     question: "Does Nootle collect analytics?",

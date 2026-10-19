@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ChevronDown, ExternalLink, Link2, Lock, RotateCw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -64,14 +65,13 @@ export function ShareMenu({ meeting }: { meeting: Meeting }) {
       <PopoverContent align="end" className="w-80 space-y-3">
         <div className="space-y-1">
           <p className="text-sm font-medium">Share link</p>
-          <p className="flex items-center gap-1 text-xs font-medium text-success-foreground">
-            <Lock className="h-3 w-3" />
+          <Badge variant="success">
+            <Lock />
             Private and end-to-end encrypted
-          </p>
+          </Badge>
           <p className="text-xs text-muted-foreground">
-            Only people with the link can read this meeting's summaries, action items, and
-            notes. They're encrypted on your Mac and only the link holds the key, so nootle.ai can't
-            read them, and neither can anyone who runs it.
+            Anyone with the link can read this meeting's summaries, action items, and notes. They're
+            encrypted on your Mac and the link holds the key, so nootle.ai can't read them.
           </p>
         </div>
 
