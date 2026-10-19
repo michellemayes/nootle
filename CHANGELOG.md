@@ -4,13 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Bug Fixes
-
-- Let the Live Assist panel scroll during recording (#185) ([1e781be](https://github.com/michellemayes/nootle/commit/1e781be18f8046679eb1c25a5a7bb30002b97432))
-
 ### Features
 
 - **site:** Redesign the shared notes page (#184) ([632926e](https://github.com/michellemayes/nootle/commit/632926e5a9de94283a5bd5efd89b02bd9b90712f))
+
+## [0.10.1] - 2026-10-19
+
+### Bug Fixes
+
+- Let the Live Assist panel scroll during recording (#185) ([1e781be](https://github.com/michellemayes/nootle/commit/1e781be18f8046679eb1c25a5a7bb30002b97432))
 
 ## [0.10.0] - 2026-10-19
 
