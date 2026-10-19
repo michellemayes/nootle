@@ -21,3 +21,7 @@ export const AI_PROVIDERS = [
 
 /** Display font utility (Outfit), loaded in app/layout.tsx. */
 export const outfit = "font-[family-name:var(--font-outfit)]";
+
+/** Underlined inline text link, used in footers and bylines. */
+export const linkClass =
+  "underline hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:rounded-sm";

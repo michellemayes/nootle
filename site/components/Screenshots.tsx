@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { motion, AnimatePresence, useInView, useReducedMotion } from "framer-motion";
+import { motion, useInView, useReducedMotion } from "framer-motion";
 import { AnimateIn } from "@/components/AnimateIn";
 import { EASE_OUT } from "@/components/motion";
 
@@ -139,25 +139,23 @@ export function Screenshots() {
         </div>
 
         <AnimateIn delay={0.1} className="relative mx-auto max-w-5xl">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={shot.id}
-              id={`screenshot-${shot.id}`}
-              role="tabpanel"
-              initial={{ opacity: 0, y: 12, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -12, scale: 0.98 }}
-              transition={{ duration: 0.3, ease: EASE_OUT }}
-            >
-              <ShotFigure shot={shot} />
-            </motion.div>
-          </AnimatePresence>
-          {/* The other screenshots stay in the HTML, hidden, so crawlers and agents read every caption and alt text. */}
-          {SHOTS.filter((s) => s.id !== shot.id).map((s) => (
-            <div key={s.id} hidden>
-              <ShotFigure shot={s} />
-            </div>
-          ))}
+          {/* Every panel stays in the HTML, inactive ones hidden, so crawlers and agents read each caption and alt text. */}
+          {SHOTS.map((s) => {
+            const selected = s.id === shot.id;
+            return (
+              <motion.div
+                key={s.id}
+                id={`screenshot-${s.id}`}
+                role="tabpanel"
+                hidden={!selected}
+                initial={false}
+                animate={selected ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 12, scale: 0.98 }}
+                transition={{ duration: 0.3, ease: EASE_OUT }}
+              >
+                <ShotFigure shot={s} />
+              </motion.div>
+            );
+          })}
 
           {/* Layered glow behind the screenshot */}
           <div

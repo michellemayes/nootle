@@ -4,7 +4,7 @@ import { Navbar } from "@/components/Navbar";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CopyCommand } from "@/components/CopyCommand";
 import { DownloadButton } from "@/components/DownloadButton";
-import { outfit } from "@/components/site-config";
+import { linkClass, outfit } from "@/components/site-config";
 
 export type LandingContent = {
   /** Short label above the headline, e.g. "Granola alternative". */
@@ -65,7 +65,7 @@ export function landingMetadata({
 }
 
 function DateStamp({ date }: { date: string }) {
-  const label = new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+  const label = new Date(date).toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
     year: "numeric",
@@ -96,10 +96,7 @@ export function LandingPage({ content }: { content: LandingContent }) {
             </p>
             <p className="text-sm text-[var(--color-text-secondary)] mb-10">
               By{" "}
-              <a
-                href="https://michellemayes.me"
-                className="underline hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:rounded-sm"
-              >
+              <a href="https://michellemayes.me" className={linkClass}>
                 Michelle Mayes
               </a>{" "}
               &middot; Published <DateStamp date={published} /> &middot; Updated <DateStamp date={updated} />
