@@ -14,21 +14,22 @@ import { SiteFooter } from "@/components/SiteFooter";
 
 export default function Home() {
   return (
-    <main id="main-content" className="relative overflow-hidden">
-
+    <>
       <Navbar />
-      <Hero />
-      <Stats />
-      <Introduction />
-      <Screenshots />
-      <Features />
-      <Comparison />
-      <Integrations />
-      <HowItWorks />
-      <SystemRequirements />
-      <FAQ />
-      <SponsorCTA />
+      <main id="main-content" className="relative overflow-hidden">
+        <Hero />
+        <Stats />
+        <Introduction />
+        <Screenshots />
+        <Features />
+        <Comparison />
+        <Integrations />
+        <HowItWorks />
+        <SystemRequirements />
+        <FAQ />
+        <SponsorCTA />
+      </main>
       <SiteFooter />
-    </main>
+    </>
   );
 }

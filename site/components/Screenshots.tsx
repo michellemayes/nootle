@@ -47,6 +47,22 @@ const SHOTS = [
 
 const AUTOPLAY_MS = 5000;
 
+function ShotFigure({ shot }: { shot: (typeof SHOTS)[number] }) {
+  return (
+    <figure>
+      <Image
+        src={`/screenshots/${shot.id}-dark.png`}
+        alt={shot.alt}
+        width={1600}
+        height={1060}
+        priority={shot.id === "library"}
+        className="w-full h-auto"
+      />
+      <figcaption className="mt-4 text-center text-[var(--color-text-secondary)]">{shot.caption}</figcaption>
+    </figure>
+  );
+}
+
 export function Screenshots() {
   const [index, setIndex] = useState(0);
   // Tours the tabs on its own until the visitor picks one.
@@ -133,19 +149,15 @@ export function Screenshots() {
               exit={{ opacity: 0, y: -12, scale: 0.98 }}
               transition={{ duration: 0.3, ease: EASE_OUT }}
             >
-              <Image
-                src={`/screenshots/${shot.id}-dark.png`}
-                alt={shot.alt}
-                width={1600}
-                height={1060}
-                priority={shot.id === "library"}
-                className="w-full h-auto"
-              />
-              <p className="mt-4 text-center text-[var(--color-text-secondary)]">
-                {shot.caption}
-              </p>
+              <ShotFigure shot={shot} />
             </motion.div>
           </AnimatePresence>
+          {/* The other screenshots stay in the HTML, hidden, so crawlers and agents read every caption and alt text. */}
+          {SHOTS.filter((s) => s.id !== shot.id).map((s) => (
+            <div key={s.id} hidden>
+              <ShotFigure shot={s} />
+            </div>
+          ))}
 
           {/* Layered glow behind the screenshot */}
           <div

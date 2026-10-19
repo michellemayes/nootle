@@ -25,6 +25,9 @@ export function Stats() {
           </div>
         ))}
       </dl>
+      <p className="max-w-5xl mx-auto mt-3 text-xs text-center text-[var(--color-text-secondary)]">
+        As of October 2026.
+      </p>
     </section>
   );
 }

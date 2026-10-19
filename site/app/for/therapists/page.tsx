@@ -12,6 +12,12 @@ const content: LandingContent = {
   headline: "Private session notes for clinicians",
   subhead:
     "Nootle records and transcribes video sessions on your Mac. Audio is never uploaded and transcripts are stored only on your Mac. With Local-only mode, no meeting content leaves it at all.",
+  answer: {
+    question: "Can therapists use an AI notetaker without uploading session audio?",
+    body: "Yes. Nootle records and transcribes video sessions on your Mac, so audio is never uploaded, and Local-only mode keeps summaries on local models too. It’s a good fit if you see clients over video from a Mac and want session content off third-party servers. If you need notes written straight into your EHR, or a vendor that signs a Business Associate Agreement, a clinical documentation service will fit better. Either way, get your client’s consent before you record.",
+  },
+  published: "2026-10-11",
+  updated: "2026-10-19",
   why: {
     heading: "Keep session content where you can see it",
     points: [

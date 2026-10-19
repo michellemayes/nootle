@@ -12,6 +12,12 @@ const content: LandingContent = {
   headline: "A private Otter alternative with no bot in your calls",
   subhead:
     "Nootle records meetings directly on your Mac, so no bot joins the call, and transcribes them there, so the audio is never uploaded. It’s free and open source.",
+  answer: {
+    question: "Which is better, Nootle or Otter?",
+    body: "It depends on whether you want a bot in the call. If you want private notes with nothing joining the meeting, audio that never leaves your Mac and no subscription, Nootle is the better choice. Otter fits better if you work on Windows or your phone, or want a bot to join and record meetings you can’t attend yourself. As of October 2026, Otter’s paid plans start at $8.33 a month billed annually; Nootle is free.",
+  },
+  published: "2026-10-11",
+  updated: "2026-10-19",
   why: {
     heading: "Why people switch from Otter",
     points: [

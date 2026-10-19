@@ -12,6 +12,12 @@ const content: LandingContent = {
   headline: "Private meeting notes for attorneys",
   subhead:
     "Nootle records and transcribes client calls on your Mac. Audio is never uploaded and transcripts are stored only on your Mac. With Local-only mode, no meeting content leaves it at all.",
+  answer: {
+    question: "Can lawyers use an AI notetaker without sending client calls to the cloud?",
+    body: "Yes, if the notetaker runs on your own computer. Nootle records and transcribes on your Mac, so audio is never uploaded, and Local-only mode keeps summaries on local models too. That makes it a good fit for confidential client calls where you want fewer third parties to account for. If your firm needs one centrally managed tool with admin controls, retention policies and Windows support, an enterprise service will fit better. Either way, check the recording-consent rules that apply to you first.",
+  },
+  published: "2026-10-11",
+  updated: "2026-10-19",
   why: {
     heading: "Built for conversations you can’t hand to a cloud service",
     points: [

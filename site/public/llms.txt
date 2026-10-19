@@ -1,6 +1,8 @@
 # Nootle
 
-> AI-powered meeting recorder for Mac. Records, transcribes in real time with speaker identification, and enables AI chat about meetings. Recording and transcription are always local — AI summaries and chat are only fully local when paired with a local model via Ollama.
+> Nootle is a free, open-source AI meeting recorder for Mac users who spend their day on calls. It records and transcribes meetings on your Mac without a bot joining, then writes summaries, pulls out action items, and answers questions from your meetings and documents. Recording and transcription are always local — AI summaries and chat are only fully local when paired with a local model via Ollama.
+
+Facts on this page are as of October 2026.
 
 ## Product
 
@@ -47,6 +49,8 @@
 Audio recording and transcription always happen locally on your Mac using ONNX Runtime. No meeting audio is ever uploaded, and transcripts are stored only on the local device. AI summaries and chat use whichever provider the user picks: Ollama keeps everything on-device, while OpenAI, Anthropic, Google, Groq, OpenRouter, or AWS Bedrock send transcript context to that provider using the user's own API key. Nootle is fully local end-to-end only when paired with a local AI model.
 
 ## Pages
+
+- Privacy policy: https://nootle.ai/privacy
 
 - Granola alternative: https://nootle.ai/granola-alternative
 - Otter alternative: https://nootle.ai/otter-alternative

@@ -12,6 +12,12 @@ const content: LandingContent = {
   headline: "UX research and interview notes, kept on your Mac",
   subhead:
     "Record user interviews without a bot in the call, transcribe them on your Mac, and ask questions across every session with answers that cite the transcript.",
+  answer: {
+    question: "What’s the best way to record and analyze user interviews privately?",
+    body: "It depends on how your team works. If you run interviews over video calls on a Mac and want transcripts that stay on your machine, Nootle is a good fit: it records without a bot, transcribes on your Mac and answers questions across every session with citations. If you need a shared research repository where a whole team tags clips and builds highlight reels, a dedicated tool like Dovetail fits better. You can still export Nootle transcripts as Markdown and bring them there.",
+  },
+  published: "2026-10-11",
+  updated: "2026-10-19",
   why: {
     heading: "Made for a stack of interviews",
     points: [
