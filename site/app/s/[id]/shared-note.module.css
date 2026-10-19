@@ -162,14 +162,14 @@
   visibility: visible;
   opacity: 1;
   transform: none;
-  transition: opacity 150ms, transform 150ms;
+  transition-delay: 0s;
 }
 @media (hover: hover) {
   .lockInfo:hover .lockPopover {
     visibility: visible;
     opacity: 1;
     transform: none;
-    transition: opacity 150ms, transform 150ms;
+    transition-delay: 0s;
   }
 }
 .lockLead {

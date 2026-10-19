@@ -113,7 +113,7 @@ function EncryptionInfo() {
         <span className={styles.lockLong}>Private, end-to-end encrypted</span>
         <span className={styles.lockShort}>Encrypted</span>
       </button>
-      <div id="encryption-info" role="region" aria-label="About end-to-end encryption" className={styles.lockPopover}>
+      <div id="encryption-info" className={styles.lockPopover}>
         <div className={styles.lockCard}>
           <p className={styles.lockLead}>
             <KeyRound aria-hidden="true" />
@@ -422,18 +422,20 @@ export function SharedNote({ id }: { id: string }) {
             <p>{state.message}</p>
           </div>
         )}
-        {state.status === "ready" && <GetNootle />}
         {state.status === "ready" && (
-          <article className={styles.paper}>
-            <Hero note={state.note} />
-            <AskAi markdown={state.markdown} note={state.note} />
-            {state.note.body && (
-              <div className={styles.note}>
-                <Markdown>{state.note.body}</Markdown>
-              </div>
-            )}
-            {state.note.transcript && <Transcript transcript={state.note.transcript} />}
-          </article>
+          <>
+            <GetNootle />
+            <article className={styles.paper}>
+              <Hero note={state.note} />
+              <AskAi markdown={state.markdown} note={state.note} />
+              {state.note.body && (
+                <div className={styles.note}>
+                  <Markdown>{state.note.body}</Markdown>
+                </div>
+              )}
+              {state.note.transcript && <Transcript transcript={state.note.transcript} />}
+            </article>
+          </>
         )}
         {state.status !== "loading" && <NootleCta />}
       </main>
