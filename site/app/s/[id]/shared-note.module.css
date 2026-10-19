@@ -1,5 +1,5 @@
 /* Shared meeting notes (/s/[id]). Light like a document by default, dark when
-   the reader's system is; the rest of the site stays dark either way. */
+   the reader picks it; the rest of the site stays dark either way. */
 
 .page {
   --bg: #f6f5fa;
@@ -31,38 +31,34 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  .page {
-    --bg: var(--color-bg);
-    --paper: #1a1724;
-    --sunken: #15131e;
-    --border: #2e2940;
-    --text: var(--color-text);
-    --text-2: #bcb6cb;
-    --text-3: #8d879e;
-    --accent: #a78bfa;
-    --accent-2: #c4b5fd;
-    --accent-soft: var(--color-accent-subtle);
-    --accent-ring: #8b5cf655;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 40px -12px rgb(0 0 0 / 0.6);
-    --s0: #60a5fa;
-    --s1: var(--color-emerald);
-    --s2: #e879f9;
-    --s3: var(--color-amber);
-    --s4: var(--color-cyan);
-    --s5: #f87171;
-    color-scheme: dark;
-  }
+.page[data-theme="dark"] {
+  --bg: var(--color-bg);
+  --paper: #1a1724;
+  --sunken: #15131e;
+  --border: #2e2940;
+  --text: var(--color-text);
+  --text-2: #bcb6cb;
+  --text-3: #8d879e;
+  --accent: #a78bfa;
+  --accent-2: #c4b5fd;
+  --accent-soft: var(--color-accent-subtle);
+  --accent-ring: #8b5cf655;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 40px -12px rgb(0 0 0 / 0.6);
+  --s0: #60a5fa;
+  --s1: var(--color-emerald);
+  --s2: #e879f9;
+  --s3: var(--color-amber);
+  --s4: var(--color-cyan);
+  --s5: #f87171;
+  color-scheme: dark;
 }
 
 /* Overscroll shows the body, which the site paints dark. */
 :global(body):has(.page) {
   background: #f6f5fa;
 }
-@media (prefers-color-scheme: dark) {
-  :global(body):has(.page) {
-    background: var(--color-bg);
-  }
+:global(body):has(.page[data-theme="dark"]) {
+  background: var(--color-bg);
 }
 
 .page svg {
@@ -114,6 +110,29 @@
   width: 0.85rem;
   height: 0.85rem;
   color: var(--s1);
+}
+.themeToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--paper);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: transform 150ms, color 150ms;
+}
+.themeToggle:hover {
+  color: var(--text);
+}
+.themeToggle:active {
+  transform: scale(0.92);
+}
+.themeToggle svg {
+  width: 1rem;
+  height: 1rem;
 }
 .getButton {
   padding: 0.45rem 1rem;
@@ -262,6 +281,7 @@
   transform: scale(0.96);
 }
 .btn:focus-visible,
+.themeToggle:focus-visible,
 .getButton:focus-visible,
 .transcript summary:focus-visible {
   outline: 2px solid var(--accent);
