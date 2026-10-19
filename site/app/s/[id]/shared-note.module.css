@@ -199,12 +199,6 @@
 .lockSteps li + li {
   margin-top: 0.3rem;
 }
-.lockPopover code {
-  padding: 0.05rem 0.3rem;
-  border-radius: 0.3rem;
-  background: var(--sunken);
-  font-size: 0.8em;
-}
 
 /* "Get Nootle" strip above the notes */
 
@@ -520,7 +514,8 @@
 .note blockquote > :last-child {
   margin-bottom: 0;
 }
-.note code {
+.note code,
+.lockPopover code {
   padding: 0.1rem 0.35rem;
   border-radius: 0.35rem;
   background: var(--sunken);
