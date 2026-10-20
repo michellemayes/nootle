@@ -74,6 +74,13 @@ nootle-cli scratch-notes list <meeting-id>
 nootle-cli scratch-notes add <meeting-id> "Follow up on pricing" --at-ms 120000
 nootle-cli scratch-notes delete <note-id>
 
+# Agent notes: pin a comment, highlight (a range, with --to), or flag to a
+# moment of a meeting; the user sees it on the meeting's timeline
+nootle-cli meetings annotate <meeting-id> "Contradicts ADR-12" --at 14:32 --kind flag
+nootle-cli meetings annotations <meeting-id>
+nootle-cli meetings resolve-annotation <annotation-id>
+nootle-cli meetings delete-annotation <annotation-id>
+
 nootle-cli snapshots list <meeting-id>          # text read off shared screens
 nootle-cli snapshots delete <snapshot-id>
 

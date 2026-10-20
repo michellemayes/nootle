@@ -248,6 +248,24 @@ export interface ScratchNote {
   created_at: string;
 }
 
+export type AnnotationKind = "comment" | "highlight" | "flag";
+
+/** A comment, highlight, or flag an agent pinned to a meeting over MCP or the CLI. */
+export interface MeetingAnnotation {
+  id: string;
+  meeting_id: string;
+  start_ms: number;
+  /** Set when it highlights a range rather than a moment. */
+  end_ms: number | null;
+  kind: AnnotationKind;
+  /** Markdown. */
+  body: string;
+  /** The MCP client's name, or "cli". */
+  author: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
 /** A picture of content shared on screen during a meeting. */
 export interface Snapshot {
   id: string;

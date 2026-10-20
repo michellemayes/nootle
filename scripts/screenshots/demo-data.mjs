@@ -84,6 +84,30 @@ const TRANSCRIPT = [
   line("t12", "Speaker 1", "Then that's decided — calendar access moves out of onboarding and becomes contextual.", 118_000, 126_000),
 ];
 
+const annotation = (id, kind, startMs, endMs, author, body, resolvedAt = null) => ({
+  id,
+  meeting_id: "m1",
+  start_ms: startMs,
+  end_ms: endMs,
+  kind,
+  body,
+  author,
+  created_at: day(28, 18, 5),
+  resolved_at: resolvedAt,
+});
+
+/**
+ * What an agent reviewing the meeting over MCP might pin to it. Not in
+ * FIXTURES, so the marketing screenshots stay as they are; captures that
+ * show agent notes add them to `list_meeting_annotations`.
+ */
+export const M1_ANNOTATIONS = [
+  annotation("an1", "flag", 29_000, null, "claude-code", "31% contradicts the Q2 funnel dashboard, which shows **24%** for this step. Check which date range each uses."),
+  annotation("an2", "highlight", 58_000, 86_000, "claude-code", "Decision and owners for the explainer test. Matches **ADR-14** (ship experiments behind a flag)."),
+  annotation("an3", "comment", 99_000, null, "cli", "Link the support tickets Speaker 3 mentions.", day(28, 18, 20)),
+  annotation("an4", "comment", 118_000, null, "cursor", "This reverses **ADR-9**, which put calendar access in onboarding. Mark ADR-9 superseded?"),
+];
+
 const SUMMARY_CONTENT = `## Overview
 
 The team reviewed funnel data for the rebuilt onboarding flow and agreed on two changes: an inline explanation for the screen-recording permission, and deferring the calendar permission out of onboarding entirely.
@@ -806,6 +830,7 @@ export const FIXTURES = {
   get_meeting_analytics: ANALYTICS,
   get_audio_data: silentWav(),
   get_scratch_notes: [],
+  list_meeting_annotations: {},
 
   list_labels: LABELS,
   get_all_meeting_labels: MEETING_LABELS,

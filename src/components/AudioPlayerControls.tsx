@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { RotateCcw, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMs } from "@/lib/utils";
@@ -118,10 +118,13 @@ export function AudioPlayerControls({
   audio,
   showBar,
   disabled,
+  markers,
 }: {
   audio: HTMLAudioElement | null;
   showBar: boolean;
   disabled: boolean;
+  /** Drawn over the seek bar, given the recording's length in seconds. */
+  markers?: (duration: number) => ReactNode;
 }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -209,6 +212,7 @@ export function AudioPlayerControls({
               className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary opacity-0 shadow transition-opacity group-hover/seek:opacity-100 group-focus-visible/seek:opacity-100"
               style={{ left: progress }}
             />
+            {markers?.(duration)}
           </div>
         </div>
       ) : (
