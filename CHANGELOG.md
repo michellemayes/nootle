@@ -2,10 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.11.0] - 2026-10-20
 
 ### Features
 
+- **site:** Redesign the Open Graph share image (#189) ([ea94754](https://github.com/michellemayes/nootle/commit/ea947541e5f1d6f069eacef7166a86e191cdf76d))
+- **site:** Open shared notes in light mode, with a dark toggle (#186) ([f125f00](https://github.com/michellemayes/nootle/commit/f125f004f1a7a17e7de216c33e942de0a60865ec))
+- **site:** Make the website easier for AI assistants to read and recommend (#188) ([a3bfc97](https://github.com/michellemayes/nootle/commit/a3bfc9717294e063f742575fbca0ccbc323336c7))
+- **site:** Explain end-to-end encryption on shared notes and add a Get Nootle link (#187) ([1be64f4](https://github.com/michellemayes/nootle/commit/1be64f45637fe5574e60095f00c33bed1bde65de))
 - **site:** Redesign the shared notes page (#184) ([632926e](https://github.com/michellemayes/nootle/commit/632926e5a9de94283a5bd5efd89b02bd9b90712f))
 
 ## [0.10.1] - 2026-10-19
