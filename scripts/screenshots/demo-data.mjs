@@ -123,6 +123,30 @@ const ROOM_ANSWER = {
   ),
 };
 
+const annotation = (id, kind, startMs, endMs, author, body, resolvedAt = null) => ({
+  id,
+  meeting_id: "m1",
+  start_ms: startMs,
+  end_ms: endMs,
+  kind,
+  body,
+  author,
+  created_at: day(28, 18, 5),
+  resolved_at: resolvedAt,
+});
+
+/**
+ * What an agent reviewing the meeting over MCP might pin to it. Not in
+ * FIXTURES, so the marketing screenshots stay as they are; captures that
+ * show agent notes add them to `list_meeting_annotations`.
+ */
+export const M1_ANNOTATIONS = [
+  annotation("an1", "flag", 29_000, null, "claude-code", "31% contradicts the Q2 funnel dashboard, which shows **24%** for this step. Check which date range each uses."),
+  annotation("an2", "highlight", 58_000, 86_000, "claude-code", "Decision and owners for the explainer test. Matches **ADR-14** (ship experiments behind a flag)."),
+  annotation("an3", "comment", 99_000, null, "cli", "Link the support tickets Speaker 3 mentions.", day(28, 18, 20)),
+  annotation("an4", "comment", 118_000, null, "cursor", "This reverses **ADR-9**, which put calendar access in onboarding. Mark ADR-9 superseded?"),
+];
+
 const SUMMARY_CONTENT = `## Overview
 
 The team reviewed funnel data for the rebuilt onboarding flow and agreed on two changes: an inline explanation for the screen-recording permission, and deferring the calendar permission out of onboarding entirely.
@@ -966,6 +990,7 @@ export const FIXTURES = {
   list_snapshots: [],
   list_voice_profiles: [],
   list_dictionary_entries: [],
+  list_meeting_annotations: {},
 
   list_labels: LABELS,
   get_all_meeting_labels: MEETING_LABELS,
@@ -1040,4 +1065,17 @@ export const FIXTURES = {
   ),
   // Stopping the demo recording opens the finished design review.
   stop_recording: MEETINGS[0],
+
+  // The menu bar popover (menubar.html), mid-recording with a Live Assist card.
+  menu_bar_status: {
+    recording: {
+      meeting_id: "m-live",
+      paused: false,
+      elapsed_ms: 1_234_000,
+      mic_level: 0.04,
+      system_level: 0.03,
+    },
+    title: "Design Review — Onboarding Flow",
+    live_assist: LIVE_ASSIST_CARD,
+  },
 };

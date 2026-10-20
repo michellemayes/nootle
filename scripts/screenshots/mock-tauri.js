@@ -22,6 +22,20 @@
       const byId = fixtures.get_transcript || {};
       return byId[args?.meetingId] || [];
     }
+    // Agent annotations are keyed by meeting id, and can be resolved or deleted.
+    const annotations = fixtures.list_meeting_annotations || {};
+    if (cmd === "list_meeting_annotations") return annotations[args?.meetingId] || [];
+    if (cmd === "resolve_meeting_annotation" || cmd === "delete_meeting_annotation") {
+      for (const [meetingId, list] of Object.entries(annotations)) {
+        annotations[meetingId] =
+          cmd === "delete_meeting_annotation"
+            ? list.filter((a) => a.id !== args.id)
+            : list.map((a) =>
+                a.id === args.id ? { ...a, resolved_at: args.resolved ? new Date().toISOString() : null } : a,
+              );
+      }
+      return null;
+    }
     // Mirror the backend's title search so the palette and library filter.
     if (cmd === "list_meetings" && args?.search) {
       const q = args.search.toLowerCase();

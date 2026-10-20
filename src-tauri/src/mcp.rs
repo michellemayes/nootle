@@ -236,6 +236,34 @@ pub struct AddScratchNoteParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct AddAnnotationParams {
+    /// Meeting ID
+    pub meeting_id: String,
+    /// Time into the meeting it refers to, in milliseconds (transcript lines'
+    /// [HH:MM:SS.mmm] timestamps)
+    pub start_ms: i64,
+    /// End of the highlighted range, in milliseconds; omit for a moment
+    #[serde(default)]
+    pub end_ms: Option<i64>,
+    pub kind: crate::db::AnnotationKind,
+    /// Markdown, up to 4000 characters
+    pub body: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ResolveAnnotationParams {
+    /// Annotation ID
+    pub id: String,
+    /// False to reopen it
+    #[serde(default = "default_true")]
+    pub resolved: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SaveDictionaryEntryParams {
     /// Entry to update. Omit to add the term, or merge the variants into the
     /// term's existing entry.
@@ -603,6 +631,23 @@ impl NootleMcpServer {
         self.detect_llms().await
     }
 
+    /// Adds `p` as an annotation by `author`, the MCP client's name.
+    fn annotate(
+        &self,
+        p: AddAnnotationParams,
+        author: String,
+    ) -> crate::error::Result<crate::db::MeetingAnnotation> {
+        let annotation = crate::db::NewMeetingAnnotation {
+            meeting_id: p.meeting_id,
+            start_ms: p.start_ms,
+            end_ms: p.end_ms,
+            kind: p.kind,
+            body: p.body,
+            author,
+        };
+        Ok(ops::add_annotation(&self.db, annotation)?)
+    }
+
     /// The LLMs on this machine, with the provider and model `choice` resolves to.
     async fn llm(
         &self,
@@ -699,7 +744,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Get meeting",
-        description = "Get a meeting's details, notes, summaries, labels, scratch notes, Linear tickets, and transcript as \"[HH:MM:SS.mmm] Speaker: text\" lines, 300 per call.",
+        description = "Get a meeting's details, notes, summaries, labels, scratch notes, Linear tickets, agent annotations, and transcript as \"[HH:MM:SS.mmm] Speaker: text\" lines, 300 per call.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn get_meeting(
@@ -724,6 +769,7 @@ impl NootleMcpServer {
                     "summaries": db.get_summaries_for_meeting(&params.id)?,
                     "scratch_notes": db.get_scratch_notes(&params.id)?,
                     "linear_tickets": db.get_linear_tickets(&params.id)?,
+                    "annotations": db.get_meeting_annotations(&params.id)?,
                     "transcript": page(lines, params.transcript_offset, TRANSCRIPT_PAGE_SIZE),
                 }))
             })
@@ -1155,6 +1201,78 @@ impl NootleMcpServer {
             self.db
                 .add_scratch_note(&p.meeting_id, &p.content, p.timestamp_ms)
         })())
+    }
+
+    // --- Annotations ---
+
+    #[tool(
+        title = "Add meeting annotation",
+        description = "Pin a comment, highlight, or flag to a moment (or, with end_ms, a range) of a meeting, e.g. \"this contradicts ADR-12\" at 14:32. The user sees it on the meeting's timeline, marked as added by you, and can resolve or delete it. Returns the annotation.",
+        annotations(destructive_hint = false, open_world_hint = false)
+    )]
+    fn add_meeting_annotation(
+        &self,
+        Parameters(p): Parameters<AddAnnotationParams>,
+        ctx: rmcp::service::RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        let author = ctx.client_info().map(|c| c.name).unwrap_or_default();
+        respond(self.annotate(p, author))
+    }
+
+    #[tool(
+        title = "List meeting annotations",
+        description = "List the comments, highlights, and flags agents pinned to a meeting, in timeline order, with who added each and whether it's resolved.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    fn list_meeting_annotations(
+        &self,
+        Parameters(p): Parameters<MeetingPageParams>,
+    ) -> Result<CallToolResult, McpError> {
+        respond(
+            self.db
+                .get_meeting_annotations(&p.meeting_id)
+                .map(|annotations| page(annotations, p.offset, PAGE_SIZE)),
+        )
+    }
+
+    #[tool(
+        title = "Resolve meeting annotation",
+        description = "Mark a meeting annotation resolved, or reopen it with resolved false.",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn resolve_meeting_annotation(
+        &self,
+        Parameters(p): Parameters<ResolveAnnotationParams>,
+    ) -> Result<CallToolResult, McpError> {
+        respond(
+            self.db
+                .set_meeting_annotation_resolved(&p.id, p.resolved)
+                .map(|()| json!({ "id": p.id, "resolved": p.resolved })),
+        )
+    }
+
+    #[tool(
+        title = "Delete meeting annotation",
+        description = "Permanently delete a meeting annotation.",
+        annotations(
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn delete_meeting_annotation(
+        &self,
+        Parameters(p): Parameters<IdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        respond(
+            self.db
+                .delete_meeting_annotation(&p.id)
+                .map(|()| deleted(&p.id)),
+        )
     }
 
     #[tool(
@@ -1899,7 +2017,9 @@ impl ServerHandler for NootleMcpServer {
                  notes, labels, transcripts, action items), run LLM features on them \
                  (summaries, insights, questions, recipes, sentiment), and set up \
                  automations: integrations, workflows that send meeting output to them, \
-                 summary templates, and custom insight types. Call get_automation_catalog \
+                 summary templates, and custom insight types. To point the user at a \
+                 moment of a meeting, pin an annotation to it with add_meeting_annotation. \
+                 Call get_automation_catalog \
                  before creating integrations or workflows. LLM tools take optional \
                  provider and model; list_llm_models shows the options and the default. \
                  Confirm with the user before any destructive tool. Lists, searches, and \
@@ -2050,6 +2170,14 @@ mod tests {
         }
         let names: Vec<&str> = read_only.iter().map(|t| t.name.as_ref()).collect();
         assert!(!names.contains(&"delete_meeting"));
+        assert!(names.contains(&"list_meeting_annotations"));
+        for write in [
+            "add_meeting_annotation",
+            "resolve_meeting_annotation",
+            "delete_meeting_annotation",
+        ] {
+            assert!(!names.contains(&write), "{write}");
+        }
     }
 
     fn setup_test_db() -> Arc<Database> {
@@ -2260,6 +2388,60 @@ mod tests {
         })));
         assert!(result["deleted"].is_string());
         assert!(db.get_meeting_labels(&id).unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_annotations() {
+        let db = setup_test_db();
+        let server = NootleMcpServer::new(db.clone());
+        let id = meeting_id(&db);
+        let add = |start_ms: i64, end_ms: Option<i64>| AddAnnotationParams {
+            meeting_id: id.clone(),
+            start_ms,
+            end_ms,
+            kind: crate::db::AnnotationKind::Flag,
+            body: "This contradicts **ADR-12**".into(),
+        };
+        let pinned = server
+            .annotate(add(3_500, Some(5_000)), "claude-code".into())
+            .unwrap();
+        assert_eq!(
+            (pinned.kind, pinned.author.as_str()),
+            (crate::db::AnnotationKind::Flag, "claude-code")
+        );
+        // The transcript ends at 6s.
+        assert!(server.annotate(add(7_000, None), String::new()).is_err());
+
+        let (_, meeting) = output(
+            server
+                .get_meeting(Parameters(GetMeetingParams {
+                    id: id.clone(),
+                    transcript_offset: 0,
+                    include_segment_ids: false,
+                }))
+                .await,
+        );
+        assert_eq!(meeting["annotations"][0]["end_ms"], 5_000);
+
+        let (err, resolved) = output(server.resolve_meeting_annotation(Parameters(
+            ResolveAnnotationParams {
+                id: pinned.id.clone(),
+                resolved: true,
+            },
+        )));
+        assert!(!err && resolved["resolved"] == true);
+        let (_, listed) = output(
+            server.list_meeting_annotations(Parameters(MeetingPageParams {
+                meeting_id: id.clone(),
+                offset: 0,
+            })),
+        );
+        assert!(listed["items"][0]["resolved_at"].is_string());
+
+        output(server.delete_meeting_annotation(Parameters(IdParams {
+            id: pinned.id.clone(),
+        })));
+        assert!(db.get_meeting_annotations(&id).unwrap().is_empty());
     }
 
     #[tokio::test]

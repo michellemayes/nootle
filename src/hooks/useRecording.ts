@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { Meeting, RecordingStatus } from "@/types";
 
 const checkIsRecording = () => invoke<boolean>("is_recording").catch(() => false);
@@ -11,7 +12,29 @@ export function useRecording() {
   const [currentMeeting, setCurrentMeeting] = useState<Meeting | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Set when the recording was stopped from the menu bar or a nootle:// link.
+  const [stoppedElsewhere, setStoppedElsewhere] = useState(false);
+  const stoppingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Follow pauses and stops made outside this view.
+  useEffect(() => {
+    if (!isRecording) return;
+    const unlisten = listen("recording-changed", async () => {
+      const status = await invoke<RecordingStatus | null>("recording_status").catch(() => null);
+      if (status) {
+        setIsPaused(status.paused);
+        setElapsed(Math.floor(status.elapsed_ms / 1000));
+      } else if (!stoppingRef.current) {
+        setIsRecording(false);
+        setIsPaused(false);
+        setStoppedElsewhere(true);
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [isRecording]);
 
   useEffect(() => {
     if (!isRecording || isPaused) return;
@@ -73,11 +96,13 @@ export function useRecording() {
   }, []);
 
   const stopRecording = useCallback(async () => {
+    stoppingRef.current = true;
     try {
       const meeting = await invoke<Meeting>("stop_recording");
       setCurrentMeeting(meeting);
       return meeting;
     } finally {
+      stoppingRef.current = false;
       setIsRecording(false);
       setIsPaused(false);
       setElapsed(0);
@@ -90,6 +115,7 @@ export function useRecording() {
     currentMeeting,
     elapsed,
     error,
+    stoppedElsewhere,
     startRecording,
     resumeRecording,
     setPaused,
@@ -99,8 +125,8 @@ export function useRecording() {
 
 /**
  * Lightweight "is anything recording?" check for chrome outside the
- * recording view. Re-checks on every navigation, since starting and stopping
- * both route through /recording.
+ * recording view. Re-checks on every navigation and whenever a recording
+ * starts or stops.
  */
 export function useIsRecording() {
   const { pathname } = useLocation();
@@ -108,5 +134,12 @@ export function useIsRecording() {
   useEffect(() => {
     checkIsRecording().then(setRecording);
   }, [pathname]);
+  // Recordings also start and stop from the menu bar.
+  useEffect(() => {
+    const unlisten = listen("recording-changed", () => checkIsRecording().then(setRecording));
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
   return recording;
 }

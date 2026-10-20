@@ -875,6 +875,37 @@ function MeetingCoachSetting() {
   );
 }
 
+/** A menu bar icon with the recording's controls, optionally instead of the Dock icon. */
+function MenuBarSetting() {
+  const [enabled, setEnabled] = useBooleanSetting("menu_bar", false);
+  const [hideDock, setHideDock] = useBooleanSetting("menu_bar_hide_dock", false);
+  return (
+    <>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium">Show in menu bar</p>
+          <p className="text-sm text-muted-foreground">
+            Start, pause and stop recordings, jot quick notes and see your next meeting from the
+            menu bar, so Nootle can stay out of the way during calls
+          </p>
+        </div>
+        <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Show in menu bar" />
+      </div>
+      {enabled && (
+        <div className="ml-4 flex items-center justify-between border-l pl-4">
+          <div>
+            <p className="text-sm font-medium">Hide Dock icon</p>
+            <p className="text-sm text-muted-foreground">
+              Open Nootle from the menu bar icon instead
+            </p>
+          </div>
+          <Switch checked={hideDock} onCheckedChange={setHideDock} aria-label="Hide Dock icon" />
+        </div>
+      )}
+    </>
+  );
+}
+
 /** Privacy: the consent reminder, its message, and local-only mode. */
 function PrivacyCard() {
   const [reminder, setReminder] = useBooleanSetting("consent_reminder", true);
@@ -1071,7 +1102,7 @@ export function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Appearance</CardTitle>
-                <CardDescription>Theme, background, and accent color</CardDescription>
+                <CardDescription>Theme, colors, and where Nootle shows up</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -1087,6 +1118,7 @@ export function SettingsPage() {
                 </div>
                 <BackgroundThemePicker />
                 <AccentColorPicker />
+                <MenuBarSetting />
               </CardContent>
             </Card>
             <Card>

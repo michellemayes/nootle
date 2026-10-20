@@ -1,7 +1,9 @@
 //! Turns a meeting into files people can take elsewhere: a Markdown write-up,
 //! a plain-text transcript, or SRT / WebVTT subtitles for the recording.
 
-use crate::db::{Database, InsightWithActionItem, Meeting, Summary, TranscriptSegment};
+use crate::db::{
+    Database, InsightWithActionItem, Meeting, MeetingAnnotation, Summary, TranscriptSegment,
+};
 use crate::error::{NootleError, Result};
 use crate::slides::Slide;
 use crate::summarization::{format_ms, format_transcript};
@@ -49,7 +51,7 @@ pub fn export_meeting(db: &Database, meeting_id: &str, format: ExportFormat) -> 
         ExportFormat::Text => format_transcript(&db.get_transcript(meeting_id)?) + "\n",
         ExportFormat::Srt => to_srt(&db.get_transcript(meeting_id)?),
         ExportFormat::Vtt => to_vtt(&db.get_transcript(meeting_id)?),
-        ExportFormat::Markdown => meeting_as_markdown(db, meeting_id, true)?,
+        ExportFormat::Markdown => full_markdown(db, meeting_id, true, true)?,
     })
 }
 
@@ -98,6 +100,7 @@ fn write_markdown(
         segments,
         &slides,
         SlideImages::Folder(&folder),
+        true,
     )?;
     std::fs::write(path, content)?;
     Ok(())
@@ -111,12 +114,22 @@ fn image_name(slide: &Slide) -> String {
     format!("slide-{:02}.{ext}", slide.number)
 }
 
-/// One meeting as Markdown; without the transcript it's just the notes,
-/// summaries, and action items, which is what gets shared.
+/// One meeting as Markdown to hand to someone else (a share link, a Claude
+/// prompt): the notes, summaries, and action items, and the transcript if
+/// asked. Agents' annotations are the user's own and stay out.
 pub fn meeting_as_markdown(
     db: &Database,
     meeting_id: &str,
     include_transcript: bool,
+) -> Result<String> {
+    full_markdown(db, meeting_id, include_transcript, false)
+}
+
+fn full_markdown(
+    db: &Database,
+    meeting_id: &str,
+    include_transcript: bool,
+    include_annotations: bool,
 ) -> Result<String> {
     let meeting = db.get_meeting(meeting_id)?;
     let segments = if include_transcript {
@@ -132,6 +145,7 @@ pub fn meeting_as_markdown(
         &segments,
         &slides,
         SlideImages::Omitted,
+        include_annotations,
     )
 }
 
@@ -143,6 +157,7 @@ fn meeting_markdown(
     segments: &[TranscriptSegment],
     slides: &[Slide],
     images: SlideImages,
+    include_annotations: bool,
 ) -> Result<String> {
     let summaries: Vec<(String, Summary)> = db
         .get_summaries_for_meeting(&meeting.id)?
@@ -157,8 +172,19 @@ fn meeting_markdown(
         })
         .collect();
     let insights = db.get_insights_for_meeting(&meeting.id)?;
+    let annotations = if include_annotations {
+        db.get_meeting_annotations(&meeting.id)?
+    } else {
+        Vec::new()
+    };
     Ok(to_markdown(
-        meeting, &summaries, slides, images, &insights, segments,
+        meeting,
+        &summaries,
+        slides,
+        images,
+        &insights,
+        &annotations,
+        segments,
     ))
 }
 
@@ -229,6 +255,7 @@ pub fn to_markdown(
     slides: &[Slide],
     images: SlideImages,
     insights: &[InsightWithActionItem],
+    annotations: &[MeetingAnnotation],
     segments: &[TranscriptSegment],
 ) -> String {
     let mut out = format!("# {}\n\n", meeting.title);
@@ -309,6 +336,12 @@ pub fn to_markdown(
         let _ = writeln!(out, "## Notes\n\n{notes}\n");
     }
 
+    if !annotations.is_empty() {
+        out.push_str("## Agent notes\n\n");
+        write_annotations(&mut out, annotations);
+        out.push('\n');
+    }
+
     if !segments.is_empty() {
         out.push_str("## Transcript\n\n");
         for s in segments {
@@ -323,6 +356,29 @@ pub fn to_markdown(
     }
 
     out.trim_end().to_string() + "\n"
+}
+
+/// Agents' annotations as a Markdown list, one item each.
+fn write_annotations(out: &mut String, annotations: &[MeetingAnnotation]) {
+    for a in annotations {
+        let mut when = format_ms(a.start_ms);
+        if let Some(end) = a.end_ms {
+            let _ = write!(when, "–{}", format_ms(end));
+        }
+        let resolved = if a.resolved_at.is_some() {
+            ", resolved"
+        } else {
+            ""
+        };
+        // Indent the body's later lines so they stay in its list item.
+        let body = a.body.trim().replace('\n', "\n  ");
+        let _ = writeln!(
+            out,
+            "- **[{when}] {}** ({}{resolved}): {body}",
+            a.kind.label(),
+            a.author
+        );
+    }
 }
 
 fn meeting_when(meeting: &Meeting) -> String {
@@ -467,8 +523,28 @@ mod tests {
         })
         .unwrap();
 
+        let flag = db
+            .add_meeting_annotation(crate::db::NewMeetingAnnotation {
+                meeting_id: meeting.id.clone(),
+                start_ms: 0,
+                end_ms: Some(1_500),
+                kind: crate::db::AnnotationKind::Flag,
+                body: "Contradicts ADR-12.\nSee the doc.".into(),
+                author: "claude-code".into(),
+            })
+            .unwrap();
+        db.set_meeting_annotation_resolved(&flag.id, true).unwrap();
+
         let md = export_meeting(&db, &meeting.id, ExportFormat::Markdown).unwrap();
         assert!(md.starts_with("# Launch sync\n\n"), "{md}");
+        assert!(
+            md.contains("## Agent notes\n\n- **[00:00–00:01] Flag** (claude-code, resolved): Contradicts ADR-12.\n  See the doc.\n\n## Transcript"),
+            "{md}"
+        );
+        // Shared notes leave them out.
+        assert!(!meeting_as_markdown(&db, &meeting.id, true)
+            .unwrap()
+            .contains("Agent notes"));
         assert!(md.contains("## Summary\n\nWe agreed to ship.\n"), "{md}");
         assert!(md.contains("## Notes\n\nRemember the changelog\n"), "{md}");
         assert!(md.contains("**[00:00] Alex:** Morning all.\n"), "{md}");
@@ -582,6 +658,7 @@ mod tests {
                 item("Write the post", "open", Some("Sam")),
                 item("Book the room", "done", None),
             ],
+            &[],
             &[],
         );
         assert!(

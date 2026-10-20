@@ -217,6 +217,15 @@ export interface LiveAssistCard {
   automatic: boolean;
 }
 
+/** What the menu bar popover shows about the recording. */
+export interface MenuBarStatus {
+  recording: RecordingStatus | null;
+  /** The recorded meeting's title. */
+  title: string | null;
+  /** The newest Live Assist card for the recorded meeting. */
+  live_assist: LiveAssistCard | null;
+}
+
 export interface GlobalChatResponse {
   response: string;
   sources: ChatSource[];
@@ -269,6 +278,24 @@ export interface ScratchNote {
   content: string;
   timestamp_ms: number;
   created_at: string;
+}
+
+export type AnnotationKind = "comment" | "highlight" | "flag";
+
+/** A comment, highlight, or flag an agent pinned to a meeting over MCP or the CLI. */
+export interface MeetingAnnotation {
+  id: string;
+  meeting_id: string;
+  start_ms: number;
+  /** Set when it highlights a range rather than a moment. */
+  end_ms: number | null;
+  kind: AnnotationKind;
+  /** Markdown. */
+  body: string;
+  /** The MCP client's name, or "cli". */
+  author: string;
+  created_at: string;
+  resolved_at: string | null;
 }
 
 /** A picture of content shared on screen during a meeting. */

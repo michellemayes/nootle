@@ -177,7 +177,7 @@
     }
 }
 
-/* The meeting pop-up window is transparent around its rounded card. */
+/* The meeting pop-up and menu bar popover windows are transparent around their rounded cards. */
 body.popup {
   background: transparent;
 }
