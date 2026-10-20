@@ -307,6 +307,17 @@ export interface Snapshot {
   text: string;
   offset_ms: number;
   created_at: string;
+  /** What was said while it was on screen, once a slide recap is made. */
+  recap?: string | null;
+}
+
+/** A snapshot numbered in meeting order, on screen from `offset_ms` to `end_ms`. */
+export interface Slide extends Snapshot {
+  /** What summaries cite as `[slide N]`. */
+  number: number;
+  end_ms: number;
+  /** The first meaningful line of text read off it. */
+  headline: string;
 }
 
 export interface Recipe {

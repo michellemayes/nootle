@@ -22,6 +22,11 @@ nootle-cli actions list --status open
 # Export a meeting as Markdown, txt, srt, or vtt
 nootle-cli meetings export <meeting-id> --format srt --output call.srt
 
+# A meeting's slides with when each was on screen, and a recap of what was said
+# while each was up (LLM; recaps also come with automatic summaries)
+nootle-cli meetings slides <meeting-id>
+nootle-cli meetings slide-recap <meeting-id>
+
 # Name a speaker
 nootle-cli meetings rename-speaker <meeting-id> "Speaker 2" "Priya"
 

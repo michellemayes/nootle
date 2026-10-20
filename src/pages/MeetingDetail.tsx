@@ -14,7 +14,8 @@ import { insightIcon } from "@/lib/insightIcons";
 import { Collapsible } from "@/components/Collapsible";
 import { TimestampButton } from "@/components/TimestampButton";
 import { AgentNotesPanel, AnnotationMarkers, ANNOTATION_KINDS, annotationsBySegment } from "@/components/AgentNotes";
-import { Markdown } from "@/components/Markdown";
+import { Markdown, SafeLink } from "@/components/Markdown";
+import type { Components } from "react-markdown";
 import { NotesEditor } from "@/components/NotesEditor";
 import { AnalyticsPanel } from "@/components/AnalyticsPanel";
 import { ExportMenu } from "@/components/ExportMenu";
@@ -35,6 +36,9 @@ import { useAnnotations } from "@/hooks/useAnnotations";
 import { useSnapshots } from "@/hooks/useSnapshots";
 import { useCallNames } from "@/hooks/useCallNames";
 import { SnapshotsSection } from "@/components/SnapshotsSection";
+import { useSlides } from "@/hooks/useSlides";
+import { SlideCitation, SlideDialog, SlideRecapSection } from "@/components/SlideRecap";
+import { citedSlide, linkSlideCitations } from "@/lib/slides";
 import { RoomRecap } from "@/components/RoomRecap";
 import { toast } from "@/components/Toaster";
 import {
@@ -45,7 +49,7 @@ import {
   useFollowPlayback,
   useIsPlaying,
 } from "@/components/AudioPlayerControls";
-import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment, Workflow, WorkflowRun } from "@/types";
+import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, Slide, TranscriptSegment, Workflow, WorkflowRun } from "@/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Input } from "@/components/ui/input";
@@ -1178,6 +1182,43 @@ export function MeetingDetail() {
     setPendingScrollMs(ms);
     if (!audioMissing) seekToMs(ms);
   }, [audioMissing, seekToMs]);
+  // Slides cited in summaries (`[slide N]`) and the slide recap.
+  const { slides, generateRecap } = useSlides(id!);
+  const [viewingSlide, setViewingSlide] = useState<Slide | null>(null);
+  const [recapping, setRecapping] = useState(false);
+  // Latest jumpToMs, so the citation renderer stays stable while playing.
+  const jumpToMsRef = useRef(jumpToMs);
+  useEffect(() => {
+    jumpToMsRef.current = jumpToMs;
+  }, [jumpToMs]);
+  const slideLinks = useMemo<Components>(() => ({
+    a: (props) => {
+      const n = citedSlide(props.href);
+      const slide = n ? slides[n - 1] : undefined;
+      if (!slide) return <SafeLink {...props} />;
+      return (
+        <SlideCitation
+          slide={slide}
+          onOpen={(s) => {
+            setViewingSlide(s);
+            jumpToMsRef.current(s.offset_ms);
+          }}
+        />
+      );
+    },
+  }), [slides]);
+  const handleRecap = async (replace: boolean) => {
+    if (!selectedProvider || !selectedModel) return;
+    setRecapping(true);
+    try {
+      await generateRecap(selectedProvider, selectedModel, replace);
+    } catch (err) {
+      toast(`Couldn't recap slides: ${err}`);
+    } finally {
+      setRecapping(false);
+    }
+  };
+
   const annotationMarkers = useCallback(
     (duration: number) => <AnnotationMarkers annotations={openAnnotations} duration={duration} onSeek={jumpToMs} />,
     [openAnnotations, jumpToMs],
@@ -1752,7 +1793,10 @@ export function MeetingDetail() {
                               <CopyButton text={s.content} markdown />
                             </div>
                           </div>
-                          <Markdown content={s.content} />
+                          <Markdown
+                            content={linkSlideCitations(s.content, slides.length)}
+                            components={slideLinks}
+                          />
                           {hasLinear && (
                             <div className="mt-3">
                               <CreateTicketButton
@@ -1776,7 +1820,24 @@ export function MeetingDetail() {
                     })}
                   </div>
                 )}
+                {slides.length > 0 && (
+                  <div className="border-t p-5">
+                    <SlideRecapSection
+                      slides={slides}
+                      onOpen={setViewingSlide}
+                      onSeek={jumpToMs}
+                      onGenerate={handleRecap}
+                      generating={recapping}
+                      canGenerate={!!selectedProvider && !!selectedModel}
+                    />
+                  </div>
+                )}
               </ScrollArea>
+              <SlideDialog
+                slide={viewingSlide}
+                onClose={() => setViewingSlide(null)}
+                onSeek={audioMissing ? undefined : jumpToMs}
+              />
             </TabsContent>
             <TabsContent value="insights" className="flex flex-1 flex-col mt-0">
               <InsightsPanel meetingId={id!} onSeek={jumpToMs} />

@@ -42,16 +42,20 @@ pub(crate) fn format_scratch_notes(notes: &[crate::db::ScratchNote]) -> String {
         .join("\n")
 }
 
-/// The transcript as the LLM reads it: speech, then any text read off shared
-/// screens (see `snapshots`), then the meeting's calendar event.
+/// The transcript as the LLM reads it: speech, then `meeting_context`.
 pub(crate) fn llm_transcript(
     db: &Database,
     meeting_id: &str,
     segments: &[TranscriptSegment],
 ) -> String {
-    format_transcript(segments)
-        + &crate::snapshots::context_section(db, meeting_id)
-        + &crate::calendar::context_section(db, meeting_id)
+    let slides = crate::slides::aligned(db, meeting_id, segments).unwrap_or_default();
+    format_transcript(segments) + &meeting_context(db, meeting_id, &slides)
+}
+
+/// What follows the transcript in a prompt: the slides shared on screen (see
+/// `slides`), then the meeting's calendar event.
+fn meeting_context(db: &Database, meeting_id: &str, slides: &[crate::slides::Slide]) -> String {
+    crate::slides::prompt_section(slides) + &crate::calendar::context_section(db, meeting_id)
 }
 
 /// How much transcript a provider reads in one prompt before it's condensed
@@ -153,8 +157,7 @@ pub async fn summarize_meeting(
     }
 
     let template = db.get_template(template_id)?;
-
-    let transcript_text = llm_transcript(db, meeting_id, &transcript);
+    let slides = crate::slides::aligned(db, meeting_id, &transcript).unwrap_or_default();
 
     let scratch_notes = db.get_scratch_notes(meeting_id).unwrap_or_default();
     let notes_section = if scratch_notes.is_empty() {
@@ -170,12 +173,19 @@ pub async fn summarize_meeting(
     let provider = llm
         .get_provider(provider_name)
         .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider_name))?;
-    let transcript_text = condense_for(provider, model, transcript_text).await?;
+    // Only the speech is condensed; what follows it is short already.
+    let transcript_text = condense_for(provider, model, format_transcript(&transcript)).await?
+        + &meeting_context(db, meeting_id, &slides);
+    let cite = if slides.is_empty() {
+        ""
+    } else {
+        crate::slides::CITE_INSTRUCTIONS
+    };
 
     let messages = vec![
         ChatMessage {
             role: "system".into(),
-            content: format!("{}{}", template.prompt, glossary),
+            content: format!("{}{cite}{}", template.prompt, glossary),
         },
         ChatMessage {
             role: "user".into(),
@@ -347,6 +357,26 @@ mod tests {
         assert_eq!(parts.len(), 2);
         assert!(parts.iter().all(|p| p.len() <= 36));
         assert_eq!(parts.concat(), text, "nothing lost or repeated");
+    }
+
+    #[test]
+    fn prompts_list_shared_slides_after_the_transcript() {
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(crate::db::NewMeeting {
+                title: "Review".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        assert_eq!(llm_transcript(&db, &meeting.id, &[]), "");
+        db.create_snapshot(&meeting.id, "/s/1.jpg", "Revenue\nQ3: $4.2M", 65_000)
+            .unwrap();
+        let text = llm_transcript(&db, &meeting.id, &[]);
+        assert!(
+            text.ends_with("Slide 1 (01:05–01:05): Revenue Q3: $4.2M"),
+            "{text}"
+        );
     }
 
     #[test]

@@ -42,7 +42,7 @@ Nootle records your meetings (microphone and system audio), transcribes them on 
 - **Ask your meetings and docs.** Chat across every meeting and your knowledge base (PDF, Word, PowerPoint, Excel, web pages and more), with citations.
 - **Meeting Coach (opt-in).** A private card after each call on how you showed up (talk share, interruptions, questions, filler words, pace), with trends over time.
 - **Your notes, expanded.** Jot shorthand while recording. Nootle fills it out from the transcript afterwards.
-- **Snapshots.** Captures shared slides and screens into your notes, and reads the text on them.
+- **Snapshots.** Captures shared slides and screens into your notes, and reads the text on them. Summaries cite slides as clickable thumbnails, and a slide recap says what was said while each was up.
 - **Workflows.** Send recaps and action items to Slack, Notion, Linear, GitHub, Asana, Confluence, Obsidian, or email.
 - **Share links.** End-to-end encrypted `nootle.ai` links to a meeting's notes.
 - **Built for agents.** A CLI and an MCP server (with a read-only mode) give Claude Code and other agents your meetings, and let them pin notes to a meeting's timeline.

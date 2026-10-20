@@ -357,6 +357,22 @@ enum MeetingsAction {
         #[command(flatten)]
         llm: LlmArgs,
     },
+    /// List a meeting's slides: each snapshot numbered, with when it was on
+    /// screen and its recap
+    Slides {
+        /// Meeting ID
+        id: String,
+    },
+    /// Recap what was said while each slide was on screen (LLM)
+    SlideRecap {
+        /// Meeting ID
+        id: String,
+        /// Rewrite recaps that already exist
+        #[arg(long)]
+        replace: bool,
+        #[command(flatten)]
+        llm: LlmArgs,
+    },
     /// A spoken recap of a meeting, a voice per speaker, rendered on this
     /// Mac: prints its script and audio file, making it first if needed (LLM)
     Listen {
@@ -1636,11 +1652,11 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
             }
         }
         MeetingsAction::Export { id, format, output } => {
-            use nootle_app_lib::export::{export_meeting, ExportFormat};
-            let content = export_meeting(db, id, ExportFormat::parse(format)?)?;
+            use nootle_app_lib::export::{export_meeting, write_meeting, ExportFormat};
+            let format = ExportFormat::parse(format)?;
             match output {
-                Some(path) => std::fs::write(path, content)?,
-                None => print!("{content}"),
+                Some(path) => write_meeting(db, id, format, path)?,
+                None => print!("{}", export_meeting(db, id, format)?),
             }
         }
         MeetingsAction::ExportAll { dir } => {
@@ -1790,6 +1806,22 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
                 embedding.as_deref(),
             ))?;
             print_text("enriched_notes", &enriched, pretty);
+        }
+        MeetingsAction::Slides { id } => {
+            db.get_meeting(id)?;
+            print_json(&nootle_app_lib::slides::for_meeting(db, id)?, pretty);
+        }
+        MeetingsAction::SlideRecap {
+            id,
+            replace,
+            llm: llm_args,
+        } => {
+            db.get_meeting(id)?;
+            let (llm, provider, model) = llm(db, llm_args)?;
+            let slides = block_on(nootle_app_lib::slides::generate_recaps(
+                db, &llm, id, &provider, &model, *replace,
+            ))?;
+            print_json(&slides, pretty);
         }
         MeetingsAction::Listen {
             id,
