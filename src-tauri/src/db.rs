@@ -825,9 +825,13 @@ pub struct Snapshot {
     /// Recorded time into the meeting when it was taken.
     pub offset_ms: i64,
     pub created_at: String,
+    /// What was said while it was on screen, once a slide recap is made
+    /// (see `slides`).
+    #[serde(default)]
+    pub recap: Option<String>,
 }
 
-/// Reads `id, meeting_id, image_path, text, offset_ms, created_at`.
+/// Reads `id, meeting_id, image_path, text, offset_ms, created_at, recap`.
 fn snapshot_from_row(row: &rusqlite::Row) -> rusqlite::Result<Snapshot> {
     Ok(Snapshot {
         id: row.get(0)?,
@@ -836,6 +840,7 @@ fn snapshot_from_row(row: &rusqlite::Row) -> rusqlite::Result<Snapshot> {
         text: row.get(3)?,
         offset_ms: row.get(4)?,
         created_at: row.get(5)?,
+        recap: row.get(6)?,
     })
 }
 
@@ -1336,6 +1341,9 @@ impl Database {
         )?;
 
         Self::seed_builtin_templates(&conn)?;
+
+        // Migration: slide recaps on snapshots (idempotent)
+        let _ = conn.execute("ALTER TABLE snapshots ADD COLUMN recap TEXT", []);
 
         // Migration: tags+categories → labels
         let has_labels: bool = conn
@@ -2548,13 +2556,14 @@ impl Database {
             text: text.to_string(),
             offset_ms,
             created_at: now,
+            recap: None,
         })
     }
 
     pub fn get_snapshots(&self, meeting_id: &str) -> Result<Vec<Snapshot>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, meeting_id, image_path, text, offset_ms, created_at
+            "SELECT id, meeting_id, image_path, text, offset_ms, created_at, recap
              FROM snapshots WHERE meeting_id = ?1 ORDER BY offset_ms ASC",
         )?;
         let snapshots = stmt
@@ -2563,13 +2572,23 @@ impl Database {
         Ok(snapshots)
     }
 
+    /// Saves what was said while a snapshot was on screen.
+    pub fn set_snapshot_recap(&self, id: &str, recap: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "UPDATE snapshots SET recap = ?2 WHERE id = ?1",
+            params![id, recap],
+        )?;
+        Ok(())
+    }
+
     /// Removes a snapshot, returning it so its image can be deleted too.
     pub fn delete_snapshot(&self, id: &str) -> Result<Option<Snapshot>> {
         let conn = self.lock_conn()?;
         let snapshot = conn
             .query_row(
                 "DELETE FROM snapshots WHERE id = ?1
-                 RETURNING id, meeting_id, image_path, text, offset_ms, created_at",
+                 RETURNING id, meeting_id, image_path, text, offset_ms, created_at, recap",
                 params![id],
                 snapshot_from_row,
             )
@@ -5746,6 +5765,19 @@ mod tests {
             .map(|s| s.text)
             .collect();
         assert_eq!(texts, ["Revenue", "Roadmap"]);
+
+        db.set_snapshot_recap(&later.id, "Sam walked through the roadmap.")
+            .unwrap();
+        let recaps: Vec<_> = db
+            .get_snapshots(&meeting.id)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.recap)
+            .collect();
+        assert_eq!(
+            recaps,
+            [None, Some("Sam walked through the roadmap.".to_string())]
+        );
 
         let removed = db.delete_snapshot(&later.id).unwrap().unwrap();
         assert_eq!(removed.image_path, "/s/2.jpg");

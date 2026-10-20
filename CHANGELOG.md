@@ -2,7 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.14.0] - 2026-10-20
+
+### Features
+
+- **mcp:** Let agents pin annotations to a meeting's timeline (#199) ([2b14467](https://github.com/michellemayes/nootle/commit/2b14467c60009717176e85b9bd4f262627d652db))
+- Menu bar mode with a recording popover (#198) ([4ece49d](https://github.com/michellemayes/nootle/commit/4ece49d51e3a1e62087f51a4e47b2974ddc873a7))
+
+## [0.13.0] - 2026-10-20
 
 ### Features
 

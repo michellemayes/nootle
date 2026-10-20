@@ -416,6 +416,17 @@ pub struct SummarizeMeetingParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SlideRecapParams {
+    /// Meeting ID
+    pub meeting_id: String,
+    /// Rewrite recaps that already exist
+    #[serde(default)]
+    pub replace: bool,
+    #[serde(flatten)]
+    pub llm: LlmChoice,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ExtractInsightsParams {
     /// Meeting ID
     pub meeting_id: String,
@@ -487,6 +498,13 @@ pub struct SearchKnowledgeParams {
     /// Only these formats: pdf, docx, pptx, xlsx, markdown, text, html, web
     #[serde(default)]
     pub kinds: Vec<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct MeetingBriefParams {
+    /// Calendar event ID (see the CLI's `calendar` command). Omit for the next event in the coming 12 hours.
+    #[serde(default)]
+    pub event_id: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -1301,6 +1319,47 @@ impl NootleMcpServer {
         )
     }
 
+    #[tool(
+        title = "List slides",
+        description = "List a meeting's snapshots as numbered slides (what summaries cite as [slide N]), with when each was on screen (start_ms to end_ms), its headline and text, and its recap of what was said while it was up, if one was made.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    fn list_slides(
+        &self,
+        Parameters(p): Parameters<MeetingIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        respond(crate::slides::for_meeting(&self.db, &p.meeting_id).map_err(Into::into))
+    }
+
+    #[tool(
+        title = "Recap slides",
+        description = "With an LLM, write 1 to 3 sentences on what was said while each of a meeting's slides was on screen, and save them. Slides that already have a recap are kept unless replace is set. Returns the slides.",
+        annotations(destructive_hint = false, open_world_hint = true)
+    )]
+    async fn generate_slide_recap(
+        &self,
+        Parameters(p): Parameters<SlideRecapParams>,
+    ) -> Result<CallToolResult, McpError> {
+        respond(
+            async {
+                self.db.get_meeting(&p.meeting_id)?;
+                let (llm, provider, model) = self.llm(&p.llm).await?;
+                Ok::<_, NootleError>(
+                    crate::slides::generate_recaps(
+                        &self.db,
+                        &llm,
+                        &p.meeting_id,
+                        &provider,
+                        &model,
+                        p.replace,
+                    )
+                    .await?,
+                )
+            }
+            .await,
+        )
+    }
+
     // --- Dictionary ---
 
     #[tool(
@@ -1657,6 +1716,32 @@ impl NootleMcpServer {
                 };
                 Ok(crate::knowledge::search(
                     &db, &embedding, &p.query, &p.tags, &p.kinds, 10,
+                )?)
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        title = "Get meeting brief",
+        description = "A brief for an upcoming calendar meeting (macOS, with calendar access): who's coming and when the user last met each, open action items owned by attendees or from the meeting series, what was decided last time in the series, and the most related knowledge-base documents. Null when there's no such event.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn get_meeting_brief(
+        &self,
+        Parameters(p): Parameters<MeetingBriefParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let (db, engine) = (self.db.clone(), self.engine.clone());
+        respond(
+            blocking(move || {
+                Ok(crate::brief::for_event(
+                    &db,
+                    p.event_id.as_deref(),
+                    |query| {
+                        let mut slot = engine.blocking_lock();
+                        ops::embed_question(ops::loaded_embedding_engine(&mut slot).ok()?, query)
+                            .ok()
+                    },
                 )?)
             })
             .await,

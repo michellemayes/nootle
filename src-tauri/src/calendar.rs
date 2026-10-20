@@ -4,9 +4,9 @@
 
 use crate::db::{Database, MeetingCalendarContext};
 use chrono::{DateTime, Duration, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CalendarEvent {
     pub id: String,
     pub title: String,
@@ -112,7 +112,7 @@ pub fn context_section(db: &Database, meeting_id: &str) -> String {
     }
 }
 
-fn format_context(context: &MeetingCalendarContext) -> String {
+pub(crate) fn format_context(context: &MeetingCalendarContext) -> String {
     let mut out = format!(
         "\n\nThe calendar event for this meeting: \"{}\"",
         context.title
@@ -128,7 +128,7 @@ fn format_context(context: &MeetingCalendarContext) -> String {
     out
 }
 
-fn parse(rfc3339: &str) -> Option<DateTime<Utc>> {
+pub(crate) fn parse(rfc3339: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(rfc3339)
         .ok()
         .map(|d| d.with_timezone(&Utc))

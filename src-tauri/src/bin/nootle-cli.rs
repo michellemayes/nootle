@@ -169,6 +169,13 @@ enum Commands {
         #[arg(long, default_value_t = 12)]
         hours: i64,
     },
+    /// Brief for an upcoming calendar meeting: attendees, open action items,
+    /// last time's decisions and related documents (macOS; needs calendar access)
+    Brief {
+        /// Calendar event ID (from `calendar`); defaults to the next event
+        #[arg(long)]
+        event: Option<String>,
+    },
 }
 
 /// Provider and model for commands that call an LLM.
@@ -359,6 +366,22 @@ enum MeetingsAction {
     EnrichNotes {
         /// Meeting ID
         id: String,
+        #[command(flatten)]
+        llm: LlmArgs,
+    },
+    /// List a meeting's slides: each snapshot numbered, with when it was on
+    /// screen and its recap
+    Slides {
+        /// Meeting ID
+        id: String,
+    },
+    /// Recap what was said while each slide was on screen (LLM)
+    SlideRecap {
+        /// Meeting ID
+        id: String,
+        /// Rewrite recaps that already exist
+        #[arg(long)]
+        replace: bool,
         #[command(flatten)]
         llm: LlmArgs,
     },
@@ -1649,6 +1672,12 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
             let hours = (*hours).clamp(1, 24 * 7);
             print_json(&nootle_app_lib::calendar::upcoming(hours), pretty);
         }
+        Commands::Brief { event } => {
+            let brief = nootle_app_lib::brief::for_event(db, event.as_deref(), |query| {
+                ops::try_load_embedding_engine()?.embed(query).ok()
+            })?;
+            print_json(&brief, pretty);
+        }
     }
     Ok(())
 }
@@ -1695,11 +1724,11 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
             }
         }
         MeetingsAction::Export { id, format, output } => {
-            use nootle_app_lib::export::{export_meeting, ExportFormat};
-            let content = export_meeting(db, id, ExportFormat::parse(format)?)?;
+            use nootle_app_lib::export::{export_meeting, write_meeting, ExportFormat};
+            let format = ExportFormat::parse(format)?;
             match output {
-                Some(path) => std::fs::write(path, content)?,
-                None => print!("{content}"),
+                Some(path) => write_meeting(db, id, format, path)?,
+                None => print!("{}", export_meeting(db, id, format)?),
             }
         }
         MeetingsAction::ExportAll { dir } => {
@@ -1849,6 +1878,22 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
                 embedding.as_deref(),
             ))?;
             print_text("enriched_notes", &enriched, pretty);
+        }
+        MeetingsAction::Slides { id } => {
+            db.get_meeting(id)?;
+            print_json(&nootle_app_lib::slides::for_meeting(db, id)?, pretty);
+        }
+        MeetingsAction::SlideRecap {
+            id,
+            replace,
+            llm: llm_args,
+        } => {
+            db.get_meeting(id)?;
+            let (llm, provider, model) = llm(db, llm_args)?;
+            let slides = block_on(nootle_app_lib::slides::generate_recaps(
+                db, &llm, id, &provider, &model, *replace,
+            ))?;
+            print_json(&slides, pretty);
         }
         MeetingsAction::Listen {
             id,

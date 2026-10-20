@@ -323,6 +323,33 @@ pub fn list_snapshots(
     db.get_snapshots(&meeting_id).map_err(|e| e.to_string())
 }
 
+/// A meeting's snapshots as slides: numbered, with when each was on screen
+/// and its recap.
+#[tauri::command(async)]
+pub fn list_slides(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<crate::slides::Slide>, String> {
+    crate::slides::for_meeting(&db, &meeting_id).map_err(|e| e.to_string())
+}
+
+/// Writes (or, with `replace`, rewrites) the recap of what was said while
+/// each slide was up.
+#[tauri::command]
+pub async fn generate_slide_recap(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+    replace: bool,
+) -> Result<Vec<crate::slides::Slide>, String> {
+    let llm = llm.read().await;
+    crate::slides::generate_recaps(&db, &llm, &meeting_id, &provider, &model, replace)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command(async)]
 pub fn delete_snapshot(db: State<'_, DbState>, id: String) -> Result<(), String> {
     crate::ops::delete_snapshot(&db, &id).map_err(|e| e.to_string())
@@ -798,8 +825,18 @@ async fn auto_summarize(
         tracing::info!("No LLM providers configured, skipping auto summaries");
         return;
     };
-    match summarization::run_auto_templates(db, &llm, meeting_id, &model.provider, &model.id).await
-    {
+    // A meeting with slides gets its slide recap alongside the summaries.
+    let recap =
+        crate::slides::generate_recaps(db, &llm, meeting_id, &model.provider, &model.id, false);
+    let (summaries, recap) = futures_util::future::join(
+        summarization::run_auto_templates(db, &llm, meeting_id, &model.provider, &model.id),
+        recap,
+    )
+    .await;
+    if let Err(e) = recap {
+        tracing::warn!("Slide recap failed: {e}");
+    }
+    match summaries {
         Ok(summaries) if !summaries.is_empty() => {
             tracing::info!(
                 "Auto-run produced {} summaries for {meeting_id}",
@@ -1542,9 +1579,8 @@ pub async fn export_meeting(
     let format = crate::export::ExportFormat::parse(&format).map_err(|e| e.to_string())?;
     let db = db.inner().clone();
     tokio::task::spawn_blocking(move || {
-        let content =
-            crate::export::export_meeting(&db, &meeting_id, format).map_err(|e| e.to_string())?;
-        std::fs::write(&path, content).map_err(|e| format!("Couldn't write {path}: {e}"))
+        crate::export::write_meeting(&db, &meeting_id, format, std::path::Path::new(&path))
+            .map_err(|e| format!("Couldn't write {path}: {e}"))
     })
     .await
     .map_err(|e| e.to_string())?

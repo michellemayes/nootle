@@ -5,8 +5,8 @@
 #
 # The release workflow bumps version and sha256 on every release.
 cask "nootle" do
-  version "0.12.0"
-  sha256 "34da2d0d31356fa9476ca68688fea8251fa9b8dc0052f8768af7eaa6cf49d85c"
+  version "0.14.0"
+  sha256 "d689c1df08ae0b56d9cab4eb32948641d873dde2ca3043d17a4149d5e960a722"
 
   url "https://github.com/michellemayes/nootle/releases/download/v#{version}/Nootle_#{version}_aarch64.dmg"
   name "Nootle"

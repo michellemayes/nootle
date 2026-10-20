@@ -178,6 +178,77 @@ const SUMMARIES = [
   },
 ];
 
+/** A slide as an SVG data URL; the mock's convertFileSrc passes it through. */
+function slideImage(title, lines, accent) {
+  const body = lines
+    .map((l, i) => `<text x="80" y="${250 + i * 64}" font-size="34" fill="#4b5563">${l}</text>`)
+    .join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+    <rect width="1280" height="720" fill="#fbfaf7"/>
+    <rect width="1280" height="14" fill="${accent}"/>
+    <text x="80" y="160" font-family="Helvetica, Arial" font-size="64" font-weight="700" fill="#1f2937">${title}</text>
+    <g font-family="Helvetica, Arial">${body}</g>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+const slide = (number, title, lines, accent, startMs, endMs, recap) => ({
+  id: `snap${number}`,
+  meeting_id: "m1",
+  image_path: slideImage(title, lines, accent),
+  text: [title, ...lines].join("\n"),
+  offset_ms: startMs,
+  created_at: day(28, 17, 0),
+  recap,
+  number,
+  end_ms: endMs,
+  headline: title,
+});
+
+/** The design review's shared deck, aligned to TRANSCRIPT. */
+const SLIDES = [
+  slide(1, "Onboarding funnel", ["Week of July 20", "6 steps · 4,812 new installs"], "#72937A", 10_000, 28_000,
+    "Speaker 1 opened with this morning's funnel numbers, and Speaker 2 asked straight away about step three, the worst drop last time."),
+  slide(2, "Step 3: permissions", ["31% drop-off", "Biggest single leak in the flow", "Support: \u201cwhy screen recording?\u201d"], "#CC765B", 28_000, 47_000,
+    "Speaker 1 confirmed the 31% drop on the permissions screen. Speaker 3 tied it to support tickets from people who don\u2019t understand the screen-recording request."),
+  slide(3, "Inline explainer", ["One sentence above the button", "Two copy variants behind a flag"], "#D9B78B", 47_000, 87_000,
+    "The team agreed to explain the permission in place and ship it this sprint. Speaker 3 will draft two variants by Thursday; Speaker 2 will wire the split behind the existing flag."),
+  slide(4, "Calendar permission", ["Keep in onboarding?", "Or ask on an empty library"], "#6B8FB5", 87_000, 126_000, null),
+];
+
+const SLIDE_SUMMARY_CONTENT = `## Overview
+
+The team reviewed funnel data for the rebuilt onboarding flow [slide 1] and agreed on two changes: an inline explanation for the screen-recording permission, and deferring the calendar permission out of onboarding entirely.
+
+## Decisions
+
+- **Inline permissions explainer ships this sprint.** While the permissions slide was up, Speaker 1 put the drop at 31%, the largest in the flow [slide 2]. Copy will explain the request in place rather than linking to docs [slide 3].
+- **Calendar access leaves onboarding.** Nobody defended keeping it; it becomes a contextual prompt on an empty meetings list [slide 4].
+
+## Action items
+
+- Draft two copy variants for the permissions explainer — **Speaker 3**, by Thursday [slide 3]
+- Wire the variant split behind the existing feature flag — **Speaker 2**
+- Re-measure step-three drop-off after a week of data — **Speaker 1**`;
+
+/**
+ * Overrides for a meeting with a shared slide deck (slide-aware summaries).
+ * Not part of FIXTURES, so the marketing screenshots stay as they are.
+ */
+export const SLIDE_FIXTURES = {
+  list_slides: SLIDES,
+  get_summaries: [{ ...SUMMARIES[0], content: SLIDE_SUMMARY_CONTENT }],
+  generate_slide_recap: SLIDES.map((s) =>
+    s.recap
+      ? s
+      : {
+          ...s,
+          recap:
+            "Speakers 3 and 2 both wanted calendar access out of onboarding, and Speaker 1 settled it: ask the first time someone opens an empty meetings list.",
+        },
+  ),
+};
+
 const INSIGHT_TYPES = [
   {
     id: "it1",
@@ -952,6 +1023,86 @@ const COMMITMENT_REMINDER = {
   commitment_id: "c1",
 };
 
+/** The pre-meeting brief for the next event on the Meetings page. */
+const UPCOMING_EVENTS = [
+  {
+    id: "ev-sync",
+    title: "Weekly Product Sync",
+    start: day(28, 19, 30),
+    end: day(28, 20, 0),
+    calendar: "Work",
+    location: null,
+    meeting_url: "https://meet.google.com/abc-defg-hij",
+    attendee_count: 6,
+    attendees: ["Alex Chen", "Priya Shah", "Sam Ortiz", "Jordan Lee"],
+    notes: "1. Onboarding drop-off\n2. Pricing page copy\n3. Launch checklist",
+  },
+  {
+    id: "ev-1on1",
+    title: "1:1 with Jordan",
+    start: day(28, 21, 0),
+    end: day(28, 21, 30),
+    calendar: "Work",
+    location: null,
+    meeting_url: "https://zoom.us/j/123456789",
+    attendee_count: 2,
+    attendees: ["Jordan Lee"],
+    notes: null,
+  },
+];
+
+const MEETING_BRIEF = {
+  event: { ...UPCOMING_EVENTS[0], start: day(28, 19, 34) },
+  attendees: [
+    { name: "Alex Chen", person: "Alex", last_met: day(27, 20, 0), meeting_count: 7 },
+    { name: "Priya Shah", person: null, last_met: day(28, 17, 0), meeting_count: 12 },
+    { name: "Sam Ortiz", person: "Sam", last_met: day(21, 16, 0), meeting_count: 3 },
+    { name: "Jordan Lee", person: null, last_met: null, meeting_count: 0 },
+  ],
+  open_items: [
+    {
+      id: "a1",
+      content: "Draft two copy variants for the permissions explainer",
+      assignee: "Priya",
+      due_date: "2026-07-30",
+      meeting_id: "m1",
+      meeting_title: "Design Review — Onboarding Flow",
+    },
+    {
+      id: "a6",
+      content: "Share the pricing page experiment results",
+      assignee: "Alex",
+      due_date: null,
+      meeting_id: "m5",
+      meeting_title: "Weekly Product Sync",
+    },
+  ],
+  last_meeting: {
+    id: "m5",
+    title: "Weekly Product Sync",
+    start_time: day(21, 19, 30),
+    decisions: [
+      "Local-only mode ships before the integrations marketplace",
+      "Move calendar permission out of onboarding",
+    ],
+    summary: null,
+  },
+  documents: [
+    {
+      document_id: "d1",
+      title: "Onboarding funnel — Q3",
+      locator: "Page 4",
+      snippet: "31% of new users leave at the permissions screen; most never return after the docs link.",
+    },
+    {
+      document_id: "d2",
+      title: "Pricing page copy v3",
+      locator: null,
+      snippet: "Three tiers: Free, Pro and Team. Lead with local transcription in the hero.",
+    },
+  ],
+};
+
 /** Meeting Coach: you in the design review, and across recent calls. */
 const COACH_METRICS = {
   talk_share: 0.34,
@@ -1020,9 +1171,9 @@ export const FIXTURES = {
     tip: "Before you explain a decision, pause and ask one open question, like “What would make this harder for you?”, and let it land before you answer.",
   },
   get_coach_trends: COACH_TRENDS,
-  list_people: [],
   get_audio_data: silentWav(),
   get_scratch_notes: [],
+  list_slides: [],
   list_snapshots: [],
   list_voice_profiles: [],
   list_dictionary_entries: [],
@@ -1084,38 +1235,19 @@ export const FIXTURES = {
   get_downloaded_models: ["parakeet-v3", "nomic-embed-text"],
   get_available_models: [],
   get_app_setting: {},
-  check_permissions: { microphone: true, screen_recording: true, calendar: true },
+  check_permissions: { microphone: "granted", screen_recording: true, calendar: "granted" },
 
   get_linear_tickets: [],
   list_linear_teams: [],
   list_linear_projects: [],
   get_linear_setting: null,
 
-  list_upcoming_events: {
-    status: "granted",
-    events: [
-      {
-        id: "ev-sync",
-        title: "Weekly Product Sync",
-        start: day(28, 19, 30),
-        end: day(28, 20, 0),
-        calendar: "Work",
-        location: null,
-        meeting_url: "https://meet.google.com/abc-defg-hij",
-        attendee_count: 6,
-      },
-      {
-        id: "ev-1on1",
-        title: "1:1 with Jordan",
-        start: day(28, 21, 0),
-        end: day(28, 21, 30),
-        calendar: "Work",
-        location: null,
-        meeting_url: "https://zoom.us/j/123456789",
-        attendee_count: 2,
-      },
-    ],
-  },
+  list_upcoming_events: { status: "granted", events: UPCOMING_EVENTS },
+  get_meeting_brief: MEETING_BRIEF,
+  get_brief_popup: MEETING_BRIEF,
+  synthesize_meeting_brief:
+    "Start with the onboarding drop-off: check whether Priya's two copy variants are ready to test. " +
+    "Then confirm the calendar-permission move from last week and ask Alex for the pricing results before the launch checklist.",
   import_extensions: ["mp3", "m4a", "wav", "mp4", "mov"],
 
   is_recording: false,

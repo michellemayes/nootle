@@ -33,6 +33,43 @@ export interface CalendarEvent {
   location: string | null;
   meeting_url: string | null;
   attendee_count: number;
+  /** Invitees with a name in the calendar. */
+  attendees?: string[];
+  /** The event's description, usually its agenda. */
+  notes?: string | null;
+}
+
+/** A pre-meeting brief, assembled on the Mac from what Nootle already has. */
+export interface MeetingBrief {
+  event: CalendarEvent;
+  attendees: {
+    name: string;
+    /** Their name in People, when it differs from the calendar's. */
+    person: string | null;
+    last_met: string | null;
+    meeting_count: number;
+  }[];
+  open_items: {
+    id: string;
+    content: string;
+    assignee: string | null;
+    due_date: string | null;
+    meeting_id: string;
+    meeting_title: string | null;
+  }[];
+  last_meeting: {
+    id: string;
+    title: string;
+    start_time: string;
+    decisions: string[];
+    summary: string | null;
+  } | null;
+  documents: {
+    document_id: string;
+    title: string;
+    locator: string | null;
+    snippet: string;
+  }[];
 }
 
 export interface UpcomingEvents {
@@ -309,6 +346,17 @@ export interface Snapshot {
   text: string;
   offset_ms: number;
   created_at: string;
+  /** What was said while it was on screen, once a slide recap is made. */
+  recap?: string | null;
+}
+
+/** A snapshot numbered in meeting order, on screen from `offset_ms` to `end_ms`. */
+export interface Slide extends Snapshot {
+  /** What summaries cite as `[slide N]`. */
+  number: number;
+  end_ms: number;
+  /** The first meaningful line of text read off it. */
+  headline: string;
 }
 
 export interface Recipe {

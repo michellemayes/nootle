@@ -22,15 +22,29 @@ pub struct PopupState(Mutex<Option<DetectedMeeting>>);
 pub fn show(app: &AppHandle, meeting: &DetectedMeeting) -> tauri::Result<()> {
     *app.state::<PopupState>().0.lock().unwrap() = Some(meeting.clone());
 
-    let window = match app.get_webview_window(LABEL) {
-        // An open pop-up picks the new meeting up from this event.
-        Some(window) => {
-            window.emit("meeting-popup-update", meeting)?;
-            window
-        }
-        None => WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("popup.html".into()))
-            .title("Meeting detected")
-            .inner_size(WIDTH, HEIGHT)
+    // An open pop-up picks the new meeting up from this event.
+    if let Some(window) = app.get_webview_window(LABEL) {
+        window.emit("meeting-popup-update", meeting)?;
+    }
+    show_corner_window(app, LABEL, "popup.html", "Meeting detected", WIDTH, HEIGHT)
+}
+
+/// Shows the window `label` (building it from `page` the first time) in the
+/// top-right corner of the screen, over other apps, without taking focus.
+/// Shared with the meeting brief.
+pub(crate) fn show_corner_window(
+    app: &AppHandle,
+    label: &str,
+    page: &str,
+    title: &str,
+    width: f64,
+    height: f64,
+) -> tauri::Result<()> {
+    let window = match app.get_webview_window(label) {
+        Some(window) => window,
+        None => WebviewWindowBuilder::new(app, label, WebviewUrl::App(page.into()))
+            .title(title)
+            .inner_size(width, height)
             .resizable(false)
             .decorations(false)
             .transparent(true)
@@ -50,7 +64,7 @@ pub fn show(app: &AppHandle, meeting: &DetectedMeeting) -> tauri::Result<()> {
     if let Some(monitor) = app.primary_monitor()? {
         let area = monitor.work_area();
         let scale = monitor.scale_factor();
-        let x = area.position.x + area.size.width as i32 - ((WIDTH + MARGIN) * scale) as i32;
+        let x = area.position.x + area.size.width as i32 - ((width + MARGIN) * scale) as i32;
         let y = area.position.y + (MARGIN * scale) as i32;
         window.set_position(PhysicalPosition::new(x, y))?;
     }

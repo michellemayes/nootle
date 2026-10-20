@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import type { Snapshot } from "@/types";
 
 /** Whether snapshots are turned on in Settings. */
@@ -34,7 +34,9 @@ export function useSnapshots(meetingId: string | null) {
   const removeSnapshot = useCallback(async (id: string) => {
     await invoke("delete_snapshot", { id });
     setSnapshots((prev) => prev.filter((s) => s.id !== id));
-  }, []);
+    // So the meeting's slides (useSlides) drop it too.
+    emit("snapshot-removed", meetingId).catch(() => {});
+  }, [meetingId]);
 
   return { snapshots, removeSnapshot };
 }

@@ -23,7 +23,7 @@ import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
 import { useModelDownload } from "@/hooks/useModelDownload";
 import { useTheme } from "@/hooks/useTheme";
-import { useBooleanSetting } from "@/hooks/useBooleanSetting";
+import { useBooleanSetting, useSetting } from "@/hooks/useBooleanSetting";
 import { plural } from "@/lib/utils";
 
 import { useInsightTypes } from "@/hooks/useInsightTypes";
@@ -890,6 +890,76 @@ function FollowThroughCard() {
   );
 }
 
+/** Pre-meeting brief: a one-screen brief a few minutes before each calendar
+ * meeting. Off by default; needs calendar access. */
+function PreMeetingBriefSetting() {
+  const [enabled, setEnabled] = useBooleanSetting("pre_meeting_brief", false);
+  // Choices match the backend's brief::LEAD_CHOICES.
+  const [lead, setLead] = useSetting("pre_meeting_brief_lead_minutes", "5");
+  const [calendar, setCalendar] = useState<string | null>(null);
+
+  useEffect(() => {
+    invoke<{ calendar: string }>("check_permissions")
+      .then((p) => setCalendar(p.calendar))
+      .catch(() => {});
+  }, []);
+  const calendarMissing = calendar !== null && calendar !== "granted";
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium">Pre-meeting brief</p>
+          <p className="text-sm text-muted-foreground">
+            Shortly before each calendar meeting, show who's coming and when you last met, open action
+            items, what was decided last time, and related documents, put together on this Mac. Every
+            upcoming meeting on the Meetings page has its brief too
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {enabled && (
+            <Select
+              size="sm"
+              containerClassName="w-32"
+              value={lead}
+              onChange={(e) => setLead(e.target.value)}
+              aria-label="How long before the meeting"
+            >
+              {["2", "5", "10"].map((m) => (
+                <option key={m} value={m}>
+                  {m} min before
+                </option>
+              ))}
+            </Select>
+          )}
+          <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Pre-meeting brief" />
+        </div>
+      </div>
+      {calendarMissing && (
+        <p className="text-xs text-muted-foreground">
+          Needs calendar access to know when your meetings are.{" "}
+          {calendar === "denied" ? (
+            "Turn it on in System Settings → Privacy & Security → Calendars."
+          ) : (
+            <button
+              type="button"
+              className="underline"
+              onClick={() =>
+                invoke("request_calendar_permission")
+                  .then(() => invoke<{ calendar: string }>("check_permissions"))
+                  .then((p) => setCalendar(p.calendar))
+                  .catch(() => {})
+              }
+            >
+              Allow calendar access
+            </button>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Meeting Coach: a private card on how you showed up in each call. */
 function MeetingCoachSetting() {
   const [enabled, setEnabled] = useBooleanSetting(COACH_SETTING, false);
@@ -1187,6 +1257,7 @@ export function SettingsPage() {
                   />
                 </div>
                 <LiveAssistSetting />
+                <PreMeetingBriefSetting />
                 <MeetingCoachSetting />
                 <div className="flex items-center justify-between">
                   <div>
