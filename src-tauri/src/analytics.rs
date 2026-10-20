@@ -10,6 +10,13 @@ use crate::db::SentimentSegment;
 /// spoke in between.
 pub(crate) const MAX_TURN_GAP_MS: i64 = 3_000;
 
+/// Starting this soon after someone stops is quicker than anyone can react
+/// to them finishing, so it's cutting in rather than replying.
+const INTERRUPT_GAP_MS: i64 = 100;
+/// Turns shorter than this ("Yeah", "Mm-hmm") are backchannel, not taking
+/// the floor, so they don't interrupt.
+const BACKCHANNEL_MS: i64 = 1_000;
+
 /// One stretch of a single speaker talking.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Turn<'a> {
@@ -44,6 +51,14 @@ pub(crate) fn turns<'a>(segments: impl IntoIterator<Item = (&'a str, i64, i64)>)
     turns
 }
 
+/// Whether `after` cuts in on `before`, the turn just ahead of it: a
+/// different speaker taking the floor before `before` has finished.
+pub(crate) fn interrupts(before: &Turn, after: &Turn) -> bool {
+    before.speaker != after.speaker
+        && after.start_ms < before.end_ms + INTERRUPT_GAP_MS
+        && after.speech_ms >= BACKCHANNEL_MS
+}
+
 /// Compute talk-time analytics from transcript segments.
 pub fn compute_speaker_analytics(db: &Database, meeting_id: &str) -> Result<Vec<SpeakerAnalytics>> {
     let transcripts = db.get_transcript(meeting_id)?;
@@ -68,11 +83,9 @@ fn speaker_analytics<'a>(
         }
     }
 
-    // Someone interrupts when their turn starts before the previous
-    // speaker's has ended.
     let mut interruptions: HashMap<&str, i64> = HashMap::new();
     for pair in turns.windows(2) {
-        if pair[1].start_ms < pair[0].end_ms {
+        if interrupts(&pair[0], &pair[1]) {
             *interruptions.entry(pair[1].speaker).or_default() += 1;
         }
     }

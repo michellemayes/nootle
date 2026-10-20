@@ -33,30 +33,28 @@ export interface CoachTrendPoint extends CoachMetrics {
 }
 
 /** A meeting's Coach card: `coach` is null when none of the meeting was you. */
-export function useMeetingCoach(meetingId: string, enabled: boolean) {
+export function useMeetingCoach(meetingId: string) {
   const [coach, setCoach] = useState<MeetingCoach | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(() => {
-    if (!enabled) return;
     invoke<MeetingCoach | null>("get_meeting_coach", { meetingId })
       .then(setCoach)
       .catch(() => setCoach(null))
       .finally(() => setLoading(false));
-  }, [meetingId, enabled]);
+  }, [meetingId]);
 
   useEffect(refresh, [refresh]);
 
   // Speaker renames rebuild analytics; "You" may have moved.
   useEffect(() => {
-    if (!enabled) return;
     const unlisten = listen<string>("analytics-ready", (event) => {
       if (event.payload === meetingId) refresh();
     });
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [meetingId, enabled, refresh]);
+  }, [meetingId, refresh]);
 
   const suggestTip = useCallback(
     async (provider: string, model: string) => {
@@ -69,14 +67,14 @@ export function useMeetingCoach(meetingId: string, enabled: boolean) {
   return { coach, loading, suggestTip };
 }
 
-/** Your coach metrics across your last `limit` meetings, oldest first. */
-export function useCoachTrends(enabled: boolean, limit = 10) {
+/** Your coach metrics across your last 10 meetings, oldest first. */
+export function useCoachTrends(enabled: boolean) {
   const [points, setPoints] = useState<CoachTrendPoint[] | null>(null);
   useEffect(() => {
     if (!enabled) return;
-    invoke<CoachTrendPoint[]>("get_coach_trends", { limit })
+    invoke<CoachTrendPoint[]>("get_coach_trends")
       .then(setPoints)
       .catch(() => setPoints([]));
-  }, [enabled, limit]);
+  }, [enabled]);
   return points;
 }

@@ -46,8 +46,9 @@
         system_level: 0.02 + 0.015 * Math.cos(t * 1.3),
       };
     }
-    if (cmd === "get_app_setting" && args?.key in (fixtures.app_settings || {})) {
-      return fixtures.app_settings[args.key];
+    // Settings are keyed by name; unlisted ones are unset.
+    if (cmd === "get_app_setting") {
+      return (fixtures.get_app_setting || {})[args?.key] ?? null;
     }
     if (cmd in fixtures) return fixtures[cmd];
     if (!cmd.startsWith("plugin:")) {

@@ -6,12 +6,13 @@
 //! Coach data is only for the app's own Coach card and trends: it is never
 //! added to exports, share links, workflows or the MCP server.
 
-use crate::analytics::turns;
+use crate::analytics::{interrupts, turns};
 use crate::db::{Database, TranscriptSegment};
 use crate::diarization::SELF_LABEL;
 use crate::llm::{ChatMessage, LlmRegistry};
 use anyhow::{bail, Result};
 use serde::Serialize;
+use std::collections::HashMap;
 
 /// Turns on the Coach card and trends. Off unless turned on.
 pub const SETTING_KEY: &str = "meeting_coach";
@@ -19,27 +20,21 @@ pub const SETTING_KEY: &str = "meeting_coach";
 /// Filler words and phrases, lowercase. "like", "kind of", "sort of",
 /// "you know" and "I mean" are also ordinary words; `filler_at` only counts
 /// them where they're used as filler.
-pub const FILLERS: &[&str] = &[
-    "um",
-    "umm",
-    "uh",
-    "uhh",
-    "erm",
-    "like",
-    "you know",
-    "sort of",
-    "kind of",
-    "basically",
-    "literally",
-    "i mean",
+pub const FILLERS: &[&[&str]] = &[
+    &["um"],
+    &["umm"],
+    &["uh"],
+    &["uhh"],
+    &["erm"],
+    &["like"],
+    &["you", "know"],
+    &["sort", "of"],
+    &["kind", "of"],
+    &["basically"],
+    &["literally"],
+    &["i", "mean"],
 ];
 
-/// Starting this soon after someone stops is quicker than anyone can react
-/// to them finishing, so it's cutting in rather than replying.
-const INTERRUPT_GAP_MS: i64 = 100;
-/// Turns shorter than this ("Yeah", "Mm-hmm") are backchannel, not taking
-/// the floor, so they don't count as interrupting.
-const BACKCHANNEL_MS: i64 = 1_000;
 /// A turn longer than this counts as a monologue.
 pub const LONG_MONOLOGUE_MS: i64 = 2 * 60_000;
 
@@ -132,47 +127,34 @@ fn ensure_enabled(db: &Database) -> Result<()> {
 /// Your metrics for a meeting's transcript, or `None` when none of it is
 /// yours (only calls record you on a channel of your own).
 pub fn metrics(segments: &[TranscriptSegment]) -> Option<CoachMetrics> {
-    let mine: Vec<&TranscriptSegment> = segments
-        .iter()
-        .filter(|s| s.speaker_label == SELF_LABEL)
-        .collect();
-    if mine.is_empty() {
-        return None;
-    }
-
     let turns = turns(
         segments
             .iter()
             .map(|s| (s.speaker_label.as_str(), s.start_ms, s.end_ms)),
     );
+    let mine: Vec<_> = turns.iter().filter(|t| t.speaker == SELF_LABEL).collect();
+    if mine.is_empty() {
+        return None;
+    }
     let total_speech: i64 = turns.iter().map(|t| t.speech_ms).sum();
-    let talk_time_ms: i64 = turns
-        .iter()
-        .filter(|t| t.speaker == SELF_LABEL)
-        .map(|t| t.speech_ms)
-        .sum();
+    let talk_time_ms: i64 = mine.iter().map(|t| t.speech_ms).sum();
+    let spans: Vec<i64> = mine.iter().map(|t| t.end_ms - t.start_ms).collect();
 
     let (mut interruptions, mut times_interrupted) = (0, 0);
     for pair in turns.windows(2) {
-        let (before, after) = (&pair[0], &pair[1]);
-        let cut_in = before.speaker != after.speaker
-            && after.start_ms < before.end_ms + INTERRUPT_GAP_MS
-            && after.speech_ms >= BACKCHANNEL_MS;
-        if cut_in && after.speaker == SELF_LABEL {
+        if !interrupts(&pair[0], &pair[1]) {
+            continue;
+        }
+        if pair[1].speaker == SELF_LABEL {
             interruptions += 1;
-        } else if cut_in && before.speaker == SELF_LABEL {
+        } else if pair[0].speaker == SELF_LABEL {
             times_interrupted += 1;
         }
     }
 
-    let spans: Vec<i64> = turns
+    let text = segments
         .iter()
-        .filter(|t| t.speaker == SELF_LABEL)
-        .map(|t| t.end_ms - t.start_ms)
-        .collect();
-
-    let text = mine
-        .iter()
+        .filter(|s| s.speaker_label == SELF_LABEL)
         .map(|s| s.text.as_str())
         .collect::<Vec<_>>()
         .join(" ");
@@ -244,7 +226,7 @@ fn words(text: &str) -> Vec<Word> {
     for raw in text.split_whitespace() {
         let word: String = raw
             .chars()
-            .filter(|c| c.is_alphanumeric() || *c == '\'' || *c == '’')
+            .filter(|c| crate::dictionary::is_word_char(*c))
             .map(|c| if c == '’' { '\'' } else { c })
             .collect::<String>()
             .to_lowercase();
@@ -262,49 +244,45 @@ fn words(text: &str) -> Vec<Word> {
 }
 
 /// The filler starting at `words[i]`, if any, with how many words it spans.
-fn filler_at(words: &[Word], i: usize) -> Option<(&'static str, usize)> {
+fn filler_at(words: &[Word], i: usize) -> Option<&'static [&'static str]> {
     let prev = i.checked_sub(1).map(|p| &words[p]);
-    FILLERS.iter().find_map(|filler| {
-        let parts: Vec<&str> = filler.split(' ').collect();
-        let matched = parts
+    let prev_word = prev.map(|w| w.text.as_str()).unwrap_or("");
+    FILLERS.iter().copied().find(|&filler| {
+        let matched = filler
             .iter()
             .enumerate()
             .all(|(k, part)| words.get(i + k).is_some_and(|w| w.text == *part));
         if !matched {
-            return None;
+            return false;
         }
-        let last = &words[i + parts.len() - 1];
-        let prev_word = prev.map(|w| w.text.as_str()).unwrap_or("");
-        let is_filler = match *filler {
+        let last = &words[i + filler.len() - 1];
+        match filler {
             // "It was, like, huge" / "like, we", not "I like it".
-            "like" => last.comma || prev.is_some_and(|w| w.comma),
-            "kind of" | "sort of" => !KIND_OF_DETERMINERS.contains(&prev_word),
-            "you know" => !YOU_KNOW_LEADS.contains(&prev_word),
+            ["like"] => last.comma || prev.is_some_and(|w| w.comma),
+            ["kind" | "sort", "of"] => !KIND_OF_DETERMINERS.contains(&prev_word),
+            ["you", "know"] => !YOU_KNOW_LEADS.contains(&prev_word),
             // "I mean, ..." or opening a sentence, not "what I mean is".
-            "i mean" => last.comma || words[i].starts_sentence,
+            ["i", "mean"] => last.comma || words[i].starts_sentence,
             _ => true,
-        };
-        is_filler.then_some((*filler, parts.len()))
+        }
     })
 }
 
 /// How often each filler is used in `text`, most used first.
 fn count_fillers(text: &str) -> Vec<(String, i64)> {
     let words = words(text);
-    let mut counts: Vec<(String, i64)> = Vec::new();
+    let mut counts: HashMap<String, i64> = HashMap::new();
     let mut i = 0;
     while i < words.len() {
         match filler_at(&words, i) {
-            Some((filler, len)) => {
-                match counts.iter_mut().find(|(f, _)| f == filler) {
-                    Some((_, n)) => *n += 1,
-                    None => counts.push((filler.to_string(), 1)),
-                }
-                i += len;
+            Some(filler) => {
+                *counts.entry(filler.join(" ")).or_default() += 1;
+                i += filler.len();
             }
             None => i += 1,
         }
     }
+    let mut counts: Vec<(String, i64)> = counts.into_iter().collect();
     counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     counts
 }
@@ -326,12 +304,17 @@ pub fn meeting_coach(db: &Database, meeting_id: &str) -> Result<Option<MeetingCo
 pub fn trends(db: &Database, limit: usize) -> Result<Vec<CoachTrendPoint>> {
     ensure_enabled(db)?;
     let mut points = Vec::new();
-    for (meeting_id, title, start_time) in db.meetings_with_speaker(SELF_LABEL, limit)? {
-        if let Some(metrics) = metrics(&db.get_transcript(&meeting_id)?) {
+    let meetings = db.meetings_with(SELF_LABEL)?;
+    for meeting in meetings
+        .into_iter()
+        .filter(|m| m.status != "recording")
+        .take(limit)
+    {
+        if let Some(metrics) = metrics(&db.get_transcript(&meeting.id)?) {
             points.push(CoachTrendPoint {
-                meeting_id,
-                title,
-                start_time,
+                meeting_id: meeting.id,
+                title: meeting.title,
+                start_time: meeting.start_time,
                 metrics,
             });
         }
@@ -342,13 +325,15 @@ pub fn trends(db: &Database, limit: usize) -> Result<Vec<CoachTrendPoint>> {
 
 /// The prompt for a tip: the numbers only, never what was said.
 fn tip_prompt(m: &CoachMetrics) -> String {
-    let fillers = match m.top_fillers.iter().take(3).collect::<Vec<_>>() {
-        top if top.is_empty() => "none".to_string(),
-        top => top
+    let fillers = if m.top_fillers.is_empty() {
+        "none".to_string()
+    } else {
+        m.top_fillers
             .iter()
+            .take(3)
             .map(|(f, n)| format!("\"{f}\" ×{n}"))
             .collect::<Vec<_>>()
-            .join(", "),
+            .join(", ")
     };
     format!(
         "Here is how one person spoke in a meeting:\n\

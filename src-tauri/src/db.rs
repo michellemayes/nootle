@@ -4585,27 +4585,6 @@ impl Database {
 
     // --- Meeting Coach ---
 
-    /// Meetings you spoke in as `speaker`, newest first: id, title, start time.
-    pub fn meetings_with_speaker(
-        &self,
-        speaker: &str,
-        limit: usize,
-    ) -> Result<Vec<(String, String, String)>> {
-        let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT m.id, m.title, m.start_time FROM meetings m
-             WHERE m.status != 'recording'
-               AND EXISTS (SELECT 1 FROM transcripts t WHERE t.meeting_id = m.id AND t.speaker_label = ?1)
-             ORDER BY m.start_time DESC LIMIT ?2",
-        )?;
-        let rows = stmt
-            .query_map(params![speaker, limit as i64], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(rows)
-    }
-
     pub fn get_coach_tip(&self, meeting_id: &str) -> Result<Option<String>> {
         let conn = self.lock_conn()?;
         Ok(conn

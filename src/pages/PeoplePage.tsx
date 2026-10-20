@@ -38,13 +38,16 @@ function minutes(ms: number): string {
  * list with your coaching trends. */
 export function PeoplePage() {
   const [people, setPeople] = useState<Person[] | null>(null);
-  const [selected, setSelected] = useState<Person | null>(null);
-  const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [searchParams] = useSearchParams();
+  // "you" is your coaching trends, listed first while Meeting Coach is on.
+  const [selected, setSelected] = useState<Person | "you" | null>(
+    searchParams.has("coach") ? "you" : null,
+  );
+  const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [coachEnabled] = useBooleanSetting(COACH_SETTING, false);
-  const [youSelected, setYouSelected] = useState(searchParams.has("coach"));
   const trends = useCoachTrends(coachEnabled);
-  const showYou = coachEnabled && youSelected;
+  const person = selected === "you" ? null : selected;
+  const showYou = coachEnabled && (selected === "you" || !selected);
 
   useEffect(() => {
     invoke<Person[]>("list_people")
@@ -56,9 +59,9 @@ export function PeoplePage() {
   }, []);
 
   useEffect(() => {
-    if (!selected) return;
-    invoke<PersonDetail>("get_person", { name: selected.name }).then(setDetail).catch(() => {});
-  }, [selected]);
+    if (!person) return;
+    invoke<PersonDetail>("get_person", { name: person.name }).then(setDetail).catch(() => {});
+  }, [person]);
 
   // Updated in place: the list's open count and this item flip together.
   const toggle = async (item: InsightWithActionItem) => {
@@ -105,7 +108,7 @@ export function PeoplePage() {
               {coachEnabled && (
                 <li>
                   <button
-                    onClick={() => setYouSelected(true)}
+                    onClick={() => setSelected("you")}
                     className={cn(
                       "w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted",
                       showYou && "bg-muted",
@@ -122,13 +125,10 @@ export function PeoplePage() {
               {people.map((p) => (
                 <li key={p.name}>
                   <button
-                    onClick={() => {
-                      setSelected(p);
-                      setYouSelected(false);
-                    }}
+                    onClick={() => setSelected(p)}
                     className={cn(
                       "w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted",
-                      !showYou && selected?.name === p.name && "bg-muted",
+                      person?.name === p.name && "bg-muted",
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -149,14 +149,14 @@ export function PeoplePage() {
             </ul>
           </ScrollArea>
           <ScrollArea className="flex-1">
-            {(showYou || (coachEnabled && !selected)) && <CoachTrends points={trends} />}
-            {!showYou && detail && selected && detail.name === selected.name && (
+            {showYou && <CoachTrends points={trends} />}
+            {detail && person && detail.name === person.name && (
               <div className="max-w-3xl space-y-8 p-6">
                 <div>
                   <h2 className="text-lg font-semibold">{detail.name}</h2>
                   <p className="text-sm text-muted-foreground">
-                    Talked for {minutes(selected.talk_time_ms)} across{" "}
-                    {plural(selected.meeting_count, "meeting")}
+                    Talked for {minutes(person.talk_time_ms)} across{" "}
+                    {plural(person.meeting_count, "meeting")}
                   </p>
                 </div>
                 <section>

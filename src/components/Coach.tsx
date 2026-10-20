@@ -21,12 +21,12 @@ const METRICS: {
   label: string;
   format: (v: number) => string;
   /** A second line on the card, from the meeting's other numbers. */
-  detail?: (m: CoachMetrics) => string;
+  detail: (m: CoachMetrics) => string;
 }[] = [
   { key: "talk_share", label: "Your talk share", format: (v) => `${Math.round(v * 100)}%`, detail: (m) => `${formatMs(m.talk_time_ms)} speaking` },
-  { key: "words_per_minute", label: "Pace", format: (v) => `${Math.round(v)} wpm`, detail: (m) => `${plural(m.words, "word")}` },
+  { key: "words_per_minute", label: "Pace", format: (v) => `${Math.round(v)} wpm`, detail: (m) => plural(m.words, "word") },
   { key: "interruptions", label: "You interrupted", format: count, detail: (m) => `Interrupted ${plural(m.times_interrupted, "time")}` },
-  { key: "questions", label: "Questions asked", format: count, detail: (m) => `${plural(m.statements, "statement")}` },
+  { key: "questions", label: "Questions asked", format: count, detail: (m) => plural(m.statements, "statement") },
   {
     key: "fillers_per_minute",
     label: "Filler words",
@@ -51,7 +51,7 @@ function PrivateBadge() {
 /** How you showed up in this meeting, with one optional thing to try next
  * time. Collapsible, and only shown when Meeting Coach is on. */
 export function CoachCard({ meetingId }: { meetingId: string }) {
-  const { coach, loading, suggestTip } = useMeetingCoach(meetingId, true);
+  const { coach, loading, suggestTip } = useMeetingCoach(meetingId);
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [open, setOpen] = useState(true);
   const [suggesting, setSuggesting] = useState(false);
@@ -101,7 +101,7 @@ export function CoachCard({ meetingId }: { meetingId: string }) {
                 <div key={key} className="rounded-md border bg-background p-2.5 space-y-0.5">
                   <p className="text-xs text-muted-foreground">{label}</p>
                   <p className="text-base font-semibold">{format(coach.metrics[key])}</p>
-                  {detail && <p className="text-xs text-muted-foreground truncate">{detail(coach.metrics)}</p>}
+                  <p className="text-xs text-muted-foreground truncate">{detail(coach.metrics)}</p>
                 </div>
               ))}
             </div>
@@ -142,11 +142,18 @@ export function CoachCard({ meetingId }: { meetingId: string }) {
 
 /** A small line of one metric across meetings, oldest to newest, with a
  * dot per meeting (hover for which). */
-function Sparkline({ points, metric }: { points: CoachTrendPoint[]; metric: (typeof METRICS)[number] }) {
+function Sparkline({
+  points,
+  values,
+  metric,
+}: {
+  points: CoachTrendPoint[];
+  values: number[];
+  metric: (typeof METRICS)[number];
+}) {
   const width = 160;
   const height = 40;
   const pad = 5;
-  const values = points.map((p) => p[metric.key]);
   const max = Math.max(...values);
   const min = Math.min(...values);
   const range = max - min || 1;
@@ -196,7 +203,7 @@ export function CoachTrends({ points }: { points: CoachTrendPoint[] | null }) {
                   <p className="text-xs text-muted-foreground">avg {metric.format(avg)}</p>
                 </div>
                 <p className="text-lg font-semibold">{metric.format(values[values.length - 1])}</p>
-                <Sparkline points={points} metric={metric} />
+                <Sparkline points={points} values={values} metric={metric} />
               </div>
             );
           })}

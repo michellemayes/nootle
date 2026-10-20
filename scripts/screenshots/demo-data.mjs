@@ -879,9 +879,7 @@ export const FIXTURES = {
   has_api_key: true,
   get_downloaded_models: ["parakeet-v3", "nomic-embed-text"],
   get_available_models: [],
-  get_app_setting: null,
-  // Per-key settings for get_app_setting; unlisted keys are unset.
-  app_settings: {},
+  get_app_setting: {},
   check_permissions: { microphone: true, screen_recording: true, calendar: true },
 
   get_linear_tickets: [],
