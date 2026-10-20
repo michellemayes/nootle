@@ -69,6 +69,21 @@ pub struct LiveAssistCard {
     pub sources: Vec<Value>,
     /// Whether it answered a question heard in the meeting, not a typed one.
     pub automatic: bool,
+    /// Set on a reminder of a commitment from an earlier meeting, whose
+    /// text is `question`.
+    pub commitment_id: Option<String>,
+}
+
+/// A quiet reminder of an open commitment, linking to where it was made.
+pub fn commitment_card(c: &crate::db::Commitment) -> LiveAssistCard {
+    LiveAssistCard {
+        id: uuid::Uuid::new_v4().to_string(),
+        question: crate::commitments::reminder_text(c),
+        answer: None,
+        sources: vec![crate::commitments::source(c)],
+        automatic: true,
+        commitment_id: Some(c.id.clone()),
+    }
 }
 
 /// The newest card for the meeting being recorded, for the menu-bar popover.
@@ -153,6 +168,7 @@ pub async fn answer(
         answer: answer.map(str::to_string),
         sources,
         automatic,
+        commitment_id: None,
     };
 
     let Some((llm, provider, model)) = llm else {
@@ -227,6 +243,7 @@ mod tests {
             answer: None,
             sources: Vec::new(),
             automatic: true,
+            commitment_id: None,
         };
         let latest = LatestCard::default();
         assert!(latest.for_meeting("m1").is_none());

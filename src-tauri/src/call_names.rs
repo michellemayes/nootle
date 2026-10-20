@@ -165,7 +165,7 @@ fn name_label(text: &str) -> Option<String> {
 /// Whether two ways of writing a name are the same person: "Priya Patel"
 /// matches "Priya Patel", "priya" and "Priya K. Patel", not "Priya Shah".
 /// Used to spot the user's own tile from the Mac account's full name.
-fn same_person(a: &str, b: &str) -> bool {
+pub(crate) fn same_person(a: &str, b: &str) -> bool {
     let a: Vec<String> = a.split_whitespace().map(str::to_lowercase).collect();
     let b: Vec<String> = b.split_whitespace().map(str::to_lowercase).collect();
     match (a.as_slice(), b.as_slice()) {

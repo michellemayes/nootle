@@ -346,7 +346,7 @@ export function ChatPage() {
                             <SourceCitation
                               key={i}
                               source={s}
-                              onOpenMeeting={(id) => navigate(`/meeting/${id}`)}
+                              onOpenMeeting={navigate}
                             />
                           ))}
                         </div>

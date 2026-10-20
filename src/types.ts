@@ -252,6 +252,8 @@ export interface LiveAssistCard {
   answer: string | null;
   sources: ChatSource[];
   automatic: boolean;
+  /** Set on a reminder of an open commitment; `question` holds its text. */
+  commitment_id: string | null;
 }
 
 /** What the menu bar popover shows about the recording. */
@@ -386,6 +388,34 @@ export interface InsightWithActionItem {
   action_item_updated_at: string | null;
   meeting_title: string | null;
   meeting_start_time: string | null;
+}
+
+/** A moment in a later meeting that showed a commitment done or slipped. */
+export interface CommitmentEvidence {
+  meeting_id: string;
+  meeting_title: string;
+  meeting_start_time: string;
+  verdict: "done" | "slipped";
+  timestamp_ms: number | null;
+  quote: string | null;
+}
+
+export type CommitmentStatus = "open" | "done" | "slipped" | "dropped";
+
+/** An action item someone owns, followed across later meetings. `id` is the action item's. */
+export interface Commitment {
+  id: string;
+  owner: string;
+  content: string;
+  due_date: string | null;
+  status: CommitmentStatus;
+  meeting_id: string;
+  meeting_title: string;
+  meeting_start_time: string;
+  transcript_start_ms: number | null;
+  /** Meetings recorded since it was made. */
+  meetings_since: number;
+  evidence: CommitmentEvidence | null;
 }
 
 /** A meeting's share link on nootle.ai; `url` carries the decryption key after `#`. */

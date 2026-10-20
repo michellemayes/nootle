@@ -69,6 +69,7 @@ pub const TOGGLE_SETTINGS: &[&str] = &[
     crate::dictionary::AUTO_LEARN_SETTING,
     crate::snapshots::SETTING_KEY,
     crate::live_assist::SETTING_KEY,
+    crate::commitments::SETTING_KEY,
     crate::brief::SETTING_KEY,
     crate::coach::SETTING_KEY,
     crate::menu_bar::SETTING_KEY,

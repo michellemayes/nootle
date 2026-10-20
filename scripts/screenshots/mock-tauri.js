@@ -49,6 +49,32 @@
           (!args?.status || i.status === args.status || i.status === null),
       );
     }
+    // Commitments filtered like the backend does: by owner (or first name) and status.
+    if (cmd === "list_commitments") {
+      const owner = args?.owner?.toLowerCase();
+      return (fixtures.list_commitments || []).filter(
+        (c) =>
+          (!owner || c.owner.toLowerCase() === owner || c.owner.toLowerCase().split(" ")[0] === owner) &&
+          (!args?.status || c.status === args.status),
+      );
+    }
+    if (cmd === "update_commitment") {
+      const found = (fixtures.list_commitments || []).find((c) => c.id === args?.id);
+      return found && { ...found, status: args.status };
+    }
+    if (cmd === "get_meeting_followups") {
+      return (fixtures.get_meeting_followups || {})[args?.meetingId] || [];
+    }
+    // Each commitment is brought up once per recording, as the backend does.
+    if (cmd === "live_commitment_reminders") {
+      return (fixtures.live_commitment_reminders || []).filter(
+        (card) => !(args?.reminded || []).includes(card.commitment_id),
+      );
+    }
+    // Settings by key, when the demo sets any.
+    if (cmd === "get_app_setting" && fixtures.app_settings) {
+      return fixtures.app_settings[args?.key] ?? null;
+    }
     // A live recording's input levels, wobbling like speech for the meter.
     if (cmd === "recording_status") {
       const t = Date.now() / 180;

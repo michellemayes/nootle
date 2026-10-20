@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use nootle_app_lib::db::{AnnotationKind, Database, NewRecipe};
 use nootle_app_lib::embedding::EmbeddingEngine;
 use nootle_app_lib::llm::LlmRegistry;
-use nootle_app_lib::{automation, ops, room_recap};
+use nootle_app_lib::{automation, commitments, ops, room_recap};
 use std::future::Future;
 use std::process;
 
@@ -58,6 +58,11 @@ enum Commands {
     Actions {
         #[command(subcommand)]
         action: ActionsAction,
+    },
+    /// Follow commitments (action items with an owner) across meetings
+    Commitments {
+        #[command(subcommand)]
+        action: CommitmentsAction,
     },
     /// Get summaries for a meeting
     Summaries {
@@ -447,6 +452,34 @@ enum ActionsAction {
         /// New due date, e.g. 2026-10-31; pass "" to clear
         #[arg(long)]
         due_date: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum CommitmentsAction {
+    /// List commitments, newest first
+    List {
+        /// Only this person's (name or first name; "You" for your own)
+        #[arg(long)]
+        owner: Option<String>,
+        /// open, done, slipped, or dropped
+        #[arg(long)]
+        status: Option<String>,
+    },
+    /// Mark a commitment open, done, slipped, or dropped
+    Update {
+        /// Commitment ID (its action item's ID)
+        id: String,
+        /// open, done, slipped, or dropped
+        #[arg(long)]
+        status: String,
+    },
+    /// Check open commitments from earlier meetings against a meeting (LLM)
+    Check {
+        /// Meeting ID
+        meeting_id: String,
+        #[command(flatten)]
+        llm: LlmArgs,
     },
 }
 
@@ -1189,6 +1222,32 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
                     due_date.as_deref(),
                 )?;
                 print_json(&item, pretty);
+            }
+        },
+        Commands::Commitments { action } => match action {
+            CommitmentsAction::List { owner, status } => {
+                let commitments = commitments::list(db, owner.as_deref(), status.as_deref())?;
+                print_json(&commitments, pretty);
+            }
+            CommitmentsAction::Update { id, status } => {
+                print_json(&commitments::set_status(db, id, status)?, pretty);
+            }
+            CommitmentsAction::Check {
+                meeting_id,
+                llm: llm_args,
+            } => {
+                db.get_meeting(meeting_id)?;
+                let (llm, provider, model) = llm(db, llm_args)?;
+                let mut engine = ops::try_load_embedding_engine();
+                let followups = block_on(commitments::check_meeting(
+                    db,
+                    &llm,
+                    &provider,
+                    &model,
+                    meeting_id,
+                    engine.as_mut(),
+                ))?;
+                print_json(&followups, pretty);
             }
         },
         Commands::Summaries { action } => match action {

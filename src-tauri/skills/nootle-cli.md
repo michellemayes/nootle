@@ -136,6 +136,23 @@ nootle-cli actions update <id> --status done
 nootle-cli actions update <id> --assignee Priya --due-date 2026-10-31
 ```
 
+### Commitments
+
+Commitments are action items with an owner, followed across meetings. Status is `open`, `done`, `slipped` (a later meeting said it isn't done, or its due date passed), or `dropped`. Each carries `meetings_since` and, once a later meeting showed it done or slipped, `evidence` (meeting, `timestamp_ms`, quote).
+
+```bash
+# What someone still owes ("You" for the user's own)
+nootle-cli commitments list --owner Priya --status open
+nootle-cli commitments list --status slipped
+
+# Mark one by hand (ID is the action item's)
+nootle-cli commitments update <id> --status done
+
+# Check a meeting against open commitments from earlier ones (sends only those
+# commitments and the passages about them to the LLM)
+nootle-cli commitments check <meeting-id>
+```
+
 ### AI features
 
 These send the transcript to an LLM. All take optional `--provider` and `--model`; without them Nootle uses the model it uses for automatic summaries. `nootle-cli llm models` lists what's available; if nothing is, the user needs to add an API key in Nootle's settings, install the Claude or Codex CLI, or run Ollama. Answers print as `{"response": ...}`; add `--pretty` for plain text.

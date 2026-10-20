@@ -36,6 +36,7 @@ Nootle records your meetings (microphone and system audio), transcribes them on 
 - **No bot in the call.** Records mic and system audio from Zoom, Meet, Teams, or anything else, and can pop up when a call starts.
 - **Live transcript with speakers.** Transcribed on your Mac with Parakeet. Speakers are told apart and named from the call's video tiles. Nootle can also learn voices and recognize them in later meetings.
 - **Summaries and action items.** Every meeting is summarized when it ends, with templates you choose. Decisions and action items are collected across meetings.
+- **Commitment tracker.** Follows what people promised across meetings: what's still owed, what slipped, and the moment a later meeting showed it done.
 - **Pre-meeting brief.** A few minutes before a calendar meeting: who's coming, open action items, last time's decisions, and related docs (opt-in).
 - **Menu bar mode.** Record, pause, jot a note and see what's next from the menu bar, with or without a Dock icon.
 - **Live Assist.** During a call, answers questions from your documents and past meetings, including ones it hears asked aloud.

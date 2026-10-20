@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Send, Sparkles, X } from "lucide-react";
+import { Handshake, Loader2, Send, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -39,14 +39,44 @@ export function LiveAssist({
   const inFlightRef = useRef(false);
   // Questions already on cards; the backend skips them.
   const askedRef = useRef<string[]>([]);
+  // Commitments already brought up, and the latest line waiting to be
+  // checked for one.
+  const remindedRef = useRef<string[]>([]);
+  const reminderQueueRef = useRef<TranscriptSegment | null>(null);
+  const reminderInFlightRef = useRef(false);
 
   const llm = { provider: selectedProvider || null, model: selectedModel || null };
   const llmRef = useRef(llm);
   llmRef.current = llm;
 
   const addCard = (card: LiveAssistCard) => {
-    askedRef.current.push(card.question);
+    if (card.commitment_id) remindedRef.current.push(card.commitment_id);
+    else askedRef.current.push(card.question);
     setCards((list) => [card, ...list].slice(0, 20));
+  };
+
+  // Open commitments owed by whoever is speaking, or whose topic just came
+  // up; the same one at a time, newest line wins, as questions are.
+  const drainReminders = async () => {
+    if (reminderInFlightRef.current) return;
+    while (reminderQueueRef.current) {
+      const segment = reminderQueueRef.current;
+      reminderQueueRef.current = null;
+      reminderInFlightRef.current = true;
+      try {
+        const reminders = await invoke<LiveAssistCard[]>("live_commitment_reminders", {
+          meetingId,
+          speaker: segment.speaker_label,
+          text: segment.text,
+          reminded: remindedRef.current,
+        });
+        reminders.forEach(addCard);
+      } catch {
+        // Reminders are a nicety; they fail quietly.
+      } finally {
+        reminderInFlightRef.current = false;
+      }
+    }
   };
 
   // One automatic request at a time; while one runs, only the newest
@@ -82,6 +112,10 @@ export function LiveAssist({
     const fresh = segments.filter((s) => !seenRef.current!.has(s.id));
     fresh.forEach((s) => seenRef.current!.add(s.id));
     if (!auto) return;
+    if (fresh.length > 0) {
+      reminderQueueRef.current = fresh[fresh.length - 1];
+      drainReminders();
+    }
     // The backend decides what counts as a question; only segments that
     // could hold one are sent.
     const candidate = [...fresh].reverse().find((s) => s.text.includes("?"));
@@ -131,13 +165,30 @@ export function LiveAssist({
           {cards.length === 0 && (
             <p className="text-xs leading-relaxed text-muted-foreground">
               {auto
-                ? "Listening for questions. When someone asks something your documents or past meetings can answer, the answer shows up here with its sources."
+                ? "Listening for questions. When someone asks something your documents or past meetings can answer, the answer shows up here with its sources. Open commitments from earlier meetings are brought up when their owner speaks or their topic comes up."
                 : "Ask your documents and past meetings anything below. Turn on Auto to have questions heard in the meeting answered as they come up."}
               {!selectedProvider &&
                 " Pick an AI model in the sidebar for written answers; without one, Nootle shows the passages it found."}
             </p>
           )}
-          {cards.map((card) => (
+          {cards.map((card) => card.commitment_id ? (
+            <div key={card.id} className="flex items-start gap-2 rounded-lg border border-dashed bg-muted/40 p-3 text-xs">
+              <Handshake className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <p className="leading-relaxed text-foreground">{card.question}</p>
+                {card.sources.map((s, i) => (
+                  <SourceCitation key={i} source={s} onOpenMeeting={navigate} />
+                ))}
+              </div>
+              <button
+                onClick={() => setCards((list) => list.filter((c) => c.id !== card.id))}
+                aria-label="Dismiss"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
             <div key={card.id} className="rounded-lg border bg-card p-3 text-sm shadow-xs">
               <div className="mb-1.5 flex items-start gap-2">
                 <p className="flex-1 text-xs text-muted-foreground">
@@ -159,7 +210,7 @@ export function LiveAssist({
                     <SourceCitation
                       key={i}
                       source={s}
-                      onOpenMeeting={(id) => navigate(`/meeting/${id}`)}
+                      onOpenMeeting={navigate}
                     />
                   ))}
                 </div>

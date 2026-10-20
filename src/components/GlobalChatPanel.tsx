@@ -283,9 +283,9 @@ export function GlobalChatPanel() {
                             <SourceCitation
                               key={j}
                               source={source}
-                              onOpenMeeting={(id) => {
+                              onOpenMeeting={(path) => {
                                 setOpen(false);
-                                navigate(`/meeting/${id}`);
+                                navigate(path);
                               }}
                             />
                           ))}
