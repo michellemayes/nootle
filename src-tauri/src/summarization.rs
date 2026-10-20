@@ -90,7 +90,7 @@ fn split_transcript(text: &str, max_chars: usize) -> Vec<String> {
 /// The transcript, or for one too long for `provider` to read at once,
 /// detailed notes of each part in order (keeping timestamps and who said
 /// what), so the summary still covers the whole meeting.
-async fn condense_for(
+pub(crate) async fn condense_for(
     provider: &dyn crate::llm::LlmProvider,
     model: &str,
     transcript: String,

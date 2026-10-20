@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use nootle_app_lib::db::{Database, NewRecipe};
 use nootle_app_lib::embedding::EmbeddingEngine;
 use nootle_app_lib::llm::LlmRegistry;
-use nootle_app_lib::{automation, ops};
+use nootle_app_lib::{automation, ops, room_recap};
 use std::future::Future;
 use std::process;
 
@@ -337,6 +337,17 @@ enum MeetingsAction {
         /// Rewrite recaps that already exist
         #[arg(long)]
         replace: bool,
+        #[command(flatten)]
+        llm: LlmArgs,
+    },
+    /// A spoken recap of a meeting, a voice per speaker, rendered on this
+    /// Mac: prints its script and audio file, making it first if needed (LLM)
+    Listen {
+        /// Meeting ID
+        id: String,
+        /// Write and record a new recap even if one is cached
+        #[arg(long)]
+        regenerate: bool,
         #[command(flatten)]
         llm: LlmArgs,
     },
@@ -1733,6 +1744,30 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
                 db, &llm, id, &provider, &model, *replace,
             ))?;
             print_json(&slides, pretty);
+        }
+        MeetingsAction::Listen {
+            id,
+            regenerate,
+            llm: llm_args,
+        } => {
+            db.get_meeting(id)?;
+            let dir = ops::recordings_dir()?;
+            let recap = match room_recap::load(&dir, id).filter(|_| !regenerate) {
+                Some(recap) => recap,
+                None => {
+                    let (llm, provider, model) = llm(db, llm_args)?;
+                    block_on(room_recap::generate(
+                        db,
+                        &llm,
+                        room_recap::system_synth()?,
+                        &dir,
+                        id,
+                        &provider,
+                        &model,
+                    ))?
+                }
+            };
+            print_json(&recap, pretty);
         }
     }
     Ok(())

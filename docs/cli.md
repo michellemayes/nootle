@@ -36,6 +36,11 @@ nootle-cli meetings summarize <meeting-id>
 nootle-cli meetings ask <meeting-id> "What did we decide about pricing?"
 nootle-cli ask "Who owns the Q3 launch?"
 
+# A spoken recap of a meeting, a voice per speaker, made on your Mac (macOS
+# speech synthesis). Prints the script and the audio file; cached, so add
+# --regenerate for a new one. The MCP server's generate_audio_recap does the same.
+nootle-cli meetings listen <meeting-id>
+
 # Ask only your knowledge base, or only documents tagged "Research"
 nootle-cli ask "What's our refund policy?" --knowledge-only
 nootle-cli ask "What did the study find?" --tag Research
