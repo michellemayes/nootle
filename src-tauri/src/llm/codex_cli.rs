@@ -1,9 +1,11 @@
 use super::types::{ChatMessage, LlmProvider, ModelInfo};
+use std::time::Duration;
 use tokio::process::Command;
 
 const CODEX_BIN: &str = "codex";
 /// Sentinel meaning "let codex pick", i.e. pass no --model flag.
 const DEFAULT_MODEL: &str = "default";
+const CHAT_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub struct CodexCliProvider;
 
@@ -73,11 +75,15 @@ impl LlmProvider for CodexCliProvider {
         // from stdin..."), which never arrives when it is run as a subprocess.
         command.stdin(std::process::Stdio::null());
 
-        let output = command
-            .arg("--skip-git-repo-check")
-            .arg(&prompt)
-            .output()
-            .await?;
+        // Killed if the caller stops waiting (a timeout, or Stop in the app).
+        command.kill_on_drop(true);
+
+        let output = tokio::time::timeout(
+            CHAT_TIMEOUT,
+            command.arg("--skip-git-repo-check").arg(&prompt).output(),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("codex CLI timed out after {:?}", CHAT_TIMEOUT))??;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

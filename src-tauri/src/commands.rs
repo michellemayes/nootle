@@ -6,9 +6,11 @@ use crate::model_download::{self, DownloadManager};
 use crate::model_registry;
 use crate::summarization;
 use crate::transcription::{self, TranscriptionEngine};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
 use tokio::sync::Mutex as TokioMutex;
+use tokio_util::sync::CancellationToken;
 
 use crate::ops::truncate_at_word_boundary;
 
@@ -58,6 +60,40 @@ async fn lock_embedding_engine(
 /// Meeting IDs with a sentiment analysis in flight, so a remounted view can
 /// show progress for a job started before the user navigated away.
 pub type SentimentJobsState = Arc<std::sync::Mutex<std::collections::HashSet<String>>>;
+
+/// Summaries being generated from a meeting's page, by meeting, so the user
+/// can stop one that is taking too long.
+#[derive(Default)]
+pub struct SummaryJobsState(std::sync::Mutex<HashMap<String, CancellationToken>>);
+
+impl SummaryJobsState {
+    fn jobs(&self) -> std::sync::MutexGuard<'_, HashMap<String, CancellationToken>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Registers a new job for `meeting_id`, cancelling any still running.
+    fn start(&self, meeting_id: &str) -> CancellationToken {
+        let token = CancellationToken::new();
+        if let Some(previous) = self.jobs().insert(meeting_id.to_string(), token.clone()) {
+            previous.cancel();
+        }
+        token
+    }
+
+    fn cancel(&self, meeting_id: &str) {
+        if let Some(job) = self.jobs().remove(meeting_id) {
+            job.cancel();
+        }
+    }
+
+    /// Forgets a job that ran to the end. A cancelled one was already removed
+    /// or replaced by a newer job.
+    fn finish(&self, meeting_id: &str, token: &CancellationToken) {
+        if !token.is_cancelled() {
+            self.jobs().remove(meeting_id);
+        }
+    }
+}
 
 fn validate_provider(provider: &str) -> Result<(), String> {
     crate::ops::validate_one_of("provider", provider, crate::ops::API_KEY_PROVIDERS)
@@ -1529,19 +1565,34 @@ pub fn list_stored_providers(db: State<'_, DbState>) -> Result<Vec<String>, Stri
     crate::ops::list_api_key_providers(&db).map_err(|e| e.to_string())
 }
 
+/// Generates a summary, or returns `None` if `cancel_summary` stopped it.
+/// Starting one replaces any still running for the same meeting.
 #[tauri::command]
 pub async fn generate_summary(
     db: State<'_, DbState>,
     llm: State<'_, LlmState>,
+    jobs: State<'_, SummaryJobsState>,
     meeting_id: String,
     template_id: String,
     provider: String,
     model: String,
-) -> Result<Summary, String> {
-    let llm = llm.read().await;
-    summarization::summarize_meeting(&db, &llm, &meeting_id, &template_id, &provider, &model)
-        .await
-        .map_err(|e| e.to_string())
+) -> Result<Option<Summary>, String> {
+    let cancel = jobs.start(&meeting_id);
+    // Dropping the summary future stops its requests and kills any CLI it ran.
+    let result = tokio::select! {
+        r = async {
+            let llm = llm.read().await;
+            summarization::summarize_meeting(&db, &llm, &meeting_id, &template_id, &provider, &model).await
+        } => r.map(Some).map_err(|e| e.to_string()),
+        _ = cancel.cancelled() => Ok(None),
+    };
+    jobs.finish(&meeting_id, &cancel);
+    result
+}
+
+#[tauri::command]
+pub fn cancel_summary(jobs: State<'_, SummaryJobsState>, meeting_id: String) {
+    jobs.cancel(&meeting_id);
 }
 
 #[tauri::command(async)]

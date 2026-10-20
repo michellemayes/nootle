@@ -70,6 +70,7 @@ import {
   RotateCw,
   Search,
   Sparkles,
+  Square,
   StickyNote,
   X,
   Zap,
@@ -1018,7 +1019,7 @@ export function MeetingDetail() {
       setDictionaryNotice(`Couldn't apply dictionary: ${err}`);
     }
   };
-  const { summaries, loading: summariesLoading, generateSummary } = useSummaries(id!);
+  const { summaries, loading: summariesLoading, generateSummary, cancelSummary } = useSummaries(id!);
   const { templates } = useTemplates();
   const { storedProviders: storedApiProviders } = useApiKeys();
   const { labels: allLabels, getMeetingLabels, addMeetingLabel, removeMeetingLabel, createLabel, updateLabel, deleteLabel } = useLabels();
@@ -1665,16 +1666,35 @@ export function MeetingDetail() {
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </Select>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-xs"
-                  onClick={handleGenerate}
-                  disabled={generating || !selectedTemplate || !selectedProvider || !selectedModel}
-                >
-                  <Sparkles className={`h-3 w-3 mr-1 ${generating ? "animate-pulse" : ""}`} />
-                  {generating ? "Generating…" : "Generate summary"}
-                </Button>
+                {generating ? (
+                  <>
+                    <span className="flex items-center text-xs text-muted-foreground">
+                      <Sparkles className="h-3 w-3 mr-1 animate-pulse" />
+                      Generating…
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs"
+                      onClick={cancelSummary}
+                      title="Stop generating this summary"
+                    >
+                      <Square className="h-3 w-3 mr-1" />
+                      Stop
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={handleGenerate}
+                    disabled={!selectedTemplate || !selectedProvider || !selectedModel}
+                  >
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    Generate summary
+                  </Button>
+                )}
               </div>
 
               {generateError && (
@@ -1693,6 +1713,14 @@ export function MeetingDetail() {
                       generating || processing
                         ? "Generating summary…"
                         : "No summaries yet. Pick a template above and generate one."
+                    }
+                    action={
+                      generating && (
+                        <Button size="sm" variant="outline" onClick={cancelSummary}>
+                          <Square className="h-3 w-3 mr-1" />
+                          Stop
+                        </Button>
+                      )
                     }
                   />
                 ) : (

@@ -108,14 +108,20 @@ impl LlmProvider for ClaudeAgentProvider {
             anyhow::anyhow!("Failed to spawn claude CLI at '{}': {e}", self.binary_path)
         })?;
 
-        if let Some(mut stdin) = child.stdin.take() {
+        // Feed the prompt while reading the output, both under the timeout: a
+        // long transcript fills the pipe, and a CLI that stops reading would
+        // otherwise leave the write, and the summary, waiting forever.
+        let mut stdin = child.stdin.take().expect("stdin is piped");
+        let write = async move {
             stdin.write_all(prompt.as_bytes()).await?;
-            stdin.shutdown().await?;
-        }
-
-        let output = tokio::time::timeout(CHAT_TIMEOUT, child.wait_with_output())
-            .await
-            .map_err(|_| anyhow::anyhow!("Claude CLI timed out after {:?}", CHAT_TIMEOUT))??;
+            stdin.shutdown().await
+        };
+        let (written, output) = tokio::time::timeout(CHAT_TIMEOUT, async {
+            tokio::join!(write, child.wait_with_output())
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Claude CLI timed out after {:?}", CHAT_TIMEOUT))?;
+        let output = output?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -125,7 +131,50 @@ impl LlmProvider for ClaudeAgentProvider {
                 stderr.trim()
             );
         }
+        written?;
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[tokio::test]
+    async fn long_prompt_does_not_deadlock_a_cli_that_writes_before_reading() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("claude");
+        // Fills the stdout pipe before reading the prompt, as a chatty CLI
+        // might; writing the whole prompt first would block both sides.
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\nhead -c 200000 /dev/zero | tr '\\0' x\nwc -c\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let provider = ClaudeAgentProvider {
+            binary_path: bin.to_string_lossy().into_owned(),
+        };
+
+        let prompt = "y".repeat(500_000);
+        let reply = tokio::time::timeout(
+            Duration::from_secs(20),
+            provider.chat(
+                vec![ChatMessage {
+                    role: "user".into(),
+                    content: prompt,
+                }],
+                "sonnet",
+            ),
+        )
+        .await
+        .expect("chat deadlocked")
+        .unwrap();
+
+        assert!(reply.starts_with('x'));
+        // `wc -c` saw the whole prompt: "User: " plus the 500,000 characters.
+        assert!(reply.ends_with("500006"));
     }
 }
