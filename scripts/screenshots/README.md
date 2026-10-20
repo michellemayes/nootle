@@ -1,20 +1,23 @@
-# Screenshots
+# Screenshots and demo GIF
 
-Generates the app screenshots used by the root `README.md` and the landing page.
-Output lands in `site/public/screenshots/` as 2x PNGs framed in macOS window
-chrome — the site serves them from `/screenshots/`, and the README links to the
-same files.
+Generates the landing page's app screenshots and the root `README.md`'s demo GIF.
 
 ```bash
 pnpm install
 pnpm exec playwright install chromium   # once
-pnpm screenshots
+pnpm screenshots   # site/public/screenshots/*.png
+pnpm demo-gif      # docs/demo.gif (needs ffmpeg)
 ```
+
+Screenshots are 2x PNGs framed in macOS window chrome; the site serves them
+from `/screenshots/`. The demo GIF is a short tour (library → live recording
+with Live Assist → finished meeting → Ask) recorded from Chromium's screencast
+and encoded with ffmpeg.
 
 ## How it works
 
 The app is a Tauri frontend, so it runs fine in a plain browser as long as
-something answers its IPC calls. `capture.mjs` starts the Vite dev server and
+something answers its IPC calls. `app.mjs` starts the Vite dev server and
 injects `mock-tauri.js`, which implements just enough of
 `window.__TAURI_INTERNALS__` to serve `demo-data.mjs` and to fire backend events
 (the live recording view is driven that way). Playwright then walks each route,
@@ -29,7 +32,9 @@ screenshots the next time this runs — no mockup to keep in sync.
   and the browser's `Date` starts at `DEMO_NOW`, so relative dates and the
   streak render the same on every run.
 - **Which screens get captured** — the `SHOTS` array in `capture.mjs`.
-- **Window chrome** — the `frame()` function in `capture.mjs`.
+- **The demo tour** — `tour()` in `demo.mjs`.
+- **Window chrome** — `frame()` in `capture.mjs`; the traffic lights, shared
+  with the demo GIF, are `TRAFFIC_LIGHTS` in `app.mjs`.
 
 ## Fonts
 

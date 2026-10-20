@@ -23,9 +23,29 @@
 
 ---
 
-Nootle captures your meetings — microphone and system audio — transcribes them in real time with speaker identification, and lets you chat with an AI about what was said. Point it at your project folders and docs and it answers questions from those too, even live during a call. No cloud recording service needed.
+<p align="center">
+  <img src="docs/demo.gif" alt="Nootle demo: start a recording, watch the live transcript build while Live Assist answers a question from your documents, stop to get a summary, then ask across all your meetings" width="960" />
+</p>
 
-> **A note on privacy.** Recording and transcription are always local — meeting audio is never uploaded, and transcripts live only on your Mac. AI summaries and chat use whichever LLM provider you point Nootle at: pick **Ollama** (with a local model) to keep everything on-device, or use OpenAI, Anthropic, Google, Groq, OpenRouter, or AWS Bedrock with your own API key. You can also route through the **Claude Code CLI** (`claude -p`) or **Codex CLI** to reuse an existing Claude or ChatGPT subscription instead of an API key. Nootle is fully local end-to-end only when you use a local AI model. Turn on **Local-only mode** (Settings → Privacy) to enforce that: only local models can see meeting content, and workflows won't send anything to integrations.
+Nootle records your meetings (microphone and system audio), transcribes them on your Mac with speaker names, and lets you ask an AI about what was said. Point it at your project folders and it answers from those too, even live during a call.
+
+**Private by default.** Recording and transcription happen on your Mac, and audio is never uploaded. Summaries and chat use the AI you pick: a local Ollama model keeps everything on-device, or bring an OpenAI, Anthropic, Google, Groq, OpenRouter or Bedrock key, or your Claude or ChatGPT subscription through the Claude Code or Codex CLI. **Local-only mode** (Settings → Privacy) allows only local models. There's no telemetry. Nootle only goes online for things you set up, plus model downloads and update checks.
+
+## Features
+
+- **No bot in the call.** Records mic and system audio from Zoom, Meet, Teams, or anything else, and can pop up when a call starts.
+- **Live transcript with speakers.** Transcribed on your Mac with Parakeet. Speakers are told apart and named from the call's video tiles. Nootle can also learn voices and recognize them in later meetings.
+- **Summaries and action items.** Every meeting is summarized when it ends, with templates you choose. Decisions and action items are collected across meetings.
+- **Live Assist.** During a call, answers questions from your documents and past meetings, including ones it hears asked aloud.
+- **Ask your meetings and docs.** Chat across every meeting and your knowledge base (PDF, Word, PowerPoint, Excel, web pages and more), with citations.
+- **Your notes, expanded.** Jot shorthand while recording. Nootle fills it out from the transcript afterwards.
+- **Snapshots.** Captures shared slides and screens into your notes, and reads the text on them.
+- **Workflows.** Send recaps and action items to Slack, Notion, Linear, GitHub, Asana, Confluence, Obsidian, or email.
+- **Share links.** End-to-end encrypted `nootle.ai` links to a meeting's notes.
+- **Built for agents.** A CLI and an MCP server (with a read-only mode) give Claude Code and other agents your meetings.
+- **Plain files you own.** Export any meeting, or all of them, as Markdown, text, SRT or WebVTT. Import recordings and transcripts from Otter, Fathom, Granola, Zoom, Teams and Meet.
+
+See [every feature in detail](docs/features.md).
 
 ## Why Nootle
 
@@ -43,298 +63,38 @@ Nootle captures your meetings — microphone and system audio — transcribes th
 
 Competitor details are as of October 2026 and change often; check their sites.
 
-**No telemetry.** Nootle sends no analytics, crash reports, or usage data anywhere. The only network calls are the AI provider you pick, model downloads from Hugging Face (each hash-checked), integrations you set up, share links you create (end-to-end encrypted on nootle.ai), web pages you add to your knowledge base (fetched at most once a day), and the update check against GitHub Releases.
-
-## Screenshots
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="site/public/screenshots/library-dark.png" />
-    <img src="site/public/screenshots/library-light.png" alt="Nootle meeting library — recorded meetings with labels, dates, and durations" width="900" />
-  </picture>
-  <br />
-  <em>Every meeting in one library — searchable, labelled, and summarized.</em>
-</p>
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="site/public/screenshots/recording-dark.png" />
-    <img src="site/public/screenshots/recording-light.png" alt="Nootle recording a meeting with a live transcript and notes" width="900" />
-  </picture>
-  <br />
-  <em>Record mic and system audio while the transcript builds in real time.</em>
-</p>
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="site/public/screenshots/meeting-dark.png" />
-    <img src="site/public/screenshots/meeting-light.png" alt="Nootle meeting detail — speaker-labelled transcript beside an AI summary" width="900" />
-  </picture>
-  <br />
-  <em>Speaker-labelled transcript beside an AI summary you can jump around in.</em>
-</p>
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="site/public/screenshots/insights-dark.png" />
-    <img src="site/public/screenshots/insights-light.png" alt="Nootle insights dashboard listing decisions and action items across meetings" width="900" />
-  </picture>
-  <br />
-  <em>Decisions, action items, and key moments pulled out of every meeting.</em>
-</p>
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="site/public/screenshots/chat-dark.png" />
-    <img src="site/public/screenshots/chat-light.png" alt="Nootle chat answering a question about onboarding drop-off with sources cited" width="900" />
-  </picture>
-  <br />
-  <em>Ask questions across your whole meeting history, with citations.</em>
-</p>
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="site/public/screenshots/automations-dark.png" />
-    <img src="site/public/screenshots/automations-light.png" alt="Nootle automations page showing summary templates" width="900" />
-  </picture>
-  <br />
-  <em>Templates and workflows so the right summary runs on its own.</em>
-</p>
-
-> Screenshots use fictional demo data. See [`scripts/screenshots`](scripts/screenshots) to regenerate them.
-
-## Features
-
-- **Record everything** — capture microphone and system audio simultaneously
-- **Live transcription** — speech-to-text powered by Parakeet via ONNX Runtime. Audio is split where people pause (Silero voice activity detection, a 2 MB part of the transcription download), so each sentence is transcribed whole, with its own timing and a confidence score
-- **Speaker identification** — know who said what with automatic diarization (download the **Speaker Diarization** model in Settings). On a call (Zoom, Meet, Teams, and the rest), your microphone is labelled **You** and the call's audio is split into **Speaker 1**, **Speaker 2**, and so on. In an in-person meeting, everyone at the mic is told apart the same way. When a meeting ends, a second speaker pass compares every sentence's voice with every other across the whole recording, which tells speakers apart far better than the live pass can. On calls, Nootle keeps your microphone and the call audio as separate channels next to the recording (`<meeting>.stems.wav`) until this pass is done. Click a speaker's name in the transcript to rename them everywhere in that meeting. Renaming one speaker to another's name merges the two. **Names from the call** (on by default, Settings → Recording) reads the names on people's video tiles in Zoom, Meet, Teams and the rest, on your Mac, whenever Nootle already has Screen Recording permission. Only the names are kept; the pictures are thrown away. After a 1:1 call everything said on the far end is put under the other person's name, even without the Speaker Diarization model. In a bigger call, once every voice but one is recognised, the last voice gets the one name left. Otherwise the call's names show up as one-click choices when you rename a speaker. Turn on **Remember voices** (Settings → Recording) and anyone named, by you or from the call, is learned and named automatically in later meetings on any app, even in person. So a voice Nootle learns on Zoom is recognised on a Meet call or around a table. Nootle keeps a voice fingerprint per person in its local database, never uploads it, and lists each one in Settings so you can forget it. If you fix a wrong name, the voice is taken back out of the wrong person's fingerprint
-- **Snapshots** — turn on **Snapshots** in Settings and, when someone shares their screen in a call (including you), Nootle snaps the slides, designs, docs, or charts into your notes, one picture per slide. Only the meeting window is captured, except while you share your own screen: then the display you're sharing is captured, with the meeting app's and Nootle's own windows left out. Capture only happens while a call is on and the recording isn't paused. Text on each snapshot is read on your Mac, so summaries, chat, and search can answer questions like "what did the revenue chart say?". Snapshots appear at the bottom of the meeting's notes, where you can view or remove them, and a snapshot indicator shows in the recording bar
-- **Live audio levels** — microphone and system-audio level bars in the recording bar show that sound is coming in, and a warning appears if Nootle hears nothing for 20 seconds (a muted mic or the wrong input). The live transcript follows along as people speak; scroll up to re-read and **Jump to live** brings you back
-- **Consent reminder** — Nootle joins no call as a bot, so nobody gets a visual cue that they're being recorded. When a recording starts, a reminder offers a message to paste into the meeting chat (edit it in Settings → Privacy), and notes that you told everyone. Many places require everyone's consent to record
-- **People** — everyone you've named in a transcript, with how often and how recently you've met, every meeting together, and the action items they own
-- **Knowledge base** — on the **Knowledge** page, add project folders, files, and web pages (PDF, Word, PowerPoint, Excel, Markdown, plain text, CSV, HTML, and `.webloc` / `.url` bookmarks). Nootle reads them on your Mac, splits them into passages, and indexes them with the same on-device search model as your meetings; files never leave your Mac. Folders are re-checked every half hour and only changed files are read again; web pages are re-fetched at most once a day. Tag sources (e.g. *Customer A*, *Research*), filter by tag or file type, and search by meaning or keyword; click a result to open the document. A Google Drive for desktop folder works too, though native Google Docs there are only links, so download or export them first. Scanned PDFs without a text layer can't be read yet
-- **Ask your meetings and documents** — Chat answers from your meetings and your knowledge base together, citing each meeting moment and each document's page, slide, or sheet; pick **Meetings only** or **Documents only**, or filter documents by tag. Click a document citation to open it
-- **Live Assist** — while recording, a side panel answers questions from your documents and past meetings. Type a question any time, or turn on **Auto** (or Settings → Recording → **Live Assist**) and when someone asks something in the meeting that your documents or past meetings can answer, a card appears with a short answer you could say aloud and its sources. Small talk ("can everyone see my screen?") is ignored, and Live Assist stays quiet when nothing relevant is found. Without an AI model selected, cards show the passages found
-- **Shorthand notes, expanded** — jot terse notes while recording (they're saved as you type, so leaving the page mid-meeting loses nothing). When the meeting ends, Nootle automatically expands your notes and quick notes into full notes from the transcript, using the calendar event's agenda and the most relevant passages from your knowledge base. Your original notes stay one click away (**Original** / **Enriched**)
-- **What did I miss?** — while recording, one click summarizes the last five minutes and calls out anything someone asked or assigned you
-- **Pause and resume** — go off the record mid-meeting; nothing is recorded or transcribed while paused, and the timer counts only recorded time
-- **Plays well with Zoom's audio device** — if `ZoomAudioDevice` (or a similar virtual device, like Teams Audio or BlackHole) has become your default input, Nootle records from your real microphone instead
-- **Auto-learning dictionary** — double-click any transcript line to fix a misheard name or term. Nootle learns the fix ("noodle" → "Nootle"), corrects the rest of that meeting, applies it to every future recording, and gives your dictionary to the AI as a spelling reference for summaries and chat. Manage words, turn learning off, or import your VoiceInk dictionary (its Dictionary export or a settings backup), in Settings → Dictionary
-- **Import recordings** — transcribe an audio or video file you already have (voice memos, Zoom cloud recordings, MP3, M4A, WAV, FLAC, MP4, MOV, and more). It goes through the same local pipeline as a live recording: transcript, speakers, title, summary, and insights
-- **Bring your history** — import transcripts exported from Otter, Fathom, Granola, Zoom, Teams, or Meet (SRT, WebVTT, TXT, or Markdown) from the same **Import** button as recordings; Nootle titles, summarizes, and indexes them like any other meeting
-- **Your notes are files you own** — Settings → Privacy → **Export all…** (or `nootle-cli meetings export-all --dir ~/Notes/Meetings`) writes every meeting as a Markdown file
-- **Export** — save any meeting as Markdown (summaries, action items, notes, and transcript), a plain-text transcript, or SRT / WebVTT subtitles. Copying a summary keeps its formatting (headings, bold, lists) when pasted into Mail, Docs, or Notion, and the envelope button next to it starts a recap email
-- **Share links** — click **Share** on a meeting to get a `nootle.ai/s/…` link to its summaries, action items, and notes (the transcript only if you tick **Include the transcript**). Notes are end-to-end encrypted: Nootle encrypts them on your Mac and the key lives only in the link, after the `#`, which browsers never send to a server, so nootle.ai stores nothing it can read. Anyone you give the link to can read the note, light by default with a toggle for dark, with the transcript folded away and buttons to take it into Claude or ChatGPT, copy it, or download it as Markdown. The page's encryption badge opens a short explainer of what end-to-end encryption means for the reader, and a Get Nootle link sits above the notes; **Stop sharing**, or deleting the meeting in the app, deletes it. Edits don't change the shared note until you click **Update link**. Off in Local-only mode
-- **Continue in Claude** — one click opens a new conversation in the Claude desktop app (or claude.ai if the app isn't installed) with the meeting's notes already in the message, so you can keep working on it there. If the transcript is too long to fit, Nootle copies the whole meeting to your clipboard to paste in. Off in Local-only mode
-- **AI summaries and chat** — every meeting is summarized automatically when it ends, and opens on its summary (a summary taking too long can be stopped with **Stop** and generated again); ask questions about your meetings using your preferred LLM, or pick a suggested starter question
-- **Playback synced to the transcript** — the line being played is highlighted and kept in view; click any timestamp to play from there, skip back or forward 15 seconds, and change speed (1×–2×). Timestamps on quick notes, action items, and insights jump to that moment too
-- **Find in transcript** — press ⌘F in a meeting to highlight every match in the transcript; ↵ and ⇧↵ step through them
-- **Insight extraction** — decisions, action items, and key moments are extracted automatically once a recording finishes transcribing. On the Insights page, filter action items by who owns them; overdue and due-today items are called out
-- **Multiple LLM providers** — OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, or your existing Claude / ChatGPT subscription via the Claude Code (`claude -p`) and Codex CLIs
-- **Calendar** — with calendar access, the Meetings page shows what's up next with one-click **Record** and **Join** (Zoom, Meet, Teams, Webex, and more), and a recording started during an event is named after it. The event's agenda (its description) and the names of those invited are kept with the recording and given to the AI for summaries, notes, insights, and Live Assist. When you've met before (same title, or the same calendar event), each event shows when you last met, links to those notes, and lists the action items still open from that series
-- **Meeting detection** — turn on **Auto-detect meetings** in Settings and a small pop-up appears in the top-right corner of your screen when a call starts (Zoom, Teams, Webex, Slack, FaceTime, Discord, or a browser call like Google Meet using your mic). It floats over the meeting app even when Nootle's window is closed: click **Record** to start, or dismiss it (it also goes away on its own after 45 seconds)
-- **Runs in the background** — closing the window (⌘W) keeps Nootle running, so recordings and meeting detection continue; click the Dock icon to bring it back, ⌘Q to quit
-- **URL scheme** — start and stop recordings from other apps or scripts via `nootle://` links (opt-in)
-- **Workflows & integrations** — push summaries, action items, and notes to Slack, Notion, Confluence, Linear, GitHub, Asana, Obsidian, or email. Notion, Linear, and Confluence connect in one click through their official MCP servers. GitHub can reuse your GitHub CLI (`gh`) sign-in. Anything else takes a pasted token, and a **Get a token** button opens the right page for each service, with Slack's app and GitHub's scopes pre-filled
-- **Templates** — customizable summary templates you can pick per recording, or mark auto-run to choose which ones run on every meeting (e.g. a standing template for 1:1s, standups, or interviews). With none marked, the built-in General template runs
-- **Search that finds names and numbers** — Ask combines meaning-based search with keyword search, so it finds "what did we say about churn?" as well as "NOO-482" or a customer's name
-- **Crash-safe recording** — the recording is saved every few seconds. If Nootle quits or crashes mid-meeting, the meeting is transcribed again from its audio the next time you open Nootle, then summarized as usual
-- **MCP server** — let Claude Code and other MCP clients read your meetings and set up workflows, integrations, templates, and insight types for you
-- **CLI tool** — query meetings and manage automations from the terminal or scripts
-- **Auto-titling** — untitled meetings are automatically titled from transcript content; a title you set yourself is kept
-- **Keyboard-first** — ⌘K command palette to jump to any meeting or ask a question, ⌘N to start recording from anywhere, ⌘↵ to stop, `/` to search meeting titles and transcripts, and in a meeting Space to play or pause, ←/→ to skip, and ⌘F to find. Press `?` anywhere to see every shortcut. Archiving a meeting can be undone straight from the confirmation toast
-- **Labels** — tag meetings with colored labels from the **+ Label** button and filter the library by them. Hover a label in that menu and click the pencil to rename it, change its color, or delete it (deleting removes it from every meeting)
-- **Pin meetings** — right-click a meeting (or use its ⋮ menu) and choose **Pin to top** to keep recurring references above the dated list
-- **Momentum at a glance** — workday recording streak, meetings this week, and open action items on the home screen, with a little celebration when you wrap a meeting
-- **Logs for bug reports** — Help → Open Logs Folder shows `nootle.log` (timings and errors only; transcripts, summaries and prompts are never logged), and Help → Report a Problem opens a GitHub issue with your version filled in
-- **In-app updates** — new versions are detected automatically and installed with one click, no trip to GitHub
-- **Themes** — light or dark mode, a background theme (Lavender, White, Slate, Ocean, Sage, Sand, Mocha, Rose, or any custom color), and a separate accent color for buttons and highlights, all in Settings → General
 
 ## Install
-
-With [Homebrew](https://brew.sh):
 
 ```bash
 brew tap michellemayes/nootle https://github.com/michellemayes/nootle
 brew install --cask nootle
 ```
 
-Or download the latest `.dmg` from [**Releases**](https://github.com/michellemayes/nootle/releases), open it, and drag Nootle to Applications.
+Or download the latest `.dmg` from [Releases](https://github.com/michellemayes/nootle/releases). Nootle needs an Apple Silicon Mac (M1–M5) on macOS 14 or later. It updates itself from inside the app.
 
-Nootle supports Apple Silicon Macs only (M1, M2, M3, M4, and M5). Intel Macs are not supported. Download `Nootle_x.y.z_aarch64.dmg`.
+On first launch it asks for **Microphone**, **Screen Recording** (for system audio and Snapshots), and optionally **Calendar** (to name recordings after events).
 
-### Updates
+> On v0.1.15 or earlier, in-app updates fail. Download the latest `.dmg` and drag it over the old app once.
 
-You only download from Releases once. Nootle checks for new versions on launch and every few hours. When one is out, a card appears in the corner of the app. Click **Install & Restart** and Nootle downloads the update, installs it, and relaunches itself. You can also check any time from **Help → Check for Updates…** or **Settings → About**. The install button stays disabled while you're recording, so an update never cuts off a meeting.
+## CLI and MCP server
 
-If you're on v0.1.15 or earlier, in-app updates fail with "Couldn't update". Those builds ran in the macOS App Sandbox, which blocks the updater from replacing the app. Download the latest `.dmg` from Releases and drag it over the old app once. On first launch it moves your meetings, recordings, and settings out of the sandbox container, and updates work from then on.
-
-### Permissions
-
-On first launch, Nootle will ask for:
-
-- **Microphone** — to record your voice
-- **Screen Recording** — to capture system audio from meeting apps via Core Audio, and the meeting window (or the screen you're sharing) for Snapshots
-- **Calendar** (optional) — to show upcoming meetings and name recordings after the event
-
-## Development
-
-```bash
-# Install dependencies
-pnpm install
-
-# Run in dev mode
-pnpm tauri dev
-```
-
-`tauri build` refuses to run when an `@tauri-apps/*` npm package and its Rust crate are on different minor versions. The npm packages are pinned with `~` to the minors in `src-tauri/Cargo.lock`, so when you bump a Tauri crate, bump its npm package to the same minor.
-
-### Integration sign-in
-
-Notion, Linear, and Confluence connect with one click through each vendor's official MCP server (`mcp.notion.com`, `mcp.linear.app`, `mcp.atlassian.com`). Those servers support OAuth dynamic client registration, so Nootle registers itself the first time you connect. There's no OAuth app to create and nothing to configure at build time. Sign-in opens the vendor's consent page and catches the redirect on a one-off `127.0.0.1` port. Workflows then call the server's MCP tools, and `rmcp` refreshes the token when it expires.
-
-GitHub can reuse a signed-in GitHub CLI (`gh auth token`). Slack and Asana connect with a pasted token, because their MCP servers require a registered app. The **Get a token** button opens the right page for each, and Slack's app setup comes pre-filled. Every service still accepts a pasted token.
-
-## CLI Tool
-
-`nootle-cli` is a standalone command-line tool that covers everything Nootle does outside of live recording: meetings, transcripts, labels, notes, action items, recipes, analytics, Ask, settings, and automations. It reads and writes the Nootle database directly — the app doesn't need to be running.
-
-`nootle-cli` ships inside Nootle.app at `/Applications/Nootle.app/Contents/MacOS/nootle-cli`; symlink it onto your PATH, or build it from source:
-
-```bash
-# Build and install
-cargo install --path src-tauri --bin nootle-cli
-
-# List meetings
-nootle-cli meetings list
-
-# Search transcripts
-nootle-cli search "quarterly review"
-
-# List open action items
-nootle-cli actions list --status open
-
-# Export a meeting as Markdown, txt, srt, or vtt
-nootle-cli meetings export <meeting-id> --format srt --output call.srt
-
-# Name a speaker
-nootle-cli meetings rename-speaker <meeting-id> "Speaker 2" "Priya"
-
-# Summarize, or ask about one meeting or all of them (uses your configured LLM;
-# --provider and --model pick another)
-nootle-cli meetings summarize <meeting-id>
-nootle-cli meetings ask <meeting-id> "What did we decide about pricing?"
-nootle-cli ask "Who owns the Q3 launch?"
-
-# Ask only your knowledge base, or only documents tagged "Research"
-nootle-cli ask "What's our refund policy?" --knowledge-only
-nootle-cli ask "What did the study find?" --tag Research
-
-# Tag a meeting and mark an action item done
-nootle-cli meetings label <meeting-id> --add Customer
-nootle-cli actions update <action-item-id> --status done
-
-# Start and stop recording in the running app (needs Settings → Recording → Allow URL control)
-nootle-cli record start --title "Staff sync"
-nootle-cli record stop
-```
-
-Output is JSON by default. Add `--pretty` for human-readable formatting. See `nootle-cli --help` for all commands.
-
-### Automations
-
-Agents and scripts can set up the same automations as the app: integrations, workflows, summary templates, and insight types. Input is validated, and errors list what's allowed.
-
-```bash
-# What can be automated: integration types, actions, and their fields
-nootle-cli catalog
-
-# Connect Slack. Credentials can come from stdin or @file to keep them out of shell history.
-echo '{"bot_token":"xoxb-..."}' | nootle-cli integrations create --type slack --credentials -
-
-# Create a workflow that posts summaries to #eng
-nootle-cli workflows create --name "Post to #eng" --integration <integration-id> --set channel=#eng
-
-# Run it on a meeting now
-nootle-cli workflows run <workflow-id> --meeting <meeting-id>
-
-# Summarize every new meeting with a custom template
-nootle-cli templates create --name "1:1" --section Wins --section Blockers --auto-run
-
-# Extract a custom insight type from every transcript
-nootle-cli insight-types create --name Risk --prompt "Risks or concerns someone raised" --icon alert-triangle
-```
-
-Credentials are stored locally and never printed. If the app is open, reopen the page to see changes made from the CLI.
-
-### Claude Code Skill
-
-Install the skill so Claude can query your meetings and manage automations:
-
-```bash
-claude skill add --global --file "$(dirname $(which nootle-cli))/../skills/nootle-cli.md"
-```
-
-## MCP Server
-
-`nootle-cli mcp` serves Nootle over MCP. The CLI ships inside Nootle.app, so there's nothing extra to install (Settings → About shows the exact command for your install):
+`nootle-cli` ships inside the app. Add Nootle to Claude Code as an MCP server:
 
 ```bash
 claude mcp add --scope user nootle -- /Applications/Nootle.app/Contents/MacOS/nootle-cli mcp
 ```
 
-The server supports MCP 2026-07-28 and the older handshake-based versions. Older setups that run the app with `--mcp` keep working, and the app serves MCP instead of opening whenever an MCP client launches it over stdio.
+Add `--read-only` to the end to stop agents editing or sending anything. The [CLI, MCP and URL scheme guide](docs/cli.md) covers every command.
 
-The server has the same features as the CLI, except API keys, recording control, and the calendar: reading, searching, and editing meetings, labels, notes, action items, and the dictionary; searching your knowledge base (`search_knowledge`, `list_knowledge_sources`), which `ask_meetings` also answers from; summaries, insights, Ask, and other LLM features; and workflows, integrations, summary templates, and insight types. So you can ask an agent things like *"Tag last week's customer calls and summarize what they asked for"* or *"Set up a workflow that posts meeting recaps to #eng"*. Large results come in pages, and tools that delete things ask Claude to confirm with you first.
-
-To give an agent read access only, add `--read-only`: it can search and read your meetings but can't edit, delete, or send anything to an integration. Meeting text comes from everyone in the meeting, so this is the safer choice for agents that act on what they read.
+## Development
 
 ```bash
-claude mcp add --scope user nootle-readonly -- /Applications/Nootle.app/Contents/MacOS/nootle-cli mcp --read-only
+pnpm install
+pnpm tauri dev
 ```
 
-## URL Scheme
-
-Other apps and scripts can control recording with `nootle://` links. This is off by default. Turn on **Settings → Recording → Allow URL control** first.
-
-Every link must carry this Mac's secret `token`, so a web page can't start a recording just by opening a link. Copy a ready-made link from **Settings → Recording**; `nootle-cli record` adds the token for you.
-
-```bash
-open "nootle://record/start?token=$TOKEN&title=Staff%20sync"   # no-op if already recording
-open "nootle://record/stop?token=$TOKEN"
-open "nootle://record/toggle?token=$TOKEN"
-open "nootle://record/status?token=$TOKEN"
-open "nootle://permissions/screen?token=$TOKEN"                # prompt for Screen Recording access
-open "nootle://permissions/status?token=$TOKEN"
-```
-
-Nootle shows a notification whenever a link starts or stops a recording, or fails.
-
-### Releases
-
-Every push to `main` publishes a release. The version comes from the [conventional commits](https://www.conventionalcommits.org/) since the last tag. Any `feat:` bumps the minor version, and anything else bumps the patch. A breaking change (`feat!:` or a `BREAKING CHANGE:` footer) bumps the minor version while Nootle is on 0.x, and the major version from 1.0 on. The rules live in the `[bump]` section of `cliff.toml`.
-
-## Testing
-
-```bash
-# Rust tests (also run on Linux, apart from macOS capture code)
-cd src-tauri && cargo test
-
-# Golden tests: a short two-speaker call through the real transcription,
-# speaker and search models, checking word error rate and speaker labels.
-# Models download (and are hash-checked) into a folder of your choice.
-scripts/fetch-test-models.sh ~/nootle-test-models
-cd src-tauri && XDG_DATA_HOME=~/nootle-test-models cargo test --release --test models_test -- --ignored
-```
-
-On macOS, point the golden tests at your own downloaded models instead by leaving `XDG_DATA_HOME` unset. CI runs these on every backend change.
-
-## Built With
-
-- [Tauri 2](https://tauri.app) — native app shell
-- [React 19](https://react.dev) — frontend UI
-- [ONNX Runtime](https://onnxruntime.ai) — local ML inference
-- [Tailwind CSS](https://tailwindcss.com) — styling
+[docs/development.md](docs/development.md) covers tests, releases, and how integration sign-in works.
 
 ## License
 
