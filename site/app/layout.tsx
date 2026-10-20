@@ -3,7 +3,6 @@ import { Outfit, DM_Sans } from "next/font/google";
 import { JsonLd } from "@/components/JsonLd";
 import { SiteAnalytics } from "@/components/SiteAnalytics";
 import { MotionProvider } from "@/components/MotionProvider";
-import { OG_IMAGE } from "@/components/site-config";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -36,21 +35,12 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://nootle.ai",
     siteName: "Nootle",
-    images: [
-      {
-        url: OG_IMAGE,
-        width: 1200,
-        height: 630,
-        alt: "Nootle - AI Meeting Recorder for Mac",
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Nootle - AI Meeting Recorder for Mac",
     description:
       DESCRIPTION,
-    images: [OG_IMAGE],
   },
   icons: {
     icon: "/favicon.png",
