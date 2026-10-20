@@ -37,6 +37,7 @@ import { formatBytes } from "@/lib/utils";
 import { useIntegrations } from "@/hooks/useIntegrations";
 import { INTEGRATION_TYPES } from "@/lib/integrations";
 import { SNAPSHOTS_SETTING } from "@/hooks/useSnapshots";
+import { COACH_SETTING } from "@/hooks/useCoach";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter", "bedrock", "codex"];
 
@@ -856,6 +857,24 @@ function LiveAssistSetting() {
   );
 }
 
+/** Meeting Coach: a private card on how you showed up in each call. */
+function MeetingCoachSetting() {
+  const [enabled, setEnabled] = useBooleanSetting(COACH_SETTING, false);
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium">Meeting Coach</p>
+        <p className="text-sm text-muted-foreground">
+          After a call, show a private card on how you showed up: talk share, interruptions,
+          questions, filler words, pace and monologues, with trends on the People page. Worked out
+          on this Mac and never shared or exported
+        </p>
+      </div>
+      <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Meeting Coach" />
+    </div>
+  );
+}
+
 /** A menu bar icon with the recording's controls, optionally instead of the Dock icon. */
 function MenuBarSetting() {
   const [enabled, setEnabled] = useBooleanSetting("menu_bar", false);
@@ -1135,6 +1154,7 @@ export function SettingsPage() {
                   />
                 </div>
                 <LiveAssistSetting />
+                <MeetingCoachSetting />
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">Allow URL control</p>
