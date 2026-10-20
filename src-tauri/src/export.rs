@@ -3,8 +3,10 @@
 
 use crate::db::{Database, InsightWithActionItem, Meeting, Summary, TranscriptSegment};
 use crate::error::{NootleError, Result};
+use crate::slides::Slide;
 use crate::summarization::{format_ms, format_transcript};
 use std::fmt::Write;
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
@@ -31,7 +33,17 @@ impl ExportFormat {
     }
 }
 
+/// How a Markdown export shows slide pictures.
+#[derive(Debug, Clone, Copy)]
+pub enum SlideImages<'a> {
+    /// Text only, with a note saying so: the Markdown travels on its own.
+    Omitted,
+    /// Copied into this folder beside the .md file, and linked from it.
+    Folder(&'a str),
+}
+
 /// Render one meeting in `format`, reading whatever that format needs.
+/// Markdown rendered this way has no slide pictures; `write_meeting` adds them.
 pub fn export_meeting(db: &Database, meeting_id: &str, format: ExportFormat) -> Result<String> {
     Ok(match format {
         ExportFormat::Text => format_transcript(&db.get_transcript(meeting_id)?) + "\n",
@@ -39,6 +51,64 @@ pub fn export_meeting(db: &Database, meeting_id: &str, format: ExportFormat) -> 
         ExportFormat::Vtt => to_vtt(&db.get_transcript(meeting_id)?),
         ExportFormat::Markdown => meeting_as_markdown(db, meeting_id, true)?,
     })
+}
+
+/// Writes one meeting to `path` in `format`. A Markdown file's slide pictures
+/// are copied into a `<name> slides` folder beside it.
+pub fn write_meeting(
+    db: &Database,
+    meeting_id: &str,
+    format: ExportFormat,
+    path: &Path,
+) -> Result<()> {
+    if format != ExportFormat::Markdown {
+        std::fs::write(path, export_meeting(db, meeting_id, format)?)?;
+        return Ok(());
+    }
+    let meeting = db.get_meeting(meeting_id)?;
+    let segments = db.get_transcript(meeting_id)?;
+    write_markdown(db, &meeting, &db.list_templates()?, &segments, path)
+}
+
+fn write_markdown(
+    db: &Database,
+    meeting: &Meeting,
+    templates: &[crate::db::Template],
+    segments: &[TranscriptSegment],
+    path: &Path,
+) -> Result<()> {
+    let stem = path
+        .file_stem()
+        .map_or_else(|| "meeting".into(), |s| s.to_string_lossy());
+    let folder = format!("{stem} slides");
+    let slides = crate::slides::aligned(db, &meeting.id, segments)?;
+    if !slides.is_empty() {
+        let dir = path.with_file_name(&folder);
+        std::fs::create_dir_all(&dir)?;
+        for slide in &slides {
+            if let Err(e) = std::fs::copy(&slide.snapshot.image_path, dir.join(image_name(slide))) {
+                tracing::warn!("Couldn't copy slide {} for export: {e}", slide.number);
+            }
+        }
+    }
+    let content = meeting_markdown(
+        db,
+        meeting,
+        templates,
+        segments,
+        &slides,
+        SlideImages::Folder(&folder),
+    )?;
+    std::fs::write(path, content)?;
+    Ok(())
+}
+
+/// `slide-04.jpg`: what a slide's picture is called in an export folder.
+fn image_name(slide: &Slide) -> String {
+    let ext = Path::new(&slide.snapshot.image_path)
+        .extension()
+        .map_or_else(|| "jpg".into(), |e| e.to_string_lossy());
+    format!("slide-{:02}.{ext}", slide.number)
 }
 
 /// One meeting as Markdown; without the transcript it's just the notes,
@@ -54,7 +124,15 @@ pub fn meeting_as_markdown(
     } else {
         Vec::new()
     };
-    meeting_markdown(db, &meeting, &db.list_templates()?, &segments)
+    let slides = crate::slides::for_meeting(db, meeting_id)?;
+    meeting_markdown(
+        db,
+        &meeting,
+        &db.list_templates()?,
+        &segments,
+        &slides,
+        SlideImages::Omitted,
+    )
 }
 
 /// A meeting as Markdown, naming each summary after its template.
@@ -63,6 +141,8 @@ fn meeting_markdown(
     meeting: &Meeting,
     templates: &[crate::db::Template],
     segments: &[TranscriptSegment],
+    slides: &[Slide],
+    images: SlideImages,
 ) -> Result<String> {
     let summaries: Vec<(String, Summary)> = db
         .get_summaries_for_meeting(&meeting.id)?
@@ -77,7 +157,9 @@ fn meeting_markdown(
         })
         .collect();
     let insights = db.get_insights_for_meeting(&meeting.id)?;
-    Ok(to_markdown(meeting, &summaries, &insights, segments))
+    Ok(to_markdown(
+        meeting, &summaries, slides, images, &insights, segments,
+    ))
 }
 
 /// Writes every meeting (archived ones too) into `dir` as Markdown, one
@@ -90,7 +172,6 @@ pub fn export_all_markdown(db: &Database, dir: &std::path::Path) -> Result<usize
     let mut used = std::collections::HashSet::new();
     for meeting in &meetings {
         let segments = db.get_transcript(&meeting.id)?;
-        let content = meeting_markdown(db, meeting, &templates, &segments)?;
         let base = file_name_for(meeting);
         let mut name = format!("{base}.md");
         let mut n = 2;
@@ -98,7 +179,7 @@ pub fn export_all_markdown(db: &Database, dir: &std::path::Path) -> Result<usize
             name = format!("{base} ({n}).md");
             n += 1;
         }
-        std::fs::write(dir.join(name), content)?;
+        write_markdown(db, meeting, &templates, &segments, &dir.join(name))?;
     }
     Ok(meetings.len())
 }
@@ -145,6 +226,8 @@ pub fn to_vtt(segments: &[TranscriptSegment]) -> String {
 pub fn to_markdown(
     meeting: &Meeting,
     summaries: &[(String, Summary)],
+    slides: &[Slide],
+    images: SlideImages,
     insights: &[InsightWithActionItem],
     segments: &[TranscriptSegment],
 ) -> String {
@@ -153,6 +236,38 @@ pub fn to_markdown(
 
     for (name, summary) in summaries {
         let _ = writeln!(out, "## {name}\n\n{}\n", summary.content.trim());
+    }
+
+    if !slides.is_empty() {
+        out.push_str("## Slide recap\n\n");
+        if let SlideImages::Omitted = images {
+            out.push_str(
+                "_Slide pictures aren't included here; they're with the meeting in Nootle._\n\n",
+            );
+        }
+        for slide in slides {
+            let _ = write!(out, "### Slide {}", slide.number);
+            if !slide.headline.is_empty() {
+                let _ = write!(out, " · {}", slide.headline);
+            }
+            let _ = writeln!(
+                out,
+                " ({}–{})\n",
+                format_ms(slide.snapshot.offset_ms),
+                format_ms(slide.end_ms)
+            );
+            if let SlideImages::Folder(folder) = images {
+                let _ = writeln!(
+                    out,
+                    "![Slide {}](<{folder}/{}>)\n",
+                    slide.number,
+                    image_name(slide)
+                );
+            }
+            if let Some(recap) = slide.snapshot.recap.as_deref() {
+                let _ = writeln!(out, "{}\n", recap.trim());
+            }
+        }
     }
 
     let action_items: Vec<_> = insights
@@ -360,6 +475,71 @@ mod tests {
     }
 
     #[test]
+    fn markdown_files_bring_their_slide_pictures() {
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(crate::db::NewMeeting {
+                title: "Deck review".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("snap.jpg");
+        std::fs::write(&image, b"jpeg").unwrap();
+        let snap = db
+            .create_snapshot(
+                &meeting.id,
+                &image.to_string_lossy(),
+                "Q3 revenue\n$4.2M",
+                65_000,
+            )
+            .unwrap();
+        db.set_snapshot_recap(&snap.id, "Sam doubted the forecast.")
+            .unwrap();
+
+        let path = dir.path().join("out").join("Review.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        write_meeting(&db, &meeting.id, ExportFormat::Markdown, &path).unwrap();
+        let md = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            md.contains(
+                "## Slide recap\n\n### Slide 1 · Q3 revenue (01:05–01:05)\n\n\
+                 ![Slide 1](<Review slides/slide-01.jpg>)\n\nSam doubted the forecast.\n"
+            ),
+            "{md}"
+        );
+        let copied = dir.path().join("out/Review slides/slide-01.jpg");
+        assert_eq!(std::fs::read(copied).unwrap(), b"jpeg");
+
+        // Shared or returned as text, there are no pictures to link.
+        let shared = meeting_as_markdown(&db, &meeting.id, false).unwrap();
+        assert!(
+            shared.contains("Slide pictures aren't included"),
+            "{shared}"
+        );
+        assert!(shared.contains("Sam doubted the forecast."), "{shared}");
+        assert!(!shared.contains("!["), "{shared}");
+    }
+
+    #[test]
+    fn meetings_without_slides_export_as_before() {
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(crate::db::NewMeeting {
+                title: "Chat".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Chat.md");
+        write_meeting(&db, &meeting.id, ExportFormat::Markdown, &path).unwrap();
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("Slide"));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
     fn markdown_lists_action_items_as_checkboxes() {
         let item = |content: &str, status: &str, assignee: Option<&str>| InsightWithActionItem {
             id: "i".into(),
@@ -396,6 +576,8 @@ mod tests {
         let md = to_markdown(
             &meeting,
             &[],
+            &[],
+            SlideImages::Omitted,
             &[
                 item("Write the post", "open", Some("Sam")),
                 item("Book the room", "done", None),

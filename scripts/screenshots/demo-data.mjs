@@ -115,6 +115,77 @@ const SUMMARIES = [
   },
 ];
 
+/** A slide as an SVG data URL; the mock's convertFileSrc passes it through. */
+function slideImage(title, lines, accent) {
+  const body = lines
+    .map((l, i) => `<text x="80" y="${250 + i * 64}" font-size="34" fill="#4b5563">${l}</text>`)
+    .join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+    <rect width="1280" height="720" fill="#fbfaf7"/>
+    <rect width="1280" height="14" fill="${accent}"/>
+    <text x="80" y="160" font-family="Helvetica, Arial" font-size="64" font-weight="700" fill="#1f2937">${title}</text>
+    <g font-family="Helvetica, Arial">${body}</g>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+const slide = (number, title, lines, accent, startMs, endMs, recap) => ({
+  id: `snap${number}`,
+  meeting_id: "m1",
+  image_path: slideImage(title, lines, accent),
+  text: [title, ...lines].join("\n"),
+  offset_ms: startMs,
+  created_at: day(28, 17, 0),
+  recap,
+  number,
+  end_ms: endMs,
+  headline: title,
+});
+
+/** The design review's shared deck, aligned to TRANSCRIPT. */
+const SLIDES = [
+  slide(1, "Onboarding funnel", ["Week of July 20", "6 steps · 4,812 new installs"], "#72937A", 10_000, 28_000,
+    "Speaker 1 opened with this morning's funnel numbers, and Speaker 2 asked straight away about step three, the worst drop last time."),
+  slide(2, "Step 3: permissions", ["31% drop-off", "Biggest single leak in the flow", "Support: \u201cwhy screen recording?\u201d"], "#CC765B", 28_000, 47_000,
+    "Speaker 1 confirmed the 31% drop on the permissions screen. Speaker 3 tied it to support tickets from people who don\u2019t understand the screen-recording request."),
+  slide(3, "Inline explainer", ["One sentence above the button", "Two copy variants behind a flag"], "#D9B78B", 47_000, 87_000,
+    "The team agreed to explain the permission in place and ship it this sprint. Speaker 3 will draft two variants by Thursday; Speaker 2 will wire the split behind the existing flag."),
+  slide(4, "Calendar permission", ["Keep in onboarding?", "Or ask on an empty library"], "#6B8FB5", 87_000, 126_000, null),
+];
+
+const SLIDE_SUMMARY_CONTENT = `## Overview
+
+The team reviewed funnel data for the rebuilt onboarding flow [slide 1] and agreed on two changes: an inline explanation for the screen-recording permission, and deferring the calendar permission out of onboarding entirely.
+
+## Decisions
+
+- **Inline permissions explainer ships this sprint.** While the permissions slide was up, Speaker 1 put the drop at 31%, the largest in the flow [slide 2]. Copy will explain the request in place rather than linking to docs [slide 3].
+- **Calendar access leaves onboarding.** Nobody defended keeping it; it becomes a contextual prompt on an empty meetings list [slide 4].
+
+## Action items
+
+- Draft two copy variants for the permissions explainer — **Speaker 3**, by Thursday [slide 3]
+- Wire the variant split behind the existing feature flag — **Speaker 2**
+- Re-measure step-three drop-off after a week of data — **Speaker 1**`;
+
+/**
+ * Overrides for a meeting with a shared slide deck (slide-aware summaries).
+ * Not part of FIXTURES, so the marketing screenshots stay as they are.
+ */
+export const SLIDE_FIXTURES = {
+  list_slides: SLIDES,
+  get_summaries: [{ ...SUMMARIES[0], content: SLIDE_SUMMARY_CONTENT }],
+  generate_slide_recap: SLIDES.map((s) =>
+    s.recap
+      ? s
+      : {
+          ...s,
+          recap:
+            "Speakers 3 and 2 both wanted calendar access out of onboarding, and Speaker 1 settled it: ask the first time someone opens an empty meetings list.",
+        },
+  ),
+};
+
 const INSIGHT_TYPES = [
   {
     id: "it1",
@@ -806,6 +877,7 @@ export const FIXTURES = {
   get_meeting_analytics: ANALYTICS,
   get_audio_data: silentWav(),
   get_scratch_notes: [],
+  list_slides: [],
 
   list_labels: LABELS,
   get_all_meeting_labels: MEETING_LABELS,

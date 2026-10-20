@@ -32,6 +32,7 @@ pub mod remote;
 pub mod sandbox_migration;
 pub mod share;
 pub mod shell_env;
+pub mod slides;
 pub mod snapshots;
 pub mod summarization;
 pub mod transcript_import;
@@ -420,6 +421,8 @@ pub fn run() {
             commands::get_transcript,
             commands::list_snapshots,
             commands::delete_snapshot,
+            commands::list_slides,
+            commands::generate_slide_recap,
             commands::rename_speaker,
             commands::search_transcripts,
             commands::update_transcript_segment,

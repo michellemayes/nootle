@@ -9,10 +9,10 @@
 //! (with the meeting app's and Nootle's own windows left out).
 //!
 //! Text is read off each snapshot on-device so summaries, chat and search can
-//! answer questions like "what did the revenue chart say?".
+//! answer questions like "what did the revenue chart say?" (see `slides`).
 
 use crate::audio::RecordedClock;
-use crate::db::{Database, Snapshot};
+use crate::db::Database;
 use crate::detection::DetectedMeeting;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -265,39 +265,6 @@ fn is_new_content(text: &HashSet<String>, last: &HashSet<String>) -> bool {
     const MIN_WORDS: usize = 5;
     const MIN_DIFFERENT: usize = 6;
     text.len() >= MIN_WORDS && text.symmetric_difference(last).count() >= MIN_DIFFERENT
-}
-
-// ---------------------------------------------------------------------------
-// Context for summaries, chat and search
-// ---------------------------------------------------------------------------
-
-/// Snapshot text to add to a meeting's transcript wherever the LLM reads it.
-/// Empty when the meeting has no snapshots with text.
-pub fn context_section(db: &Database, meeting_id: &str) -> String {
-    let snapshots = db.get_snapshots(meeting_id).unwrap_or_default();
-    format_context(&snapshots)
-}
-
-fn format_context(snapshots: &[Snapshot]) -> String {
-    let lines: Vec<String> = snapshots
-        .iter()
-        .filter(|s| !s.text.trim().is_empty())
-        .map(|s| {
-            format!(
-                "[{}] {}",
-                crate::summarization::format_ms(s.offset_ms),
-                s.text.split_whitespace().collect::<Vec<_>>().join(" ")
-            )
-        })
-        .collect();
-    if lines.is_empty() {
-        return String::new();
-    }
-    format!(
-        "\n\nText read from slides, documents and charts shared on screen during the meeting \
-         (it may include some of the meeting app's own interface):\n{}",
-        lines.join("\n")
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -970,21 +937,6 @@ mod tests {
         assert!(!is_new_content(&slide1_again, &slide1));
         assert!(is_new_content(&slide2, &slide1));
         assert!(!is_new_content(&words("Sam Lee"), &HashSet::new()));
-    }
-
-    #[test]
-    fn context_lists_snapshot_text_with_times() {
-        let snap = |text: &str, offset_ms| Snapshot {
-            id: "s".into(),
-            meeting_id: "m".into(),
-            image_path: "/x.jpg".into(),
-            text: text.into(),
-            offset_ms,
-            created_at: String::new(),
-        };
-        assert_eq!(format_context(&[snap("  ", 0)]), "");
-        let ctx = format_context(&[snap("Revenue\nQ3: $4.2M", 65_000)]);
-        assert!(ctx.ends_with("[01:05] Revenue Q3: $4.2M"), "{ctx}");
     }
 
     #[test]

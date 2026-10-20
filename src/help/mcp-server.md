@@ -27,6 +27,7 @@ MCP (Model Context Protocol) is an open standard that lets AI assistants connect
 - **list_labels**, **save_label**, **update_meeting_labels** — organize meetings with labels (`save_label` creates one, or with `id` changes it)
 - **add_scratch_note** — timestamped notes on a meeting
 - **list_snapshots** — screenshots of shared screens and the text read off them
+- **list_slides** — snapshots as numbered slides (what summaries cite as `[slide N]`), with when each was on screen and its recap
 - **list_dictionary**, **save_dictionary_entry**, **apply_dictionary** — the custom dictionary of names and jargon, and re-applying it to a recorded meeting
 - **list_insights** — decisions, action items, and custom insights, across all meetings or one, filtered by type, status, or text
 - **update_action_item** — mark an action item done or cancelled, or change its assignee or due date
@@ -42,6 +43,7 @@ These send the meeting's transcript to an LLM provider, just like the same butto
 - **list_llm_models** — the providers and models available, and the default
 - **summarize_meeting** — summarize with a template, or with whatever Nootle would run after recording
 - **extract_insights** — pull out decisions, action items, and your custom insight types (`replace` redoes them)
+- **generate_slide_recap** — recap what was said while each of a meeting's slides was on screen (`replace` redoes them)
 - **ask_meeting** — answer a question about one meeting
 - **ask_meetings** — answer a question from all your meetings and your knowledge base, citing them (`scope` picks `meetings` or `knowledge` only; `tags` narrows documents). It can continue or save a conversation in the Ask view. Needs the search model, downloaded in Nootle's settings.
 - **search_knowledge** / **list_knowledge_sources** — find passages in your knowledge-base documents, and list its folders, files, and pages
