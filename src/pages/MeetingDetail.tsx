@@ -32,6 +32,7 @@ import { useScratchPad } from "@/hooks/useScratchPad";
 import { useSnapshots } from "@/hooks/useSnapshots";
 import { useCallNames } from "@/hooks/useCallNames";
 import { SnapshotsSection } from "@/components/SnapshotsSection";
+import { RoomRecap } from "@/components/RoomRecap";
 import { toast } from "@/components/Toaster";
 import {
   AudioPlayerControls,
@@ -58,6 +59,7 @@ import {
   ChevronRight,
   ChevronUp,
   FileText,
+  Headphones,
   Lightbulb,
   List,
   Mail,
@@ -1405,6 +1407,14 @@ export function MeetingDetail() {
           <ExportMenu meeting={meeting} />
           <ShareMenu meeting={meeting} />
           <OpenInClaudeButton meetingId={meeting.id} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDetailTab("listen")}
+            title="Ask the Room: a spoken recap, a voice per speaker"
+          >
+            <Headphones className="h-4 w-4" /> Listen
+          </Button>
           {!chatOpen && (
             <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
               <MessageSquare className="h-4 w-4" /> Ask Nootle
@@ -1641,6 +1651,9 @@ export function MeetingDetail() {
                 <TabsTrigger value="workflows" title="Workflows">
                   {isCompact ? <Zap className="h-4 w-4" /> : "Workflows"}
                 </TabsTrigger>
+                <TabsTrigger value="listen" title="Listen">
+                  {isCompact ? <Headphones className="h-4 w-4" /> : "Listen"}
+                </TabsTrigger>
               </TabsList>
             </div>
             <TabsContent value="notes" className="flex flex-1 flex-col mt-0">
@@ -1779,6 +1792,9 @@ export function MeetingDetail() {
             </TabsContent>
             <TabsContent value="insights" className="flex flex-1 flex-col mt-0">
               <InsightsPanel meetingId={id!} onSeek={jumpToMs} />
+            </TabsContent>
+            <TabsContent value="listen" className="flex flex-1 flex-col mt-0 overflow-hidden">
+              <RoomRecap meetingId={id!} speakerColors={speakerMap} />
             </TabsContent>
             <TabsContent value="analytics" className="flex flex-1 flex-col mt-0">
               <AnalyticsPanel meetingId={id!} />

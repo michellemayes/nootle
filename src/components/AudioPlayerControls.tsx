@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { RotateCcw, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMs } from "@/lib/utils";
-import type { TranscriptSegment } from "@/types";
 
 export const SKIP_SECONDS = 15;
 const SPEEDS = [1, 1.25, 1.5, 2];
@@ -32,8 +31,9 @@ export function useIsPlaying(audio: HTMLAudioElement | null) {
   return playing;
 }
 
-/** Index of the last segment starting at or before `ms` (-1 if none). */
-export function segmentIndexAt(segments: TranscriptSegment[], ms: number): number {
+/** Index of the last segment (or recap line) starting at or before `ms`
+ * (-1 if none). */
+export function segmentIndexAt(segments: { start_ms: number }[], ms: number): number {
   let lo = 0;
   let hi = segments.length - 1;
   let found = -1;
@@ -49,15 +49,20 @@ export function segmentIndexAt(segments: TranscriptSegment[], ms: number): numbe
   return found;
 }
 
+/** The segment under the playhead, or -1 before playback starts. */
+export function playheadIndex(audio: HTMLAudioElement, segments: { start_ms: number }[]): number {
+  return audio.currentTime === 0 && audio.paused ? -1 : segmentIndexAt(segments, audio.currentTime * 1000);
+}
+
 /**
- * Marks the transcript row under the playhead with `data-active` (rows carry
+ * Marks the transcript row (or recap line) under the playhead with `data-active` (rows carry
  * `data-segment-id`) and keeps it in view, unless the reader has scrolled
  * away from it. Done on the DOM rather than in React state so playback
  * doesn't re-render the whole transcript every time the line changes.
  */
 export function useFollowPlayback(
   audio: HTMLAudioElement | null,
-  segments: TranscriptSegment[],
+  segments: { id: string; start_ms: number }[],
   viewport: HTMLElement | null,
 ) {
   useEffect(() => {
@@ -81,9 +86,7 @@ export function useFollowPlayback(
     };
 
     const update = () => {
-      const index = audio.currentTime === 0 && audio.paused
-        ? -1
-        : segmentIndexAt(segments, audio.currentTime * 1000);
+      const index = playheadIndex(audio, segments);
       const id = index >= 0 ? segments[index].id : null;
       if (activeEl?.isConnected && activeEl.dataset.segmentId === id) return;
       const next = id
