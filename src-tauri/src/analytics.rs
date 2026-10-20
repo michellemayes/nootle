@@ -12,18 +12,18 @@ pub(crate) const MAX_TURN_GAP_MS: i64 = 3_000;
 
 /// One stretch of a single speaker talking.
 #[derive(Debug, Clone, PartialEq)]
-struct Turn<'a> {
-    speaker: &'a str,
-    start_ms: i64,
-    end_ms: i64,
+pub(crate) struct Turn<'a> {
+    pub speaker: &'a str,
+    pub start_ms: i64,
+    pub end_ms: i64,
     /// Time actually spent speaking, without the pauses between sentences.
-    speech_ms: i64,
+    pub speech_ms: i64,
 }
 
 /// Merges consecutive sentences by the same speaker into turns. Transcript
 /// segments are single sentences, so counting them as turns would make
 /// every monologue a few seconds long.
-fn turns<'a>(segments: impl IntoIterator<Item = (&'a str, i64, i64)>) -> Vec<Turn<'a>> {
+pub(crate) fn turns<'a>(segments: impl IntoIterator<Item = (&'a str, i64, i64)>) -> Vec<Turn<'a>> {
     let mut sorted: Vec<(&str, i64, i64)> = segments.into_iter().collect();
     sorted.sort_by_key(|s| s.1);
     let mut turns: Vec<Turn> = Vec::new();

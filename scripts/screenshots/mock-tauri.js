@@ -46,6 +46,9 @@
         system_level: 0.02 + 0.015 * Math.cos(t * 1.3),
       };
     }
+    if (cmd === "get_app_setting" && args?.key in (fixtures.app_settings || {})) {
+      return fixtures.app_settings[args.key];
+    }
     if (cmd in fixtures) return fixtures[cmd];
     if (!cmd.startsWith("plugin:")) {
       console.warn(`[mock-tauri] no fixture for "${cmd}" — returning null`);

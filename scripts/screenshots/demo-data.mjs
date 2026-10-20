@@ -781,6 +781,43 @@ const LIVE_ASSIST_CARD = {
   automatic: true,
 };
 
+/** Meeting Coach: you in the design review, and across recent calls. */
+const COACH_METRICS = {
+  talk_share: 0.34,
+  talk_time_ms: 762_000,
+  words: 1_880,
+  words_per_minute: 148,
+  interruptions: 2,
+  times_interrupted: 1,
+  questions: 9,
+  statements: 41,
+  filler_count: 27,
+  fillers_per_minute: 2.1,
+  top_fillers: [["like", 11], ["kind of", 8], ["um", 6]],
+  longest_monologue_ms: 161_000,
+  long_monologues: 1,
+};
+
+const COACH_TRENDS = [
+  ["Customer call — Northwind", 0.52, 162, 5, 3, 4.2, 312_000],
+  ["Sprint planning", 0.41, 158, 4, 5, 3.8, 248_000],
+  ["Pricing review", 0.47, 155, 3, 4, 3.1, 226_000],
+  ["1:1 with Jordan", 0.38, 151, 2, 8, 2.9, 175_000],
+  ["Weekly Product Sync", 0.36, 150, 2, 7, 2.4, 190_000],
+  ["Design Review — Onboarding Flow", 0.34, 148, 2, 9, 2.1, 161_000],
+].map(([title, talk_share, words_per_minute, interruptions, questions, fillers_per_minute, longest_monologue_ms], i) => ({
+  ...COACH_METRICS,
+  meeting_id: `coach-${i}`,
+  title,
+  start_time: day(15 + i * 2, 17, 0),
+  talk_share,
+  words_per_minute,
+  interruptions,
+  questions,
+  fillers_per_minute,
+  longest_monologue_ms,
+}));
+
 /**
  * Command name -> response. Anything not listed here resolves to `null`, which
  * is enough for the fire-and-forget commands the screenshots never trigger.
@@ -804,8 +841,17 @@ export const FIXTURES = {
   get_all_insights: [...M1_INSIGHTS, ...OTHER_INSIGHTS],
   list_insight_types: INSIGHT_TYPES,
   get_meeting_analytics: ANALYTICS,
+  get_meeting_coach: {
+    metrics: COACH_METRICS,
+    tip: "Before you explain a decision, pause and ask one open question, like “What would make this harder for you?”, and let it land before you answer.",
+  },
+  get_coach_trends: COACH_TRENDS,
+  list_people: [],
   get_audio_data: silentWav(),
   get_scratch_notes: [],
+  list_snapshots: [],
+  list_voice_profiles: [],
+  list_dictionary_entries: [],
 
   list_labels: LABELS,
   get_all_meeting_labels: MEETING_LABELS,
@@ -834,6 +880,8 @@ export const FIXTURES = {
   get_downloaded_models: ["parakeet-v3", "nomic-embed-text"],
   get_available_models: [],
   get_app_setting: null,
+  // Per-key settings for get_app_setting; unlisted keys are unset.
+  app_settings: {},
   check_permissions: { microphone: true, screen_recording: true, calendar: true },
 
   get_linear_tickets: [],

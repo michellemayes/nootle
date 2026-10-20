@@ -1177,6 +1177,12 @@ impl Database {
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS coach_tips (
+                meeting_id TEXT PRIMARY KEY REFERENCES meetings(id) ON DELETE CASCADE,
+                tip TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             ",
         )?;
         Self::seed_default_insight_types(&conn)?;
@@ -4573,6 +4579,49 @@ impl Database {
         conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
             params![key, value],
+        )?;
+        Ok(())
+    }
+
+    // --- Meeting Coach ---
+
+    /// Meetings you spoke in as `speaker`, newest first: id, title, start time.
+    pub fn meetings_with_speaker(
+        &self,
+        speaker: &str,
+        limit: usize,
+    ) -> Result<Vec<(String, String, String)>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.title, m.start_time FROM meetings m
+             WHERE m.status != 'recording'
+               AND EXISTS (SELECT 1 FROM transcripts t WHERE t.meeting_id = m.id AND t.speaker_label = ?1)
+             ORDER BY m.start_time DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![speaker, limit as i64], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn get_coach_tip(&self, meeting_id: &str) -> Result<Option<String>> {
+        let conn = self.lock_conn()?;
+        Ok(conn
+            .query_row(
+                "SELECT tip FROM coach_tips WHERE meeting_id = ?1",
+                params![meeting_id],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    pub fn save_coach_tip(&self, meeting_id: &str, tip: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO coach_tips (meeting_id, tip) VALUES (?1, ?2)",
+            params![meeting_id, tip],
         )?;
         Ok(())
     }

@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Link } from "react-router-dom";
-import { Users } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { GraduationCap, Users } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadingState } from "@/components/LoadingState";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { ActionItemCheckbox } from "@/components/ActionItemCheckbox";
+import { CoachTrends } from "@/components/Coach";
+import { useBooleanSetting } from "@/hooks/useBooleanSetting";
+import { COACH_SETTING, useCoachTrends } from "@/hooks/useCoach";
 import { formatDate, cn, plural } from "@/lib/utils";
 import type { InsightWithActionItem, Meeting } from "@/types";
 
@@ -31,11 +34,17 @@ function minutes(ms: number): string {
 }
 
 /** Everyone you've named as a speaker: when you last met, what you
- * talked about, and what they owe. */
+ * talked about, and what they owe. With Meeting Coach on, "You" leads the
+ * list with your coaching trends. */
 export function PeoplePage() {
   const [people, setPeople] = useState<Person[] | null>(null);
   const [selected, setSelected] = useState<Person | null>(null);
   const [detail, setDetail] = useState<PersonDetail | null>(null);
+  const [searchParams] = useSearchParams();
+  const [coachEnabled] = useBooleanSetting(COACH_SETTING, false);
+  const [youSelected, setYouSelected] = useState(searchParams.has("coach"));
+  const trends = useCoachTrends(coachEnabled);
+  const showYou = coachEnabled && youSelected;
 
   useEffect(() => {
     invoke<Person[]>("list_people")
@@ -83,7 +92,7 @@ export function PeoplePage() {
       />
       {people === null ? (
         <LoadingState message="Loading people…" />
-      ) : people.length === 0 ? (
+      ) : people.length === 0 && !coachEnabled ? (
         <EmptyState
           icon={Users}
           title="No people yet"
@@ -93,13 +102,33 @@ export function PeoplePage() {
         <div className="flex min-h-0 flex-1">
           <ScrollArea className="w-64 shrink-0 border-r">
             <ul className="p-2">
+              {coachEnabled && (
+                <li>
+                  <button
+                    onClick={() => setYouSelected(true)}
+                    className={cn(
+                      "w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted",
+                      showYou && "bg-muted",
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <GraduationCap className="h-3.5 w-3.5 text-muted-foreground" />
+                      You
+                    </span>
+                    <p className="text-xs text-muted-foreground">Your coaching trends</p>
+                  </button>
+                </li>
+              )}
               {people.map((p) => (
                 <li key={p.name}>
                   <button
-                    onClick={() => setSelected(p)}
+                    onClick={() => {
+                      setSelected(p);
+                      setYouSelected(false);
+                    }}
                     className={cn(
                       "w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted",
-                      selected?.name === p.name && "bg-muted",
+                      !showYou && selected?.name === p.name && "bg-muted",
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -120,7 +149,8 @@ export function PeoplePage() {
             </ul>
           </ScrollArea>
           <ScrollArea className="flex-1">
-            {detail && selected && detail.name === selected.name && (
+            {(showYou || (coachEnabled && !selected)) && <CoachTrends points={trends} />}
+            {!showYou && detail && selected && detail.name === selected.name && (
               <div className="max-w-3xl space-y-8 p-6">
                 <div>
                   <h2 className="text-lg font-semibold">{detail.name}</h2>
