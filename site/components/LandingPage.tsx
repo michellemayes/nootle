@@ -5,6 +5,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { CopyCommand } from "@/components/CopyCommand";
 import { DownloadButton } from "@/components/DownloadButton";
 import { linkClass, outfit } from "@/components/site-config";
+import ogImage from "@/app/opengraph-image.png";
 
 export type LandingContent = {
   /** Short label above the headline, e.g. "Granola alternative". */
@@ -33,7 +34,10 @@ export type LandingContent = {
   disclaimer?: string;
 };
 
-/** Page metadata for a landing page, keeping the site's Open Graph image and Twitter card. */
+/**
+ * Page metadata for a landing page, keeping the site's Open Graph image and Twitter card.
+ * Setting `openGraph` here drops the root opengraph-image.png, so the image is passed explicitly.
+ */
 export function landingMetadata({
   path,
   title,
@@ -53,13 +57,13 @@ export function landingMetadata({
       type: "website",
       url: path,
       siteName: "Nootle",
-      images: [{ url: "/og-image.png", width: 1200, height: 630, alt: title }],
+      images: [{ url: ogImage.src, width: ogImage.width, height: ogImage.height, alt: title }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: ["/og-image.png"],
+      images: [ogImage.src],
     },
   };
 }

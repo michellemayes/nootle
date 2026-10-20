@@ -35,21 +35,12 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://nootle.ai",
     siteName: "Nootle",
-    images: [
-      {
-        url: "/og-image.png",
-        width: 1200,
-        height: 630,
-        alt: "Nootle - AI Meeting Recorder for Mac",
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Nootle - AI Meeting Recorder for Mac",
     description:
       DESCRIPTION,
-    images: ["/og-image.png"],
   },
   icons: {
     icon: "/favicon.png",
