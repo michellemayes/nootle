@@ -2,14 +2,22 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CalendarDays, ChevronDown, ChevronRight, Circle, History, Video, X } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Circle, History, NotebookText, Video, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { MeetingBriefView } from "@/components/MeetingBrief";
 import type { RecordingIntent } from "@/pages/RecordingView";
-import { relativeWhen } from "@/lib/momentum";
+import { clockTime, relativeWhen } from "@/lib/momentum";
 import { useMeetings } from "@/hooks/useMeetings";
 import { useAllInsights } from "@/hooks/useInsights";
-import type { CalendarEvent, InsightWithActionItem, Meeting, UpcomingEvents } from "@/types";
+import type {
+  CalendarEvent,
+  InsightWithActionItem,
+  Meeting,
+  MeetingBrief,
+  UpcomingEvents,
+} from "@/types";
 
 const DISMISS_KEY = "calendarPromptDismissed";
 const REFRESH_MS = 5 * 60 * 1000;
@@ -17,8 +25,6 @@ const REFRESH_MS = 5 * 60 * 1000;
 const FOCUS_REFRESH_MS = 60 * 1000;
 const SHOWN = 3;
 
-const time = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 const NO_EVENTS: CalendarEvent[] = [];
 
@@ -105,6 +111,52 @@ function BriefLine({ brief }: { brief: Brief }) {
   );
 }
 
+/** The full pre-meeting brief for an event, opened from the upcoming list. */
+function BriefDialog({
+  event,
+  onClose,
+  onRecord,
+}: {
+  event: CalendarEvent | null;
+  onClose: () => void;
+  onRecord: (event: CalendarEvent) => void;
+}) {
+  const navigate = useNavigate();
+  const [brief, setBrief] = useState<MeetingBrief | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setBrief(null);
+    setError(null);
+    if (!event) return;
+    invoke<MeetingBrief>("get_meeting_brief", { eventId: event.id })
+      .then(setBrief)
+      .catch((e) => setError(String(e)));
+  }, [event]);
+
+  return (
+    <Dialog open={event !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="flex max-h-[80vh] flex-col sm:max-w-md">
+        <DialogTitle className="sr-only">Brief for {event?.title}</DialogTitle>
+        <DialogDescription className="sr-only">
+          Who's coming, open action items, last time's decisions and related documents
+        </DialogDescription>
+        {brief ? (
+          <MeetingBriefView
+            brief={brief}
+            onRecord={() => event && onRecord(event)}
+            onOpenMeeting={(id) => navigate(`/meeting/${id}`)}
+          />
+        ) : (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {error ?? "Putting the brief together…"}
+          </p>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function readDismissed(): boolean {
   try {
     return localStorage.getItem(DISMISS_KEY) === "1";
@@ -122,6 +174,7 @@ export function UpcomingMeetings() {
   const [upcoming, setUpcoming] = useState<UpcomingEvents | null>(null);
   const [dismissed, setDismissed] = useState(readDismissed);
   const [now, setNow] = useState(() => Date.now());
+  const [briefFor, setBriefFor] = useState<CalendarEvent | null>(null);
   const events = useMemo(() => upcoming?.events.slice(0, SHOWN) ?? [], [upcoming]);
   const briefs = useBriefs(upcoming?.status === "granted" ? events : NO_EVENTS);
 
@@ -194,6 +247,7 @@ export function UpcomingMeetings() {
 
   return (
     <section className="space-y-2">
+      <BriefDialog event={briefFor} onClose={() => setBriefFor(null)} onRecord={record} />
       <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Up next
       </h2>
@@ -204,7 +258,7 @@ export function UpcomingMeetings() {
           return (
             <div key={event.id} className="flex items-center gap-3 px-4 py-2.5">
               <span className="w-36 shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-                {time(event.start)} – {time(event.end)}
+                {clockTime(event.start)} – {clockTime(event.end)}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
@@ -228,6 +282,15 @@ export function UpcomingMeetings() {
                 )}
                 {brief && <BriefLine brief={brief} />}
               </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs"
+                onClick={() => setBriefFor(event)}
+                title={`Brief for "${event.title}"`}
+              >
+                <NotebookText /> Brief
+              </Button>
               {event.meeting_url && (
                 <Button
                   size="sm"

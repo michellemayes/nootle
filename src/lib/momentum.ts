@@ -148,3 +148,7 @@ export function relativeWhen(dateStr: string, now = new Date()): string {
   }
   return monthDayFmt.format(d);
 }
+
+/** A clock time like "2:30 PM". */
+export const clockTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });

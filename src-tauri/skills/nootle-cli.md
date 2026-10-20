@@ -215,6 +215,7 @@ Never ask the user to paste an API key into the chat; have them run `api-keys se
 ```bash
 nootle-cli record start --title "Design review"   # also: record stop, record toggle
 nootle-cli calendar --hours 24
+nootle-cli brief                     # next meeting's brief; --event <id> for another
 ```
 
 `record` sends a `nootle://` URL to the running app, which must have Settings → Recording → Allow URL control on (`settings set remote_control_enabled true`). The app reports the result as a notification, not to the CLI.

@@ -67,6 +67,7 @@ pub const TOGGLE_SETTINGS: &[&str] = &[
     crate::dictionary::AUTO_LEARN_SETTING,
     crate::snapshots::SETTING_KEY,
     crate::live_assist::SETTING_KEY,
+    crate::brief::SETTING_KEY,
 ];
 /// Settings the MCP server refuses to change. URL control lets other apps
 /// start recordings and snapshots capture shared screens, so turning either
@@ -90,10 +91,11 @@ const MAX_CONSENT_MESSAGE_CHARS: usize = 600;
 
 /// Settings the app, CLI, and MCP server can read and change.
 pub fn editable_settings() -> impl Iterator<Item = &'static str> {
-    TOGGLE_SETTINGS
-        .iter()
-        .copied()
-        .chain([SUMMARIZATION_PROVIDER_SETTING, CONSENT_MESSAGE_SETTING])
+    TOGGLE_SETTINGS.iter().copied().chain([
+        SUMMARIZATION_PROVIDER_SETTING,
+        CONSENT_MESSAGE_SETTING,
+        crate::brief::LEAD_SETTING,
+    ])
 }
 
 pub fn validate_one_of(what: &str, value: &str, allowed: &[&str]) -> Result<()> {
@@ -146,6 +148,9 @@ pub fn validate_setting(key: &str, value: &str) -> Result<()> {
             anyhow!("The consent message can be at most {MAX_CONSENT_MESSAGE_CHARS} characters"),
         ),
         CONSENT_MESSAGE_SETTING => Ok(()),
+        crate::brief::LEAD_SETTING => {
+            validate_one_of("lead time", value, crate::brief::LEAD_CHOICES)
+        }
         _ => validate_one_of("value", value, &["true", "false"]),
     }
 }

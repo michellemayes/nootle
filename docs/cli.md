@@ -39,6 +39,10 @@ nootle-cli ask "What did the study find?" --tag Research
 nootle-cli meetings label <meeting-id> --add Customer
 nootle-cli actions update <action-item-id> --status done
 
+# Brief for the next calendar meeting (or --event <id> from `nootle-cli calendar`):
+# who's coming, open action items, last time's decisions, related documents
+nootle-cli brief --pretty
+
 # Start and stop recording in the running app (needs Settings → Recording → Allow URL control)
 nootle-cli record start --title "Staff sync"
 nootle-cli record stop
@@ -90,7 +94,7 @@ claude mcp add --scope user nootle -- /Applications/Nootle.app/Contents/MacOS/no
 
 The server supports MCP 2026-07-28 and the older handshake-based versions. Older setups that run the app with `--mcp` keep working, and the app serves MCP instead of opening whenever an MCP client launches it over stdio.
 
-The server has the same features as the CLI, except API keys, recording control, and the calendar: reading, searching, and editing meetings, labels, notes, action items, and the dictionary; searching your knowledge base (`search_knowledge`, `list_knowledge_sources`), which `ask_meetings` also answers from; summaries, insights, Ask, and other LLM features; and workflows, integrations, summary templates, and insight types. So you can ask an agent things like *"Tag last week's customer calls and summarize what they asked for"* or *"Set up a workflow that posts meeting recaps to #eng"*. Large results come in pages, and tools that delete things ask Claude to confirm with you first.
+The server has the same features as the CLI, except API keys, recording control, and listing the calendar: reading, searching, and editing meetings, labels, notes, action items, and the dictionary; searching your knowledge base (`search_knowledge`, `list_knowledge_sources`), which `ask_meetings` also answers from; a pre-meeting brief for an upcoming calendar event (`get_meeting_brief`); summaries, insights, Ask, and other LLM features; and workflows, integrations, summary templates, and insight types. So you can ask an agent things like *"Tag last week's customer calls and summarize what they asked for"* or *"Set up a workflow that posts meeting recaps to #eng"*. Large results come in pages, and tools that delete things ask Claude to confirm with you first.
 
 To give an agent read access only, add `--read-only`: it can search and read your meetings but can't edit, delete, or send anything to an integration. Meeting text comes from everyone in the meeting, so this is the safer choice for agents that act on what they read.
 

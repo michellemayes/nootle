@@ -35,6 +35,10 @@
           (!args?.status || i.status === args.status || i.status === null),
       );
     }
+    // Settings are keyed; unset ones are null.
+    if (cmd === "get_app_setting") {
+      return (fixtures.app_settings || {})[args?.key] ?? null;
+    }
     // A live recording's input levels, wobbling like speech for the meter.
     if (cmd === "recording_status") {
       const t = Date.now() / 180;
