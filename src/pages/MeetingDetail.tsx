@@ -24,7 +24,7 @@ import { useSummaries } from "@/hooks/useSummaries";
 import { useInsights } from "@/hooks/useInsights";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useLinearTickets, useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
-import { cn, formatMs, formatDate, isInteractiveTarget, statusLabel, statusVariant } from "@/lib/utils";
+import { cn, formatMs, formatDate, isInteractiveTarget, momentLink, statusLabel, statusVariant } from "@/lib/utils";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
@@ -41,8 +41,8 @@ import {
   useFollowPlayback,
   useIsPlaying,
 } from "@/components/AudioPlayerControls";
-import { commitmentAge, momentLink } from "@/components/CommitmentRow";
-import { listen } from "@tauri-apps/api/event";
+import { VerdictIcon, commitmentAge } from "@/components/CommitmentRow";
+import { useFollowups } from "@/hooks/useCommitments";
 import type { Commitment, LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment, Workflow, WorkflowRun } from "@/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -59,10 +59,8 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  CircleCheck,
   FileText,
   Handshake,
-  Hourglass,
   Lightbulb,
   List,
   Mail,
@@ -397,34 +395,13 @@ function InsightSection<T extends { id: string }>({
   );
 }
 
-/** What this meeting showed done or slipped from earlier meetings'
- * commitments, kept fresh as the meeting is checked. */
-function useFollowups(meetingId: string) {
-  const [followups, setFollowups] = useState<Commitment[]>([]);
-  const load = useCallback(() => {
-    invoke<Commitment[]>("get_meeting_followups", { meetingId }).then(setFollowups).catch(() => {});
-  }, [meetingId]);
-  useEffect(() => {
-    load();
-    const unlisten = listen<string>("commitments-updated", (e) => {
-      if (e.payload === meetingId) load();
-    });
-    return () => { unlisten.then((fn) => fn()); };
-  }, [meetingId, load]);
-  return [followups, setFollowups] as const;
-}
-
 /** A commitment from an earlier meeting, and what this one showed about it. */
 function FollowUpRow({ commitment: c, onSeek }: { commitment: Commitment; onSeek?: (ms: number) => void }) {
   const done = c.evidence?.verdict === "done";
   return (
     <div className="rounded-md border p-3 space-y-1">
       <div className="flex items-start gap-2">
-        {done ? (
-          <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-success-foreground" />
-        ) : (
-          <Hourglass className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
-        )}
+        <VerdictIcon verdict={done ? "done" : "slipped"} className="mt-0.5 h-4 w-4" />
         <p className="flex-1 text-sm leading-relaxed">{c.content}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2 pl-6 text-xs text-muted-foreground">

@@ -650,6 +650,11 @@ pub struct InsightWithActionItem {
     pub meeting_start_time: Option<String>,
 }
 
+/// Joins each commitment to the latest moment that showed it done or slipped.
+const LATEST_EVIDENCE: &str = "LEFT JOIN commitment_evidence e ON e.rowid = (
+     SELECT rowid FROM commitment_evidence WHERE action_item_id = a.id
+     ORDER BY created_at DESC, rowid DESC LIMIT 1)";
+
 /// An action item someone owns, followed across the meetings after it.
 #[derive(Debug, Clone, Serialize)]
 pub struct Commitment {
@@ -4439,13 +4444,19 @@ impl Database {
     /// newest first, each with the latest moment that showed it done or
     /// slipped. `today` (YYYY-MM-DD) decides which open ones are past due.
     pub fn list_commitments(&self, today: &str) -> Result<Vec<Commitment>> {
-        self.query_commitments(
-            "LEFT JOIN commitment_evidence e ON e.rowid = (
-                 SELECT rowid FROM commitment_evidence WHERE action_item_id = a.id
-                 ORDER BY created_at DESC, rowid DESC LIMIT 1)",
-            None,
-            today,
-        )
+        self.query_commitments(LATEST_EVIDENCE, "", None, today)
+    }
+
+    /// The commitments still to be done (open or slipped).
+    pub fn pending_commitments(&self, today: &str) -> Result<Vec<Commitment>> {
+        self.query_commitments(LATEST_EVIDENCE, "AND a.status = 'open'", None, today)
+    }
+
+    /// One commitment by its action item's ID; `None` if it has no owner.
+    pub fn get_commitment(&self, id: &str, today: &str) -> Result<Option<Commitment>> {
+        Ok(self
+            .query_commitments(LATEST_EVIDENCE, "AND a.id = ?1", Some(id), today)?
+            .pop())
     }
 
     /// Commitments from earlier meetings that `meeting_id` showed done or
@@ -4453,30 +4464,39 @@ impl Database {
     pub fn commitment_followups(&self, meeting_id: &str, today: &str) -> Result<Vec<Commitment>> {
         self.query_commitments(
             "JOIN commitment_evidence e ON e.action_item_id = a.id AND e.meeting_id = ?1",
+            "",
             Some(meeting_id),
             today,
         )
     }
 
+    /// Commitments joined to their evidence by `evidence_join`, narrowed by
+    /// `filter`; `param` binds ?1 in either.
     fn query_commitments(
         &self,
         evidence_join: &str,
-        meeting_id: Option<&str>,
+        filter: &str,
+        param: Option<&str>,
         today: &str,
     ) -> Result<Vec<Commitment>> {
         let conn = self.lock_conn()?;
+        // Meetings since each one, counted once per meeting rather than per row.
         let mut stmt = conn.prepare(&format!(
-            "SELECT a.id, a.assignee, i.content, a.due_date, a.status, a.slipped_at IS NOT NULL,
+            "WITH since AS (
+                 SELECT id, RANK() OVER (ORDER BY start_time DESC) - 1 AS n
+                 FROM meetings WHERE status != 'recording'
+             )
+             SELECT a.id, a.assignee, i.content, a.due_date, a.status, a.slipped_at IS NOT NULL,
                     i.meeting_id, m.title, m.start_time, i.transcript_start_ms,
-                    (SELECT COUNT(*) FROM meetings later
-                     WHERE later.start_time > m.start_time AND later.status != 'recording'),
+                    COALESCE(since.n, 0),
                     e.meeting_id, em.title, em.start_time, e.verdict, e.timestamp_ms, e.quote
              FROM action_items a
              JOIN insights i ON i.id = a.insight_id
              JOIN meetings m ON m.id = i.meeting_id
+             LEFT JOIN since ON since.id = m.id
              {evidence_join}
              LEFT JOIN meetings em ON em.id = e.meeting_id
-             WHERE TRIM(COALESCE(a.assignee, '')) != '' AND m.status != 'archived'
+             WHERE TRIM(COALESCE(a.assignee, '')) != '' AND m.status != 'archived' {filter}
              ORDER BY m.start_time DESC, i.transcript_start_ms ASC NULLS LAST"
         ))?;
         let row_to_commitment = |row: &rusqlite::Row| -> rusqlite::Result<Commitment> {
@@ -4513,11 +4533,9 @@ impl Database {
                 evidence,
             })
         };
-        let rows = match meeting_id {
-            Some(id) => stmt.query_map(params![id], row_to_commitment)?,
-            None => stmt.query_map([], row_to_commitment)?,
-        }
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(param), row_to_commitment)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
@@ -4571,16 +4589,16 @@ impl Database {
         Ok(())
     }
 
-    /// A meeting's search passages in order, as (index, text, start, end).
-    pub fn meeting_chunks(&self, meeting_id: &str) -> Result<Vec<(i64, String, i64, i64)>> {
+    /// A meeting's search passages by index, as (text, start, end).
+    pub fn meeting_chunks(&self, meeting_id: &str) -> Result<Vec<(String, i64, i64)>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare_cached(
-            "SELECT chunk_index, text, start_ms, end_ms FROM transcript_chunks
+            "SELECT text, start_ms, end_ms FROM transcript_chunks
              WHERE meeting_id = ?1 ORDER BY chunk_index",
         )?;
         let chunks = stmt
             .query_map(params![meeting_id], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(chunks)

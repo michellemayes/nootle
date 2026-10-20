@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { FileText } from "lucide-react";
-import { formatMs } from "@/lib/utils";
+import { formatMs, momentLink } from "@/lib/utils";
 import { toast } from "@/components/Toaster";
 import type { ChatSource } from "@/types";
 
@@ -9,13 +9,14 @@ export function openKnowledgeDocument(id: string) {
   invoke("open_knowledge_document", { id }).catch((err) => toast(String(err)));
 }
 
-/** A cited passage: a meeting moment opens the meeting; a document opens the file. */
+/** A cited passage: a meeting moment opens the meeting at that moment (its
+ * route goes to `onOpenMeeting`); a document opens the file. */
 export function SourceCitation({
   source,
   onOpenMeeting,
 }: {
   source: ChatSource;
-  onOpenMeeting: (meetingId: string) => void;
+  onOpenMeeting: (path: string) => void;
 }) {
   const className =
     "inline-flex max-w-full items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20 transition-colors";
@@ -35,7 +36,7 @@ export function SourceCitation({
     );
   }
   return (
-    <button onClick={() => onOpenMeeting(source.meeting_id)} className={className}>
+    <button onClick={() => onOpenMeeting(momentLink(source.meeting_id, source.start_ms))} className={className}>
       {source.meeting_title}, {formatMs(source.start_ms)}
     </button>
   );

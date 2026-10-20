@@ -177,7 +177,7 @@ export function LiveAssist({
               <div className="min-w-0 flex-1 space-y-1.5">
                 <p className="leading-relaxed text-foreground">{card.question}</p>
                 {card.sources.map((s, i) => (
-                  <SourceCitation key={i} source={s} onOpenMeeting={(id) => navigate(`/meeting/${id}`)} />
+                  <SourceCitation key={i} source={s} onOpenMeeting={navigate} />
                 ))}
               </div>
               <button
@@ -210,7 +210,7 @@ export function LiveAssist({
                     <SourceCitation
                       key={i}
                       source={s}
-                      onOpenMeeting={(id) => navigate(`/meeting/${id}`)}
+                      onOpenMeeting={navigate}
                     />
                   ))}
                 </div>

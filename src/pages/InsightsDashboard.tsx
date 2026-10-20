@@ -17,7 +17,8 @@ import type { InsightWithActionItem, InsightType, LinearTeam } from "@/types";
 import type { LucideIcon } from "lucide-react";
 import { Handshake, Lightbulb, Search, Ticket } from "lucide-react";
 import { ActionItemCheckbox } from "@/components/ActionItemCheckbox";
-import { CommitmentRow } from "@/components/CommitmentRow";
+import { CommitmentRow, isPending } from "@/components/CommitmentRow";
+import { DueDate } from "@/components/DueDate";
 import { useCommitments } from "@/hooks/useCommitments";
 import { useBooleanSetting } from "@/hooks/useBooleanSetting";
 import { formatDate } from "@/lib/utils";
@@ -196,28 +197,6 @@ function DashboardActionItem({
   );
 }
 
-/** YYYY-MM-DD in local time, comparable as a string. */
-function localIsoDate(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-/** A due date that calls out overdue and due-today items while they're open. */
-function DueDate({ date, done }: { date: string; done: boolean }) {
-  const today = localIsoDate(new Date());
-  const label = new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-  if (!done && date < today) {
-    return <Badge variant="destructive" size="sm">Overdue · {label}</Badge>;
-  }
-  if (!done && date === today) {
-    return <Badge variant="warning" size="sm">Due today</Badge>;
-  }
-  return <span>Due {label}</span>;
-}
-
 const UNASSIGNED = "__unassigned__";
 
 /** How assignees are compared: case and surrounding space don't matter. */
@@ -356,13 +335,13 @@ function CommitmentsSection({
   const query = search?.toLowerCase();
   const matching = commitments.filter(
     (c) =>
-      (owner === undefined || c.owner.toLowerCase() === owner.toLowerCase()) &&
+      (owner === undefined || c.owner.toLowerCase() === owner.trim().toLowerCase()) &&
       (!query || c.content.toLowerCase().includes(query)),
   );
   const pending = matching
-    .filter((c) => c.status === "open" || c.status === "slipped")
+    .filter(isPending)
     .sort((a, b) => Number(b.status === "slipped") - Number(a.status === "slipped"));
-  const closed = matching.filter((c) => c.status === "done" || c.status === "dropped");
+  const closed = matching.filter((c) => !isPending(c));
   const shown =
     status === "done"
       ? closed.filter((c) => c.status === "done")

@@ -34,3 +34,22 @@ export function useCommitments(owner?: string) {
 
   return { commitments, setStatus, refresh };
 }
+
+/** What a meeting showed done or slipped from earlier meetings' commitments,
+ * kept fresh as it's checked. */
+export function useFollowups(meetingId: string) {
+  const [followups, setFollowups] = useState<Commitment[]>([]);
+  const load = useCallback(() => {
+    invoke<Commitment[]>("get_meeting_followups", { meetingId }).then(setFollowups).catch(() => {});
+  }, [meetingId]);
+  useEffect(() => {
+    load();
+    const unlisten = listen<string>("commitments-updated", (e) => {
+      if (e.payload === meetingId) load();
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [meetingId, load]);
+  return [followups, setFollowups] as const;
+}

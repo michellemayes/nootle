@@ -8,7 +8,7 @@ import { LoadingState } from "@/components/LoadingState";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { ActionItemCheckbox } from "@/components/ActionItemCheckbox";
-import { CommitmentRow } from "@/components/CommitmentRow";
+import { CommitmentRow, isPending } from "@/components/CommitmentRow";
 import { useCommitments } from "@/hooks/useCommitments";
 import { formatDate, cn, plural } from "@/lib/utils";
 import type { CommitmentStatus, InsightWithActionItem, Meeting } from "@/types";
@@ -53,7 +53,7 @@ export function PeoplePage() {
     invoke<PersonDetail>("get_person", { name: selected.name }).then(setDetail).catch(() => {});
   }, [selected]);
   const { commitments, setStatus, refresh: refreshCommitments } = useCommitments(selected?.name);
-  const owed = (commitments ?? []).filter((c) => c.status === "open" || c.status === "slipped");
+  const owed = (commitments ?? []).filter(isPending);
   // A commitment is one of their action items, so both lists follow it.
   const setCommitmentStatus = async (id: string, status: CommitmentStatus) => {
     await setStatus(id, status);

@@ -56,24 +56,14 @@ pub fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// How a name is compared: "me" and "I" are the user, as "You" is.
-fn person_key(name: &str) -> String {
-    let name = name.trim().to_lowercase();
-    match name.as_str() {
-        "me" | "i" | "myself" | "you" => "you".to_string(),
-        _ => name,
-    }
-}
-
-/// Whether two names are the same person: equal ignoring case, or one is
-/// the other's first name ("Priya" and "Priya Shah").
+/// Whether two names are the same person, as the call window's names are
+/// matched ("Priya" is "Priya Shah"); "me" and "I" are the user, "You".
 pub fn same_person(a: &str, b: &str) -> bool {
-    let (a, b) = (person_key(a), person_key(b));
-    if a.is_empty() || b.is_empty() {
-        return false;
-    }
-    let first = |s: &str| s.split_whitespace().next().unwrap_or("").to_string();
-    a == b || (!a.contains(' ') && a == first(&b)) || (!b.contains(' ') && b == first(&a))
+    let user = |name: &str| match name.trim().to_lowercase().as_str() {
+        "me" | "i" | "myself" => crate::diarization::SELF_LABEL.to_string(),
+        _ => name.to_string(),
+    };
+    crate::call_names::same_person(&user(a), &user(b))
 }
 
 /// Commitments, filtered by owner and status.
@@ -138,11 +128,14 @@ pub struct Check {
 }
 
 /// Who was in a meeting: its named speakers, "You", and who was invited.
-fn attendees(db: &Database, meeting_id: &str) -> Result<Vec<String>> {
-    let mut names: Vec<String> = db
-        .get_transcript(meeting_id)?
-        .into_iter()
-        .map(|s| s.speaker_label)
+fn attendees(
+    db: &Database,
+    meeting_id: &str,
+    transcript: &[crate::db::TranscriptSegment],
+) -> Result<Vec<String>> {
+    let mut names: Vec<String> = transcript
+        .iter()
+        .map(|s| s.speaker_label.clone())
         .filter(|l| {
             l.as_str() == crate::diarization::SELF_LABEL
                 || !crate::diarization::is_automatic_label(l)
@@ -168,38 +161,37 @@ pub fn gather(
 ) -> Result<Option<Check>> {
     let meeting = db.get_meeting(meeting_id)?;
     let pending: Vec<Commitment> = db
-        .list_commitments(&today())?
+        .pending_commitments(&today())?
         .into_iter()
-        .filter(|c| is_pending(c) && c.meeting_start_time < meeting.start_time)
+        .filter(|c| c.meeting_start_time < meeting.start_time)
         .collect();
     if pending.is_empty() {
         return Ok(None);
     }
-    let indexed = db.meeting_chunks(meeting_id)?;
-    let passages: Vec<Passage> = if indexed.is_empty() {
-        crate::chunking::chunk_segments(&db.get_transcript(meeting_id)?)
+    let transcript = db.get_transcript(meeting_id)?;
+    // The search index's passages when the meeting has one, so they can be
+    // found by meaning too; else the same passages, cut here.
+    let mut indexed = true;
+    let mut passages = db.meeting_chunks(meeting_id)?;
+    if passages.is_empty() {
+        indexed = false;
+        passages = crate::chunking::chunk_segments(&transcript)
             .into_iter()
-            .map(|(text, start_ms, end_ms, _)| Passage {
-                start_ms,
-                end_ms,
-                text,
-            })
-            .collect()
-    } else {
-        indexed
-            .into_iter()
-            .map(|(_, text, start_ms, end_ms)| Passage {
-                start_ms,
-                end_ms,
-                text,
-            })
-            .collect()
-    };
+            .map(|(text, start_ms, end_ms, _)| (text, start_ms, end_ms))
+            .collect();
+    }
+    let passages: Vec<Passage> = passages
+        .into_iter()
+        .map(|(text, start_ms, end_ms)| Passage {
+            start_ms,
+            end_ms,
+            text,
+        })
+        .collect();
     if passages.is_empty() {
         return Ok(None);
     }
-    let by_meaning_available = db.has_meeting_chunks(meeting_id)?;
-    let attendees = attendees(db, meeting_id)?;
+    let attendees = attendees(db, meeting_id, &transcript)?;
 
     let mut picked = Vec::new();
     for commitment in pending {
@@ -211,18 +203,16 @@ pub fn gather(
             .filter(|(_, n)| *n > 0)
             .collect();
         by_keywords.sort_by_key(|&(_, n)| std::cmp::Reverse(n));
-        let by_meaning: Vec<(usize, f64)> = match by_meaning_available
-            .then(|| embed(&commitment.content))
-            .flatten()
-        {
-            Some(vector) => db
-                .meeting_chunks_similar(meeting_id, &vector, PASSAGES_PER_COMMITMENT * 2)?
-                .into_iter()
-                .filter_map(|(i, d)| usize::try_from(i).ok().map(|i| (i, d)))
-                .filter(|(i, _)| *i < passages.len())
-                .collect(),
-            None => Vec::new(),
-        };
+        let by_meaning: Vec<(usize, f64)> =
+            match indexed.then(|| embed(&commitment.content)).flatten() {
+                Some(vector) => db
+                    .meeting_chunks_similar(meeting_id, &vector, PASSAGES_PER_COMMITMENT * 2)?
+                    .into_iter()
+                    .filter_map(|(i, d)| usize::try_from(i).ok().map(|i| (i, d)))
+                    .filter(|(i, _)| *i < passages.len())
+                    .collect(),
+                None => Vec::new(),
+            };
         let topical = by_keywords.first().is_some_and(|(_, n)| *n >= TOPIC_WORDS)
             || by_meaning
                 .first()
@@ -475,14 +465,12 @@ pub fn set_status(db: &Database, id: &str, status: &str) -> Result<Commitment> {
             db.set_action_item_slipped(id, status == "slipped")?;
         }
     }
-    db.list_commitments(&today())?
-        .into_iter()
-        .find(|c| c.id == id)
+    db.get_commitment(id, &today())?
         .ok_or_else(|| anyhow::anyhow!("Action item {id} has no owner, so it isn't a commitment"))
 }
 
 /// "2 meetings ago", counting the meetings recorded since.
-pub fn age(meetings_since: i64) -> String {
+fn age(meetings_since: i64) -> String {
     match meetings_since {
         0 => "in your last meeting".to_string(),
         1 => "1 meeting ago".to_string(),
@@ -521,7 +509,7 @@ pub fn reminder_text(c: &Commitment) -> String {
     text
 }
 
-/// Open commitments from other meetings to bring up while `speaker` says
+/// Of the `pending` commitments, those from other meetings to bring up while `speaker` says
 /// `text` in a recording: theirs, or ones whose topic it touches. Skips the
 /// ids in `reminded`; your own only come up by topic.
 pub fn reminders<'a>(
@@ -534,7 +522,7 @@ pub fn reminders<'a>(
     let speaker_is_named = !crate::diarization::is_automatic_label(speaker);
     pending
         .iter()
-        .filter(|c| is_pending(c) && c.meeting_id != meeting_id && !reminded.contains(&c.id))
+        .filter(|c| c.meeting_id != meeting_id && !reminded.contains(&c.id))
         .filter(|c| {
             (speaker_is_named && same_person(&c.owner, speaker))
                 || shared_words(&topic_words(&c.content), text) >= TOPIC_WORDS

@@ -12,6 +12,11 @@ export function formatMs(ms: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+/** Where a meeting moment opens: the meeting, its transcript at that line. */
+export function momentLink(meetingId: string, ms: number | null): string {
+  return ms == null ? `/meeting/${meetingId}` : `/meeting/${meetingId}?t=${ms}`;
+}
+
 export function formatDate(dateStr: string, style: "short" | "long" = "short"): string {
   if (style === "long") {
     return new Date(dateStr).toLocaleDateString("en-US", {
