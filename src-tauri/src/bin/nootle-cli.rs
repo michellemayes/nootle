@@ -164,6 +164,13 @@ enum Commands {
         #[arg(long, default_value_t = 12)]
         hours: i64,
     },
+    /// Brief for an upcoming calendar meeting: attendees, open action items,
+    /// last time's decisions and related documents (macOS; needs calendar access)
+    Brief {
+        /// Calendar event ID (from `calendar`); defaults to the next event
+        #[arg(long)]
+        event: Option<String>,
+    },
 }
 
 /// Provider and model for commands that call an LLM.
@@ -1605,6 +1612,12 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
         Commands::Calendar { hours } => {
             let hours = (*hours).clamp(1, 24 * 7);
             print_json(&nootle_app_lib::calendar::upcoming(hours), pretty);
+        }
+        Commands::Brief { event } => {
+            let brief = nootle_app_lib::brief::for_event(db, event.as_deref(), |query| {
+                ops::try_load_embedding_engine()?.embed(query).ok()
+            })?;
+            print_json(&brief, pretty);
         }
     }
     Ok(())

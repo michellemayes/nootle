@@ -1,6 +1,8 @@
 pub mod analytics;
 pub mod audio;
 pub mod automation;
+pub mod brief;
+pub mod brief_popup;
 pub mod calendar;
 pub mod call_names;
 pub mod chunking;
@@ -287,6 +289,7 @@ pub fn run() {
         .manage(meeting_popup::PopupState::default())
         .manage(menu_bar::MenuBarState::default())
         .manage(live_assist::LatestCard::default())
+        .manage(brief_popup::BriefPopupState::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             model_registry::migrate_legacy_files();
@@ -364,6 +367,10 @@ pub fn run() {
                     }
                 });
             }
+
+            // Opens the pre-meeting brief shortly before calendar meetings,
+            // when turned on.
+            brief_popup::spawn_scheduler(app_handle.clone());
 
             let db_for_detection = app.state::<Arc<db::Database>>().inner().clone();
 
@@ -565,6 +572,12 @@ pub fn run() {
             meeting_popup::record_from_meeting_popup,
             menu_bar::menu_bar_status,
             menu_bar::menu_bar_open_main,
+            brief_popup::get_meeting_brief,
+            brief_popup::synthesize_meeting_brief,
+            brief_popup::get_brief_popup,
+            brief_popup::dismiss_brief_popup,
+            brief_popup::record_from_brief_popup,
+            brief_popup::open_meeting_from_brief,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

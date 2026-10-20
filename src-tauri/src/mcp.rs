@@ -480,6 +480,13 @@ pub struct SearchKnowledgeParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct MeetingBriefParams {
+    /// Calendar event ID (see the CLI's `calendar` command). Omit for the next event in the coming 12 hours.
+    #[serde(default)]
+    pub event_id: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct EmbedMeetingsParams {
     /// Meeting to index. Omit to index every meeting not yet indexed.
     #[serde(default)]
@@ -1654,6 +1661,32 @@ impl NootleMcpServer {
                 };
                 Ok(crate::knowledge::search(
                     &db, &embedding, &p.query, &p.tags, &p.kinds, 10,
+                )?)
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        title = "Get meeting brief",
+        description = "A brief for an upcoming calendar meeting (macOS, with calendar access): who's coming and when the user last met each, open action items owned by attendees or from the meeting series, what was decided last time in the series, and the most related knowledge-base documents. Null when there's no such event.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn get_meeting_brief(
+        &self,
+        Parameters(p): Parameters<MeetingBriefParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let (db, engine) = (self.db.clone(), self.engine.clone());
+        respond(
+            blocking(move || {
+                Ok(crate::brief::for_event(
+                    &db,
+                    p.event_id.as_deref(),
+                    |query| {
+                        let mut slot = engine.blocking_lock();
+                        ops::embed_question(ops::loaded_embedding_engine(&mut slot).ok()?, query)
+                            .ok()
+                    },
                 )?)
             })
             .await,
