@@ -86,6 +86,23 @@ pub fn commitment_card(c: &crate::db::Commitment) -> LiveAssistCard {
     }
 }
 
+/// The newest card for the meeting being recorded, for the menu-bar popover.
+#[derive(Default)]
+pub struct LatestCard(std::sync::Mutex<Option<(String, LiveAssistCard)>>);
+
+impl LatestCard {
+    pub fn remember(&self, meeting_id: &str, card: &LiveAssistCard) {
+        *self.0.lock().unwrap() = Some((meeting_id.to_string(), card.clone()));
+    }
+
+    pub fn for_meeting(&self, meeting_id: &str) -> Option<LiveAssistCard> {
+        match &*self.0.lock().unwrap() {
+            Some((id, card)) if id == meeting_id => Some(card.clone()),
+            _ => None,
+        }
+    }
+}
+
 /// Passages at least this close to the question (L2 distance between unit
 /// vectors, about 0.5 cosine similarity) are worth an unprompted card.
 const MAX_AUTOMATIC_DISTANCE: f64 = 1.0;
@@ -217,6 +234,24 @@ pub fn normalize_question(question: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn latest_card_belongs_to_its_meeting() {
+        let card = |id: &str| LiveAssistCard {
+            id: id.into(),
+            question: "When does the contract renew?".into(),
+            answer: None,
+            sources: Vec::new(),
+            automatic: true,
+            commitment_id: None,
+        };
+        let latest = LatestCard::default();
+        assert!(latest.for_meeting("m1").is_none());
+        latest.remember("m1", &card("a"));
+        latest.remember("m1", &card("b"));
+        assert_eq!(latest.for_meeting("m1").unwrap().id, "b", "newest wins");
+        assert!(latest.for_meeting("m2").is_none(), "not another meeting's");
+    }
 
     #[test]
     fn finds_real_questions() {

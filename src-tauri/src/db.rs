@@ -747,6 +747,73 @@ pub struct ScratchNote {
     pub created_at: String,
 }
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, clap::ValueEnum,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AnnotationKind {
+    /// A remark on a moment
+    Comment,
+    /// A stretch worth rereading; give an end
+    Highlight,
+    /// Something wrong or risky, e.g. a contradiction
+    Flag,
+}
+
+impl AnnotationKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Comment => "comment",
+            Self::Highlight => "highlight",
+            Self::Flag => "flag",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Comment => "Comment",
+            Self::Highlight => "Highlight",
+            Self::Flag => "Flag",
+        }
+    }
+
+    fn parse(s: &str) -> Self {
+        match s {
+            "highlight" => Self::Highlight,
+            "flag" => Self::Flag,
+            _ => Self::Comment,
+        }
+    }
+}
+
+/// A comment, highlight, or flag an agent pinned to a moment (or a range)
+/// of a meeting through the MCP server or the CLI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeetingAnnotation {
+    pub id: String,
+    pub meeting_id: String,
+    pub start_ms: i64,
+    /// Set when it highlights a range rather than a moment.
+    pub end_ms: Option<i64>,
+    pub kind: AnnotationKind,
+    /// Markdown.
+    pub body: String,
+    /// The MCP client's name, or `cli`.
+    pub author: String,
+    pub created_at: String,
+    pub resolved_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewMeetingAnnotation {
+    pub meeting_id: String,
+    pub start_ms: i64,
+    pub end_ms: Option<i64>,
+    pub kind: AnnotationKind,
+    pub body: String,
+    pub author: String,
+}
+
 /// A picture of something shared on screen during a meeting, with the text
 /// read off it so the meeting can be searched and asked about.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1164,6 +1231,18 @@ impl Database {
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS meeting_annotations (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                start_ms INTEGER NOT NULL,
+                end_ms INTEGER,
+                kind TEXT NOT NULL,
+                body TEXT NOT NULL,
+                author TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                resolved_at TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS recipes (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -1558,6 +1637,7 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_meeting_analytics_meeting ON meeting_analytics(meeting_id);
             CREATE INDEX IF NOT EXISTS idx_sentiment_segments_meeting ON sentiment_segments(meeting_id, start_ms);
             CREATE INDEX IF NOT EXISTS idx_scratch_notes_meeting ON scratch_notes(meeting_id, timestamp_ms);
+            CREATE INDEX IF NOT EXISTS idx_meeting_annotations_meeting ON meeting_annotations(meeting_id, start_ms);
             CREATE INDEX IF NOT EXISTS idx_workflow_runs_meeting ON workflow_runs(meeting_id, started_at);
             CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow ON workflow_runs(workflow_id);
             ",
@@ -2365,6 +2445,85 @@ impl Database {
         let conn = self.lock_conn()?;
         conn.execute("DELETE FROM scratch_notes WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn add_meeting_annotation(&self, a: NewMeetingAnnotation) -> Result<MeetingAnnotation> {
+        let conn = self.lock_conn()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO meeting_annotations (id, meeting_id, start_ms, end_ms, kind, body, author, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![id, a.meeting_id, a.start_ms, a.end_ms, a.kind.as_str(), a.body, a.author, now],
+        )?;
+        Ok(MeetingAnnotation {
+            id,
+            meeting_id: a.meeting_id,
+            start_ms: a.start_ms,
+            end_ms: a.end_ms,
+            kind: a.kind,
+            body: a.body,
+            author: a.author,
+            created_at: now,
+            resolved_at: None,
+        })
+    }
+
+    /// A meeting's annotations in timeline order.
+    pub fn get_meeting_annotations(&self, meeting_id: &str) -> Result<Vec<MeetingAnnotation>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, meeting_id, start_ms, end_ms, kind, body, author, created_at, resolved_at
+             FROM meeting_annotations
+             WHERE meeting_id = ?1
+             ORDER BY start_ms ASC, created_at ASC",
+        )?;
+        let annotations = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok(MeetingAnnotation {
+                    id: row.get(0)?,
+                    meeting_id: row.get(1)?,
+                    start_ms: row.get(2)?,
+                    end_ms: row.get(3)?,
+                    kind: AnnotationKind::parse(&row.get::<_, String>(4)?),
+                    body: row.get(5)?,
+                    author: row.get(6)?,
+                    created_at: row.get(7)?,
+                    resolved_at: row.get(8)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(annotations)
+    }
+
+    /// Marks an annotation resolved, or open again. Errors if there's none.
+    pub fn set_meeting_annotation_resolved(&self, id: &str, resolved: bool) -> Result<()> {
+        let conn = self.lock_conn()?;
+        let resolved_at = resolved.then(|| chrono::Utc::now().to_rfc3339());
+        let changed = conn.execute(
+            "UPDATE meeting_annotations SET resolved_at = ?2 WHERE id = ?1",
+            params![id, resolved_at],
+        )?;
+        if changed == 0 {
+            return Err(NootleError::Other(format!("Annotation not found: {id}")));
+        }
+        Ok(())
+    }
+
+    pub fn delete_meeting_annotation(&self, id: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute("DELETE FROM meeting_annotations WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Where a meeting's transcript ends, or 0 without one.
+    pub fn transcript_end_ms(&self, meeting_id: &str) -> Result<i64> {
+        let conn = self.lock_conn()?;
+        Ok(conn.query_row(
+            "SELECT COALESCE(MAX(end_ms), 0) FROM transcripts WHERE meeting_id = ?1",
+            params![meeting_id],
+            |row| row.get(0),
+        )?)
     }
 
     pub fn create_snapshot(
@@ -5594,6 +5753,50 @@ mod tests {
 
         db.delete_meeting(&meeting.id).unwrap();
         assert!(db.get_snapshots(&meeting.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn annotations_resolve_delete_and_follow_their_meeting() {
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(NewMeeting {
+                title: "Design review".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        let new = |start_ms: i64, body: &str| NewMeetingAnnotation {
+            meeting_id: meeting.id.clone(),
+            start_ms,
+            end_ms: None,
+            kind: AnnotationKind::Comment,
+            body: body.into(),
+            author: "claude-code".into(),
+        };
+        let later = db.add_meeting_annotation(new(9_000, "Later")).unwrap();
+        db.add_meeting_annotation(new(3_000, "Earlier")).unwrap();
+        let bodies: Vec<_> = db
+            .get_meeting_annotations(&meeting.id)
+            .unwrap()
+            .into_iter()
+            .map(|a| a.body)
+            .collect();
+        assert_eq!(bodies, ["Earlier", "Later"]);
+
+        db.set_meeting_annotation_resolved(&later.id, true).unwrap();
+        let resolved = db.get_meeting_annotations(&meeting.id).unwrap();
+        assert!(resolved[1].resolved_at.is_some());
+        db.set_meeting_annotation_resolved(&later.id, false)
+            .unwrap();
+        assert!(db.get_meeting_annotations(&meeting.id).unwrap()[1]
+            .resolved_at
+            .is_none());
+        assert!(db.set_meeting_annotation_resolved("nope", true).is_err());
+
+        db.delete_meeting_annotation(&later.id).unwrap();
+        assert_eq!(db.get_meeting_annotations(&meeting.id).unwrap().len(), 1);
+        db.delete_meeting(&meeting.id).unwrap();
+        assert!(db.get_meeting_annotations(&meeting.id).unwrap().is_empty());
     }
 
     #[test]
