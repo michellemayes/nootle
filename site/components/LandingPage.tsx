@@ -4,7 +4,7 @@ import { Navbar } from "@/components/Navbar";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CopyCommand } from "@/components/CopyCommand";
 import { DownloadButton } from "@/components/DownloadButton";
-import { linkClass, outfit } from "@/components/site-config";
+import { linkClass, OG_IMAGE, outfit } from "@/components/site-config";
 
 export type LandingContent = {
   /** Short label above the headline, e.g. "Granola alternative". */
@@ -53,13 +53,13 @@ export function landingMetadata({
       type: "website",
       url: path,
       siteName: "Nootle",
-      images: [{ url: "/og-image.png", width: 1200, height: 630, alt: title }],
+      images: [{ url: OG_IMAGE, width: 1200, height: 630, alt: title }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: ["/og-image.png"],
+      images: [OG_IMAGE],
     },
   };
 }

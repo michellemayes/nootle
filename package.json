@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "screenshots": "node scripts/screenshots/capture.mjs",
+    "og-image": "node scripts/og-image/render.mjs",
     "prepare": "husky"
   },
   "dependencies": {

@@ -43,3 +43,15 @@ fontconfig — that is what the committed screenshots were captured with.
 - `SCREENSHOT_BASE_URL` — capture against an already-running server instead of
   starting Vite.
 - `SCREENSHOT_PORT` — port for the Vite dev server (default `1420`).
+
+## Open Graph image
+
+`site/public/og-image.png` (the card shown when nootle.ai is shared) is built
+from `scripts/og-image/og-image.html` and the dark meeting screenshot:
+
+```bash
+pnpm og-image
+```
+
+Re-run it after regenerating the screenshots, then bump `v` in `OG_IMAGE`
+(`site/components/site-config.ts`) so social sites drop their cached copy.

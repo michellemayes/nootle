@@ -1,5 +1,7 @@
 export const RELEASES_URL = "https://github.com/michellemayes/nootle/releases";
 export const SPONSOR_URL = "https://github.com/sponsors/michellemayes";
+/** Open Graph / Twitter card image. Bump `v` when the image changes so social sites re-fetch it. */
+export const OG_IMAGE = "/og-image.png?v=2";
 export const BREW_COMMAND =
   "brew tap michellemayes/nootle https://github.com/michellemayes/nootle && brew install --cask nootle";
 
