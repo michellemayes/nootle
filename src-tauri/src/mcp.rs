@@ -1722,6 +1722,40 @@ impl NootleMcpServer {
     }
 
     #[tool(
+        title = "Make audio recap",
+        description = "Write a 2-4 minute spoken recap of a meeting with an LLM (a narrator, then each point in the voice of the person who raised it) and record it with macOS speech synthesis on this Mac, replacing any earlier one. Returns the script, with each line's speaker and timing, and the audio file's path. Mac only.",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
+    )]
+    async fn generate_audio_recap(
+        &self,
+        Parameters(p): Parameters<MeetingLlmParams>,
+    ) -> Result<CallToolResult, McpError> {
+        respond(
+            async {
+                self.db.get_meeting(&p.meeting_id)?;
+                let (llm, provider, model) = self.llm(&p.llm).await?;
+                Ok::<_, NootleError>(
+                    crate::room_recap::generate(
+                        &self.db,
+                        &llm,
+                        crate::room_recap::system_synth()?,
+                        &ops::recordings_dir()?,
+                        &p.meeting_id,
+                        &provider,
+                        &model,
+                    )
+                    .await?,
+                )
+            }
+            .await,
+        )
+    }
+
+    #[tool(
         title = "Run recipe",
         description = "Run a recipe (by ID or slash command) on a meeting with an LLM and return its output. Nothing is saved.",
         annotations(read_only_hint = true, open_world_hint = true)

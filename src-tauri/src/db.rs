@@ -1256,6 +1256,12 @@ impl Database {
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS coach_tips (
+                meeting_id TEXT PRIMARY KEY REFERENCES meetings(id) ON DELETE CASCADE,
+                tip TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             ",
         )?;
         Self::seed_default_insight_types(&conn)?;
@@ -4732,6 +4738,28 @@ impl Database {
         conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
             params![key, value],
+        )?;
+        Ok(())
+    }
+
+    // --- Meeting Coach ---
+
+    pub fn get_coach_tip(&self, meeting_id: &str) -> Result<Option<String>> {
+        let conn = self.lock_conn()?;
+        Ok(conn
+            .query_row(
+                "SELECT tip FROM coach_tips WHERE meeting_id = ?1",
+                params![meeting_id],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    pub fn save_coach_tip(&self, meeting_id: &str, tip: &str) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO coach_tips (meeting_id, tip) VALUES (?1, ?2)",
+            params![meeting_id, tip],
         )?;
         Ok(())
     }
