@@ -42,6 +42,7 @@ pub mod workflows;
 
 use commands::{
     DownloadManagerState, EmbeddingState, LlmState, RecordingState, SentimentJobsState,
+    SummaryJobsState,
 };
 use detection::MeetingDetector;
 use llm::LlmRegistry;
@@ -277,6 +278,7 @@ pub fn run() {
         .manage(download_manager)
         .manage(embedding_state)
         .manage(SentimentJobsState::default())
+        .manage(SummaryJobsState::default())
         .manage(connectors::SignInState::default())
         .manage(meeting_popup::PopupState::default())
         .setup(move |app| {
@@ -456,6 +458,7 @@ pub fn run() {
             commands::delete_api_key,
             commands::list_stored_providers,
             commands::generate_summary,
+            commands::cancel_summary,
             commands::chat_with_meeting,
             commands::list_llm_models,
             commands::list_llm_providers,

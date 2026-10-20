@@ -35,19 +35,25 @@ export function useSummaries(meetingId: string) {
     return () => { unlisten.then((f) => f()); };
   }, [meetingId, refresh]);
 
+  /** Resolves to `null` if `cancelSummary` stopped it. */
   const generateSummary = useCallback(
     async (templateId: string, provider: string, model: string) => {
-      const summary = await invoke<Summary>("generate_summary", {
+      const summary = await invoke<Summary | null>("generate_summary", {
         meetingId,
         templateId,
         provider,
         model,
       });
-      setSummaries((prev) => [summary, ...prev]);
+      if (summary) setSummaries((prev) => [summary, ...prev]);
       return summary;
     },
     [meetingId],
   );
 
-  return { summaries, loading, error, refresh, generateSummary };
+  const cancelSummary = useCallback(
+    () => invoke("cancel_summary", { meetingId }),
+    [meetingId],
+  );
+
+  return { summaries, loading, error, refresh, generateSummary, cancelSummary };
 }
