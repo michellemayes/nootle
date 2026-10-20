@@ -659,7 +659,7 @@ export const AUDIO_DURATION_SECONDS =
   (new Date(MEETINGS[0].end_time) - new Date(MEETINGS[0].start_time)) / 1000;
 
 /** Transcript pushed into the live recording view via `transcript-update`. */
-export const LIVE_TRANSCRIPT = TRANSCRIPT.slice(0, 6).map((s) => ({
+export const LIVE_TRANSCRIPT = TRANSCRIPT.map((s) => ({
   ...s,
   meeting_id: "m-live",
 }));
@@ -773,7 +773,6 @@ const LIVE_ASSIST_CARD = {
  * is enough for the fire-and-forget commands the screenshots never trigger.
  */
 export const FIXTURES = {
-  "plugin:app|version": "0.1.1",
   "plugin:window|inner_size": { width: 1440, height: 900 },
   "plugin:window|current_monitor": {
     name: "Built-in Retina Display",
@@ -865,4 +864,6 @@ export const FIXTURES = {
     null,
     "recording",
   ),
+  // Stopping the demo recording opens the finished design review.
+  stop_recording: MEETINGS[0],
 };

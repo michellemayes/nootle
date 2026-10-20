@@ -11,19 +11,13 @@
  * SF Pro. On other platforms install Inter and alias it to `system-ui` in
  * fontconfig — that is what the committed screenshots were captured with.
  */
-import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
-import { AUDIO_DURATION_SECONDS, DEMO_NOW, FIXTURES, LIVE_TRANSCRIPT } from "./demo-data.mjs";
+import { LIVE_TRANSCRIPT } from "./demo-data.mjs";
+import { launchBrowser, newDemoContext, openPage, repoRoot, startDevServer } from "./app.mjs";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, "../..");
 const outDir = path.join(repoRoot, "site/public/screenshots");
 
-const PORT = Number(process.env.SCREENSHOT_PORT ?? 1420);
-const BASE_URL = process.env.SCREENSHOT_BASE_URL ?? `http://localhost:${PORT}`;
 const WINDOW = { width: 1440, height: 900 };
 const SCALE = 2;
 const THEMES = ["light", "dark"];
@@ -129,87 +123,16 @@ async function frame(browser, rawPng, theme) {
   return png;
 }
 
-async function startDevServer() {
-  if (process.env.SCREENSHOT_BASE_URL) return null;
-  const server = spawn(
-    "node",
-    [path.join(repoRoot, "node_modules/vite/bin/vite.js"), "--port", String(PORT)],
-    { cwd: repoRoot, stdio: "ignore" },
-  );
-  for (let i = 0; i < 60; i++) {
-    try {
-      const res = await fetch(BASE_URL);
-      if (res.ok) return server;
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  server.kill();
-  throw new Error(`Vite did not start on ${BASE_URL}`);
-}
-
 async function main() {
   await mkdir(outDir, { recursive: true });
   const server = await startDevServer();
-  const browser = await chromium.launch({
-    // Escape hatch for environments with a preinstalled Chromium.
-    executablePath: process.env.CHROMIUM_EXECUTABLE || undefined,
-  });
+  const browser = await launchBrowser();
 
   try {
     for (const theme of THEMES) {
-      const context = await browser.newContext({
-        viewport: WINDOW,
-        deviceScaleFactor: SCALE,
-        colorScheme: theme,
-        locale: "en-US",
-        timezoneId: "America/Los_Angeles",
-      });
-      await context.addInitScript(
-        `window.__NOOTLE_FIXTURES__ = ${JSON.stringify(FIXTURES)};
-         localStorage.setItem("onboarding_complete", "true");
-         localStorage.setItem("theme", ${JSON.stringify(theme)});
-         localStorage.setItem("llm_provider", "anthropic");
-         localStorage.setItem("llm_model", "claude-opus-4-6");
-         localStorage.setItem("meetingViewMode", "grid");
-         localStorage.setItem("nootle-sidebar-collapsed", "false");`,
-      );
-      // Start "now" just after the demo library's latest meeting so relative
-      // dates, the greeting, and the streak render the same on every run.
-      // Only Date is shifted: any of Playwright's clock APIs also swap in fake
-      // timers and requestAnimationFrame, under which framer-motion entrance
-      // animations never finish and pages capture blank.
-      await context.addInitScript(
-        `(() => {
-           const RealDate = Date;
-           const offset = ${DEMO_NOW.getTime()} - RealDate.now();
-           class DemoDate extends RealDate {
-             constructor(...args) {
-               super(...(args.length ? args : [DemoDate.now()]));
-             }
-             static now() {
-               return RealDate.now() + offset;
-             }
-           }
-           globalThis.Date = DemoDate;
-         })();`,
-      );
-      await context.addInitScript({ path: path.join(here, "mock-tauri.js") });
-      // The demo audio is a one-second placeholder; report the meeting's real
-      // length so the player reads like a finished recording.
-      await context.addInitScript(
-        `Object.defineProperty(HTMLMediaElement.prototype, "duration", {
-           get: () => ${AUDIO_DURATION_SECONDS},
-         });`,
-      );
-
+      const context = await newDemoContext(browser, { theme, viewport: WINDOW, scale: SCALE });
       for (const shot of SHOTS) {
-        const page = await context.newPage();
-        page.on("pageerror", (err) => console.warn(`  ! ${shot.name}: ${err.message}`));
-        await page.goto(`${BASE_URL}${shot.route}`, { waitUntil: "networkidle" });
-        await page.addStyleTag({ content: "*, *::after { caret-color: transparent !important; }" });
-        await page.waitForSelector(shot.ready, { timeout: 15_000 });
+        const page = await openPage(context, shot.route, shot.ready);
         await shot.prepare?.(page);
         // Let entrance animations settle before capturing.
         await page.waitForTimeout(1200);
