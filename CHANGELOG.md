@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.17.0] - 2026-10-20
+
+### Features
+
+- Track commitments across meetings (#200) ([d22b379](https://github.com/michellemayes/nootle/commit/d22b379a7e5ffbb8628f9ca46e9ec5f4dbba3a13))
+
 ## [0.16.0] - 2026-10-20
 
 ### Features
