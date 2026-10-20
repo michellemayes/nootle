@@ -968,4 +968,17 @@ export const FIXTURES = {
   ),
   // Stopping the demo recording opens the finished design review.
   stop_recording: MEETINGS[0],
+
+  // The menu bar popover (menubar.html), mid-recording with a Live Assist card.
+  menu_bar_status: {
+    recording: {
+      meeting_id: "m-live",
+      paused: false,
+      elapsed_ms: 1_234_000,
+      mic_level: 0.04,
+      system_level: 0.03,
+    },
+    title: "Design Review — Onboarding Flow",
+    live_assist: LIVE_ASSIST_CARD,
+  },
 };

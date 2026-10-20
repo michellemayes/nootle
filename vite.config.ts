@@ -16,12 +16,14 @@ export default defineConfig(async () => ({
     },
   },
 
-  // The meeting pop-up is its own window with its own page.
+  // The meeting pop-up and the menu bar popover are their own windows with
+  // their own pages.
   build: {
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, "index.html"),
         popup: path.resolve(__dirname, "popup.html"),
+        menubar: path.resolve(__dirname, "menubar.html"),
       },
     },
   },

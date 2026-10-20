@@ -24,6 +24,7 @@ pub mod live_assist;
 pub mod llm;
 pub mod mcp;
 pub mod meeting_popup;
+pub mod menu_bar;
 pub mod model_download;
 pub mod model_registry;
 pub mod ops;
@@ -283,6 +284,8 @@ pub fn run() {
         .manage(SummaryJobsState::default())
         .manage(connectors::SignInState::default())
         .manage(meeting_popup::PopupState::default())
+        .manage(menu_bar::MenuBarState::default())
+        .manage(live_assist::LatestCard::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             model_registry::migrate_legacy_files();
@@ -347,6 +350,7 @@ pub fn run() {
                     }
                 });
             }
+            menu_bar::start(&app_handle);
             // Keep the knowledge base current: a pass shortly after launch,
             // then every half hour, reading only files that changed.
             {
@@ -553,6 +557,8 @@ pub fn run() {
             meeting_popup::get_popup_meeting,
             meeting_popup::dismiss_meeting_popup,
             meeting_popup::record_from_meeting_popup,
+            menu_bar::menu_bar_status,
+            menu_bar::menu_bar_open_main,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

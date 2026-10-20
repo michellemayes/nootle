@@ -18,19 +18,10 @@ import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Kbd } from "@/components/Kbd";
 import { AudioLevelMeter } from "@/components/AudioLevelMeter";
+import { formatDuration } from "@/lib/utils";
 import { Markdown } from "@/components/Markdown";
 import { useStickToBottom } from "@/hooks/useStickToBottom";
 import { Square, ArrowLeft, ArrowDown, ChevronDown, ChevronRight, FileText, MicOff, Pause, Play, ScanLine } from "lucide-react";
-
-function formatTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) {
-    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  }
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
 
 const TRANSCRIPT_OPEN_KEY = "recordingTranscriptOpen";
 
@@ -162,6 +153,7 @@ export function RecordingView() {
     currentMeeting,
     elapsed,
     error,
+    stoppedElsewhere,
     startRecording,
     resumeRecording,
     setPaused,
@@ -327,6 +319,15 @@ export function RecordingView() {
   // re-read pauses it and offers a way back.
   const { following, sentinelRef, jumpToBottom } = useStickToBottom(scrollRef, segments);
 
+  // Once stopped, here or from the menu bar: keep the notes, show the meeting.
+  const showStopped = useCallback(
+    async (meetingId: string) => {
+      await saveNotes(meetingId);
+      navigate(`/meeting/${meetingId}`, { state: { justRecorded: true } });
+    },
+    [saveNotes, navigate],
+  );
+
   const handleStop = useCallback(async () => {
     if (stopping) return;
     setStopping(true);
@@ -334,12 +335,18 @@ export function RecordingView() {
       // ⌘↵ can stop while the title field still has focus, before it commits.
       await saveDetails();
       const meeting = await stopRecording();
-      await saveNotes(meeting.id);
-      navigate(`/meeting/${meeting.id}`, { state: { justRecorded: true } });
+      await showStopped(meeting.id);
     } catch {
       navigate("/");
     }
-  }, [stopping, saveDetails, stopRecording, saveNotes, navigate]);
+  }, [stopping, saveDetails, stopRecording, showStopped, navigate]);
+
+  useEffect(() => {
+    if (!stoppedElsewhere || !currentMeeting) return;
+    saveDetails()
+      .then(() => showStopped(currentMeeting.id))
+      .catch(() => navigate("/"));
+  }, [stoppedElsewhere, currentMeeting, saveDetails, showStopped, navigate]);
 
   // ⌘↵ wraps up the meeting from anywhere on the page, notes included.
   useEffect(() => {
@@ -435,7 +442,7 @@ export function RecordingView() {
         )}
 
         <span className="font-mono text-sm tabular-nums text-muted-foreground">
-          {formatTime(elapsed)}
+          {formatDuration(elapsed)}
         </span>
 
         <AudioLevelMeter

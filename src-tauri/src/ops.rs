@@ -70,6 +70,8 @@ pub const TOGGLE_SETTINGS: &[&str] = &[
     crate::snapshots::SETTING_KEY,
     crate::live_assist::SETTING_KEY,
     crate::coach::SETTING_KEY,
+    crate::menu_bar::SETTING_KEY,
+    crate::menu_bar::HIDE_DOCK_SETTING,
 ];
 /// Settings the MCP server refuses to change. URL control lets other apps
 /// start recordings and snapshots capture shared screens, so turning either
