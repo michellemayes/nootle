@@ -183,7 +183,7 @@ fn split_speaker(line: &str) -> (String, String) {
 }
 
 /// `1:02`, `01:02:03`, `00:01:02,500`, `00:01:02.500`.
-fn timestamp_ms(s: &str) -> Option<i64> {
+pub fn timestamp_ms(s: &str) -> Option<i64> {
     let s = s.trim().trim_matches(['[', ']', '(', ')']);
     let (clock, millis) = match s.split_once([',', '.']) {
         // ".5" is half a second: pad the fraction to milliseconds.

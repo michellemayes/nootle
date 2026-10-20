@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use nootle_app_lib::db::{Database, NewRecipe};
+use nootle_app_lib::db::{AnnotationKind, Database, NewRecipe};
 use nootle_app_lib::embedding::EmbeddingEngine;
 use nootle_app_lib::llm::LlmRegistry;
 use nootle_app_lib::{automation, ops, room_recap};
@@ -219,7 +219,7 @@ enum MeetingsAction {
     Get {
         /// Meeting ID
         id: String,
-        /// Include labels, summaries, and scratch notes
+        /// Include labels, summaries, scratch notes, and annotations
         #[arg(long)]
         full: bool,
     },
@@ -290,6 +290,39 @@ enum MeetingsAction {
         /// Label ID or name to remove; repeatable
         #[arg(long)]
         remove: Vec<String>,
+    },
+    /// Pin a comment, highlight, or flag to a moment (or range) of a meeting
+    Annotate {
+        /// Meeting ID
+        id: String,
+        /// Markdown text, @file, or - for stdin
+        body: String,
+        /// When in the meeting: 14:32, 1:02:03, or milliseconds
+        #[arg(long, value_parser = parse_meeting_time)]
+        at: i64,
+        /// End of a highlighted range, in the same form
+        #[arg(long, value_parser = parse_meeting_time)]
+        to: Option<i64>,
+        #[arg(long, value_enum, default_value_t = AnnotationKind::Comment)]
+        kind: AnnotationKind,
+    },
+    /// List a meeting's annotations in timeline order
+    Annotations {
+        /// Meeting ID
+        id: String,
+    },
+    /// Mark an annotation resolved
+    ResolveAnnotation {
+        /// Annotation ID
+        annotation_id: String,
+        /// Reopen it instead
+        #[arg(long)]
+        reopen: bool,
+    },
+    /// Delete an annotation
+    DeleteAnnotation {
+        /// Annotation ID
+        annotation_id: String,
     },
     /// Correct one transcript segment; with auto-learn on, the fix joins the
     /// dictionary and is applied to the rest of the meeting
@@ -921,6 +954,15 @@ fn read_text_arg(arg: &str) -> CliResult<String> {
             None => arg.to_string(),
         },
     })
+}
+
+/// A time into a meeting, as `MM:SS` or `H:MM:SS` (either with `.mmm`), or
+/// plain milliseconds, in milliseconds.
+fn parse_meeting_time(arg: &str) -> Result<i64, String> {
+    arg.parse()
+        .ok()
+        .or_else(|| nootle_app_lib::transcript_import::timestamp_ms(arg))
+        .ok_or_else(|| format!("'{arg}' isn't a time; use 14:32, 1:02:03, or milliseconds"))
 }
 
 fn read_json_arg(arg: &str) -> CliResult<serde_json::Value> {
@@ -1573,6 +1615,7 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
                 value["labels"] = serde_json::to_value(db.get_meeting_labels(id)?)?;
                 value["summaries"] = serde_json::to_value(db.get_summaries_for_meeting(id)?)?;
                 value["scratch_notes"] = serde_json::to_value(db.get_scratch_notes(id)?)?;
+                value["annotations"] = serde_json::to_value(db.get_meeting_annotations(id)?)?;
                 print_json(&value, pretty);
             } else {
                 print_json(&meeting, pretty);
@@ -1660,6 +1703,41 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
                 db.remove_meeting_label(id, &label_id)?;
             }
             print_json(&db.get_meeting_labels(id)?, pretty);
+        }
+        MeetingsAction::Annotate {
+            id,
+            body,
+            at,
+            to,
+            kind,
+        } => {
+            let annotation = ops::add_annotation(
+                db,
+                nootle_app_lib::db::NewMeetingAnnotation {
+                    meeting_id: id.clone(),
+                    start_ms: *at,
+                    end_ms: *to,
+                    kind: *kind,
+                    body: read_text_arg(body)?,
+                    author: ops::CLI_ANNOTATION_AUTHOR.into(),
+                },
+            )?;
+            print_json(&annotation, pretty);
+        }
+        MeetingsAction::Annotations { id } => print_json(&db.get_meeting_annotations(id)?, pretty),
+        MeetingsAction::ResolveAnnotation {
+            annotation_id,
+            reopen,
+        } => {
+            db.set_meeting_annotation_resolved(annotation_id, !reopen)?;
+            print_json(
+                &serde_json::json!({ "id": annotation_id, "resolved": !reopen }),
+                pretty,
+            );
+        }
+        MeetingsAction::DeleteAnnotation { annotation_id } => {
+            db.delete_meeting_annotation(annotation_id)?;
+            print_deleted(annotation_id, pretty);
         }
         MeetingsAction::EditSegment { segment_id, text } => {
             let result = nootle_app_lib::dictionary::record_edit(db, segment_id, text)?;
@@ -1864,5 +1942,15 @@ mod tests {
     fn refuses_inline_secrets() {
         let err = read_secret_arg("sk-123").unwrap_err();
         assert!(err.to_string().contains("stdin"));
+    }
+
+    #[test]
+    fn parses_meeting_times() {
+        assert_eq!(parse_meeting_time("14:32"), Ok(872_000));
+        assert_eq!(parse_meeting_time("1:02:03.5"), Ok(3_723_500));
+        assert_eq!(parse_meeting_time("90500"), Ok(90_500));
+        for bad in ["", "1:2:3:4", "1:75", "1:xx"] {
+            assert!(parse_meeting_time(bad).is_err(), "{bad}");
+        }
     }
 }

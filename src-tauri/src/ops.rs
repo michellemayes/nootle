@@ -7,8 +7,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 
 use crate::db::{
-    ChatConversation, Database, InsightWithActionItem, Label, Meeting, NewRecipe, Recipe,
-    SentimentSegment, TranscriptSegment,
+    ChatConversation, Database, InsightWithActionItem, Label, Meeting, MeetingAnnotation,
+    NewMeetingAnnotation, NewRecipe, Recipe, SentimentSegment, TranscriptSegment,
 };
 use crate::dictionary::DictionaryEntry;
 use crate::embedding::EmbeddingEngine;
@@ -389,6 +389,53 @@ pub fn delete_snapshot(db: &Database, id: &str) -> Result<()> {
         .ok_or_else(|| anyhow!("Snapshot not found: {id}"))?;
     let _ = std::fs::remove_file(&snapshot.image_path);
     Ok(())
+}
+
+/// Longest annotation body, in characters: a few paragraphs, not a report.
+pub const MAX_ANNOTATION_CHARS: usize = 4000;
+/// Who annotations from `nootle-cli` are by.
+pub const CLI_ANNOTATION_AUTHOR: &str = "cli";
+
+/// How long a meeting runs: to the end of its transcript or its end time,
+/// whichever is later, and up to now while it's still recording.
+fn meeting_length_ms(db: &Database, meeting: &Meeting) -> Result<i64> {
+    let parse = |t: &str| chrono::DateTime::parse_from_rfc3339(t).ok();
+    let wall = parse(&meeting.start_time).map_or(0, |start| {
+        let end = match meeting.end_time.as_deref() {
+            Some(end) => parse(end).map(|e| e.to_utc()),
+            None => Some(chrono::Utc::now()),
+        };
+        end.map_or(0, |end| (end - start.to_utc()).num_milliseconds())
+    });
+    Ok(wall.max(db.transcript_end_ms(&meeting.id)?))
+}
+
+/// Pins an agent's annotation to a meeting, checking its body and that it
+/// falls within the meeting. An empty range becomes a moment.
+pub fn add_annotation(db: &Database, mut a: NewMeetingAnnotation) -> Result<MeetingAnnotation> {
+    a.body = non_empty_name("Annotation body", &a.body)?.to_string();
+    let chars = a.body.chars().count();
+    if chars > MAX_ANNOTATION_CHARS {
+        bail!("Annotation body is {chars} characters; the limit is {MAX_ANNOTATION_CHARS}");
+    }
+    let meeting = db.get_meeting(&a.meeting_id)?;
+    let length = meeting_length_ms(db, &meeting)?;
+    let end = a.end_ms.unwrap_or(a.start_ms);
+    if end < a.start_ms {
+        bail!("Annotation end_ms can't be before start_ms");
+    }
+    if a.start_ms < 0 || end > length {
+        bail!(
+            "Annotation must fall within the meeting, between 00:00 and {} ({length} ms)",
+            crate::summarization::format_ms(length)
+        );
+    }
+    a.end_ms = a.end_ms.filter(|end| *end > a.start_ms);
+    a.author = match a.author.trim() {
+        "" => "agent".to_string(),
+        author => author.chars().take(100).collect(),
+    };
+    Ok(db.add_meeting_annotation(a)?)
 }
 
 /// Updates a dictionary entry; `None` keeps a field. Returns the entry.
@@ -1159,6 +1206,7 @@ pub async fn ask(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::AnnotationKind;
 
     #[test]
     fn validates_recipes_like_the_app() {
@@ -1208,6 +1256,62 @@ mod tests {
         })
         .unwrap();
         (db, meeting.id)
+    }
+
+    #[test]
+    fn annotations_stay_within_the_meeting() {
+        let (db, id) = db_with_meeting();
+        // Ended a second after it started, so the 3s transcript is longer.
+        let start = db.get_meeting(&id).unwrap().start_time;
+        let end = (chrono::DateTime::parse_from_rfc3339(&start).unwrap()
+            + chrono::Duration::seconds(1))
+        .to_rfc3339();
+        db.finalize_meeting(&id, &end, None, "summarized").unwrap();
+        let note = |start_ms: i64, end_ms: Option<i64>, kind: AnnotationKind, body: &str| {
+            add_annotation(
+                &db,
+                NewMeetingAnnotation {
+                    meeting_id: id.clone(),
+                    start_ms,
+                    end_ms,
+                    kind,
+                    body: body.into(),
+                    author: " ".into(),
+                },
+            )
+        };
+
+        let pinned = note(
+            2_000,
+            Some(3_000),
+            AnnotationKind::Highlight,
+            " Contradicts ADR-12 ",
+        )
+        .unwrap();
+        assert_eq!(pinned.body, "Contradicts ADR-12");
+        assert_eq!(pinned.author, "agent");
+        let moment = note(1_000, Some(1_000), AnnotationKind::Comment, "Empty range").unwrap();
+        assert_eq!(moment.end_ms, None);
+        assert!(note(3_001, None, AnnotationKind::Comment, "Past the end").is_err());
+        assert!(note(-1, None, AnnotationKind::Comment, "Before the start").is_err());
+        assert!(note(2_000, Some(1_000), AnnotationKind::Comment, "Backwards").is_err());
+        assert!(note(0, None, AnnotationKind::Flag, "   ").is_err());
+        let long = "x".repeat(MAX_ANNOTATION_CHARS + 1);
+        assert!(note(0, None, AnnotationKind::Flag, &long).is_err());
+        assert!(note(0, None, AnnotationKind::Comment, "At the start").is_ok());
+        assert!(add_annotation(
+            &db,
+            NewMeetingAnnotation {
+                meeting_id: "nope".into(),
+                start_ms: 0,
+                end_ms: None,
+                kind: AnnotationKind::Comment,
+                body: "No meeting".into(),
+                author: "cli".into(),
+            }
+        )
+        .is_err());
+        assert_eq!(db.get_meeting_annotations(&id).unwrap().len(), 3);
     }
 
     #[test]

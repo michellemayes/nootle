@@ -292,6 +292,30 @@ pub fn delete_scratch_note(db: State<'_, DbState>, id: String) -> Result<(), Str
 }
 
 #[tauri::command(async)]
+pub fn list_meeting_annotations(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<MeetingAnnotation>, String> {
+    db.get_meeting_annotations(&meeting_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn resolve_meeting_annotation(
+    db: State<'_, DbState>,
+    id: String,
+    resolved: bool,
+) -> Result<(), String> {
+    db.set_meeting_annotation_resolved(&id, resolved)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn delete_meeting_annotation(db: State<'_, DbState>, id: String) -> Result<(), String> {
+    db.delete_meeting_annotation(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
 pub fn list_snapshots(
     db: State<'_, DbState>,
     meeting_id: String,

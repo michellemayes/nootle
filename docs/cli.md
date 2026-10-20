@@ -40,6 +40,11 @@ nootle-cli meetings listen <meeting-id>
 nootle-cli ask "What's our refund policy?" --knowledge-only
 nootle-cli ask "What did the study find?" --tag Research
 
+# Pin a note to 14:32 (or a range with --to), list a meeting's notes, resolve one
+nootle-cli meetings annotate <meeting-id> "This contradicts ADR-12" --at 14:32 --kind flag
+nootle-cli meetings annotations <meeting-id>
+nootle-cli meetings resolve-annotation <annotation-id>   # --reopen to undo
+
 # Tag a meeting and mark an action item done
 nootle-cli meetings label <meeting-id> --add Customer
 nootle-cli actions update <action-item-id> --status done
@@ -95,9 +100,9 @@ claude mcp add --scope user nootle -- /Applications/Nootle.app/Contents/MacOS/no
 
 The server supports MCP 2026-07-28 and the older handshake-based versions. Older setups that run the app with `--mcp` keep working, and the app serves MCP instead of opening whenever an MCP client launches it over stdio.
 
-The server has the same features as the CLI, except API keys, recording control, and the calendar: reading, searching, and editing meetings, labels, notes, action items, and the dictionary; searching your knowledge base (`search_knowledge`, `list_knowledge_sources`), which `ask_meetings` also answers from; summaries, insights, Ask, and other LLM features; and workflows, integrations, summary templates, and insight types. So you can ask an agent things like *"Tag last week's customer calls and summarize what they asked for"* or *"Set up a workflow that posts meeting recaps to #eng"*. Large results come in pages, and tools that delete things ask Claude to confirm with you first.
+The server has the same features as the CLI, except API keys, recording control, and the calendar: reading, searching, and editing meetings, labels, notes, action items, and the dictionary; searching your knowledge base (`search_knowledge`, `list_knowledge_sources`), which `ask_meetings` also answers from; summaries, insights, Ask, and other LLM features; and workflows, integrations, summary templates, and insight types. Agents can also pin comments, highlights, and flags to a moment or range of a meeting (`add_meeting_annotation`, `list_meeting_annotations`, `resolve_meeting_annotation`, `delete_meeting_annotation`). Each is marked with the MCP client's name and shows on the meeting's timeline in the app; `get_meeting` includes them. So you can ask an agent things like *"Tag last week's customer calls and summarize what they asked for"* or *"Set up a workflow that posts meeting recaps to #eng"* or *"Review yesterday's design review against our ADRs and flag anything that contradicts one"*. Large results come in pages, and tools that delete things ask Claude to confirm with you first.
 
-To give an agent read access only, add `--read-only`: it can search and read your meetings but can't edit, delete, or send anything to an integration. Meeting text comes from everyone in the meeting, so this is the safer choice for agents that act on what they read.
+To give an agent read access only, add `--read-only`: it can search and read your meetings (agent notes included) but can't edit, delete, annotate, or send anything to an integration. Meeting text comes from everyone in the meeting, so this is the safer choice for agents that act on what they read.
 
 ```bash
 claude mcp add --scope user nootle-readonly -- /Applications/Nootle.app/Contents/MacOS/nootle-cli mcp --read-only
