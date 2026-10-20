@@ -24,7 +24,8 @@ import {
 const out = path.join(repoRoot, "docs/demo.gif");
 const VIEWPORT = { width: 1280, height: 800 };
 const SCALE = 2;
-const GIF_WIDTH = 960;
+// Wider than the README shows it, so it stays sharp on Retina screens.
+const GIF_WIDTH = 1600;
 const FPS = 12;
 
 /** Asked mid-meeting so Live Assist answers it from the knowledge base. */
@@ -138,9 +139,7 @@ async function record(page, dir, run) {
     writes.push(writeFile(file, data, "base64"));
     cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
   });
-  // 1.5x is plenty for a GIF scaled down to GIF_WIDTH.
-  const max = { maxWidth: VIEWPORT.width * 1.5, maxHeight: VIEWPORT.height * 1.5 };
-  await cdp.send("Page.startScreencast", { format: "png", ...max });
+  await cdp.send("Page.startScreencast", { format: "png" });
   await run();
   await cdp.send("Page.stopScreencast");
   await Promise.all(writes);
@@ -159,7 +158,7 @@ async function record(page, dir, run) {
 function encode(listFile) {
   const filters =
     `fps=${FPS},scale=${GIF_WIDTH}:-1:flags=lanczos,split[a][b];` +
-    `[a]palettegen=max_colors=192:stats_mode=diff[p];` +
+    `[a]palettegen=max_colors=256:stats_mode=diff[p];` +
     `[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle`;
   const ffmpeg = spawnSync(
     "ffmpeg",
