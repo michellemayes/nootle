@@ -4,7 +4,6 @@
  * demo-data.mjs.
  */
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -16,11 +15,16 @@ export const repoRoot = path.resolve(here, "../..");
 const PORT = Number(process.env.SCREENSHOT_PORT ?? 1420);
 export const BASE_URL = process.env.SCREENSHOT_BASE_URL ?? `http://localhost:${PORT}`;
 
-// Release builds get their version at publish time, so the newest released
-// one is the changelog's first numbered heading.
-const VERSION = readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8").match(
-  /^## \[(\d+\.\d+\.\d+)\]/m,
-)[1];
+/** macOS window traffic lights, positioned in their parent's top-left corner. */
+export const TRAFFIC_LIGHTS = `
+  <div style="position: absolute; top: 19px; left: 20px; display: flex; gap: 8px; pointer-events: none;">
+    ${["#FF5F57", "#FEBC2E", "#28C840"]
+      .map(
+        (color) =>
+          `<span style="width: 12px; height: 12px; border-radius: 50%; background: ${color}; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.12);"></span>`,
+      )
+      .join("")}
+  </div>`;
 
 export async function startDevServer() {
   if (process.env.SCREENSHOT_BASE_URL) return null;
@@ -56,17 +60,14 @@ export async function newDemoContext(browser, { theme, viewport, scale }) {
     locale: "en-US",
     timezoneId: "America/Los_Angeles",
   });
-  const fixtures = { ...FIXTURES, "plugin:app|version": VERSION };
   await context.addInitScript(
-    `window.__NOOTLE_FIXTURES__ = ${JSON.stringify(fixtures)};
+    `window.__NOOTLE_FIXTURES__ = ${JSON.stringify(FIXTURES)};
      localStorage.setItem("onboarding_complete", "true");
      localStorage.setItem("theme", ${JSON.stringify(theme)});
      localStorage.setItem("llm_provider", "anthropic");
      localStorage.setItem("llm_model", "claude-opus-4-6");
      localStorage.setItem("meetingViewMode", "grid");
-     localStorage.setItem("nootle-sidebar-collapsed", "false");
-     // Chromium's spellchecker sometimes underlines typed demo notes.
-     document.addEventListener("focusin", (e) => { e.target.spellcheck = false; }, true);`,
+     localStorage.setItem("nootle-sidebar-collapsed", "false");`,
   );
   // Start "now" just after the demo library's latest meeting so relative
   // dates, the greeting, and the streak render the same on every run.
@@ -99,12 +100,18 @@ export async function newDemoContext(browser, { theme, viewport, scale }) {
   return context;
 }
 
-/** Opens `route` and waits for `ready` to show, with text carets hidden. */
+/**
+ * Opens `route` and waits for `ready` to show and entrance animations to
+ * settle, with text carets and spellcheck underlines off.
+ */
 export async function openPage(context, route, ready) {
   const page = await context.newPage();
   page.on("pageerror", (err) => console.warn(`  ! ${route}: ${err.message}`));
   await page.goto(`${BASE_URL}${route}`, { waitUntil: "networkidle" });
   await page.addStyleTag({ content: "*, *::after { caret-color: transparent !important; }" });
+  // Fields inherit this, so typed demo notes never get a red underline.
+  await page.evaluate(() => (document.documentElement.spellcheck = false));
   await page.waitForSelector(ready, { timeout: 15_000 });
+  await page.waitForTimeout(1200);
   return page;
 }

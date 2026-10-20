@@ -14,7 +14,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { LIVE_TRANSCRIPT } from "./demo-data.mjs";
-import { launchBrowser, newDemoContext, openPage, repoRoot, startDevServer } from "./app.mjs";
+import {
+  TRAFFIC_LIGHTS,
+  launchBrowser,
+  newDemoContext,
+  openPage,
+  repoRoot,
+  startDevServer,
+} from "./app.mjs";
 
 const outDir = path.join(repoRoot, "site/public/screenshots");
 
@@ -101,20 +108,11 @@ async function frame(browser, rawPng, theme) {
           0 0 0 1px rgba(${dark ? "255, 255, 255, 0.09" : "0, 0, 0, 0.09"});
       }
       .window img { display: block; width: ${WINDOW.width}px; height: ${WINDOW.height}px; }
-      .lights { position: absolute; top: 19px; left: 20px; display: flex; gap: 8px; }
-      .lights span {
-        width: 12px; height: 12px; border-radius: 50%;
-        box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.12);
-      }
     </style>
     <div class="stage">
       <div class="window">
         <img src="data:image/png;base64,${rawPng.toString("base64")}" />
-        <div class="lights">
-          <span style="background:#FF5F57"></span>
-          <span style="background:#FEBC2E"></span>
-          <span style="background:#28C840"></span>
-        </div>
+        ${TRAFFIC_LIGHTS}
       </div>
     </div>
   `);
@@ -133,9 +131,11 @@ async function main() {
       const context = await newDemoContext(browser, { theme, viewport: WINDOW, scale: SCALE });
       for (const shot of SHOTS) {
         const page = await openPage(context, shot.route, shot.ready);
-        await shot.prepare?.(page);
-        // Let entrance animations settle before capturing.
-        await page.waitForTimeout(1200);
+        if (shot.prepare) {
+          await shot.prepare(page);
+          // Let what it set off settle before capturing.
+          await page.waitForTimeout(1200);
+        }
 
         const raw = await page.screenshot();
         const framed = await frame(browser, raw, theme);

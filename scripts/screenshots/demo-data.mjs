@@ -7,6 +7,8 @@
  * capture produces byte-comparable images.
  */
 
+import { readFileSync } from "node:fs";
+
 const day = (d, h, m = 0) =>
   `2026-07-${String(d).padStart(2, "0")}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00Z`;
 
@@ -651,6 +653,17 @@ function silentWav() {
   return Buffer.concat([header, Buffer.alloc(samples, 128)]).toString("base64");
 }
 
+/**
+ * Release builds get their version at publish time, so the newest released one
+ * is the changelog's first numbered heading.
+ */
+function latestRelease() {
+  const changelog = readFileSync(new URL("../../CHANGELOG.md", import.meta.url), "utf8");
+  const version = changelog.match(/^## \[(\d+\.\d+\.\d+)\]/m)?.[1];
+  if (!version) throw new Error("CHANGELOG.md has no released version heading");
+  return version;
+}
+
 /** 12:30pm PDT on the day of the most recent demo meeting. */
 export const DEMO_NOW = new Date("2026-07-28T19:30:00Z");
 
@@ -773,6 +786,7 @@ const LIVE_ASSIST_CARD = {
  * is enough for the fire-and-forget commands the screenshots never trigger.
  */
 export const FIXTURES = {
+  "plugin:app|version": latestRelease(),
   "plugin:window|inner_size": { width: 1440, height: 900 },
   "plugin:window|current_monitor": {
     name: "Built-in Retina Display",
@@ -784,7 +798,7 @@ export const FIXTURES = {
 
   list_meetings: MEETINGS,
   get_meeting: MEETINGS[0],
-  get_transcript: TRANSCRIPT,
+  get_transcript: { [MEETINGS[0].id]: TRANSCRIPT },
   get_summaries: SUMMARIES,
   get_insights: M1_INSIGHTS,
   get_all_insights: [...M1_INSIGHTS, ...OTHER_INSIGHTS],

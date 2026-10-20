@@ -33,7 +33,8 @@ screenshots the next time this runs — no mockup to keep in sync.
   streak render the same on every run.
 - **Which screens get captured** — the `SHOTS` array in `capture.mjs`.
 - **The demo tour** — `tour()` in `demo.mjs`.
-- **Window chrome** — the `frame()` function in `capture.mjs`.
+- **Window chrome** — `frame()` in `capture.mjs`; the traffic lights, shared
+  with the demo GIF, are `TRAFFIC_LIGHTS` in `app.mjs`.
 
 ## Fonts
 

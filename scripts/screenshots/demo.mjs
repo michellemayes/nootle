@@ -12,10 +12,18 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { LIVE_TRANSCRIPT } from "./demo-data.mjs";
-import { launchBrowser, newDemoContext, openPage, repoRoot, startDevServer } from "./app.mjs";
+import {
+  TRAFFIC_LIGHTS,
+  launchBrowser,
+  newDemoContext,
+  openPage,
+  repoRoot,
+  startDevServer,
+} from "./app.mjs";
 
 const out = path.join(repoRoot, "docs/demo.gif");
 const VIEWPORT = { width: 1280, height: 800 };
+const SCALE = 2;
 const GIF_WIDTH = 960;
 const FPS = 12;
 
@@ -40,13 +48,12 @@ const CHROME = `
       transition: transform 120ms ease-out;
     }
     #demo-cursor.down { transform: scale(0.85); }
-    #demo-lights { position: fixed; z-index: 2147483646; top: 19px; left: 20px; display: flex; gap: 8px; pointer-events: none; }
-    #demo-lights span { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.12); }
+    #demo-lights { position: fixed; z-index: 2147483646; inset: 0 auto auto 0; pointer-events: none; }
   \`;
   document.head.append(style);
   const lights = document.createElement("div");
   lights.id = "demo-lights";
-  lights.innerHTML = '<span style="background:#FF5F57"></span><span style="background:#FEBC2E"></span><span style="background:#28C840"></span>';
+  lights.innerHTML = ${JSON.stringify(TRAFFIC_LIGHTS)};
   const cursor = document.createElement("div");
   cursor.id = "demo-cursor";
   cursor.style.left = "-40px";
@@ -70,8 +77,9 @@ async function click(page, locator) {
   await page.mouse.up();
 }
 
-const say = (page, segment) =>
-  page.evaluate((s) => window.__NOOTLE_EMIT__("transcript-update", [s]), segment);
+const emit = (page, event, payload) =>
+  page.evaluate(([e, p]) => window.__NOOTLE_EMIT__(e, p), [event, payload]);
+const say = (page, segment) => emit(page, "transcript-update", [segment]);
 
 async function tour(page) {
   const pause = (ms) => page.waitForTimeout(ms);
@@ -82,12 +90,9 @@ async function tour(page) {
   // Start a recording; the live transcript builds while notes are typed.
   await click(page, page.getByRole("button", { name: "New recording" }).first());
   await page.getByRole("button", { name: "Design Review — Onboarding Flow" }).waitFor();
-  await page.evaluate(() =>
-    window.__NOOTLE_EMIT__("transcription-status", { meeting_id: "m-live", available: true }),
-  );
+  await emit(page, "transcription-status", { meeting_id: "m-live", available: true });
   await pause(500);
   await click(page, page.getByRole("button", { name: /Live transcript/ }));
-  await click(page, page.getByLabel("Answer questions automatically"));
   for (const segment of LIVE_TRANSCRIPT.slice(0, 3)) {
     await say(page, segment);
     await pause(900);
@@ -96,7 +101,9 @@ async function tour(page) {
   await page.keyboard.type("Permissions screen: 31% drop", { delay: 35 });
   await say(page, LIVE_TRANSCRIPT[3]);
   await page.keyboard.type("\nInline copy, not the docs link", { delay: 35 });
-  // Live Assist answers a question it hears from the knowledge base.
+  // Live Assist answers a question it hears from the knowledge base. The
+  // mock answers any question, so Auto goes on just before this one.
+  await click(page, page.getByLabel("Answer questions automatically"));
   await say(page, QUESTION);
   await pause(2800);
   for (const segment of LIVE_TRANSCRIPT.slice(4, 6)) {
@@ -117,62 +124,64 @@ async function tour(page) {
   await pause(3200);
 }
 
-/** Records the page's screencast while `run` drives it; returns timed PNG frames. */
-async function record(page, run) {
+/**
+ * Records the page's screencast into `dir` while `run` drives it, and returns
+ * an ffmpeg concat list that holds each frame for as long as it was on screen.
+ */
+async function record(page, dir, run) {
   const cdp = await page.context().newCDPSession(page);
   const frames = [];
+  const writes = [];
   cdp.on("Page.screencastFrame", ({ data, metadata, sessionId }) => {
-    frames.push({ data, time: metadata.timestamp });
+    const file = path.join(dir, `${String(frames.length).padStart(5, "0")}.png`);
+    frames.push({ file, time: metadata.timestamp });
+    writes.push(writeFile(file, data, "base64"));
     cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
   });
-  await cdp.send("Page.startScreencast", { format: "png" });
+  // 1.5x is plenty for a GIF scaled down to GIF_WIDTH.
+  const max = { maxWidth: VIEWPORT.width * 1.5, maxHeight: VIEWPORT.height * 1.5 };
+  await cdp.send("Page.startScreencast", { format: "png", ...max });
   await run();
   await cdp.send("Page.stopScreencast");
+  await Promise.all(writes);
+  // The concat demuxer ignores the last entry's duration, so repeat it.
   frames.push({ ...frames.at(-1), time: frames.at(-1).time + 1 });
-  return frames;
+  const list = [];
+  for (const [i, frame] of frames.entries()) {
+    list.push(`file '${frame.file}'`);
+    const next = frames[i + 1];
+    if (next) list.push(`duration ${(next.time - frame.time).toFixed(3)}`);
+  }
+  return list.join("\n");
 }
 
-/** Encodes timed frames as a palette-optimised GIF. */
-async function encode(frames) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "nootle-demo-"));
-  try {
-    const list = [];
-    for (const [i, frame] of frames.entries()) {
-      const file = path.join(dir, `${String(i).padStart(5, "0")}.png`);
-      await writeFile(file, Buffer.from(frame.data, "base64"));
-      list.push(`file '${file}'`);
-      const next = frames[i + 1];
-      if (next) list.push(`duration ${(next.time - frame.time).toFixed(3)}`);
-    }
-    const listFile = path.join(dir, "frames.txt");
-    await writeFile(listFile, list.join("\n"));
-    const filters =
-      `fps=${FPS},scale=${GIF_WIDTH}:-1:flags=lanczos,split[a][b];` +
-      `[a]palettegen=max_colors=192:stats_mode=diff[p];` +
-      `[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle`;
-    const ffmpeg = spawnSync(
-      "ffmpeg",
-      ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", listFile, "-filter_complex", filters, out],
-      { stdio: "inherit" },
-    );
-    if (ffmpeg.status !== 0) throw new Error("ffmpeg failed");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+/** Encodes a concat list of frames as a palette-optimised GIF. */
+function encode(listFile) {
+  const filters =
+    `fps=${FPS},scale=${GIF_WIDTH}:-1:flags=lanczos,split[a][b];` +
+    `[a]palettegen=max_colors=192:stats_mode=diff[p];` +
+    `[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle`;
+  const ffmpeg = spawnSync(
+    "ffmpeg",
+    ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", listFile, "-filter_complex", filters, out],
+    { stdio: "inherit" },
+  );
+  if (ffmpeg.status !== 0) throw new Error("ffmpeg failed");
 }
 
 async function main() {
   const server = await startDevServer();
   const browser = await launchBrowser();
+  const dir = await mkdtemp(path.join(os.tmpdir(), "nootle-demo-"));
   try {
-    const context = await newDemoContext(browser, { theme: "light", viewport: VIEWPORT, scale: 2 });
+    const context = await newDemoContext(browser, { theme: "light", viewport: VIEWPORT, scale: SCALE });
     const page = await openPage(context, "/", "text=Design Review — Onboarding Flow");
-    // Let entrance animations settle before the first frame.
-    await page.waitForTimeout(1200);
-    const frames = await record(page, () => tour(page));
-    await encode(frames);
-    console.log(`✓ ${path.relative(repoRoot, out)} (${frames.length} frames)`);
+    const listFile = path.join(dir, "frames.txt");
+    await writeFile(listFile, await record(page, dir, () => tour(page)));
+    encode(listFile);
+    console.log(`✓ ${path.relative(repoRoot, out)}`);
   } finally {
+    await rm(dir, { recursive: true, force: true });
     await browser.close();
     server?.kill();
   }

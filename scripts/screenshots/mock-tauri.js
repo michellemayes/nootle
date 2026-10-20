@@ -17,8 +17,11 @@
       const byId = fixtures.list_chat_messages || {};
       return byId[args?.conversationId] || [];
     }
-    // The live recording starts empty; its lines arrive as events.
-    if (cmd === "get_transcript" && args?.meetingId === "m-live") return [];
+    // Transcripts are keyed by meeting id; the live recording's arrive as events.
+    if (cmd === "get_transcript") {
+      const byId = fixtures.get_transcript || {};
+      return byId[args?.meetingId] || [];
+    }
     // Mirror the backend's title search so the palette and library filter.
     if (cmd === "list_meetings" && args?.search) {
       const q = args.search.toLowerCase();
