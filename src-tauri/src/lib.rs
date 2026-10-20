@@ -29,6 +29,7 @@ pub mod ops;
 pub mod permissions;
 pub mod pipeline;
 pub mod remote;
+pub mod room_recap;
 pub mod sandbox_migration;
 pub mod share;
 pub mod shell_env;
@@ -460,6 +461,9 @@ pub fn run() {
             commands::generate_summary,
             commands::cancel_summary,
             commands::chat_with_meeting,
+            commands::get_audio_recap,
+            commands::generate_audio_recap,
+            commands::ask_the_room,
             commands::list_llm_models,
             commands::list_llm_providers,
             commands::seed_default_prompts,

@@ -84,6 +84,45 @@ const TRANSCRIPT = [
   line("t12", "Speaker 1", "Then that's decided — calendar access moves out of onboarding and becomes contextual.", 118_000, 126_000),
 ];
 
+/** Ask the Room: the spoken recap of m1, with when each line is spoken. */
+const recapLine = (speaker, voice, text, startMs, endMs) => ({
+  speaker,
+  voice,
+  text,
+  start_ms: startMs,
+  end_ms: endMs,
+});
+
+const AUDIO_RECAP = {
+  meeting_id: "m1",
+  audio_path: "/demo/m1.recap.wav",
+  provider: "anthropic",
+  model: "claude-opus-4-6",
+  created_at: "2026-07-28T18:05:00Z",
+  lines: [
+    recapLine("Narrator", "Samantha", "Here's your recap of the onboarding design review. Three of you looked at where the rebuilt flow is losing people, and settled two changes.", 0, 9_400),
+    recapLine("Speaker 1", "Daniel", "I pulled this morning's funnel. Thirty-one percent of people drop off on the permissions screen, the biggest leak we have.", 9_800, 17_900),
+    recapLine("Speaker 3", "Karen", "Support hears the same thing: people don't understand why we ask for screen recording access.", 18_300, 24_600),
+    recapLine("Speaker 2", "Moira", "So I suggested we explain it in place, one sentence right above the button, instead of linking out to the docs.", 25_000, 32_800),
+    recapLine("Speaker 1", "Daniel", "We agreed to ship that inline explainer this sprint, and I'll re-measure after a week of data.", 33_200, 39_700),
+    recapLine("Narrator", "Samantha", "The second decision was about the calendar permission.", 40_100, 43_200),
+    recapLine("Speaker 3", "Karen", "Nobody needs calendar detection in the first sixty seconds, so it moves out of onboarding.", 43_600, 49_500),
+    recapLine("Speaker 2", "Moira", "It'll come up the first time someone opens an empty meetings list instead.", 49_900, 54_800),
+    recapLine("Narrator", "Samantha", "To wrap up: Speaker 3 drafts two copy variants by Thursday, Speaker 2 wires the split behind the existing flag, and Speaker 1 re-measures step three next week.", 55_200, 66_400),
+  ],
+};
+
+const ROOM_ANSWER = {
+  audio_path: "/demo/m1.answer.wav",
+  line: recapLine(
+    "Speaker 3",
+    "Karen",
+    "I said I'd have the copy ready by Thursday, and I'd like to test two variants if we have the traffic for it.",
+    0,
+    7_200,
+  ),
+};
+
 const SUMMARY_CONTENT = `## Overview
 
 The team reviewed funnel data for the rebuilt onboarding flow and agreed on two changes: an inline explanation for the screen-recording permission, and deferring the calendar permission out of onboarding entirely.
@@ -800,6 +839,9 @@ export const FIXTURES = {
   get_meeting: MEETINGS[0],
   get_transcript: { [MEETINGS[0].id]: TRANSCRIPT },
   get_summaries: SUMMARIES,
+  get_audio_recap: AUDIO_RECAP,
+  generate_audio_recap: AUDIO_RECAP,
+  ask_the_room: ROOM_ANSWER,
   get_insights: M1_INSIGHTS,
   get_all_insights: [...M1_INSIGHTS, ...OTHER_INSIGHTS],
   list_insight_types: INSIGHT_TYPES,
