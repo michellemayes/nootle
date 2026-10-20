@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useDeferredValue } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -41,7 +41,9 @@ import {
   useFollowPlayback,
   useIsPlaying,
 } from "@/components/AudioPlayerControls";
-import type { LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment, Workflow, WorkflowRun } from "@/types";
+import { commitmentAge, momentLink } from "@/components/CommitmentRow";
+import { listen } from "@tauri-apps/api/event";
+import type { Commitment, LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, TranscriptSegment, Workflow, WorkflowRun } from "@/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Input } from "@/components/ui/input";
@@ -57,7 +59,10 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  CircleCheck,
   FileText,
+  Handshake,
+  Hourglass,
   Lightbulb,
   List,
   Mail,
@@ -344,7 +349,7 @@ function ActionItemRow({
   );
 }
 
-function InsightSection({
+function InsightSection<T extends { id: string }>({
   title,
   icon: Icon,
   items,
@@ -353,9 +358,9 @@ function InsightSection({
 }: {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
-  items: InsightWithActionItem[];
+  items: T[];
   defaultOpen?: boolean;
-  renderItem: (item: InsightWithActionItem) => React.ReactNode;
+  renderItem: (item: T) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
@@ -392,6 +397,49 @@ function InsightSection({
   );
 }
 
+/** What this meeting showed done or slipped from earlier meetings'
+ * commitments, kept fresh as the meeting is checked. */
+function useFollowups(meetingId: string) {
+  const [followups, setFollowups] = useState<Commitment[]>([]);
+  const load = useCallback(() => {
+    invoke<Commitment[]>("get_meeting_followups", { meetingId }).then(setFollowups).catch(() => {});
+  }, [meetingId]);
+  useEffect(() => {
+    load();
+    const unlisten = listen<string>("commitments-updated", (e) => {
+      if (e.payload === meetingId) load();
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [meetingId, load]);
+  return [followups, setFollowups] as const;
+}
+
+/** A commitment from an earlier meeting, and what this one showed about it. */
+function FollowUpRow({ commitment: c, onSeek }: { commitment: Commitment; onSeek?: (ms: number) => void }) {
+  const done = c.evidence?.verdict === "done";
+  return (
+    <div className="rounded-md border p-3 space-y-1">
+      <div className="flex items-start gap-2">
+        {done ? (
+          <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-success-foreground" />
+        ) : (
+          <Hourglass className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
+        )}
+        <p className="flex-1 text-sm leading-relaxed">{c.content}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 pl-6 text-xs text-muted-foreground">
+        <Badge variant={done ? "success" : "warning"} size="sm">{done ? "Done" : "Slipped"}</Badge>
+        <span>{c.owner}</span>
+        {c.evidence?.timestamp_ms != null && <TimestampButton ms={c.evidence.timestamp_ms} onSeek={onSeek} />}
+        <Link to={momentLink(c.meeting_id, c.transcript_start_ms)} className="hover:text-foreground hover:underline">
+          Committed {commitmentAge(c)} in {c.meeting_title}
+        </Link>
+      </div>
+      {c.evidence?.quote && <p className="pl-6 text-xs italic text-muted-foreground">“{c.evidence.quote}”</p>}
+    </div>
+  );
+}
+
 function InsightsPanel({
   meetingId,
   onSeek,
@@ -414,6 +462,26 @@ function InsightsPanel({
   const { selectedProvider, selectedModel, providers } = useGlobalLLMSelection();
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
+  const [followups, setFollowups] = useFollowups(meetingId);
+  const [checking, setChecking] = useState(false);
+
+  const handleCheckFollowups = async () => {
+    if (!selectedProvider || !selectedModel) return;
+    setChecking(true);
+    try {
+      const found = await invoke<Commitment[]>("check_meeting_followups", {
+        meetingId,
+        provider: selectedProvider,
+        model: selectedModel,
+      });
+      setFollowups(found);
+      if (found.length === 0) toast("Nothing owed from earlier meetings came up as done or slipped.");
+    } catch (err) {
+      toast(`Couldn't check follow-ups: ${err}`);
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const hasInsights = insights.length > 0;
 
@@ -462,12 +530,33 @@ function InsightsPanel({
             </>
           )}
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs"
+          onClick={handleCheckFollowups}
+          disabled={checking || !selectedProvider || !selectedModel}
+          title="Check whether this meeting followed up on commitments from earlier meetings"
+        >
+          <Handshake className={`h-3 w-3 mr-1 ${checking ? "animate-pulse" : ""}`} />
+          {checking ? "Checking follow-ups…" : "Check follow-ups"}
+        </Button>
         {(extractError || insightsError) && (
           <span className="text-xs text-destructive">Couldn't extract insights. Try again.</span>
         )}
       </div>
 
       <ScrollArea className="flex-1">
+        {followups.length > 0 && (
+          <div className="px-5 pt-5">
+            <InsightSection
+              title="Follow-ups from earlier meetings"
+              icon={Handshake}
+              items={followups}
+              renderItem={(c) => <FollowUpRow commitment={c} onSeek={onSeek} />}
+            />
+          </div>
+        )}
         {!hasInsights ? (
           <EmptyState
             icon={Lightbulb}
@@ -1201,6 +1290,21 @@ export function MeetingDetail() {
     if (index >= 0) scrollToSegment(segments[index].id);
     setPendingScrollMs(null);
   }, [pendingScrollMs, transcriptViewport, segments, scrollToSegment]);
+
+  // A link to a moment (/meeting/:id?t=ms), e.g. where a commitment was
+  // made: open the transcript there, ready to play.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const momentParam = searchParams.get("t");
+  useEffect(() => {
+    if (momentParam === null) return;
+    const ms = Number(momentParam);
+    if (Number.isFinite(ms) && ms >= 0) {
+      setTranscriptCollapsed(false);
+      setPendingScrollMs(ms);
+      if (audioElement) audioElement.currentTime = ms / 1000;
+    }
+    setSearchParams({}, { replace: true });
+  }, [momentParam, audioElement, setSearchParams]);
 
   // Find in transcript (⌘F).
   const [findOpen, setFindOpen] = useState(false);

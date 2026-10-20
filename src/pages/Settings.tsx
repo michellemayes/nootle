@@ -856,6 +856,39 @@ function LiveAssistSetting() {
   );
 }
 
+/** Follow-through checks: each new meeting is checked against the open
+ * commitments from earlier ones. Off unless turned on. */
+function FollowThroughCard() {
+  const [enabled, setEnabled] = useBooleanSetting("commitment_checks", false);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Follow-through</CardTitle>
+        <CardDescription>
+          Commitments are action items someone owns. See them on the{" "}
+          <RouterLink to="/insights" className="underline">Insights</RouterLink> and{" "}
+          <RouterLink to="/people" className="underline">People</RouterLink> pages.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Check follow-through after each meeting</p>
+            <p className="text-sm text-muted-foreground">
+              When a meeting ends, open commitments whose owner was there, or whose topic came up,
+              are checked against what was said, using your summary model. Each is marked done or
+              slipped, with the moment that shows it. Only those commitments and the passages about
+              them are sent. You can always check a meeting from its Insights tab, or mark
+              commitments yourself
+            </p>
+          </div>
+          <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Check follow-through after each meeting" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 /** Privacy: the consent reminder, its message, and local-only mode. */
 function PrivacyCard() {
   const [reminder, setReminder] = useBooleanSetting("consent_reminder", true);
@@ -1193,6 +1226,7 @@ export function SettingsPage() {
 
         <TabsContent value="insight-types" className="mt-0 flex-1 overflow-auto">
           <div className="flex flex-col gap-8 p-6 max-w-3xl">
+            <FollowThroughCard />
             <InsightTypesManager />
           </div>
         </TabsContent>

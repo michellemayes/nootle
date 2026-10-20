@@ -8,8 +8,10 @@ import { LoadingState } from "@/components/LoadingState";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { ActionItemCheckbox } from "@/components/ActionItemCheckbox";
+import { CommitmentRow } from "@/components/CommitmentRow";
+import { useCommitments } from "@/hooks/useCommitments";
 import { formatDate, cn, plural } from "@/lib/utils";
-import type { InsightWithActionItem, Meeting } from "@/types";
+import type { CommitmentStatus, InsightWithActionItem, Meeting } from "@/types";
 
 interface Person {
   name: string;
@@ -50,6 +52,14 @@ export function PeoplePage() {
     if (!selected) return;
     invoke<PersonDetail>("get_person", { name: selected.name }).then(setDetail).catch(() => {});
   }, [selected]);
+  const { commitments, setStatus, refresh: refreshCommitments } = useCommitments(selected?.name);
+  const owed = (commitments ?? []).filter((c) => c.status === "open" || c.status === "slipped");
+  // A commitment is one of their action items, so both lists follow it.
+  const setCommitmentStatus = async (id: string, status: CommitmentStatus) => {
+    await setStatus(id, status);
+    if (selected) invoke<PersonDetail>("get_person", { name: selected.name }).then(setDetail).catch(() => {});
+    invoke<Person[]>("list_people").then(setPeople).catch(() => {});
+  };
 
   // Updated in place: the list's open count and this item flip together.
   const toggle = async (item: InsightWithActionItem) => {
@@ -60,6 +70,7 @@ export function PeoplePage() {
     } catch {
       return;
     }
+    refreshCommitments();
     setDetail((d) =>
       d && {
         ...d,
@@ -129,6 +140,16 @@ export function PeoplePage() {
                     {plural(selected.meeting_count, "meeting")}
                   </p>
                 </div>
+                {owed.length > 0 && (
+                  <section>
+                    <h3 className="mb-2 text-sm font-medium">Open commitments</h3>
+                    <div className="space-y-2">
+                      {owed.map((c) => (
+                        <CommitmentRow key={c.id} commitment={c} onSetStatus={setCommitmentStatus} showOwner={false} />
+                      ))}
+                    </div>
+                  </section>
+                )}
                 <section>
                   <h3 className="mb-2 text-sm font-medium">Action items</h3>
                   {detail.action_items.length === 0 ? (

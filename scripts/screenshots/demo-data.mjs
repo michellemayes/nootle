@@ -781,6 +781,114 @@ const LIVE_ASSIST_CARD = {
   automatic: true,
 };
 
+const commitment = (o) => ({
+  due_date: null,
+  status: "open",
+  transcript_start_ms: null,
+  evidence: null,
+  ...o,
+});
+
+const titleOf = (id) => MEETINGS.find((m) => m.id === id).title;
+const startOf = (id) => MEETINGS.find((m) => m.id === id).start_time;
+const evidence = (meetingId, verdict, timestampMs, quote) => ({
+  meeting_id: meetingId,
+  meeting_title: titleOf(meetingId),
+  meeting_start_time: startOf(meetingId),
+  verdict,
+  timestamp_ms: timestampMs,
+  quote,
+});
+const madeIn = (meetingId, meetingsSince, transcriptStartMs) => ({
+  meeting_id: meetingId,
+  meeting_title: titleOf(meetingId),
+  meeting_start_time: startOf(meetingId),
+  meetings_since: meetingsSince,
+  transcript_start_ms: transcriptStartMs,
+});
+
+/** Action items with an owner, followed across later meetings. */
+const COMMITMENTS = [
+  commitment({
+    id: "c1",
+    owner: "Priya Shah",
+    content: "Send Northwind the pricing deck and pilot terms",
+    due_date: "2026-07-27",
+    status: "slipped",
+    ...madeIn("m4", 3, 2_412_000),
+    evidence: evidence("m2", "slipped", 1_284_000, "The pricing deck is still with legal, it should go out Wednesday"),
+  }),
+  commitment({
+    id: "c2",
+    owner: "Alex Chen",
+    content: "Send the recruiting screener for the onboarding study",
+    status: "slipped",
+    ...madeIn("m2", 2, 1_946_000),
+    evidence: evidence("m1", "slipped", 2_031_000, "The screener isn't done yet, I'll have it Thursday"),
+  }),
+  commitment({
+    id: "c3",
+    owner: "You",
+    content: "Book the user-research sessions for the onboarding study",
+    due_date: "2026-07-31",
+    ...madeIn("m5", 4, 3_120_000),
+  }),
+  commitment({
+    id: "c4",
+    owner: "Alex Chen",
+    content: "Write up the transcription worker refactor plan",
+    ...madeIn("m3", 1, 840_000),
+  }),
+  commitment({
+    id: "c5",
+    owner: "Jordan Lee",
+    content: "Share the Q3 roadmap draft with the support team",
+    status: "done",
+    ...madeIn("m5", 4, 2_210_000),
+    evidence: evidence("m1", "done", 1_772_000, "I shared the roadmap draft with support yesterday"),
+  }),
+  commitment({
+    id: "c6",
+    owner: "Sam Ortiz",
+    content: "Re-run the crash-on-resume repro on an Intel Mac",
+    status: "done",
+    ...madeIn("m6", 5, 1_090_000),
+    evidence: evidence("m2", "done", 655_000, "Repro'd it on the Intel mini, it's the device change handler"),
+  }),
+  commitment({
+    id: "c7",
+    owner: "Priya Shah",
+    content: "Get legal sign-off on the new consent copy",
+    status: "dropped",
+    ...madeIn("m9", 6, 3_801_000),
+  }),
+];
+
+const PEOPLE = [
+  { name: "Priya Shah", meeting_count: 5, last_met: day(27, 16, 30), talk_time_ms: 2_940_000, open_action_items: 1 },
+  { name: "Alex Chen", meeting_count: 4, last_met: day(28, 17, 0), talk_time_ms: 2_310_000, open_action_items: 2 },
+  { name: "Jordan Lee", meeting_count: 3, last_met: day(28, 17, 0), talk_time_ms: 1_420_000, open_action_items: 0 },
+  { name: "Sam Ortiz", meeting_count: 2, last_met: day(27, 16, 30), talk_time_ms: 980_000, open_action_items: 0 },
+];
+
+/** A Live Assist reminder of an open commitment, as the backend words it. */
+const COMMITMENT_REMINDER = {
+  id: "la-c1",
+  question: "Priya Shah committed to send Northwind the pricing deck and pilot terms 3 meetings ago (Jul 24). It has slipped",
+  answer: null,
+  sources: [
+    {
+      type: "meeting",
+      meeting_id: "m4",
+      meeting_title: titleOf("m4"),
+      start_ms: 2_412_000,
+      end_ms: 2_412_000,
+    },
+  ],
+  automatic: true,
+  commitment_id: "c1",
+};
+
 /**
  * Command name -> response. Anything not listed here resolves to `null`, which
  * is enough for the fire-and-forget commands the screenshots never trigger.
@@ -825,6 +933,35 @@ export const FIXTURES = {
   list_knowledge_documents: KNOWLEDGE_DOCUMENTS,
   search_knowledge: KNOWLEDGE_HITS,
   live_assist: LIVE_ASSIST_CARD,
+  live_commitment_reminders: [COMMITMENT_REMINDER],
+
+  list_commitments: COMMITMENTS,
+  get_meeting_followups: {
+    m1: COMMITMENTS.filter((c) => c.evidence?.meeting_id === "m1").map((c) => ({
+      ...c,
+      status: c.evidence.verdict,
+    })),
+  },
+  list_people: PEOPLE,
+  get_person: {
+    name: "Priya Shah",
+    meetings: ["m2", "m4", "m5", "m9"].map((id) => MEETINGS.find((m) => m.id === id)),
+    // Her action items, as the Insights page lists them.
+    action_items: COMMITMENTS.filter((c) => c.owner === "Priya Shah").map((c) =>
+      insight({
+        id: `i-${c.id}`,
+        meeting_id: c.meeting_id,
+        type: "action_item",
+        content: c.content,
+        action_item_id: c.id,
+        assignee: c.owner,
+        due_date: c.due_date,
+        status: c.status === "dropped" ? "cancelled" : c.status === "done" ? "done" : "open",
+        meeting_title: c.meeting_title,
+        meeting_start_time: c.meeting_start_time,
+      }),
+    ),
+  },
   get_embedding_status: { embedded: 6, total: 6, model_available: true },
 
   list_llm_models: MODELS,

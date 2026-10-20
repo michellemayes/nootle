@@ -69,6 +69,21 @@ pub struct LiveAssistCard {
     pub sources: Vec<Value>,
     /// Whether it answered a question heard in the meeting, not a typed one.
     pub automatic: bool,
+    /// Set on a reminder of a commitment from an earlier meeting, whose
+    /// text is `question`.
+    pub commitment_id: Option<String>,
+}
+
+/// A quiet reminder of an open commitment, linking to where it was made.
+pub fn commitment_card(c: &crate::db::Commitment) -> LiveAssistCard {
+    LiveAssistCard {
+        id: uuid::Uuid::new_v4().to_string(),
+        question: crate::commitments::reminder_text(c),
+        answer: None,
+        sources: vec![crate::commitments::source(c)],
+        automatic: true,
+        commitment_id: Some(c.id.clone()),
+    }
 }
 
 /// Passages at least this close to the question (L2 distance between unit
@@ -136,6 +151,7 @@ pub async fn answer(
         answer: answer.map(str::to_string),
         sources,
         automatic,
+        commitment_id: None,
     };
 
     let Some((llm, provider, model)) = llm else {

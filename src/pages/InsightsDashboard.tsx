@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +15,11 @@ import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import type { InsightWithActionItem, InsightType, LinearTeam } from "@/types";
 import type { LucideIcon } from "lucide-react";
-import { Lightbulb, Search, Ticket } from "lucide-react";
+import { Handshake, Lightbulb, Search, Ticket } from "lucide-react";
 import { ActionItemCheckbox } from "@/components/ActionItemCheckbox";
+import { CommitmentRow } from "@/components/CommitmentRow";
+import { useCommitments } from "@/hooks/useCommitments";
+import { useBooleanSetting } from "@/hooks/useBooleanSetting";
 import { formatDate } from "@/lib/utils";
 import { insightIcon } from "@/lib/insightIcons";
 
@@ -333,6 +336,68 @@ function TypeSection({
   );
 }
 
+/** Action items someone owns, and whether later meetings show them done:
+ * the ones still owed first (slipped ones on top), done and dropped ones a
+ * click away. Follows the page's owner, status and search filters. */
+function CommitmentsSection({
+  owner,
+  status,
+  search,
+}: {
+  owner: string | undefined;
+  status: string | undefined;
+  search: string | undefined;
+}) {
+  const { commitments, setStatus } = useCommitments();
+  const [checksOn] = useBooleanSetting("commitment_checks", false);
+  const [showClosed, setShowClosed] = useState(false);
+  if (!commitments || commitments.length === 0 || owner === UNASSIGNED) return null;
+
+  const query = search?.toLowerCase();
+  const matching = commitments.filter(
+    (c) =>
+      (owner === undefined || c.owner.toLowerCase() === owner.toLowerCase()) &&
+      (!query || c.content.toLowerCase().includes(query)),
+  );
+  const pending = matching
+    .filter((c) => c.status === "open" || c.status === "slipped")
+    .sort((a, b) => Number(b.status === "slipped") - Number(a.status === "slipped"));
+  const closed = matching.filter((c) => c.status === "done" || c.status === "dropped");
+  const shown =
+    status === "done"
+      ? closed.filter((c) => c.status === "done")
+      : status === undefined && showClosed
+        ? [...pending, ...closed]
+        : pending;
+
+  return (
+    <section>
+      <div className="flex items-center gap-2 pb-2">
+        <Handshake className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-base font-semibold">Commitments</h2>
+        <Badge variant="secondary" size="sm">{pending.length}</Badge>
+        {closed.length > 0 && status === undefined && (
+          <Button variant="ghost" size="xs" className="ml-auto" onClick={() => setShowClosed((v) => !v)}>
+            {showClosed ? "Hide done and dropped" : `Show done and dropped (${closed.length})`}
+          </Button>
+        )}
+      </div>
+      {!checksOn && (
+        <p className="pb-2 text-xs text-muted-foreground">
+          Turn on <Link to="/settings?tab=insight-types" className="underline">follow-through checks</Link> and
+          each new meeting marks these done or slipped when it comes up.
+        </p>
+      )}
+      <div className="space-y-2">
+        {shown.length === 0 && <p className="text-sm text-muted-foreground">Nothing owed right now.</p>}
+        {shown.map((c) => (
+          <CommitmentRow key={c.id} commitment={c} onSetStatus={setStatus} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function InsightsDashboard() {
   const navigate = useNavigate();
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
@@ -405,7 +470,7 @@ export function InsightsDashboard() {
     <div className="flex flex-1 flex-col overflow-hidden">
       <PageHeader
         title="Insights"
-        description="Action items, decisions, and key moments from your meetings"
+        description="Commitments, action items, decisions, and key moments from your meetings"
       />
 
       <div className="flex shrink-0 items-center gap-3 px-6 pt-6">
@@ -467,6 +532,9 @@ export function InsightsDashboard() {
       ) : (
         <ScrollArea className="flex-1">
           <div className="space-y-8 p-6">
+            {(typeFilter === undefined || typeFilter === "action_item") && (
+              <CommitmentsSection owner={assigneeFilter} status={statusFilter} search={searchDebounced} />
+            )}
             {visibleTypes.map((t) => (
               <TypeSection
                 key={t.slug}

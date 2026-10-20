@@ -5,6 +5,7 @@ pub mod calendar;
 pub mod call_names;
 pub mod chunking;
 pub mod commands;
+pub mod commitments;
 pub mod connectors;
 pub mod db;
 pub mod detection;
@@ -525,6 +526,11 @@ pub fn run() {
             commands::search_knowledge,
             commands::open_knowledge_document,
             commands::live_assist,
+            commands::live_commitment_reminders,
+            commands::list_commitments,
+            commands::update_commitment,
+            commands::get_meeting_followups,
+            commands::check_meeting_followups,
             commands::compute_meeting_analytics,
             commands::compute_meeting_sentiment,
             commands::get_meeting_analytics,

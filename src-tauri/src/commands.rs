@@ -870,7 +870,7 @@ async fn finish_meeting(
     }
 
     // Embedding is local CPU work and independent of the LLM calls below.
-    {
+    let indexed = {
         let db = db.clone();
         let meeting_id = meeting_id.clone();
         let embedding_state = embedding_state.clone();
@@ -882,8 +882,8 @@ async fn finish_meeting(
                     Err(e) => tracing::warn!("Failed to embed meeting {meeting_id}: {e}"),
                 }
             }
-        });
-    }
+        })
+    };
 
     // Title, summaries and insights are independent LLM calls, so they run
     // side by side and the summary lands as soon as its own call returns.
@@ -911,6 +911,7 @@ async fn finish_meeting(
     };
     if segment_count == 0 {
         summarize.await;
+        return;
     } else if auto_model_is_local(&db, &llm_state).await {
         summarize.await;
         auto_extract_insights(&db, &llm_state, &app, &meeting_id).await;
@@ -919,6 +920,59 @@ async fn finish_meeting(
             summarize,
             auto_extract_insights(&db, &llm_state, &app, &meeting_id),
         );
+    }
+    // Last, once the meeting is indexed: whether it followed up on
+    // commitments from earlier meetings.
+    let _ = indexed.await;
+    auto_check_commitments(&db, &llm_state, &embedding_state, &app, &meeting_id).await;
+}
+
+/// Checks open commitments from earlier meetings against a finished one,
+/// when turned on and an automatic model is available.
+async fn auto_check_commitments(
+    db: &DbState,
+    llm_state: &LlmState,
+    embedding_state: &EmbeddingState,
+    app: &tauri::AppHandle,
+    meeting_id: &str,
+) {
+    if !db.get_bool_setting(crate::commitments::SETTING_KEY, false) {
+        return;
+    }
+    let registry = llm_state.read().await;
+    let Some(model) = pick_auto_model(db, &registry) else {
+        tracing::info!("No LLM available, skipping the follow-through check");
+        return;
+    };
+    // The search model is only held while choosing passages, not during
+    // the LLM call.
+    let gathered = {
+        let db = db.clone();
+        let meeting_id = meeting_id.to_string();
+        let embedding_state = embedding_state.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut slot = embedding_state.blocking_lock();
+            let mut engine = crate::ops::loaded_embedding_engine(&mut slot).ok();
+            crate::commitments::gather(&db, &meeting_id, |text| {
+                engine.as_deref_mut().and_then(|e| e.embed(text).ok())
+            })
+        })
+        .await
+    };
+    let check = match gathered {
+        Ok(Ok(Some(check))) => check,
+        Ok(Ok(None)) => return,
+        Ok(Err(e)) => return tracing::warn!("Couldn't gather commitments to check: {e}"),
+        Err(e) => return tracing::warn!("Commitment gathering panicked: {e}"),
+    };
+    match crate::commitments::run(db, &registry, &model.provider, &model.id, &check).await {
+        Ok((done, slipped)) => {
+            tracing::info!("Follow-through check: {done} done, {slipped} slipped");
+            if done + slipped > 0 {
+                let _ = app.emit("commitments-updated", meeting_id);
+            }
+        }
+        Err(e) => tracing::warn!("Follow-through check failed: {e}"),
     }
 }
 
@@ -1615,6 +1669,65 @@ pub fn get_person(db: State<'_, DbState>, name: String) -> Result<serde_json::Va
         })
         .collect();
     Ok(serde_json::json!({ "name": name, "meetings": meetings, "action_items": action_items }))
+}
+
+/// Commitments (action items with an owner), filtered by owner and
+/// status (open, done, slipped, dropped).
+#[tauri::command(async)]
+pub fn list_commitments(
+    db: State<'_, DbState>,
+    owner: Option<String>,
+    status: Option<String>,
+) -> Result<Vec<Commitment>, String> {
+    crate::commitments::list(&db, owner.as_deref(), status.as_deref()).map_err(|e| e.to_string())
+}
+
+/// Marks a commitment open, done, slipped, or dropped by hand.
+#[tauri::command(async)]
+pub fn update_commitment(
+    db: State<'_, DbState>,
+    id: String,
+    status: String,
+) -> Result<Commitment, String> {
+    crate::commitments::set_status(&db, &id, &status).map_err(|e| e.to_string())
+}
+
+/// Commitments from earlier meetings this one showed done or slipped.
+#[tauri::command(async)]
+pub fn get_meeting_followups(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<Commitment>, String> {
+    db.commitment_followups(&meeting_id, &crate::commitments::today())
+        .map_err(|e| e.to_string())
+}
+
+/// Checks open commitments from earlier meetings against this one now,
+/// with the chosen model. Returns its follow-ups.
+#[tauri::command]
+pub async fn check_meeting_followups(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    embedding_state: State<'_, EmbeddingState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+) -> Result<Vec<Commitment>, String> {
+    let check = {
+        let mut engine = lock_embedding_engine(&embedding_state).await.ok();
+        crate::commitments::gather(&db, &meeting_id, |text| {
+            engine.as_deref_mut().and_then(|e| e.embed(text).ok())
+        })
+        .map_err(|e| e.to_string())?
+    };
+    if let Some(check) = check {
+        let llm = llm.read().await;
+        crate::commitments::run(&db, &llm, &provider, &model, &check)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    db.commitment_followups(&meeting_id, &crate::commitments::today())
+        .map_err(|e| e.to_string())
 }
 
 /// "What did I miss?" during (or after) a meeting.
@@ -2913,4 +3026,27 @@ pub async fn live_assist(
     crate::live_assist::answer(&db, chosen, &meeting_id, &question, &embedding, automatic)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Live Assist reminders while recording: open commitments from earlier
+/// meetings owed by whoever said `text`, or whose topic it touches.
+/// `reminded` holds the commitments already on cards.
+#[tauri::command(async)]
+pub fn live_commitment_reminders(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    speaker: String,
+    text: String,
+    reminded: Option<Vec<String>>,
+) -> Result<Vec<crate::live_assist::LiveAssistCard>, String> {
+    let reminded = reminded.unwrap_or_default().into_iter().collect();
+    let pending = db
+        .list_commitments(&crate::commitments::today())
+        .map_err(|e| e.to_string())?;
+    Ok(
+        crate::commitments::reminders(&pending, &meeting_id, &speaker, &text, &reminded)
+            .into_iter()
+            .map(crate::live_assist::commitment_card)
+            .collect(),
+    )
 }

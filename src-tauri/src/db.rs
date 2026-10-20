@@ -650,6 +650,39 @@ pub struct InsightWithActionItem {
     pub meeting_start_time: Option<String>,
 }
 
+/// An action item someone owns, followed across the meetings after it.
+#[derive(Debug, Clone, Serialize)]
+pub struct Commitment {
+    /// The action item's ID.
+    pub id: String,
+    pub owner: String,
+    pub content: String,
+    pub due_date: Option<String>,
+    /// open, done, slipped, or dropped.
+    pub status: String,
+    /// The meeting it was made in, and when in it.
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub meeting_start_time: String,
+    pub transcript_start_ms: Option<i64>,
+    /// Meetings recorded since it was made.
+    pub meetings_since: i64,
+    /// The latest later moment that showed it done or slipped.
+    pub evidence: Option<CommitmentEvidence>,
+}
+
+/// A moment in a later meeting that showed a commitment done or slipped.
+#[derive(Debug, Clone, Serialize)]
+pub struct CommitmentEvidence {
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub meeting_start_time: String,
+    /// done or slipped.
+    pub verdict: String,
+    pub timestamp_ms: Option<i64>,
+    pub quote: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatConversation {
     pub id: String,
@@ -1194,6 +1227,23 @@ impl Database {
             "ALTER TABLE meetings ADD COLUMN template_id TEXT REFERENCES templates(id)",
             [],
         );
+
+        // Commitment tracking: when a later meeting showed an open action
+        // item slipping, and the moments that showed it done or slipped.
+        let _ = conn.execute("ALTER TABLE action_items ADD COLUMN slipped_at TEXT", []);
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS commitment_evidence (
+                 action_item_id TEXT NOT NULL REFERENCES action_items(id) ON DELETE CASCADE,
+                 meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                 verdict TEXT NOT NULL,
+                 timestamp_ms INTEGER,
+                 quote TEXT,
+                 created_at TEXT NOT NULL,
+                 PRIMARY KEY (action_item_id, meeting_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_commitment_evidence_meeting
+                 ON commitment_evidence(meeting_id);",
+        )?;
 
         Self::seed_builtin_templates(&conn)?;
 
@@ -4381,6 +4431,185 @@ impl Database {
             params![linear_ticket_id, now, id],
         )?;
         Ok(())
+    }
+
+    // --- Commitments ---
+
+    /// Every action item with an owner, from meetings that aren't archived,
+    /// newest first, each with the latest moment that showed it done or
+    /// slipped. `today` (YYYY-MM-DD) decides which open ones are past due.
+    pub fn list_commitments(&self, today: &str) -> Result<Vec<Commitment>> {
+        self.query_commitments(
+            "LEFT JOIN commitment_evidence e ON e.rowid = (
+                 SELECT rowid FROM commitment_evidence WHERE action_item_id = a.id
+                 ORDER BY created_at DESC, rowid DESC LIMIT 1)",
+            None,
+            today,
+        )
+    }
+
+    /// Commitments from earlier meetings that `meeting_id` showed done or
+    /// slipped, each with what this meeting showed.
+    pub fn commitment_followups(&self, meeting_id: &str, today: &str) -> Result<Vec<Commitment>> {
+        self.query_commitments(
+            "JOIN commitment_evidence e ON e.action_item_id = a.id AND e.meeting_id = ?1",
+            Some(meeting_id),
+            today,
+        )
+    }
+
+    fn query_commitments(
+        &self,
+        evidence_join: &str,
+        meeting_id: Option<&str>,
+        today: &str,
+    ) -> Result<Vec<Commitment>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT a.id, a.assignee, i.content, a.due_date, a.status, a.slipped_at IS NOT NULL,
+                    i.meeting_id, m.title, m.start_time, i.transcript_start_ms,
+                    (SELECT COUNT(*) FROM meetings later
+                     WHERE later.start_time > m.start_time AND later.status != 'recording'),
+                    e.meeting_id, em.title, em.start_time, e.verdict, e.timestamp_ms, e.quote
+             FROM action_items a
+             JOIN insights i ON i.id = a.insight_id
+             JOIN meetings m ON m.id = i.meeting_id
+             {evidence_join}
+             LEFT JOIN meetings em ON em.id = e.meeting_id
+             WHERE TRIM(COALESCE(a.assignee, '')) != '' AND m.status != 'archived'
+             ORDER BY m.start_time DESC, i.transcript_start_ms ASC NULLS LAST"
+        ))?;
+        let row_to_commitment = |row: &rusqlite::Row| -> rusqlite::Result<Commitment> {
+            let status: String = row.get(4)?;
+            let due_date: Option<String> = row.get(3)?;
+            let evidence = match row.get::<_, Option<String>>(11)? {
+                Some(meeting_id) => Some(CommitmentEvidence {
+                    meeting_id,
+                    meeting_title: row.get(12)?,
+                    meeting_start_time: row.get(13)?,
+                    verdict: row.get(14)?,
+                    timestamp_ms: row.get(15)?,
+                    quote: row.get(16)?,
+                }),
+                None => None,
+            };
+            Ok(Commitment {
+                id: row.get(0)?,
+                owner: row.get::<_, String>(1)?.trim().to_string(),
+                content: row.get(2)?,
+                status: crate::commitments::follow_through_status(
+                    &status,
+                    row.get(5)?,
+                    due_date.as_deref(),
+                    today,
+                )
+                .to_string(),
+                due_date,
+                meeting_id: row.get(6)?,
+                meeting_title: row.get(7)?,
+                meeting_start_time: row.get(8)?,
+                transcript_start_ms: row.get(9)?,
+                meetings_since: row.get(10)?,
+                evidence,
+            })
+        };
+        let rows = match meeting_id {
+            Some(id) => stmt.query_map(params![id], row_to_commitment)?,
+            None => stmt.query_map([], row_to_commitment)?,
+        }
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Records what `meeting_id` showed about an open commitment: `done`
+    /// closes it, `slipped` flags it. Returns false, recording nothing, when
+    /// it's no longer open, so a check never overrides the user's own call.
+    pub fn record_commitment_evidence(
+        &self,
+        action_item_id: &str,
+        meeting_id: &str,
+        verdict: &str,
+        timestamp_ms: Option<i64>,
+        quote: Option<&str>,
+    ) -> Result<bool> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let update = if verdict == "done" {
+            "UPDATE action_items SET status = 'done', updated_at = ?1 WHERE id = ?2 AND status = 'open'"
+        } else {
+            "UPDATE action_items SET slipped_at = ?1, updated_at = ?1 WHERE id = ?2 AND status = 'open'"
+        };
+        let changed = tx.execute(update, params![now, action_item_id])? > 0;
+        if changed {
+            tx.execute(
+                "INSERT OR REPLACE INTO commitment_evidence
+                     (action_item_id, meeting_id, verdict, timestamp_ms, quote, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    action_item_id,
+                    meeting_id,
+                    verdict,
+                    timestamp_ms,
+                    quote,
+                    now
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(changed)
+    }
+
+    /// Flags an action item as slipped, or clears the flag.
+    pub fn set_action_item_slipped(&self, id: &str, slipped: bool) -> Result<()> {
+        let conn = self.lock_conn()?;
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE action_items SET slipped_at = ?1, updated_at = ?2 WHERE id = ?3",
+            params![slipped.then_some(&now), now, id],
+        )?;
+        Ok(())
+    }
+
+    /// A meeting's search passages in order, as (index, text, start, end).
+    pub fn meeting_chunks(&self, meeting_id: &str) -> Result<Vec<(i64, String, i64, i64)>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare_cached(
+            "SELECT chunk_index, text, start_ms, end_ms FROM transcript_chunks
+             WHERE meeting_id = ?1 ORDER BY chunk_index",
+        )?;
+        let chunks = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(chunks)
+    }
+
+    /// The `limit` passages of one meeting closest in meaning to
+    /// `embedding`, as (chunk index, distance). A meeting holds few enough
+    /// passages to compare against every one.
+    pub fn meeting_chunks_similar(
+        &self,
+        meeting_id: &str,
+        embedding: &[f32],
+        limit: usize,
+    ) -> Result<Vec<(i64, f64)>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare_cached(
+            "SELECT tc.chunk_index, vec_distance_l2(ce.embedding, ?1) AS distance
+             FROM transcript_chunks tc
+             JOIN chunk_embeddings ce ON ce.chunk_id = tc.id
+             WHERE tc.meeting_id = ?2
+             ORDER BY distance LIMIT ?3",
+        )?;
+        let hits = stmt
+            .query_map(
+                params![f32_slice_to_bytes(embedding), meeting_id, limit as i64],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(hits)
     }
 
     pub fn create_extraction_run(

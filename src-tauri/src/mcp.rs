@@ -284,6 +284,27 @@ pub struct UpdateActionItemParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ListCommitmentsParams {
+    /// Only this person's, matched by name or first name; "You" for the user's own
+    #[serde(default)]
+    pub owner: Option<String>,
+    /// Only those with this status: open, done, slipped, or dropped
+    #[serde(default)]
+    pub status: Option<String>,
+    /// From next_offset
+    #[serde(default)]
+    pub offset: usize,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct UpdateCommitmentParams {
+    /// Commitment ID (its action item's ID)
+    pub id: String,
+    /// open, done, slipped, or dropped
+    pub status: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct CreateRecipeParams {
     /// Display name
     pub name: String,
@@ -1272,6 +1293,40 @@ impl NootleMcpServer {
         )
     }
 
+    // --- Commitments ---
+
+    #[tool(
+        title = "List commitments",
+        description = "List commitments: action items someone owns, newest first, with whether they were followed through in later meetings. status is open, done, slipped (a later meeting said it isn't done, or its due date passed), or dropped. meetings_since counts the meetings recorded since it was made; evidence is the later moment (meeting, timestamp_ms, quote) that showed it done or slipped.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    fn list_commitments(
+        &self,
+        Parameters(p): Parameters<ListCommitmentsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        respond(
+            crate::commitments::list(&self.db, p.owner.as_deref(), p.status.as_deref())
+                .map(|commitments| page(commitments, p.offset, PAGE_SIZE))
+                .map_err(Into::into),
+        )
+    }
+
+    #[tool(
+        title = "Update commitment",
+        description = "Mark a commitment open, done, slipped, or dropped. Done and dropped also close its action item. Returns the updated commitment.",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn update_commitment(
+        &self,
+        Parameters(p): Parameters<UpdateCommitmentParams>,
+    ) -> Result<CallToolResult, McpError> {
+        respond(crate::commitments::set_status(&self.db, &p.id, &p.status).map_err(Into::into))
+    }
+
     // --- Recipes ---
 
     #[tool(
@@ -2248,6 +2303,54 @@ mod tests {
         assert_eq!(updated["assignee"], "Bob");
         assert!(updated["due_date"].is_null());
         assert!(update(Some("finished"), None, None).0);
+    }
+
+    #[test]
+    fn test_commitments() {
+        let db = setup_test_db();
+        let server = NootleMcpServer::new(db.clone());
+        let insight = db
+            .create_insight(crate::db::NewInsight {
+                meeting_id: meeting_id(&db),
+                insight_type: "action_item".into(),
+                content: "Send the deck".into(),
+                context: None,
+                transcript_start_ms: Some(3000),
+                transcript_end_ms: None,
+            })
+            .unwrap();
+        let item = db
+            .create_action_item(crate::db::NewActionItem {
+                insight_id: insight.id,
+                assignee: Some("Alice".into()),
+                due_date: None,
+            })
+            .unwrap();
+        let list = |owner: Option<&str>, status: Option<&str>| {
+            output(server.list_commitments(Parameters(ListCommitmentsParams {
+                owner: owner.map(Into::into),
+                status: status.map(Into::into),
+                offset: 0,
+            })))
+        };
+        let (_, open) = list(Some("alice"), Some("open"));
+        assert_eq!(open["total"], 1);
+        assert_eq!(open["items"][0]["id"], item.id.as_str());
+        assert_eq!(list(Some("Bob"), None).1["total"], 0);
+        assert!(list(None, Some("finished")).0);
+
+        let (_, updated) = output(server.update_commitment(Parameters(UpdateCommitmentParams {
+            id: item.id.clone(),
+            status: "dropped".into(),
+        })));
+        assert_eq!(updated["status"], "dropped");
+        assert_eq!(
+            db.get_insight_by_action_item(&item.id)
+                .unwrap()
+                .status
+                .as_deref(),
+            Some("cancelled")
+        );
     }
 
     #[test]
