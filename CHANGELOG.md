@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- Add an opt-in pre-meeting brief (#195) ([9435352](https://github.com/michellemayes/nootle/commit/9435352ee988f73383676e9587e7fd86342b4c2a))
+
+## [0.15.0] - 2026-10-20
+
+### Features
+
+- **summaries:** Slide-aware summaries and slide recap (#196) ([6513191](https://github.com/michellemayes/nootle/commit/6513191eda06ff2b6920c1947c5fabf1805ffa39))
+
 ## [0.14.0] - 2026-10-20
 
 ### Features
