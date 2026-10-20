@@ -4,6 +4,7 @@ pub mod automation;
 pub mod calendar;
 pub mod call_names;
 pub mod chunking;
+pub mod coach;
 pub mod commands;
 pub mod connectors;
 pub mod db;
@@ -528,6 +529,9 @@ pub fn run() {
             commands::compute_meeting_analytics,
             commands::compute_meeting_sentiment,
             commands::get_meeting_analytics,
+            commands::get_meeting_coach,
+            commands::get_coach_trends,
+            commands::suggest_coach_tip,
             commands::create_integration,
             commands::list_integrations,
             commands::update_integration,

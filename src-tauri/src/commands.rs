@@ -2514,6 +2514,36 @@ pub async fn get_meeting_analytics(
 }
 
 #[tauri::command(async)]
+pub fn get_meeting_coach(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Option<crate::coach::MeetingCoach>, String> {
+    crate::coach::meeting_coach(&db, &meeting_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn get_coach_trends(
+    db: State<'_, DbState>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::coach::CoachTrendPoint>, String> {
+    crate::coach::trends(&db, limit.unwrap_or(10)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn suggest_coach_tip(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+) -> Result<String, String> {
+    let registry = llm.read().await;
+    crate::coach::suggest_tip(&db, &registry, &meeting_id, &provider, &model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
 pub fn create_integration(
     db: State<'_, DbState>,
     integration_type: String,
