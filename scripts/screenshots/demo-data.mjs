@@ -834,6 +834,7 @@ export const FIXTURES = {
   get_downloaded_models: ["parakeet-v3", "nomic-embed-text"],
   get_available_models: [],
   get_app_setting: null,
+  list_voice_profiles: [],
   check_permissions: { microphone: true, screen_recording: true, calendar: true },
 
   get_linear_tickets: [],
@@ -880,4 +881,17 @@ export const FIXTURES = {
   ),
   // Stopping the demo recording opens the finished design review.
   stop_recording: MEETINGS[0],
+
+  // The menu bar popover (menubar.html), mid-recording with a Live Assist card.
+  menu_bar_status: {
+    recording: {
+      meeting_id: "m-live",
+      paused: false,
+      elapsed_ms: 1_234_000,
+      mic_level: 0.04,
+      system_level: 0.03,
+    },
+    title: "Design Review — Onboarding Flow",
+    live_assist: LIVE_ASSIST_CARD,
+  },
 };

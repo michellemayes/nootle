@@ -194,6 +194,15 @@ export interface LiveAssistCard {
   automatic: boolean;
 }
 
+/** What the menu bar popover shows about the recording. */
+export interface MenuBarStatus {
+  recording: RecordingStatus | null;
+  /** The recorded meeting's title. */
+  title: string | null;
+  /** The newest Live Assist card for the recorded meeting. */
+  live_assist: LiveAssistCard | null;
+}
+
 export interface GlobalChatResponse {
   response: string;
   sources: ChatSource[];

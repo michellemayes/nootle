@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { ScratchNote } from "@/types";
 
 export function useScratchPad(meetingId: string | null) {
@@ -30,6 +31,16 @@ export function useScratchPad(meetingId: string | null) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Notes can also be added from the menu bar.
+  useEffect(() => {
+    const unlisten = listen<string>("scratch-notes-changed", (event) => {
+      if (event.payload === meetingId) refresh();
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [meetingId, refresh]);
 
   const addNote = useCallback(
     async (content: string, timestampMs: number) => {

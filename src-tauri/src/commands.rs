@@ -264,13 +264,18 @@ pub fn get_all_meeting_labels(db: State<'_, DbState>) -> Result<Vec<MeetingLabel
 
 #[tauri::command(async)]
 pub fn add_scratch_note(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
     meeting_id: String,
     content: String,
     timestamp_ms: i64,
 ) -> Result<ScratchNote, String> {
-    db.add_scratch_note(&meeting_id, &content, timestamp_ms)
-        .map_err(|e| e.to_string())
+    let note = db
+        .add_scratch_note(&meeting_id, &content, timestamp_ms)
+        .map_err(|e| e.to_string())?;
+    // Notes added from the menu bar show up in the recording view too.
+    let _ = app.emit("scratch-notes-changed", &meeting_id);
+    Ok(note)
 }
 
 #[tauri::command(async)]
@@ -665,6 +670,7 @@ pub async fn start_recording(
     }
 
     *session_lock = Some(session);
+    let _ = app.emit(RECORDING_CHANGED, ());
 
     Ok(meeting)
 }
@@ -1115,6 +1121,7 @@ fn transcribe_live(
 
 #[tauri::command]
 pub async fn stop_recording(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
     recording: State<'_, RecordingState>,
 ) -> Result<Meeting, String> {
@@ -1147,10 +1154,15 @@ pub async fn stop_recording(
     let end_time = chrono::Utc::now().to_rfc3339();
     db.finalize_meeting(&meeting_id, &end_time, Some(&audio_path), "transcribing")
         .map_err(|e| e.to_string())?;
+    let _ = app.emit(RECORDING_CHANGED, ());
 
     // Return the updated meeting
     db.get_meeting(&meeting_id).map_err(|e| e.to_string())
 }
+
+/// Sent when a recording starts, stops, pauses or resumes, from any window,
+/// the menu bar or a nootle:// link, so every view can catch up.
+pub const RECORDING_CHANGED: &str = "recording-changed";
 
 #[tauri::command]
 pub async fn is_recording(recording: State<'_, RecordingState>) -> Result<bool, String> {
@@ -1209,6 +1221,7 @@ pub async fn recording_status(
 /// the audio file or transcribed.
 #[tauri::command]
 pub async fn set_recording_paused(
+    app: tauri::AppHandle,
     recording: State<'_, RecordingState>,
     paused: bool,
 ) -> Result<RecordingStatus, String> {
@@ -1217,6 +1230,7 @@ pub async fn set_recording_paused(
         .as_ref()
         .ok_or_else(|| "Not recording".to_string())?;
     session.set_paused(paused);
+    let _ = app.emit(RECORDING_CHANGED, ());
     Ok(recording_status_of(session))
 }
 
@@ -2208,13 +2222,21 @@ pub async fn get_app_setting(
 
 #[tauri::command]
 pub async fn set_app_setting(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
     key: String,
     value: String,
 ) -> Result<(), String> {
-    crate::ops::set_setting(&db, &key, &value)
-        .map(drop)
-        .map_err(|e| e.to_string())
+    crate::ops::set_setting(&db, &key, &value).map_err(|e| e.to_string())?;
+    if [
+        crate::menu_bar::SETTING_KEY,
+        crate::menu_bar::HIDE_DOCK_SETTING,
+    ]
+    .contains(&key.as_str())
+    {
+        crate::menu_bar::apply(&app);
+    }
+    Ok(())
 }
 
 /// Names read off the meeting's call window that no speaker has yet,
@@ -2869,6 +2891,7 @@ pub async fn live_assist(
     db: State<'_, DbState>,
     llm: State<'_, LlmState>,
     embedding_state: State<'_, EmbeddingState>,
+    latest: State<'_, crate::live_assist::LatestCard>,
     meeting_id: String,
     text: String,
     automatic: bool,
@@ -2910,7 +2933,12 @@ pub async fn live_assist(
         }
         _ => None,
     };
-    crate::live_assist::answer(&db, chosen, &meeting_id, &question, &embedding, automatic)
-        .await
-        .map_err(|e| e.to_string())
+    let card =
+        crate::live_assist::answer(&db, chosen, &meeting_id, &question, &embedding, automatic)
+            .await
+            .map_err(|e| e.to_string())?;
+    if let Some(card) = &card {
+        latest.remember(&meeting_id, card);
+    }
+    Ok(card)
 }

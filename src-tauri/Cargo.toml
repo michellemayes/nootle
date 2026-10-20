@@ -23,8 +23,9 @@ path = "src/bin/nootle-cli.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# macos-private-api lets the meeting pop-up window be transparent.
-tauri = { version = "2", features = ["macos-private-api", "protocol-asset"] }
+# macos-private-api lets the meeting pop-up window be transparent;
+# tray-icon and image-png are for the menu bar icon.
+tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

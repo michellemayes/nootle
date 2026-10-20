@@ -162,6 +162,7 @@ export function RecordingView() {
     currentMeeting,
     elapsed,
     error,
+    stoppedElsewhere,
     startRecording,
     resumeRecording,
     setPaused,
@@ -340,6 +341,15 @@ export function RecordingView() {
       navigate("/");
     }
   }, [stopping, saveDetails, stopRecording, saveNotes, navigate]);
+
+  // Stopped from the menu bar: keep what was typed here and show the meeting.
+  useEffect(() => {
+    if (!stoppedElsewhere || !currentMeeting) return;
+    const { id } = currentMeeting;
+    Promise.all([saveDetails(), saveNotes(id)])
+      .catch((err) => console.error("Failed to save meeting details:", err))
+      .finally(() => navigate(`/meeting/${id}`, { state: { justRecorded: true } }));
+  }, [stoppedElsewhere, currentMeeting, saveDetails, saveNotes, navigate]);
 
   // ⌘↵ wraps up the meeting from anywhere on the page, notes included.
   useEffect(() => {
