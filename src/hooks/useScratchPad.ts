@@ -50,9 +50,9 @@ export function useScratchPad(meetingId: string | null) {
         content,
         timestampMs,
       });
-      await refresh();
+      // The backend's scratch-notes-changed event refreshes the list.
     },
-    [meetingId, refresh],
+    [meetingId],
   );
 
   const deleteNote = useCallback(

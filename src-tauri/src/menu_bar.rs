@@ -14,7 +14,8 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, Rect, WebviewUrl, WebviewWindowBuilder, Wry,
+    AppHandle, Emitter, Manager, PhysicalPosition, Rect, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder, Wry,
 };
 
 use crate::commands::{DbState, RecordingState, RecordingStatus};
@@ -48,15 +49,9 @@ pub struct MenuBarSettings {
 
 impl MenuBarSettings {
     pub fn load(db: &Database) -> Self {
-        let on = |key| {
-            db.get_setting(key)
-                .ok()
-                .flatten()
-                .is_some_and(|v| v == "true")
-        };
         Self {
-            show: on(SETTING_KEY),
-            hide_dock: on(HIDE_DOCK_SETTING),
+            show: db.get_bool_setting(SETTING_KEY, false),
+            hide_dock: db.get_bool_setting(HIDE_DOCK_SETTING, false),
         }
     }
 
@@ -97,23 +92,21 @@ impl TrayMode {
     fn is_template(self) -> bool {
         self != Self::Recording
     }
-}
 
-/// Recorded time as the menu bar shows it: "4:05", or "1:02:09" past an hour.
-pub fn format_elapsed(ms: u64) -> String {
-    let secs = ms / 1000;
-    let (h, m, s) = (secs / 3600, secs / 60 % 60, secs % 60);
-    if h > 0 {
-        format!("{h}:{m:02}:{s:02}")
-    } else {
-        format!("{m}:{s:02}")
+    fn tooltip(self) -> &'static str {
+        match self {
+            Self::Idle => "Nootle",
+            Self::Recording => "Nootle: recording",
+            Self::Paused => "Nootle: paused",
+        }
     }
-}
 
-/// Text beside the icon: the recorded time while a recording is running or
-/// paused, nothing when idle.
-pub fn tray_title(status: Option<&RecordingStatus>) -> Option<String> {
-    status.map(|s| format_elapsed(s.elapsed_ms))
+    fn record_label(self) -> &'static str {
+        match self {
+            Self::Idle => "Start Recording",
+            _ => "Stop Recording",
+        }
+    }
 }
 
 /// Where the popover's top-left corner goes, in physical pixels: centered
@@ -132,22 +125,23 @@ pub fn popover_origin(
     (x, y)
 }
 
-/// The menu-bar icon's menu item that changes with the recording, and when
-/// the popover last hid itself.
+/// The settings last applied, the menu-bar icon's menu item and mode that
+/// change with the recording, and when the popover last hid itself.
 #[derive(Default)]
 pub struct MenuBarState {
+    applied: Mutex<Option<MenuBarSettings>>,
     record_item: Mutex<Option<MenuItem<Wry>>>,
-    shown: Mutex<Option<(TrayMode, Option<String>)>>,
+    mode: Mutex<Option<TrayMode>>,
     popover_hidden_at: Mutex<Option<Instant>>,
 }
 
-/// Applies the settings at launch, then keeps the icon and its timer
-/// current while it's shown.
+/// Every second: applies changed settings (from Settings, the CLI or MCP)
+/// and keeps the icon and its timer current while it's shown.
 pub fn start(app: &AppHandle) {
-    apply(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         loop {
+            apply(&app);
             if app.tray_by_id(TRAY_ID).is_some() {
                 refresh(&app).await;
             }
@@ -156,10 +150,14 @@ pub fn start(app: &AppHandle) {
     });
 }
 
-/// Shows or removes the menu-bar icon and the Dock icon to match the
-/// settings. Called at launch and whenever either setting changes.
-pub fn apply(app: &AppHandle) {
+/// Shows or removes the menu-bar icon and the Dock icon when the settings
+/// changed since they were last applied.
+fn apply(app: &AppHandle) {
     let settings = MenuBarSettings::load(&app.state::<DbState>());
+    let state = app.state::<MenuBarState>();
+    if state.applied.lock().unwrap().replace(settings) == Some(settings) {
+        return;
+    }
     let existing = app.tray_by_id(TRAY_ID);
     if settings.show && existing.is_none() {
         if let Err(e) = build_tray(app) {
@@ -170,9 +168,8 @@ pub fn apply(app: &AppHandle) {
         if let Some(popover) = app.get_webview_window(POPOVER_LABEL) {
             let _ = popover.close();
         }
-        let state = app.state::<MenuBarState>();
         *state.record_item.lock().unwrap() = None;
-        *state.shown.lock().unwrap() = None;
+        *state.mode.lock().unwrap() = None;
     }
 
     #[cfg(target_os = "macos")]
@@ -189,7 +186,8 @@ pub fn apply(app: &AppHandle) {
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
-    let record_item = MenuItemBuilder::with_id("tray-record", "Start Recording").build(app)?;
+    let record_item =
+        MenuItemBuilder::with_id("tray-record", TrayMode::Idle.record_label()).build(app)?;
     let menu: Menu<Wry> = MenuBuilder::new(app)
         .item(&record_item)
         .separator()
@@ -223,8 +221,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
             }
             "tray-open" => open_main(app),
             "tray-settings" => {
-                hide_popover(app);
-                crate::show_main_window(app);
+                bring_forward(app);
                 let _ = app.emit("open-settings", ());
             }
             "tray-quit" => app.exit(0),
@@ -253,84 +250,44 @@ async fn refresh(app: &AppHandle) {
         .await
         .ok()
         .flatten();
-    let mode = TrayMode::of(status.as_ref());
-    let title = tray_title(status.as_ref());
-    let state = app.state::<MenuBarState>();
-    let previous = state.shown.lock().unwrap().replace((mode, title.clone()));
-    if previous.as_ref() == Some(&(mode, title.clone())) {
-        return;
-    }
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
-    let _ = tray.set_title(title.as_deref());
+    // The recorded time while recording or paused, nothing when idle.
+    let title = status
+        .as_ref()
+        .map(|s| crate::summarization::format_ms(s.elapsed_ms as i64));
+    let _ = tray.set_title(title);
+    let mode = TrayMode::of(status.as_ref());
+    let state = app.state::<MenuBarState>();
     // Most ticks only move the timer.
-    if previous.is_some_and(|(m, _)| m == mode) {
+    if state.mode.lock().unwrap().replace(mode) == Some(mode) {
         return;
     }
     if let Ok(icon) = Image::from_bytes(mode.icon()) {
         let _ = tray.set_icon(Some(icon));
         let _ = tray.set_icon_as_template(mode.is_template());
     }
-    let _ = tray.set_tooltip(Some(match mode {
-        TrayMode::Idle => "Nootle",
-        TrayMode::Recording => "Nootle: recording",
-        TrayMode::Paused => "Nootle: paused",
-    }));
+    let _ = tray.set_tooltip(Some(mode.tooltip()));
     if let Some(item) = state.record_item.lock().unwrap().as_ref() {
-        let _ = item.set_text(if mode == TrayMode::Idle {
-            "Start Recording"
-        } else {
-            "Stop Recording"
-        });
+        let _ = item.set_text(mode.record_label());
     };
 }
 
 fn toggle_popover(app: &AppHandle, icon: Rect) -> tauri::Result<()> {
-    let state = app.state::<MenuBarState>();
-    let just_hidden = state
+    let popover = popover(app)?;
+    if popover.is_visible()? {
+        return popover.hide();
+    }
+    let just_hidden = app
+        .state::<MenuBarState>()
         .popover_hidden_at
         .lock()
         .unwrap()
         .is_some_and(|at| at.elapsed() < REOPEN_GRACE);
-    if let Some(popover) = app.get_webview_window(POPOVER_LABEL) {
-        if popover.is_visible()? {
-            return popover.hide();
-        }
-        if just_hidden {
-            return Ok(());
-        }
+    if just_hidden {
+        return Ok(());
     }
-
-    let popover = match app.get_webview_window(POPOVER_LABEL) {
-        Some(popover) => popover,
-        None => {
-            let popover = WebviewWindowBuilder::new(
-                app,
-                POPOVER_LABEL,
-                WebviewUrl::App("menubar.html".into()),
-            )
-            .title("Nootle")
-            .inner_size(POPOVER_WIDTH, POPOVER_HEIGHT)
-            .resizable(false)
-            .decorations(false)
-            .transparent(true)
-            .shadow(false)
-            .always_on_top(true)
-            .visible_on_all_workspaces(true)
-            .skip_taskbar(true)
-            .visible(false)
-            .build()?;
-            // Like a menu, it goes away when you click elsewhere.
-            let handle = app.clone();
-            popover.on_window_event(move |event| {
-                if let tauri::WindowEvent::Focused(false) = event {
-                    hide_popover(&handle);
-                }
-            });
-            popover
-        }
-    };
 
     let scale = popover.scale_factor()?;
     let icon_pos = icon.position.to_physical::<f64>(scale);
@@ -360,6 +317,34 @@ fn toggle_popover(app: &AppHandle, icon: Rect) -> tauri::Result<()> {
     popover.emit("menu-bar-shown", ())
 }
 
+/// The popover window, created hidden the first time it's needed.
+fn popover(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    if let Some(popover) = app.get_webview_window(POPOVER_LABEL) {
+        return Ok(popover);
+    }
+    let popover =
+        WebviewWindowBuilder::new(app, POPOVER_LABEL, WebviewUrl::App("menubar.html".into()))
+            .title("Nootle")
+            .inner_size(POPOVER_WIDTH, POPOVER_HEIGHT)
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .visible_on_all_workspaces(true)
+            .skip_taskbar(true)
+            .visible(false)
+            .build()?;
+    // Like a menu, it goes away when you click elsewhere.
+    let handle = app.clone();
+    popover.on_window_event(move |event| {
+        if let tauri::WindowEvent::Focused(false) = event {
+            hide_popover(&handle);
+        }
+    });
+    Ok(popover)
+}
+
 fn hide_popover(app: &AppHandle) {
     if let Some(popover) = app.get_webview_window(POPOVER_LABEL) {
         if popover.is_visible().unwrap_or(false) {
@@ -372,10 +357,14 @@ fn hide_popover(app: &AppHandle) {
     }
 }
 
-/// Brings the main window forward, on the recording when there is one.
-fn open_main(app: &AppHandle) {
+fn bring_forward(app: &AppHandle) {
     hide_popover(app);
     crate::show_main_window(app);
+}
+
+/// Brings the main window forward, on the recording when there is one.
+fn open_main(app: &AppHandle) {
+    bring_forward(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         if crate::remote::is_recording(&app).await {
@@ -385,7 +374,7 @@ fn open_main(app: &AppHandle) {
 }
 
 /// What the popover shows about the recording.
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 pub struct MenuBarStatus {
     pub recording: Option<RecordingStatus>,
     /// The recorded meeting's title.
@@ -401,11 +390,7 @@ pub async fn menu_bar_status(
     cards: tauri::State<'_, crate::live_assist::LatestCard>,
 ) -> Result<MenuBarStatus, String> {
     let Some(status) = crate::commands::recording_status(recording).await? else {
-        return Ok(MenuBarStatus {
-            recording: None,
-            title: None,
-            live_assist: None,
-        });
+        return Ok(MenuBarStatus::default());
     };
     let title = db.get_meeting(&status.meeting_id).ok().map(|m| m.title);
     let live_assist = cards.for_meeting(&status.meeting_id);
@@ -442,27 +427,6 @@ mod tests {
         assert_eq!(TrayMode::of(Some(&status(true, 0))), TrayMode::Paused);
         assert!(!TrayMode::Recording.is_template(), "the red dot stays red");
         assert!(TrayMode::Idle.is_template() && TrayMode::Paused.is_template());
-    }
-
-    #[test]
-    fn elapsed_time_reads_like_a_clock() {
-        assert_eq!(format_elapsed(0), "0:00");
-        assert_eq!(format_elapsed(65_400), "1:05");
-        assert_eq!(format_elapsed(59 * 60_000 + 59_999), "59:59");
-        assert_eq!(format_elapsed(3_600_000 + 2 * 60_000 + 9_000), "1:02:09");
-    }
-
-    #[test]
-    fn title_shows_time_only_while_recording() {
-        assert_eq!(tray_title(None), None);
-        assert_eq!(
-            tray_title(Some(&status(false, 754_000))).as_deref(),
-            Some("12:34")
-        );
-        assert_eq!(
-            tray_title(Some(&status(true, 754_000))).as_deref(),
-            Some("12:34")
-        );
     }
 
     #[test]

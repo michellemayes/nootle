@@ -9,29 +9,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Markdown } from "@/components/Markdown";
 import { NootleLogo } from "@/components/NootleLogo";
-import { cn } from "@/lib/utils";
+import { cn, formatClockTime, formatDuration, plural } from "@/lib/utils";
 import type { CalendarEvent, MenuBarStatus, UpcomingEvents } from "@/types";
 
 /** How often the timer and Live Assist card refresh while the popover is open. */
 const POLL_MS = 1000;
-
-const time = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-
-/** Same clock as the menu bar title: "4:05", or "1:02:09" past an hour. */
-function formatElapsed(ms: number): string {
-  const secs = Math.floor(ms / 1000);
-  const [h, m, s] = [Math.floor(secs / 3600), Math.floor(secs / 60) % 60, secs % 60];
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
-}
 
 /** "Now", "in 12 min" or "at 3:30 PM". */
 function startsWhen(event: CalendarEvent, now: number): string {
   const minutes = Math.round((new Date(event.start).getTime() - now) / 60_000);
   if (minutes <= 0) return "Now";
   if (minutes < 60) return `In ${minutes} min`;
-  return `At ${time(event.start)}`;
+  return `At ${formatClockTime(event.start)}`;
 }
 
 /** The recording's state, polled while the popover has focus (it hides on blur). */
@@ -195,7 +184,7 @@ export function MenuBarPopover() {
             </div>
             {recording && (
               <span className="text-lg font-semibold tabular-nums" aria-label="Recorded time">
-                {formatElapsed(recording.elapsed_ms)}
+                {formatDuration(Math.floor(recording.elapsed_ms / 1000))}
               </span>
             )}
           </div>
@@ -251,7 +240,7 @@ export function MenuBarPopover() {
               {card.answer ? (
                 <Markdown content={card.answer} />
               ) : (
-                `${card.sources.length} related ${card.sources.length === 1 ? "passage" : "passages"} found`
+                `${plural(card.sources.length, "related passage")} found`
               )}
             </div>
           </section>
@@ -261,7 +250,8 @@ export function MenuBarPopover() {
           <section aria-label="Up next" className="flex items-center gap-3 border-t pt-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {startsWhen(next, Date.now())} · {time(next.start)} – {time(next.end)}
+                {startsWhen(next, Date.now())} · {formatClockTime(next.start)} –{" "}
+                {formatClockTime(next.end)}
               </p>
               <p className="truncate text-sm font-medium">{next.title}</p>
             </div>

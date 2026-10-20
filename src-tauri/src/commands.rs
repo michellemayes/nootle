@@ -2222,21 +2222,13 @@ pub async fn get_app_setting(
 
 #[tauri::command]
 pub async fn set_app_setting(
-    app: tauri::AppHandle,
     db: State<'_, DbState>,
     key: String,
     value: String,
 ) -> Result<(), String> {
-    crate::ops::set_setting(&db, &key, &value).map_err(|e| e.to_string())?;
-    if [
-        crate::menu_bar::SETTING_KEY,
-        crate::menu_bar::HIDE_DOCK_SETTING,
-    ]
-    .contains(&key.as_str())
-    {
-        crate::menu_bar::apply(&app);
-    }
-    Ok(())
+    crate::ops::set_setting(&db, &key, &value)
+        .map(drop)
+        .map_err(|e| e.to_string())
 }
 
 /// Names read off the meeting's call window that no speaker has yet,
