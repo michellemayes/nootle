@@ -72,6 +72,10 @@
         system_level: 0.02 + 0.015 * Math.cos(t * 1.3),
       };
     }
+    // Settings are keyed by name; unlisted ones are unset.
+    if (cmd === "get_app_setting") {
+      return (fixtures.get_app_setting || {})[args?.key] ?? null;
+    }
     if (cmd in fixtures) return fixtures[cmd];
     if (!cmd.startsWith("plugin:")) {
       console.warn(`[mock-tauri] no fixture for "${cmd}" — returning null`);

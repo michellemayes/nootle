@@ -1791,6 +1791,65 @@ pub async fn chat_with_meeting(
     .map_err(|e| e.to_string())
 }
 
+/// The meeting's cached audio recap (Ask the Room), if one was made.
+#[tauri::command(async)]
+pub fn get_audio_recap(
+    meeting_id: String,
+) -> Result<Option<crate::room_recap::AudioRecap>, String> {
+    Ok(crate::room_recap::load(&recordings_dir()?, &meeting_id))
+}
+
+/// Writes and records a spoken recap of a meeting, replacing any earlier one.
+#[tauri::command]
+pub async fn generate_audio_recap(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+) -> Result<crate::room_recap::AudioRecap, String> {
+    let synth = crate::room_recap::system_synth().map_err(|e| e.to_string())?;
+    let llm = llm.read().await;
+    crate::room_recap::generate(
+        &db,
+        &llm,
+        synth,
+        &recordings_dir()?,
+        &meeting_id,
+        &provider,
+        &model,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Answers a question about a meeting aloud, in the voice of whoever the
+/// answer mostly comes from.
+#[tauri::command]
+pub async fn ask_the_room(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    question: String,
+    provider: String,
+    model: String,
+) -> Result<crate::room_recap::RoomAnswer, String> {
+    let synth = crate::room_recap::system_synth().map_err(|e| e.to_string())?;
+    let llm = llm.read().await;
+    crate::room_recap::ask(
+        &db,
+        &llm,
+        synth,
+        &recordings_dir()?,
+        &meeting_id,
+        &question,
+        &provider,
+        &model,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn list_llm_models(
     llm: State<'_, LlmState>,
@@ -2647,6 +2706,36 @@ pub async fn get_meeting_analytics(
         "engagement": engagement,
         "sentiment_running": jobs.lock().unwrap().contains(&meeting_id),
     }))
+}
+
+#[tauri::command(async)]
+pub fn get_meeting_coach(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Option<crate::coach::MeetingCoach>, String> {
+    crate::coach::meeting_coach(&db, &meeting_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn get_coach_trends(
+    db: State<'_, DbState>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::coach::CoachTrendPoint>, String> {
+    crate::coach::trends(&db, limit.unwrap_or(10)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn suggest_coach_tip(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    provider: String,
+    model: String,
+) -> Result<String, String> {
+    let registry = llm.read().await;
+    crate::coach::suggest_tip(&db, &registry, &meeting_id, &provider, &model)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
