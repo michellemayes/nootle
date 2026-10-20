@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **summaries:** Let a stuck summary be stopped and regenerated (#191) ([0821b5c](https://github.com/michellemayes/nootle/commit/0821b5cc8d338ed15c4f390fc7258e0ec6c1d12d))
+- **site:** Serve the OG image at its old /og-image.png URL (#192) ([b19c403](https://github.com/michellemayes/nootle/commit/b19c403586fcdc33d0be5bea7eaa984840036e01))
+
+### Documentation
+
+- Record the README demo GIF at a higher resolution (#193) ([ce57132](https://github.com/michellemayes/nootle/commit/ce57132e87ac6d8ff7583a08f2eefd58892745e2))
+
+## [0.11.1] - 2026-10-20
+
+### Documentation
+
+- Shorten the README and lead with a demo GIF (#190) ([374a7f9](https://github.com/michellemayes/nootle/commit/374a7f9e9c54c402eb4d079df46ef1512dbee193))
+
 ## [0.11.0] - 2026-10-20
 
 ### Features
