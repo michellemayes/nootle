@@ -1,10 +1,8 @@
 import Link from "next/link";
 import { Fragment } from "react";
+import { linkClass } from "@/components/site-config";
 
 type FooterLink = { label: string; href: string };
-
-const linkClass =
-  "underline hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:rounded-sm";
 
 const rows: { label: string; links: FooterLink[] }[] = [
   {

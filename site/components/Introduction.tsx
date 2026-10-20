@@ -12,10 +12,12 @@ export function Introduction() {
         <AnimateIn delay={0.1}>
           <div className="space-y-5 text-[var(--color-text-secondary)] text-base leading-relaxed">
             <p>
-              Nootle is a free, open-source AI meeting recorder designed exclusively for Mac.
-              It runs in the background and offers to record when a call starts on Zoom,
-              Microsoft Teams, Webex, Slack, FaceTime, Discord, or Google Meet in your
-              browser, with no bot joining the call. Once recording begins, Nootle
+              Nootle is a free, open-source AI meeting recorder for Mac users who spend their
+              day on calls. It records and transcribes meetings on your Mac without a bot
+              joining, then writes summaries, pulls out action items, and answers questions
+              from your meetings and documents. It runs in the background and offers to
+              record when a call starts on Zoom, Microsoft Teams, Webex, Slack, FaceTime,
+              Discord, or Google Meet in your browser. Once recording begins, Nootle
               transcribes the conversation in real time with automatic speaker identification
               — so you always know who said what — and it can learn voices so people are
               named for you in later meetings.

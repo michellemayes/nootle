@@ -12,6 +12,12 @@ const content: LandingContent = {
   headline: "The open-source, local Granola alternative",
   subhead:
     "Like Granola, Nootle records meetings from your Mac with no bot in the call. Unlike Granola, it transcribes on your Mac, keeps recordings and transcripts there, and is free and open source.",
+  answer: {
+    question: "Which is better, Nootle or Granola?",
+    body: "It depends on where you want your meetings to live. If you want transcription on your Mac, speaker labels beyond “Me” and “Them”, and notes you can export as Markdown for free, Nootle is the better choice: it’s open source and meeting audio never leaves your Mac. Granola fits better if you need it on Windows, an iPhone or an Intel Mac, or want a shared team workspace out of the box. As of October 2026, Granola’s Business plan costs $14 a month; Nootle is free.",
+  },
+  published: "2026-10-11",
+  updated: "2026-10-19",
   why: {
     heading: "Why people switch from Granola",
     points: [

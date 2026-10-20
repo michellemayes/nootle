@@ -24,14 +24,14 @@ export function Navbar() {
   });
 
   return (
-    <nav
+    <header
       className={`fixed top-0 left-0 right-0 z-50 px-6 transition-[padding,background-color,border-color] duration-300 border-b ${
         scrolled
           ? "py-2.5 bg-[var(--color-bg)]/85 backdrop-blur-md border-[var(--color-border)]"
           : "py-4 bg-[var(--color-bg)]/60 backdrop-blur-sm border-transparent"
       }`}
     >
-      <div className="max-w-6xl mx-auto flex items-center justify-between">
+      <nav aria-label="Main" className="max-w-6xl mx-auto flex items-center justify-between">
         <Link
           href="/"
           className="group flex items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
@@ -68,12 +68,12 @@ export function Navbar() {
             Download
           </a>
         </div>
-      </div>
+      </nav>
       <motion.div
         aria-hidden="true"
         className="absolute left-0 right-0 -bottom-px h-0.5 origin-left bg-[var(--color-accent)]"
         style={{ scaleX: progress }}
       />
-    </nav>
+    </header>
   );
 }

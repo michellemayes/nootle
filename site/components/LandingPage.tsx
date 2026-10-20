@@ -4,13 +4,18 @@ import { Navbar } from "@/components/Navbar";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CopyCommand } from "@/components/CopyCommand";
 import { DownloadButton } from "@/components/DownloadButton";
-import { outfit } from "@/components/site-config";
+import { linkClass, outfit } from "@/components/site-config";
 
 export type LandingContent = {
   /** Short label above the headline, e.g. "Granola alternative". */
   eyebrow: string;
   headline: string;
   subhead: string;
+  /** The reader's main question, as they'd type it, answered in 100 words or less right below the headline. */
+  answer: { question: string; body: string };
+  /** ISO dates (YYYY-MM-DD) shown in the byline. */
+  published: string;
+  updated: string;
   why: {
     heading: string;
     points: { title: string; body: string }[];
@@ -59,14 +64,24 @@ export function landingMetadata({
   };
 }
 
+function DateStamp({ date }: { date: string }) {
+  const label = new Date(date).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return <time dateTime={date}>{label}</time>;
+}
+
 export function LandingPage({ content }: { content: LandingContent }) {
-  const { eyebrow, headline, subhead, why, table, faqs, disclaimer } = content;
+  const { eyebrow, headline, subhead, answer, published, updated, why, table, faqs, disclaimer } = content;
 
   return (
     <>
       <Navbar />
       <main id="main-content" className="relative overflow-hidden">
-        <section aria-label="Introduction" className="pt-36 pb-20 px-6">
+        <section aria-label="Introduction" className="pt-36 pb-16 px-6">
           <div className="max-w-3xl mx-auto text-center">
             <p className="text-sm font-semibold uppercase tracking-wider text-[var(--color-accent)] mb-4">
               {eyebrow}
@@ -76,8 +91,15 @@ export function LandingPage({ content }: { content: LandingContent }) {
             >
               {headline}
             </h1>
-            <p className="text-lg md:text-xl text-[var(--color-text-secondary)] mb-10 max-w-2xl mx-auto">
+            <p className="text-lg md:text-xl text-[var(--color-text-secondary)] mb-6 max-w-2xl mx-auto">
               {subhead}
+            </p>
+            <p className="text-sm text-[var(--color-text-secondary)] mb-10">
+              By{" "}
+              <a href="https://michellemayes.me" className={linkClass}>
+                Michelle Mayes
+              </a>{" "}
+              &middot; Published <DateStamp date={published} /> &middot; Updated <DateStamp date={updated} />
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <DownloadButton />
@@ -88,6 +110,18 @@ export function LandingPage({ content }: { content: LandingContent }) {
                 Or install with Homebrew
               </a>
             </div>
+          </div>
+        </section>
+
+        <section aria-labelledby="answer-heading" className="pb-20 px-6">
+          <div className="max-w-3xl mx-auto">
+            <h2
+              id="answer-heading"
+              className={`${outfit} text-2xl md:text-3xl font-bold mb-4 text-[var(--color-text)]`}
+            >
+              {answer.question}
+            </h2>
+            <p className="text-lg text-[var(--color-text-secondary)] leading-relaxed">{answer.body}</p>
           </div>
         </section>
 

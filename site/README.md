@@ -38,3 +38,17 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 ## Landing pages
 
 SEO landing pages (`app/granola-alternative`, `app/otter-alternative`, `app/for/*`) each pass a content object to `components/LandingPage.tsx` and build their metadata with `landingMetadata()`. When you add one, also add it to `public/sitemap.xml`, `public/llms.txt` and the links in `components/SiteFooter.tsx`.
+
+Each content object also sets:
+
+- `answer`: the reader's main question, as they'd type it (on comparison pages, "Which is better, Nootle or X?"), and an "it depends" answer of 100 words or less. It renders as the page's first H2, right below the headline.
+- `published` and `updated`: ISO dates shown in the byline. Bump `updated`, and the page's `lastmod` in `public/sitemap.xml`, whenever you change the page.
+
+## Writing for AI crawlers and agents
+
+AI assistants read the raw HTML and the accessibility tree, so:
+
+- Keep key facts (pricing, features, platform support) in server-rendered text, not images or text set by client-side scripts. Hidden-until-clicked content, like screenshot tabs, should still render in the HTML.
+- Give icon-only buttons an `aria-label`, give images descriptive alt text, and use `<header>`, `<nav>`, `<button>` and `<figure>` rather than generic `<div>`s.
+- Date facts that change with "as of" (for example, competitor pricing).
+- `public/robots.txt` allows AI crawlers, including Meta's `meta-webindexer`.
