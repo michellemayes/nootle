@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.17.1] - 2026-10-20
+
+### Bug Fixes
+
+- **speakers:** Stop room meetings splitting into dozens of speakers (#201) ([74890ca](https://github.com/michellemayes/nootle/commit/74890ca8e269acc1544cbef6c744986dadb720a2))
+
 ## [0.17.0] - 2026-10-20
 
 ### Features
