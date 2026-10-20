@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Circle, FileText, History, ListTodo, Sparkles, Users, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { clockTime, relativeWhen } from "@/lib/momentum";
+import { relativeWhen } from "@/lib/momentum";
+import { formatClockTime } from "@/lib/utils";
 import type { MeetingBrief } from "@/types";
 
 
@@ -13,7 +14,7 @@ function startsIn(iso: string, now: number): string {
   if (minutes < 0) return `Started ${-minutes} min ago`;
   if (minutes === 0) return "Starting now";
   if (minutes <= 60) return `Starts in ${minutes} min`;
-  return `Today at ${clockTime(iso)}`;
+  return `Today at ${formatClockTime(iso)}`;
 }
 
 function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
@@ -83,7 +84,7 @@ export function MeetingBriefView({ brief, onRecord, onOpenMeeting, recording }: 
           {event.title}
         </h2>
         <p className="text-xs tabular-nums text-muted-foreground">
-          {clockTime(event.start)} – {clockTime(event.end)}
+          {formatClockTime(event.start)} – {formatClockTime(event.end)}
           {event.calendar && ` · ${event.calendar}`}
         </p>
       </div>

@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { MeetingBriefView } from "@/components/MeetingBrief";
 import type { RecordingIntent } from "@/pages/RecordingView";
-import { clockTime, relativeWhen } from "@/lib/momentum";
+import { relativeWhen } from "@/lib/momentum";
+import { formatClockTime } from "@/lib/utils";
 import { useMeetings } from "@/hooks/useMeetings";
 import { useAllInsights } from "@/hooks/useInsights";
 import type {
@@ -24,7 +25,6 @@ const REFRESH_MS = 5 * 60 * 1000;
 /** Coming back to the window refreshes, but not more than once a minute. */
 const FOCUS_REFRESH_MS = 60 * 1000;
 const SHOWN = 3;
-
 
 const NO_EVENTS: CalendarEvent[] = [];
 
@@ -258,7 +258,7 @@ export function UpcomingMeetings() {
           return (
             <div key={event.id} className="flex items-center gap-3 px-4 py-2.5">
               <span className="w-36 shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-                {clockTime(event.start)} – {clockTime(event.end)}
+                {formatClockTime(event.start)} – {formatClockTime(event.end)}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">

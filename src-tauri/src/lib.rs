@@ -26,6 +26,7 @@ pub mod live_assist;
 pub mod llm;
 pub mod mcp;
 pub mod meeting_popup;
+pub mod menu_bar;
 pub mod model_download;
 pub mod model_registry;
 pub mod ops;
@@ -285,6 +286,8 @@ pub fn run() {
         .manage(SummaryJobsState::default())
         .manage(connectors::SignInState::default())
         .manage(meeting_popup::PopupState::default())
+        .manage(menu_bar::MenuBarState::default())
+        .manage(live_assist::LatestCard::default())
         .manage(brief_popup::BriefPopupState::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
@@ -350,6 +353,7 @@ pub fn run() {
                     }
                 });
             }
+            menu_bar::start(&app_handle);
             // Keep the knowledge base current: a pass shortly after launch,
             // then every half hour, reading only files that changed.
             {
@@ -426,6 +430,9 @@ pub fn run() {
             commands::add_scratch_note,
             commands::get_scratch_notes,
             commands::delete_scratch_note,
+            commands::list_meeting_annotations,
+            commands::resolve_meeting_annotation,
+            commands::delete_meeting_annotation,
             commands::get_transcript,
             commands::list_snapshots,
             commands::delete_snapshot,
@@ -560,6 +567,8 @@ pub fn run() {
             meeting_popup::get_popup_meeting,
             meeting_popup::dismiss_meeting_popup,
             meeting_popup::record_from_meeting_popup,
+            menu_bar::menu_bar_status,
+            menu_bar::menu_bar_open_main,
             brief_popup::get_meeting_brief,
             brief_popup::synthesize_meeting_brief,
             brief_popup::get_brief_popup,

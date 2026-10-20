@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- **meetings:** Listen to a meeting as a spoken recap, a voice per speaker (#197) ([9c56fe2](https://github.com/michellemayes/nootle/commit/9c56fe2cf2ec3d5cecb22633040ccfee6b826ba3))
+
+## [0.12.0] - 2026-10-20
+
+### Features
+
+- **coach:** Opt-in Meeting Coach with a private per-call card and trends (#194) ([fecb969](https://github.com/michellemayes/nootle/commit/fecb969019ab9abe0e2dcd72c52fe76bbc2faf01))
+
 ## [0.11.2] - 2026-10-20
 
 ### Bug Fixes
