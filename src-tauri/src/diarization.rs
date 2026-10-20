@@ -389,10 +389,11 @@ impl SpeakerClusters {
     }
 }
 
-/// Cosine similarity two voices need to be merged by [`cluster_voices`].
-/// Offline clustering compares whole-utterance fingerprints, which are less
-/// noisy than the live window's, so it can afford to be a little stricter.
-pub const OFFLINE_SIMILARITY: f32 = 0.55;
+/// Cosine similarity two groups of voices need to be merged by
+/// [`cluster_voices`]. One sentence's fingerprint is noisy: on a laptop mic
+/// in a room, two sentences by the same person average only about 0.5,
+/// while different people stay near 0.1, so the cut sits between the two.
+pub const OFFLINE_SIMILARITY: f32 = 0.3;
 
 /// Groups unit-length voice fingerprints into speakers by average-linkage
 /// agglomerative clustering: repeatedly merge the two most similar groups
@@ -458,13 +459,94 @@ pub fn cluster_voices(embeddings: &[&[f32]], threshold: f32) -> Vec<usize> {
         }
         i
     };
+    number_by_first_appearance((0..n).map(root))
+}
+
+/// A speaker needs this much speech across the meeting (or, in a short
+/// meeting, [`MIN_SPEAKER_SHARE`] of it) to count as a person of their own;
+/// a voice heard for less joins the speaker it sounds most like.
+const MIN_SPEAKER_MS: i64 = 10_000;
+const MIN_SPEAKER_SHARE: f64 = 0.05;
+
+/// Groups a finished meeting's sentence fingerprints into speakers.
+/// `talk_ms` is how long each sentence lasts. Returns each sentence's
+/// speaker, numbered by first appearance.
+pub fn cluster_speakers(embeddings: &[&[f32]], talk_ms: &[i64]) -> Vec<usize> {
+    let total: i64 = talk_ms.iter().sum();
+    let min_talk = MIN_SPEAKER_MS.min((total as f64 * MIN_SPEAKER_SHARE) as i64);
+    absorb_minor_clusters(
+        embeddings,
+        &cluster_voices(embeddings, OFFLINE_SIMILARITY),
+        talk_ms,
+        min_talk,
+    )
+}
+
+/// Folds every cluster whose `weights` (e.g. speaking time) add up to less
+/// than `min_weight` into the remaining cluster that sounds most like it,
+/// smallest first, then renumbers by first appearance. A voice heard for
+/// only a moment is far more often a known speaker who sounded different
+/// (a laugh, a cough, turning away from the mic) than someone new.
+fn absorb_minor_clusters(
+    embeddings: &[&[f32]],
+    clusters: &[usize],
+    weights: &[i64],
+    min_weight: i64,
+) -> Vec<usize> {
+    let count = clusters.iter().max().map_or(0, |m| m + 1);
+    let dim = embeddings.first().map_or(0, |e| e.len());
+    // Summed voices are enough: cosine similarity ignores their length.
+    let mut voice = vec![vec![0.0f32; dim]; count];
+    let mut total = vec![0i64; count];
+    for ((e, &c), &w) in embeddings.iter().zip(clusters).zip(weights) {
+        voice[c]
+            .iter_mut()
+            .zip(e.iter())
+            .for_each(|(acc, x)| *acc += x);
+        total[c] += w;
+    }
+    let mut merged_into: Vec<usize> = (0..count).collect();
+    let mut live: Vec<usize> = (0..count).collect();
+    while live.len() > 1 {
+        let Some(minor) = live
+            .iter()
+            .copied()
+            .filter(|&c| total[c] < min_weight)
+            .min_by_key(|&c| total[c])
+        else {
+            break;
+        };
+        live.retain(|&c| c != minor);
+        let (into, _) = live
+            .iter()
+            .map(|&c| (c, cosine_similarity(&voice[c], &voice[minor])))
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .expect("another speaker is left");
+        let moved = std::mem::take(&mut voice[minor]);
+        voice[into]
+            .iter_mut()
+            .zip(&moved)
+            .for_each(|(acc, x)| *acc += x);
+        total[into] += total[minor];
+        merged_into[minor] = into;
+    }
+    let root = |mut c: usize| {
+        while merged_into[c] != c {
+            c = merged_into[c];
+        }
+        c
+    };
+    number_by_first_appearance(clusters.iter().map(|&c| root(c)))
+}
+
+/// Renames cluster ids 0, 1, 2, … in the order they first appear.
+fn number_by_first_appearance(ids: impl Iterator<Item = usize>) -> Vec<usize> {
     let mut number = std::collections::HashMap::new();
-    (0..n)
-        .map(|i| {
-            let next = number.len();
-            *number.entry(root(i)).or_insert(next)
-        })
-        .collect()
+    ids.map(|c| {
+        let next = number.len();
+        *number.entry(c).or_insert(next)
+    })
+    .collect()
 }
 
 /// Unit-length mean voice of each cluster from [`cluster_voices`].
@@ -751,6 +833,27 @@ mod tests {
         );
         assert_eq!(cluster_voices(&[], OFFLINE_SIMILARITY), Vec::<usize>::new());
         assert_eq!(cluster_voices(&[&a, &b], 0.99), vec![0, 1]);
+    }
+
+    #[test]
+    fn test_minor_clusters_join_the_closest_speaker() {
+        let a = vec![1.0, 0.0, 0.0, 0.0];
+        let b = vec![0.0, 1.0, 0.0, 0.0];
+        let a_cough = vec![0.25, 0.0, 0.97, 0.0];
+        let b_laugh = vec![0.0, 0.25, 0.0, 0.97];
+        let voices: [&[f32]; 5] = [&a, &a_cough, &b, &b_laugh, &a];
+        let clusters = cluster_voices(&voices, OFFLINE_SIMILARITY);
+        assert_eq!(clusters, vec![0, 1, 2, 3, 0]);
+        let talk = [5_000, 1_000, 12_000, 2_000, 6_000];
+        assert_eq!(
+            absorb_minor_clusters(&voices, &clusters, &talk, 10_000),
+            vec![0, 0, 1, 1, 0]
+        );
+        // The only speaker stays, however little they said.
+        assert_eq!(
+            absorb_minor_clusters(&voices[..1], &[0], &[1_000], 10_000),
+            vec![0]
+        );
     }
 
     #[test]
