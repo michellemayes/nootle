@@ -1,0 +1,116 @@
+# CLI, MCP server, and URL scheme
+
+## CLI tool
+
+`nootle-cli` is a standalone command-line tool that covers everything Nootle does outside of live recording: meetings, transcripts, labels, notes, action items, recipes, analytics, Ask, settings, and automations. It reads and writes the Nootle database directly — the app doesn't need to be running.
+
+`nootle-cli` ships inside Nootle.app at `/Applications/Nootle.app/Contents/MacOS/nootle-cli`; symlink it onto your PATH, or build it from source:
+
+```bash
+# Build and install
+cargo install --path src-tauri --bin nootle-cli
+
+# List meetings
+nootle-cli meetings list
+
+# Search transcripts
+nootle-cli search "quarterly review"
+
+# List open action items
+nootle-cli actions list --status open
+
+# Export a meeting as Markdown, txt, srt, or vtt
+nootle-cli meetings export <meeting-id> --format srt --output call.srt
+
+# Name a speaker
+nootle-cli meetings rename-speaker <meeting-id> "Speaker 2" "Priya"
+
+# Summarize, or ask about one meeting or all of them (uses your configured LLM;
+# --provider and --model pick another)
+nootle-cli meetings summarize <meeting-id>
+nootle-cli meetings ask <meeting-id> "What did we decide about pricing?"
+nootle-cli ask "Who owns the Q3 launch?"
+
+# Ask only your knowledge base, or only documents tagged "Research"
+nootle-cli ask "What's our refund policy?" --knowledge-only
+nootle-cli ask "What did the study find?" --tag Research
+
+# Tag a meeting and mark an action item done
+nootle-cli meetings label <meeting-id> --add Customer
+nootle-cli actions update <action-item-id> --status done
+
+# Start and stop recording in the running app (needs Settings → Recording → Allow URL control)
+nootle-cli record start --title "Staff sync"
+nootle-cli record stop
+```
+
+Output is JSON by default. Add `--pretty` for human-readable formatting. See `nootle-cli --help` for all commands.
+
+### Automations
+
+Agents and scripts can set up the same automations as the app: integrations, workflows, summary templates, and insight types. Input is validated, and errors list what's allowed.
+
+```bash
+# What can be automated: integration types, actions, and their fields
+nootle-cli catalog
+
+# Connect Slack. Credentials can come from stdin or @file to keep them out of shell history.
+echo '{"bot_token":"xoxb-..."}' | nootle-cli integrations create --type slack --credentials -
+
+# Create a workflow that posts summaries to #eng
+nootle-cli workflows create --name "Post to #eng" --integration <integration-id> --set channel=#eng
+
+# Run it on a meeting now
+nootle-cli workflows run <workflow-id> --meeting <meeting-id>
+
+# Summarize every new meeting with a custom template
+nootle-cli templates create --name "1:1" --section Wins --section Blockers --auto-run
+
+# Extract a custom insight type from every transcript
+nootle-cli insight-types create --name Risk --prompt "Risks or concerns someone raised" --icon alert-triangle
+```
+
+Credentials are stored locally and never printed. If the app is open, reopen the page to see changes made from the CLI.
+
+### Claude Code skill
+
+Install the skill so Claude can query your meetings and manage automations:
+
+```bash
+claude skill add --global --file "$(dirname $(which nootle-cli))/../skills/nootle-cli.md"
+```
+
+## MCP server
+
+`nootle-cli mcp` serves Nootle over MCP. The CLI ships inside Nootle.app, so there's nothing extra to install (Settings → About shows the exact command for your install):
+
+```bash
+claude mcp add --scope user nootle -- /Applications/Nootle.app/Contents/MacOS/nootle-cli mcp
+```
+
+The server supports MCP 2026-07-28 and the older handshake-based versions. Older setups that run the app with `--mcp` keep working, and the app serves MCP instead of opening whenever an MCP client launches it over stdio.
+
+The server has the same features as the CLI, except API keys, recording control, and the calendar: reading, searching, and editing meetings, labels, notes, action items, and the dictionary; searching your knowledge base (`search_knowledge`, `list_knowledge_sources`), which `ask_meetings` also answers from; summaries, insights, Ask, and other LLM features; and workflows, integrations, summary templates, and insight types. So you can ask an agent things like *"Tag last week's customer calls and summarize what they asked for"* or *"Set up a workflow that posts meeting recaps to #eng"*. Large results come in pages, and tools that delete things ask Claude to confirm with you first.
+
+To give an agent read access only, add `--read-only`: it can search and read your meetings but can't edit, delete, or send anything to an integration. Meeting text comes from everyone in the meeting, so this is the safer choice for agents that act on what they read.
+
+```bash
+claude mcp add --scope user nootle-readonly -- /Applications/Nootle.app/Contents/MacOS/nootle-cli mcp --read-only
+```
+
+## URL scheme
+
+Other apps and scripts can control recording with `nootle://` links. This is off by default. Turn on **Settings → Recording → Allow URL control** first.
+
+Every link must carry this Mac's secret `token`, so a web page can't start a recording just by opening a link. Copy a ready-made link from **Settings → Recording**; `nootle-cli record` adds the token for you.
+
+```bash
+open "nootle://record/start?token=$TOKEN&title=Staff%20sync"   # no-op if already recording
+open "nootle://record/stop?token=$TOKEN"
+open "nootle://record/toggle?token=$TOKEN"
+open "nootle://record/status?token=$TOKEN"
+open "nootle://permissions/screen?token=$TOKEN"                # prompt for Screen Recording access
+open "nootle://permissions/status?token=$TOKEN"
+```
+
+Nootle shows a notification whenever a link starts or stops a recording, or fails.
