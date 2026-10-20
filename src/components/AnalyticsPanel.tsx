@@ -8,6 +8,9 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { BarChart3, RotateCw, Users, Timer, MessageCircleQuestion, Zap } from "lucide-react";
 import { formatMs } from "@/lib/utils";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
+import { useBooleanSetting } from "@/hooks/useBooleanSetting";
+import { COACH_SETTING } from "@/hooks/useCoach";
+import { CoachCard } from "@/components/Coach";
 
 // Same order as the speaker colors in MeetingDetail, so a speaker keeps one
 // color between the transcript and these bars.
@@ -37,6 +40,7 @@ export function AnalyticsPanel({
   } = useAnalytics(meetingId);
 
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
+  const [coachEnabled] = useBooleanSetting(COACH_SETTING, false);
   const [computing, setComputing] = useState(false);
   const [startingSentiment, setStartingSentiment] = useState(false);
   // The backend tracks in-flight jobs, so progress survives switching tabs.
@@ -103,6 +107,8 @@ export function AnalyticsPanel({
   return (
     <ScrollArea className="flex-1">
       <div className="space-y-6 p-5">
+        {coachEnabled && <CoachCard meetingId={meetingId} />}
+
         {hasSpeakers && (
           <div className="space-y-3">
             <h3 className="text-sm font-semibold">Talk time</h3>

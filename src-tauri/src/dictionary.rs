@@ -114,7 +114,7 @@ impl Rules {
     }
 }
 
-fn is_word_char(c: char) -> bool {
+pub(crate) fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '\'' || c == '’'
 }
 

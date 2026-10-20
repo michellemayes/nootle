@@ -35,10 +35,6 @@
           (!args?.status || i.status === args.status || i.status === null),
       );
     }
-    // Settings are keyed; unset ones are null.
-    if (cmd === "get_app_setting") {
-      return (fixtures.app_settings || {})[args?.key] ?? null;
-    }
     // A live recording's input levels, wobbling like speech for the meter.
     if (cmd === "recording_status") {
       const t = Date.now() / 180;
@@ -49,6 +45,10 @@
         mic_level: 0.03 + 0.025 * Math.sin(t),
         system_level: 0.02 + 0.015 * Math.cos(t * 1.3),
       };
+    }
+    // Settings are keyed by name; unlisted ones are unset.
+    if (cmd === "get_app_setting") {
+      return (fixtures.get_app_setting || {})[args?.key] ?? null;
     }
     if (cmd in fixtures) return fixtures[cmd];
     if (!cmd.startsWith("plugin:")) {

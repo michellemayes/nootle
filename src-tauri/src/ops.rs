@@ -22,7 +22,8 @@ pub fn recordings_dir() -> Result<std::path::PathBuf> {
         .join("recordings"))
 }
 
-/// Deletes a meeting with its search index, audio file, and snapshots.
+/// Deletes a meeting with its search index, audio file, snapshots, and
+/// audio recap.
 pub fn delete_meeting(db: &Database, id: &str) -> Result<()> {
     let audio_path = db.get_meeting(id).ok().and_then(|m| m.audio_path);
     // vec0 embeddings don't cascade.
@@ -34,6 +35,7 @@ pub fn delete_meeting(db: &Database, id: &str) -> Result<()> {
     }
     if let Ok(dir) = recordings_dir() {
         let _ = std::fs::remove_dir_all(crate::snapshots::dir_for(&dir, id));
+        crate::room_recap::delete_files(&dir, id);
     }
     Ok(())
 }
@@ -68,6 +70,7 @@ pub const TOGGLE_SETTINGS: &[&str] = &[
     crate::snapshots::SETTING_KEY,
     crate::live_assist::SETTING_KEY,
     crate::brief::SETTING_KEY,
+    crate::coach::SETTING_KEY,
 ];
 /// Settings the MCP server refuses to change. URL control lets other apps
 /// start recordings and snapshots capture shared screens, so turning either

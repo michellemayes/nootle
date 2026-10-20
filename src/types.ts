@@ -134,6 +134,29 @@ export interface ChatMessage {
   content: string;
 }
 
+/** One spoken line of an Ask the Room recap or answer. */
+export interface RecapLine {
+  speaker: string;
+  text: string;
+  voice: string;
+  start_ms: number;
+  end_ms: number;
+}
+
+export interface AudioRecap {
+  meeting_id: string;
+  audio_path: string;
+  lines: RecapLine[];
+  provider: string;
+  model: string;
+  created_at: string;
+}
+
+export interface RoomAnswer {
+  line: RecapLine;
+  audio_path: string;
+}
+
 export interface DetectedMeeting {
   app_name: string;
   display_name: string;

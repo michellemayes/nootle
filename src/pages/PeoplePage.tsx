@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Link } from "react-router-dom";
-import { Users } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { GraduationCap, Users } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadingState } from "@/components/LoadingState";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { ActionItemCheckbox } from "@/components/ActionItemCheckbox";
+import { CoachTrends } from "@/components/Coach";
+import { useBooleanSetting } from "@/hooks/useBooleanSetting";
+import { COACH_SETTING, useCoachTrends } from "@/hooks/useCoach";
 import { formatDate, cn, plural } from "@/lib/utils";
 import type { InsightWithActionItem, Meeting } from "@/types";
 
@@ -31,11 +34,20 @@ function minutes(ms: number): string {
 }
 
 /** Everyone you've named as a speaker: when you last met, what you
- * talked about, and what they owe. */
+ * talked about, and what they owe. With Meeting Coach on, "You" leads the
+ * list with your coaching trends. */
 export function PeoplePage() {
   const [people, setPeople] = useState<Person[] | null>(null);
-  const [selected, setSelected] = useState<Person | null>(null);
+  const [searchParams] = useSearchParams();
+  // "you" is your coaching trends, listed first while Meeting Coach is on.
+  const [selected, setSelected] = useState<Person | "you" | null>(
+    searchParams.has("coach") ? "you" : null,
+  );
   const [detail, setDetail] = useState<PersonDetail | null>(null);
+  const [coachEnabled] = useBooleanSetting(COACH_SETTING, false);
+  const trends = useCoachTrends(coachEnabled);
+  const person = selected === "you" ? null : selected;
+  const showYou = coachEnabled && (selected === "you" || !selected);
 
   useEffect(() => {
     invoke<Person[]>("list_people")
@@ -47,9 +59,9 @@ export function PeoplePage() {
   }, []);
 
   useEffect(() => {
-    if (!selected) return;
-    invoke<PersonDetail>("get_person", { name: selected.name }).then(setDetail).catch(() => {});
-  }, [selected]);
+    if (!person) return;
+    invoke<PersonDetail>("get_person", { name: person.name }).then(setDetail).catch(() => {});
+  }, [person]);
 
   // Updated in place: the list's open count and this item flip together.
   const toggle = async (item: InsightWithActionItem) => {
@@ -83,7 +95,7 @@ export function PeoplePage() {
       />
       {people === null ? (
         <LoadingState message="Loading people…" />
-      ) : people.length === 0 ? (
+      ) : people.length === 0 && !coachEnabled ? (
         <EmptyState
           icon={Users}
           title="No people yet"
@@ -93,13 +105,30 @@ export function PeoplePage() {
         <div className="flex min-h-0 flex-1">
           <ScrollArea className="w-64 shrink-0 border-r">
             <ul className="p-2">
+              {coachEnabled && (
+                <li>
+                  <button
+                    onClick={() => setSelected("you")}
+                    className={cn(
+                      "w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted",
+                      showYou && "bg-muted",
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <GraduationCap className="h-3.5 w-3.5 text-muted-foreground" />
+                      You
+                    </span>
+                    <p className="text-xs text-muted-foreground">Your coaching trends</p>
+                  </button>
+                </li>
+              )}
               {people.map((p) => (
                 <li key={p.name}>
                   <button
                     onClick={() => setSelected(p)}
                     className={cn(
                       "w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted",
-                      selected?.name === p.name && "bg-muted",
+                      person?.name === p.name && "bg-muted",
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -120,13 +149,14 @@ export function PeoplePage() {
             </ul>
           </ScrollArea>
           <ScrollArea className="flex-1">
-            {detail && selected && detail.name === selected.name && (
+            {showYou && <CoachTrends points={trends} />}
+            {detail && person && detail.name === person.name && (
               <div className="max-w-3xl space-y-8 p-6">
                 <div>
                   <h2 className="text-lg font-semibold">{detail.name}</h2>
                   <p className="text-sm text-muted-foreground">
-                    Talked for {minutes(selected.talk_time_ms)} across{" "}
-                    {plural(selected.meeting_count, "meeting")}
+                    Talked for {minutes(person.talk_time_ms)} across{" "}
+                    {plural(person.meeting_count, "meeting")}
                   </p>
                 </div>
                 <section>
