@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -16,6 +16,8 @@ import {
   KeyRound,
   Lock,
   MessageSquareText,
+  Moon,
+  Sun,
   Timer,
   type LucideIcon,
 } from "lucide-react";
@@ -23,6 +25,7 @@ import { SiClaude, SiOpenai } from "react-icons/si";
 import { DownloadButton } from "@/components/DownloadButton";
 import { RELEASES_URL } from "@/components/site-config";
 import { chatPrompt, initials, parseNote, type ParsedNote } from "./note";
+import { THEME_ATTR, THEME_KEY } from "./theme";
 import styles from "./shared-note.module.css";
 
 type State =
@@ -31,6 +34,30 @@ type State =
   | { status: "ready"; markdown: string; note: ParsedNote };
 
 const LOAD_FAILED = "Couldn't load this note. Try again in a moment.";
+
+type Theme = "light" | "dark";
+const themeListeners = new Set<() => void>();
+
+const readTheme = (): Theme => (document.documentElement.getAttribute(THEME_ATTR) === "dark" ? "dark" : "light");
+
+function subscribeTheme(onChange: () => void) {
+  themeListeners.add(onChange);
+  return () => themeListeners.delete(onChange);
+}
+
+/** Only the toggle and the screenshot depend on the theme; CSS does the rest. */
+function useTheme() {
+  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => "light" as const);
+  const toggle = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute(THEME_ATTR, next);
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch {}
+    themeListeners.forEach((l) => l());
+  };
+  return [theme, toggle] as const;
+}
 
 function fromBase64Url(text: string): Uint8Array<ArrayBuffer> {
   const base64 = text.replace(/-/g, "+").replace(/_/g, "/");
@@ -158,14 +185,25 @@ function GetNootle() {
 }
 
 function Header() {
+  const [theme, toggleTheme] = useTheme();
+  const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
   return (
     <header className={styles.topbar}>
       <Link href="/" className={styles.brand}>
         <Image src="/nootle-icon.svg" alt="" width={28} height={28} priority />
-        Nootle
+        <span className={styles.brandName}>Nootle</span>
       </Link>
       <div className={styles.topbarEnd}>
         <EncryptionInfo />
+        <button
+          type="button"
+          className={`${styles.btn} ${styles.btnIcon} ${styles.themeToggle}`}
+          onClick={toggleTheme}
+          aria-label={label}
+          title={label}
+        >
+          {theme === "dark" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+        </button>
         <a href={RELEASES_URL} className={styles.getButton}>
           Get Nootle
         </a>
@@ -339,6 +377,8 @@ function Transcript({ transcript }: { transcript: NonNullable<ParsedNote["transc
 const SHOT_SIZES = "(max-width: 720px) 100vw, 32rem";
 
 function NootleCta() {
+  const [theme] = useTheme();
+  const shot = (w: number) => `/screenshots/meeting-${theme}-${w}.webp`;
   return (
     <section className={styles.cta} aria-labelledby="cta-title">
       <div>
@@ -363,14 +403,9 @@ function NootleCta() {
         </div>
       </div>
       <picture className={styles.ctaShot}>
-        <source
-          media="(prefers-color-scheme: dark)"
-          srcSet="/screenshots/meeting-dark-800.webp 800w, /screenshots/meeting-dark-1600.webp 1600w"
-          sizes={SHOT_SIZES}
-        />
         <img
-          src="/screenshots/meeting-light-1600.webp"
-          srcSet="/screenshots/meeting-light-800.webp 800w, /screenshots/meeting-light-1600.webp 1600w"
+          src={shot(1600)}
+          srcSet={`${shot(800)} 800w, ${shot(1600)} 1600w`}
           sizes={SHOT_SIZES}
           alt="A meeting in Nootle: transcript beside its summary"
           width={1600}

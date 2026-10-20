@@ -1,5 +1,5 @@
 /* Shared meeting notes (/s/[id]). Light like a document by default, dark when
-   the reader's system is; the rest of the site stays dark either way. */
+   the reader picks it (see theme.ts); the rest of the site stays dark either way. */
 
 .page {
   --bg: #f6f5fa;
@@ -31,38 +31,34 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  .page {
-    --bg: var(--color-bg);
-    --paper: #1a1724;
-    --sunken: #15131e;
-    --border: #2e2940;
-    --text: var(--color-text);
-    --text-2: #bcb6cb;
-    --text-3: #8d879e;
-    --accent: #a78bfa;
-    --accent-2: #c4b5fd;
-    --accent-soft: var(--color-accent-subtle);
-    --accent-ring: #8b5cf655;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 40px -12px rgb(0 0 0 / 0.6);
-    --s0: #60a5fa;
-    --s1: var(--color-emerald);
-    --s2: #e879f9;
-    --s3: var(--color-amber);
-    --s4: var(--color-cyan);
-    --s5: #f87171;
-    color-scheme: dark;
-  }
+:global(html[data-share-theme="dark"]) .page {
+  --bg: var(--color-bg);
+  --paper: #1a1724;
+  --sunken: #15131e;
+  --border: #2e2940;
+  --text: var(--color-text);
+  --text-2: #bcb6cb;
+  --text-3: #8d879e;
+  --accent: #a78bfa;
+  --accent-2: #c4b5fd;
+  --accent-soft: var(--color-accent-subtle);
+  --accent-ring: #8b5cf655;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 40px -12px rgb(0 0 0 / 0.6);
+  --s0: #60a5fa;
+  --s1: var(--color-emerald);
+  --s2: #e879f9;
+  --s3: var(--color-amber);
+  --s4: var(--color-cyan);
+  --s5: #f87171;
+  color-scheme: dark;
 }
 
 /* Overscroll shows the body, which the site paints dark. */
 :global(body):has(.page) {
   background: #f6f5fa;
 }
-@media (prefers-color-scheme: dark) {
-  :global(body):has(.page) {
-    background: var(--color-bg);
-  }
+:global(html[data-share-theme="dark"] body):has(.page) {
+  background: var(--color-bg);
 }
 
 .page svg {
@@ -91,6 +87,7 @@
   color: var(--text);
 }
 .brand img {
+  flex-shrink: 0;
   width: 1.75rem;
   height: 1.75rem;
 }
@@ -230,6 +227,7 @@
 }
 .getButton {
   padding: 0.45rem 1rem;
+  white-space: nowrap;
   border-radius: 999px;
   background: var(--text);
   color: var(--paper);
@@ -398,6 +396,15 @@
 .btnIcon {
   width: 2.5rem;
   padding: 0;
+}
+.themeToggle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  color: var(--text-3);
+}
+.themeToggle:hover {
+  color: var(--text);
 }
 .btnLink {
   font-weight: 600;
@@ -953,6 +960,21 @@
   }
   .footer {
     align-items: flex-start;
+  }
+}
+
+/* Room for the pill, theme toggle and Get Nootle on the narrowest phones. */
+@media (max-width: 420px) {
+  .topbarEnd {
+    gap: 0.5rem;
+  }
+  .brandName {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
