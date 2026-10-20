@@ -19,8 +19,8 @@ use crate::audio::writer::{repair_wav_header, stems_path};
 use crate::audio::{rms, AudioChunk, AudioMixer, SAMPLE_RATE};
 use crate::db::{Database, NewTranscriptSegment, TranscriptSegment};
 use crate::diarization::{
-    centroids, classify, cluster_voices, cosine_similarity, is_automatic_label, speaker_label,
-    DiarizationEngine, Source, SpeakerAttributor, OFFLINE_SIMILARITY, SELF_LABEL, UNKNOWN_LABEL,
+    centroids, classify, cluster_speakers, cosine_similarity, is_automatic_label, speaker_label,
+    DiarizationEngine, Source, SpeakerAttributor, SELF_LABEL, UNKNOWN_LABEL,
 };
 use crate::transcription::{TranscriptionEngine, TranscriptionSegment};
 use crate::vad::{Endpointer, Utterance, VoiceDetector, FRAME_SAMPLES};
@@ -445,7 +445,11 @@ fn assign_speakers(
         .filter_map(|i| Some((i, voices[i].as_deref()?)))
         .collect();
     let anchor_voices: Vec<&[f32]> = anchors.iter().map(|&(_, v)| v).collect();
-    let clusters = cluster_voices(&anchor_voices, OFFLINE_SIMILARITY);
+    let talk: Vec<i64> = anchors
+        .iter()
+        .map(|&(i, _)| segments[i].end_ms - segments[i].start_ms)
+        .collect();
+    let clusters = cluster_speakers(&anchor_voices, &talk);
     let mut cluster_of = vec![None; segments.len()];
     for (&(i, _), &c) in anchors.iter().zip(&clusters) {
         cluster_of[i] = Some(c);
