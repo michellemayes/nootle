@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.18.0] - 2026-10-21
+
+### Features
+
+- **meetings:** Tidy the meeting header and make "Continue in" configurable (#202) ([1ce657e](https://github.com/michellemayes/nootle/commit/1ce657e0cfef083ccdad16cb4b3b5dff064780c2))
+
 ## [0.17.1] - 2026-10-20
 
 ### Bug Fixes
