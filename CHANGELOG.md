@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.18.1] - 2026-10-21
+
+### Bug Fixes
+
+- **deps:** Patch open CVEs in npm and Rust dependencies (#204) ([b82edd6](https://github.com/michellemayes/nootle/commit/b82edd6cd744ac9e8e6f7860dd0d614e33a92101))
+
 ## [0.18.0] - 2026-10-21
 
 ### Features
