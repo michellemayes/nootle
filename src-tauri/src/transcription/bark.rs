@@ -430,7 +430,7 @@ fn read_npz(path: &Path) -> anyhow::Result<Arrays> {
     let mut arrays = HashMap::new();
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
-        let Some(name) = entry.name().strip_suffix(".npy").map(str::to_string) else {
+        let Some(name) = entry.name()?.strip_suffix(".npy").map(str::to_string) else {
             continue;
         };
         let mut bytes = Vec::new();
