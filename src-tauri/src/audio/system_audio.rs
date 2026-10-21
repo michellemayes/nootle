@@ -6,7 +6,7 @@
 #[cfg(all(target_os = "macos", feature = "system-audio"))]
 mod core_audio_impl {
     use anyhow::Context;
-    use ringbuf::traits::{Consumer, Producer, Split};
+    use ringbuf::traits::{Producer, Split};
     use ringbuf::HeapRb;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -159,14 +159,14 @@ mod core_audio_impl {
 
         /// Everything captured since the last read.
         pub fn read_all(&mut self) -> Vec<f32> {
-            self.consumer.pop_iter().collect()
+            crate::audio::mic::drain(&mut self.consumer)
         }
     }
 }
 
 #[cfg(not(all(target_os = "macos", feature = "system-audio")))]
 mod fallback_impl {
-    use ringbuf::traits::{Consumer, Split};
+    use ringbuf::traits::Split;
     use ringbuf::HeapRb;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -212,7 +212,7 @@ mod fallback_impl {
 
         /// Everything captured since the last read.
         pub fn read_all(&mut self) -> Vec<f32> {
-            self.consumer.pop_iter().collect()
+            crate::audio::mic::drain(&mut self.consumer)
         }
     }
 }
