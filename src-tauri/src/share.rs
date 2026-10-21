@@ -1,5 +1,4 @@
-//! Takes a meeting outside Nootle on purpose: a public share link to its
-//! notes, and a hand-off to Claude to keep talking about it.
+//! A public share link to a meeting's notes.
 //!
 //! Share links live on nootle.ai and are end-to-end encrypted: the note is
 //! encrypted here with a key of its own, only the ciphertext is uploaded, and
@@ -16,10 +15,6 @@ use base64::Engine;
 use std::sync::Arc;
 
 const SHARE_SITE: &str = "https://nootle.ai";
-
-/// Longest prompt put in a Claude link. Percent-encoding can triple it, and
-/// links much past ~16 KB get refused before they reach Claude.
-const CLAUDE_PROMPT_MAX_CHARS: usize = 5_000;
 
 /// Encrypts `plaintext` with AES-256-GCM into the `{ iv, ciphertext }` the
 /// share page decrypts with WebCrypto (the tag rides at the ciphertext's end).
@@ -172,84 +167,9 @@ pub fn revoke_after_delete(db: &Database, meeting_id: &str) {
     });
 }
 
-/// A first message for Claude about this meeting: its notes, plus as much of
-/// the transcript as fits in a link. `rest` is the whole meeting when any of
-/// it was left out, so the caller can offer it another way.
-#[derive(Debug)]
-pub struct ClaudePrompt {
-    pub prompt: String,
-    pub rest: Option<String>,
-}
-
-pub fn claude_prompt(db: &Database, meeting_id: &str) -> Result<ClaudePrompt, String> {
-    crate::llm::ensure_may_send(db, "Claude")?;
-    let markdown = |include_transcript| {
-        meeting_as_markdown(db, meeting_id, include_transcript).map_err(|e| e.to_string())
-    };
-    build_claude_prompt(markdown(true)?, || markdown(false))
-}
-
-fn build_claude_prompt(
-    full: String,
-    notes: impl FnOnce() -> Result<String, String>,
-) -> Result<ClaudePrompt, String> {
-    let intro = "I'd like to keep discussing this meeting. Here are my notes from Nootle:\n\n";
-    let outro = "\n\nRead them, then let's talk it through.";
-    let budget =
-        CLAUDE_PROMPT_MAX_CHARS.saturating_sub(intro.chars().count() + outro.chars().count());
-    if full.chars().nth(budget).is_none() {
-        return Ok(ClaudePrompt {
-            prompt: format!("{intro}{}{outro}", full.trim()),
-            rest: None,
-        });
-    }
-    let trimmed = "\n\n…(trimmed)";
-    let room = budget.saturating_sub(trimmed.chars().count());
-    let body = crate::ops::truncate_at_word_boundary(&notes()?, room, trimmed);
-    Ok(ClaudePrompt {
-        prompt: format!("{intro}{body}{outro}"),
-        rest: Some(full),
-    })
-}
-
-/// Whether the Claude desktop app is installed, so a hand-off can open it
-/// instead of claude.ai in the browser.
-pub fn claude_desktop_installed() -> bool {
-    let user_apps = dirs::home_dir().map(|h| h.join("Applications/Claude.app"));
-    std::iter::once(std::path::PathBuf::from("/Applications/Claude.app"))
-        .chain(user_apps)
-        .any(|p| p.exists())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn unused_notes() -> Result<String, String> {
-        panic!("notes are only built when the meeting doesn't fit")
-    }
-
-    #[test]
-    fn claude_prompt_keeps_a_short_meeting_whole() {
-        let full = "# Sync\n\n## Transcript\n\nhi\n".to_string();
-        let p = build_claude_prompt(full, unused_notes).unwrap();
-        assert!(p.rest.is_none());
-        assert!(p.prompt.contains("## Transcript"), "{}", p.prompt);
-        assert!(p
-            .prompt
-            .starts_with("I'd like to keep discussing this meeting"));
-    }
-
-    #[test]
-    fn claude_prompt_drops_a_long_transcript_and_fits_the_link() {
-        let full = format!("# Sync\n\n## Transcript\n\n{}", "word ".repeat(5_000));
-        let notes = format!("# Sync\n\n## Notes\n\n{}", "note ".repeat(5_000));
-        let p = build_claude_prompt(full.clone(), || Ok(notes)).unwrap();
-        assert_eq!(p.rest, Some(full));
-        assert!(!p.prompt.contains("## Transcript"));
-        assert!(p.prompt.contains("…(trimmed)"));
-        assert!(p.prompt.chars().count() <= CLAUDE_PROMPT_MAX_CHARS);
-    }
 
     #[test]
     fn sealed_notes_open_with_their_key_only() {
@@ -304,7 +224,6 @@ mod tests {
         db.set_setting(crate::llm::LOCAL_ONLY_SETTING, "true")
             .unwrap();
         assert!(share_meeting(&db, "m", false).await.is_err());
-        assert!(claude_prompt(&db, "m").is_err());
     }
 
     #[test]

@@ -1611,38 +1611,18 @@ pub async fn unshare_meeting(db: State<'_, DbState>, meeting_id: String) -> Resu
     crate::share::unshare_meeting(&db, &meeting_id).await
 }
 
-/// What `open_in_claude` did. `rest` is the whole meeting as Markdown when
-/// the link couldn't hold all of it, for the caller to put on the clipboard.
-#[derive(serde::Serialize)]
-pub struct ClaudeHandoff {
-    desktop: bool,
-    rest: Option<String>,
-}
-
-/// Starts a Claude conversation about the meeting: in the Claude desktop app
-/// when it's installed, otherwise on claude.ai.
+/// Opens the "Continue in…" app with a first message about the meeting.
 #[tauri::command(async)]
-pub fn open_in_claude(
+pub fn continue_in_app(
     app: tauri::AppHandle,
     db: State<'_, DbState>,
     meeting_id: String,
-) -> Result<ClaudeHandoff, String> {
+) -> Result<crate::handoff::Handoff, String> {
     use tauri_plugin_opener::OpenerExt;
-    let prompt = crate::share::claude_prompt(&db, &meeting_id)?;
-    let mut web = url::Url::parse("https://claude.ai/new").expect("valid URL");
-    web.query_pairs_mut().append_pair("q", &prompt.prompt);
-    // The desktop app handles claude:// links to claude.ai pages.
-    let desktop_url = format!("claude://{}", &web.as_str()["https://".len()..]);
-    let desktop = crate::share::claude_desktop_installed()
-        && app.opener().open_url(&desktop_url, None::<&str>).is_ok();
-    if !desktop {
+    crate::handoff::continue_in_app(&db, &meeting_id, |url| {
         app.opener()
-            .open_url(web.as_str(), None::<&str>)
-            .map_err(|e| format!("Couldn't open Claude: {e}"))?;
-    }
-    Ok(ClaudeHandoff {
-        desktop,
-        rest: prompt.rest,
+            .open_url(url, None::<&str>)
+            .map_err(|e| e.to_string())
     })
 }
 

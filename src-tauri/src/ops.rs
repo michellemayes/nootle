@@ -83,6 +83,9 @@ pub const AGENT_LOCKED_SETTINGS: &[&str] = &[
     crate::voices::SETTING_KEY,
     crate::llm::LOCAL_ONLY_SETTING,
     crate::snapshots::SETTING_KEY,
+    // Where "Continue in…" sends a meeting; an agent mustn't redirect it.
+    crate::handoff::APP_SETTING,
+    crate::handoff::URL_SETTING,
 ];
 
 /// Reminds you to tell people they're being recorded when a recording
@@ -101,6 +104,10 @@ pub fn editable_settings() -> impl Iterator<Item = &'static str> {
         SUMMARIZATION_PROVIDER_SETTING,
         CONSENT_MESSAGE_SETTING,
         crate::brief::LEAD_SETTING,
+        crate::handoff::APP_SETTING,
+        crate::handoff::NAME_SETTING,
+        crate::handoff::URL_SETTING,
+        crate::handoff::ICON_SETTING,
     ])
 }
 
@@ -126,6 +133,15 @@ pub fn validate_hex_color(color: &str) -> Result<()> {
     }
 }
 
+/// Refuses `value` when it's longer than `max` characters.
+pub fn max_chars(what: &str, value: &str, max: usize) -> Result<()> {
+    if value.chars().count() > max {
+        Err(anyhow!("The {what} can be at most {max} characters"))
+    } else {
+        Ok(())
+    }
+}
+
 /// A trimmed name, or an error when nothing is left.
 pub fn non_empty_name<'a>(what: &str, name: &'a str) -> Result<&'a str> {
     match name.trim() {
@@ -147,16 +163,18 @@ fn validate_setting_key(key: &str) -> Result<()> {
 /// Checks a setting change: a toggle takes "true" or "false", and the
 /// summarization provider any name ("" for automatic).
 pub fn validate_setting(key: &str, value: &str) -> Result<()> {
+    use crate::handoff;
     validate_setting_key(key)?;
     match key {
         SUMMARIZATION_PROVIDER_SETTING => Ok(()),
-        CONSENT_MESSAGE_SETTING if value.chars().count() > MAX_CONSENT_MESSAGE_CHARS => Err(
-            anyhow!("The consent message can be at most {MAX_CONSENT_MESSAGE_CHARS} characters"),
-        ),
-        CONSENT_MESSAGE_SETTING => Ok(()),
+        CONSENT_MESSAGE_SETTING => max_chars("consent message", value, MAX_CONSENT_MESSAGE_CHARS),
         crate::brief::LEAD_SETTING => {
             validate_one_of("lead time", value, crate::brief::LEAD_CHOICES)
         }
+        handoff::APP_SETTING => validate_one_of("app", value, &handoff::apps()),
+        handoff::NAME_SETTING => max_chars("name", value, handoff::MAX_NAME_CHARS),
+        handoff::ICON_SETTING => max_chars("icon", value, handoff::MAX_ICON_CHARS),
+        handoff::URL_SETTING => handoff::validate_url(value),
         _ => validate_one_of("value", value, &["true", "false"]),
     }
 }
