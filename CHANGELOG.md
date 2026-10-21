@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.19.0] - 2026-10-21
+
+### Features
+
+- **transcription:** Offer Underdog Bark 3.0 Plus as a transcription model (#205) ([1f991f7](https://github.com/michellemayes/nootle/commit/1f991f722c3de7aef4a0e8fb72b2dc74b28f602c))
+
 ## [0.18.1] - 2026-10-21
 
 ### Bug Fixes
