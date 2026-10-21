@@ -22,6 +22,8 @@ pub struct ModelFile {
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelVariant {
     pub id: &'static str,
+    /// Short name, e.g. for which variant is in use.
+    pub name: &'static str,
     pub label: &'static str,
     pub files: &'static [ModelFile],
     pub total_size_bytes: u64,
@@ -116,18 +118,66 @@ const PARAKEET_FULL_FILES: &[ModelFile] = &[
     SILERO_VAD,
 ];
 
-const PARAKEET_VARIANTS: &[ModelVariant] = &[
+// ── Underdog Bark 3.0 Plus (Transcription) ────────────────────────────
+// Conway Research's post-trained, compressed Parakeet TDT 0.6B v3
+// (CC-BY-4.0), as its Core ML package for the Neural Engine. English only.
+// The paths under bark/ are what transcription/bark.rs loads.
+
+pub(crate) const BARK_FILES: &[ModelFile] = &[
+    ModelFile {
+        local_name: "bark/BarkEncoder.mlpackage/Manifest.json",
+        url: "https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus/resolve/main/coreml/ane/BarkEncoder.mlpackage/Manifest.json",
+        size_bytes: 617,
+        sha256: "ab559f86066abca46cd92a80941b6140770247b12bcc594955416981706d76a1",
+    },
+    ModelFile {
+        local_name: "bark/BarkEncoder.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+        url: "https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus/resolve/main/coreml/ane/BarkEncoder.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+        size_bytes: 1_784_701,
+        sha256: "bfc5b4e6fde8cd06722ae37bee6bea044f9c4e3bbb25c9945a48edc3e5df0ec1",
+    },
+    ModelFile {
+        local_name: "bark/BarkEncoder.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+        url: "https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus/resolve/main/coreml/ane/BarkEncoder.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+        size_bytes: 192_940_480,
+        sha256: "6b2c1c9ca7fdd8d18abee2452b54a978dcb1c31d0460bded396d9e61e3e9a59f",
+    },
+    ModelFile {
+        local_name: "bark/decoder.npz",
+        url: "https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus/resolve/main/coreml/ane/decoder.npz",
+        size_bytes: 11_168_286,
+        sha256: "1ce79071f54c3dcec9aa9bb1d488486766f1fdbb3fd988b776da3f4da8024665",
+    },
+    ModelFile {
+        local_name: "bark/vocab.json",
+        url: "https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus/resolve/main/coreml/ane/vocab.json",
+        size_bytes: 115_878,
+        sha256: "eee86951e9f74921342fdc60ba26711eb70f7188e8784d98d2aecfc525b72270",
+    },
+    SILERO_VAD,
+];
+
+const TRANSCRIPTION_VARIANTS: &[ModelVariant] = &[
     ModelVariant {
         id: "int8",
-        label: "Quantized (≈670 MB) — faster download, slightly less accurate",
+        name: "Parakeet, quantized",
+        label: "Parakeet, quantized (≈670 MB) — faster download, slightly less accurate",
         files: PARAKEET_INT8_FILES,
         total_size_bytes: 672_677_022,
     },
     ModelVariant {
         id: "full",
-        label: "Full Precision (≈2.5 GB) — best quality, large download",
+        name: "Parakeet, full precision",
+        label: "Parakeet, full precision (≈2.5 GB) — large download",
         files: PARAKEET_FULL_FILES,
         total_size_bytes: 2_556_777_022,
+    },
+    ModelVariant {
+        id: crate::transcription::BARK_VARIANT,
+        name: "Underdog Bark 3.0 Plus",
+        label: "Underdog Bark 3.0 Plus (≈210 MB) — smallest, English only, macOS 15+",
+        files: BARK_FILES,
+        total_size_bytes: 208_252_984,
     },
 ];
 
@@ -150,6 +200,7 @@ const DIARIZATION_FILES: &[ModelFile] = &[
 
 const DIARIZATION_VARIANTS: &[ModelVariant] = &[ModelVariant {
     id: "default",
+    name: "Speaker identification",
     label: "Speaker Identification (≈32 MB)",
     files: DIARIZATION_FILES,
     total_size_bytes: 32_500_000,
@@ -174,6 +225,7 @@ const EMBEDDING_FILES: &[ModelFile] = &[
 
 const EMBEDDING_VARIANTS: &[ModelVariant] = &[ModelVariant {
     id: "default",
+    name: "Sentence embeddings",
     label: "Sentence Embeddings (≈86 MB)",
     files: EMBEDDING_FILES,
     total_size_bytes: 86_232_000,
@@ -183,12 +235,13 @@ const EMBEDDING_VARIANTS: &[ModelVariant] = &[ModelVariant {
 
 pub const MODEL_REGISTRY: &[ModelDefinition] = &[
     ModelDefinition {
+        // The id and folder keep Parakeet's name so existing installs keep working.
         id: "parakeet-tdt-0.6b-v3",
-        name: "Parakeet TDT 0.6B v3",
-        description: "NVIDIA speech-to-text model for English transcription",
+        name: "Transcription",
+        description: "Speech-to-text: NVIDIA Parakeet TDT 0.6B v3, or Conway Research's smaller Underdog Bark (CC-BY-4.0)",
         category: ModelCategory::Transcription,
         dir_name: "parakeet-tdt-0.6b-v3",
-        variants: PARAKEET_VARIANTS,
+        variants: TRANSCRIPTION_VARIANTS,
     },
     ModelDefinition {
         id: "diarization",
@@ -266,9 +319,24 @@ fn migrate_legacy_files_in(dir: &std::path::Path) {
     }
 }
 
-/// Check if all files for a variant are present on disk.
-pub fn is_variant_downloaded(model: &ModelDefinition, variant: &ModelVariant) -> bool {
-    is_variant_in_dir(&model_dir(model), variant)
+/// The variant on disk, if any.
+pub fn downloaded_variant(model: &ModelDefinition) -> Option<&'static ModelVariant> {
+    variant_in_dir(&model_dir(model), model)
+}
+
+/// Variants can share files (Parakeet's quantized files are a subset of its
+/// full-precision ones), so the most complete one in `dir` wins.
+fn variant_in_dir(dir: &std::path::Path, model: &ModelDefinition) -> Option<&'static ModelVariant> {
+    model
+        .variants
+        .iter()
+        .filter(|v| is_variant_in_dir(dir, v))
+        .max_by_key(|v| v.files.len())
+}
+
+/// Whether this Mac can run a variant.
+pub fn is_variant_supported(variant: &ModelVariant) -> bool {
+    variant.id != crate::transcription::BARK_VARIANT || crate::transcription::bark_supported()
 }
 
 #[cfg(test)]
@@ -312,11 +380,29 @@ mod tests {
     }
 
     #[test]
-    fn parakeet_has_two_variants() {
+    fn transcription_has_three_variants() {
         let model = get_model("parakeet-tdt-0.6b-v3").unwrap();
-        assert_eq!(model.variants.len(), 2);
+        assert_eq!(model.variants.len(), 3);
         assert_eq!(model.variants[0].id, "int8");
         assert_eq!(model.variants[1].id, "full");
+        assert_eq!(model.variants[2].id, "bark");
+    }
+
+    #[test]
+    fn full_precision_is_not_mistaken_for_quantized() {
+        let dir = tempfile::tempdir().unwrap();
+        let (model, full) = get_variant("parakeet-tdt-0.6b-v3", "full").unwrap();
+        for file in full.files {
+            std::fs::write(dir.path().join(file.local_name), b"").unwrap();
+        }
+        assert_eq!(variant_in_dir(dir.path(), model).unwrap().id, "full");
+    }
+
+    #[test]
+    fn bark_total_matches_its_files() {
+        let (_, variant) = get_variant("parakeet-tdt-0.6b-v3", "bark").unwrap();
+        let sum: u64 = variant.files.iter().map(|f| f.size_bytes).sum();
+        assert_eq!(sum, variant.total_size_bytes);
     }
 
     #[test]

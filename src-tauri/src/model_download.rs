@@ -171,6 +171,10 @@ async fn download_single_file(
     if final_path.exists() {
         return Ok(());
     }
+    // Some models are folders (Core ML packages).
+    if let Some(parent) = final_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create model dir: {e}"))?;
+    }
 
     // Resume support: check existing .part file size
     let existing_bytes = if part_path.exists() {
@@ -339,31 +343,21 @@ pub fn get_all_model_status() -> Vec<ModelOnDiskStatus> {
         .iter()
         .map(|model| {
             let dir = model_registry::model_dir(model);
-            let mut downloaded = false;
-            let mut variant_id = None;
-            let mut size_on_disk: u64 = 0;
-
-            for variant in model.variants {
-                if model_registry::is_variant_downloaded(model, variant) {
-                    downloaded = true;
-                    variant_id = Some(variant.id.to_string());
-                    // Calculate actual size on disk
-                    for file in variant.files {
-                        if let Ok(meta) = std::fs::metadata(dir.join(file.local_name)) {
-                            size_on_disk += meta.len();
-                        }
-                    }
-                    break;
-                }
-            }
+            let variant = model_registry::downloaded_variant(model);
+            let size_on_disk: u64 = variant
+                .into_iter()
+                .flat_map(|v| v.files)
+                .filter_map(|f| std::fs::metadata(dir.join(f.local_name)).ok())
+                .map(|meta| meta.len())
+                .sum();
 
             ModelOnDiskStatus {
                 model_id: model.id.to_string(),
                 name: model.name.to_string(),
                 description: model.description.to_string(),
                 category: format!("{:?}", model.category),
-                downloaded,
-                variant_id,
+                downloaded: variant.is_some(),
+                variant_id: variant.map(|v| v.id.to_string()),
                 size_on_disk,
             }
         })

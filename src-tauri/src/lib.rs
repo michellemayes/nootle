@@ -309,14 +309,7 @@ pub fn run() {
             ) && !crate::vad::SileroVad::is_available()
             {
                 let handle = app_handle.clone();
-                let variant = if crate::transcription::TranscriptionEngine::model_dir()
-                    .join("encoder-model.onnx.data")
-                    .exists()
-                {
-                    "full"
-                } else {
-                    "int8"
-                };
+                let variant = crate::transcription::TranscriptionEngine::downloaded_variant();
                 tauri::async_runtime::spawn(async move {
                     if let Some((model, variant)) =
                         model_registry::get_variant("parakeet-tdt-0.6b-v3", variant)

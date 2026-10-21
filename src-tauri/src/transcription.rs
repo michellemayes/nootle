@@ -1,4 +1,7 @@
-// Parakeet v3 transcription engine via ONNX Runtime with CoreML EP.
+// Speech-to-text, with one of two models downloaded into the same folder:
+// Parakeet v3 (below) or Bark 3.0 Plus (bark.rs), a smaller fine-tune of it.
+//
+// Parakeet runs via ONNX Runtime with CoreML EP.
 //
 // Pipeline: audio -> nemo128 preprocessor -> FastConformer encoder -> TDT decoder -> text
 //
@@ -7,6 +10,10 @@
 //   1. nemo128.onnx - NeMo mel spectrogram preprocessor (audio -> features)
 //   2. encoder.onnx - FastConformer acoustic encoder
 //   3. decoder.onnx - TDT (Token-and-Duration Transducer) decoder
+
+mod bark;
+#[cfg(target_os = "macos")]
+mod coreml;
 
 use anyhow::{anyhow, Context};
 use ndarray::Array2;
@@ -60,8 +67,18 @@ pub enum ModelStatus {
     Error(String),
 }
 
-/// Transcription engine using Parakeet v3 ONNX models with CoreML acceleration.
+/// Transcription engine for whichever speech model is downloaded.
 pub struct TranscriptionEngine {
+    model: Model,
+}
+
+enum Model {
+    Parakeet(Box<Parakeet>),
+    Bark(Box<bark::Bark>),
+}
+
+/// Parakeet v3 ONNX models with CoreML acceleration.
+struct Parakeet {
     /// NeMo mel spectrogram preprocessor (nemo128.onnx). When present, used
     /// instead of the Rust mel computation to guarantee feature compatibility.
     preprocessor: Option<Session>,
@@ -116,7 +133,9 @@ impl TranscriptionEngine {
         let decoder_path = dir.join("decoder.onnx");
         let vocab_path = dir.join("vocab.txt");
 
-        if encoder_path.exists() && decoder_path.exists() && vocab_path.exists() {
+        if (encoder_path.exists() && decoder_path.exists() && vocab_path.exists())
+            || bark::is_downloaded(dir)
+        {
             ModelStatus::Ready
         } else {
             ModelStatus::NotDownloaded
@@ -128,16 +147,60 @@ impl TranscriptionEngine {
         Self::check_status_in(&Self::model_dir())
     }
 
+    /// Which variant of the transcription model is downloaded, by registry id.
+    pub fn downloaded_variant() -> &'static str {
+        let dir = Self::model_dir();
+        if bark::is_downloaded(&dir) {
+            BARK_VARIANT
+        } else if dir.join("encoder-model.onnx.data").exists() {
+            "full"
+        } else {
+            "int8"
+        }
+    }
+
     /// Load the transcription engine from pre-downloaded model files.
     pub fn load() -> anyhow::Result<Self> {
         let model_dir = Self::model_dir();
 
         if !model_dir.exists() {
             return Err(anyhow!(
-                "Models not found. Please download the Parakeet TDT model first."
+                "Models not found. Please download a transcription model first."
             ));
         }
+        let model = if bark::is_downloaded(&model_dir) {
+            Model::Bark(Box::new(bark::Bark::load(&model_dir)?))
+        } else {
+            Model::Parakeet(Box::new(Parakeet::load(model_dir)?))
+        };
+        Ok(Self { model })
+    }
 
+    /// Transcribe a chunk of audio (16kHz mono f32 samples).
+    ///
+    /// Returns transcription segments with timing information.
+    pub fn transcribe(
+        &mut self,
+        audio: &[f32],
+        offset_ms: u64,
+    ) -> anyhow::Result<Vec<TranscriptionSegment>> {
+        if audio.is_empty() {
+            return Ok(vec![]);
+        }
+        match &mut self.model {
+            Model::Parakeet(m) => m.transcribe(audio, offset_ms),
+            Model::Bark(m) => m.transcribe(audio, offset_ms),
+        }
+    }
+}
+
+/// The registry id of the Bark variant of the transcription model.
+pub const BARK_VARIANT: &str = "bark";
+
+pub use bark::is_supported as bark_supported;
+
+impl Parakeet {
+    fn load(model_dir: PathBuf) -> anyhow::Result<Self> {
         let preprocessor_path = model_dir.join("nemo128.onnx");
         let encoder_path = model_dir.join("encoder.onnx");
         let decoder_path = model_dir.join("decoder.onnx");
@@ -350,18 +413,11 @@ impl TranscriptionEngine {
         Ok((feat_data.to_vec(), n_mels, n_frames))
     }
 
-    /// Transcribe a chunk of audio (16kHz mono f32 samples).
-    ///
-    /// Returns transcription segments with timing information.
-    pub fn transcribe(
+    fn transcribe(
         &mut self,
         audio: &[f32],
         offset_ms: u64,
     ) -> anyhow::Result<Vec<TranscriptionSegment>> {
-        if audio.is_empty() {
-            return Ok(vec![]);
-        }
-
         // 1. Compute mel spectrogram — prefer ONNX preprocessor for accuracy
         let (mel_data, n_mels, n_frames) = if let Some(ref mut preprocessor) = self.preprocessor {
             Self::preprocess_audio(preprocessor, audio)?
@@ -725,6 +781,21 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let status = TranscriptionEngine::check_status_in(tmp.path());
         assert!(matches!(status, ModelStatus::NotDownloaded));
+    }
+
+    #[test]
+    fn downloaded_bark_files_are_ready() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, variant) =
+            crate::model_registry::get_variant("parakeet-tdt-0.6b-v3", BARK_VARIANT).unwrap();
+        for file in variant.files {
+            let path = tmp.path().join(file.local_name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"").unwrap();
+        }
+        assert!(bark::is_downloaded(tmp.path()));
+        let status = TranscriptionEngine::check_status_in(tmp.path());
+        assert!(matches!(status, ModelStatus::Ready));
     }
 
     #[test]

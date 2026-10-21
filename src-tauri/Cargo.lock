@@ -3038,6 +3038,7 @@ dependencies = [
  "cpal",
  "dirs",
  "futures-util",
+ "half",
  "hound",
  "image",
  "log",
