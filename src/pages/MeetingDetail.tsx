@@ -980,13 +980,18 @@ function RunWorkflowMenu({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="text-xs gap-1.5">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-0.5 px-2"
+          title={anyRunning ? "Running a workflow…" : "Run a workflow"}
+          aria-label="Run a workflow"
+        >
           {anyRunning ? (
-            <RotateCw className="h-3 w-3 animate-spin" />
+            <RotateCw className="h-4 w-4 animate-spin" />
           ) : (
-            <Zap className="h-3 w-3" />
+            <Zap className="h-4 w-4" />
           )}
-          {anyRunning ? "Running…" : "Run"}
           <ChevronDown className="h-3 w-3 opacity-60" />
         </Button>
       </PopoverTrigger>
@@ -1447,13 +1452,20 @@ export function MeetingDetail() {
     <div className="flex flex-1 min-h-0 overflow-hidden">
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 flex items-center justify-between border-b px-6 py-4">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
-            <ArrowLeft className="h-4 w-4" /> Back
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4">
+        <div className="flex min-w-64 flex-1 items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0"
+            onClick={() => navigate("/")}
+            title="Back to meetings"
+            aria-label="Back to meetings"
+          >
+            <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
               {editingTitle ? (
                 <Input
                   value={titleDraft}
@@ -1468,23 +1480,26 @@ export function MeetingDetail() {
                 />
               ) : (
                 <h1
-                  className="text-xl font-bold cursor-pointer group/title flex items-center gap-2 hover:text-muted-foreground transition-colors"
+                  className="text-xl font-bold cursor-pointer group/title flex min-w-0 items-center gap-2 hover:text-muted-foreground transition-colors"
+                  title={meeting.title}
                   onClick={() => {
                     setTitleDraft(meeting.title);
                     setEditingTitle(true);
                   }}
                 >
-                  {meeting.title}
-                  <Pencil className="h-3.5 w-3.5 opacity-0 group-hover/title:opacity-50 transition-opacity" />
+                  <span className="line-clamp-2 break-words">{meeting.title}</span>
+                  <Pencil className="h-3.5 w-3.5 shrink-0 opacity-0 group-hover/title:opacity-50 transition-opacity" />
                 </h1>
               )}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2">
+              <p className="text-sm text-muted-foreground whitespace-nowrap">
+                {formatDate(meeting.start_time, "long")}
+              </p>
               <Badge variant={statusVariant(meeting.status)} size="sm">
                 {statusLabel(meeting.status)}
               </Badge>
             </div>
-            <p className="text-sm text-muted-foreground">
-              {formatDate(meeting.start_time, "long")}
-            </p>
             {!isCompact && (
             <div className="mt-1.5">
             <LabelEditor
@@ -1502,29 +1517,24 @@ export function MeetingDetail() {
           </div>
         </div>
         {!isCompact && (
-        <div className="flex items-center gap-2">
-          <RunWorkflowMenu
-            meetingId={id!}
-            workflows={workflows}
-            runs={runs}
-            runWorkflow={runWorkflow}
-            refreshRuns={refreshRuns}
-            onViewRuns={() => setDetailTab("workflows")}
-          />
-          <ExportMenu meeting={meeting} />
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* One joined toolbar for the icon actions, then Share and the primary Ask Nootle. */}
+          <div className="flex items-center [&>*]:rounded-none [&>*:first-child]:rounded-l-md [&>*:last-child]:rounded-r-md [&>*+*]:-ml-px [&>*:focus-visible]:z-10">
+            <RunWorkflowMenu
+              meetingId={id!}
+              workflows={workflows}
+              runs={runs}
+              runWorkflow={runWorkflow}
+              refreshRuns={refreshRuns}
+              onViewRuns={() => setDetailTab("workflows")}
+            />
+            <ExportMenu meeting={meeting} />
+            <OpenInClaudeButton meetingId={meeting.id} />
+          </div>
           <ShareMenu meeting={meeting} />
-          <OpenInClaudeButton meetingId={meeting.id} />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setDetailTab("listen")}
-            title="Ask the Room: a spoken recap, a voice per speaker"
-          >
-            <Headphones className="h-4 w-4" /> Listen
-          </Button>
           {!chatOpen && (
-            <Button variant="outline" size="sm" onClick={() => setChatOpen(true)}>
-              <MessageSquare className="h-4 w-4" /> Ask Nootle
+            <Button size="sm" className="text-xs gap-1.5" onClick={() => setChatOpen(true)}>
+              <MessageSquare className="h-3 w-3" /> Ask Nootle
             </Button>
           )}
         </div>

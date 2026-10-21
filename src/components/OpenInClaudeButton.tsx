@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { MessageSquareShare } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ClaudeIcon } from "@/components/ClaudeIcon";
 import { toast } from "@/components/Toaster";
 
 interface ClaudeHandoff {
@@ -33,9 +33,8 @@ export function OpenInClaudeButton({ meetingId }: { meetingId: string }) {
   };
 
   return (
-    <Button variant="outline" size="sm" className="text-xs gap-1.5" disabled={busy} onClick={open} title="Continue discussing this meeting with Claude">
-      <MessageSquareShare className="h-3 w-3" />
-      Continue in Claude
+    <Button variant="outline" size="icon-sm" disabled={busy} onClick={open} title="Continue in Claude" aria-label="Continue in Claude">
+      <ClaudeIcon className="h-4 w-4" />
     </Button>
   );
 }
