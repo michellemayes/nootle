@@ -49,9 +49,8 @@ export function ExportMenu({ meeting }: { meeting: Meeting }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="text-xs gap-1.5" title={result?.message}>
-          <Icon className={`h-3 w-3 ${iconClass}`} />
-          {label}
+        <Button variant="outline" size="sm" className="gap-0.5 px-2" title={result?.message ?? label} aria-label={label}>
+          <Icon className={`h-4 w-4 ${iconClass}`} />
           <ChevronDown className="h-3 w-3 opacity-60" />
         </Button>
       </DropdownMenuTrigger>

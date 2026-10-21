@@ -19,6 +19,7 @@ pub mod error;
 pub mod export;
 pub mod extraction;
 pub mod github_cli;
+pub mod handoff;
 pub mod http;
 pub mod import;
 pub mod knowledge;
@@ -471,7 +472,7 @@ pub fn run() {
             commands::get_meeting_share,
             commands::share_meeting,
             commands::unshare_meeting,
-            commands::open_in_claude,
+            commands::continue_in_app,
             commands::list_upcoming_events,
             commands::store_api_key,
             commands::has_api_key,

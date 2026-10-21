@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-/** An app setting: its value (`fallback` until loaded or when unset) and a
- * setter that saves it. */
+/** An app setting: its value (`fallback` until loaded or when unset), a
+ * setter that saves it, and why the last save was refused, if it was. */
 export function useSetting(key: string, fallback: string) {
   const [value, setValue] = useState(fallback);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     invoke<string | null>("get_app_setting", { key })
       .then((v) => setValue(v ?? fallback))
@@ -13,11 +14,13 @@ export function useSetting(key: string, fallback: string) {
   const set = useCallback(
     (next: string) => {
       setValue(next);
-      invoke("set_app_setting", { key, value: next }).catch(() => {});
+      invoke("set_app_setting", { key, value: next })
+        .then(() => setError(null))
+        .catch((err) => setError(String(err)));
     },
     [key],
   );
-  return [value, set] as const;
+  return [value, set, error] as const;
 }
 
 /** An on/off app setting, stored as "true" or "false". */
