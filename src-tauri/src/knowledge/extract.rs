@@ -193,6 +193,7 @@ fn pptx(bytes: &[u8]) -> Result<Extracted> {
     let mut slides: Vec<(u32, String)> = archive
         .file_names()
         .filter_map(|name| {
+            let name = name.ok()?;
             let n = name
                 .strip_prefix("ppt/slides/slide")?
                 .strip_suffix(".xml")?
@@ -252,7 +253,11 @@ fn attr(e: &quick_xml::events::BytesStart, key: &[u8]) -> Option<String> {
     e.attributes()
         .flatten()
         .find(|a| a.key.as_ref() == key || a.key.local_name().as_ref() == key)
-        .and_then(|a| a.unescape_value().ok().map(|v| v.into_owned()))
+        .and_then(|a| {
+            a.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+                .map(|v| v.into_owned())
+        })
 }
 
 /// The workbook's sheets in tab order, as (name, relationship id).

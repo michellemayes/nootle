@@ -1,5 +1,5 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use ringbuf::traits::{Consumer, Producer, Split};
+use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use ringbuf::HeapRb;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -107,8 +107,18 @@ impl MicCapture {
 
     /// Everything captured since the last read.
     pub fn read_all(&mut self) -> Vec<f32> {
-        self.consumer.pop_iter().collect()
+        drain(&mut self.consumer)
     }
+}
+
+/// Everything waiting in `consumer`, copied out in one pass. Unlike
+/// `pop_iter`, this publishes the read position to the audio thread once
+/// rather than once per sample.
+pub(crate) fn drain(consumer: &mut ringbuf::HeapCons<f32>) -> Vec<f32> {
+    let mut samples = vec![0.0; consumer.occupied_len()];
+    let read = consumer.pop_slice(&mut samples);
+    samples.truncate(read);
+    samples
 }
 
 #[cfg(test)]
@@ -122,5 +132,15 @@ mod tests {
         assert!(is_virtual_input("BlackHole 2ch"));
         assert!(!is_virtual_input("MacBook Pro Microphone"));
         assert!(!is_virtual_input("AirPods Pro"));
+    }
+
+    #[test]
+    fn test_drain_returns_samples_in_order_across_wraparound() {
+        let (mut producer, mut consumer) = HeapRb::<f32>::new(4).split();
+        producer.push_slice(&[1.0, 2.0, 3.0]);
+        assert_eq!(drain(&mut consumer), vec![1.0, 2.0, 3.0]);
+        producer.push_slice(&[4.0, 5.0, 6.0]);
+        assert_eq!(drain(&mut consumer), vec![4.0, 5.0, 6.0]);
+        assert!(drain(&mut consumer).is_empty());
     }
 }
