@@ -1561,6 +1561,15 @@ function ModelManagementCard() {
                       {model.description}
                     </p>
 
+                    {model.downloaded && regModel && regModel.variants.length > 1 && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Using:{" "}
+                        {regModel.variants
+                          .find((v) => v.id === model.variant_id)
+                          ?.label.split(" — ")[0] ?? model.variant_id}
+                      </p>
+                    )}
+
                     {model.downloaded && model.size_on_disk > 0 && (
                       <p className="text-xs text-muted-foreground mt-1">
                         Size on disk: {formatBytes(model.size_on_disk)}

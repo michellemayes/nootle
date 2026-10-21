@@ -171,6 +171,10 @@ async fn download_single_file(
     if final_path.exists() {
         return Ok(());
     }
+    // Some models are folders (Core ML packages).
+    if let Some(parent) = final_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create model dir: {e}"))?;
+    }
 
     // Resume support: check existing .part file size
     let existing_bytes = if part_path.exists() {

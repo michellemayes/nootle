@@ -47,7 +47,7 @@ export const faqs = [
   {
     question: "How accurate is the transcription?",
     answer:
-      "Nootle uses Parakeet, a state-of-the-art speech recognition model running via ONNX Runtime. Nootle splits audio where people pause, so whole sentences are transcribed together, and after each meeting it compares every speaker's voice across the whole recording to tell people apart. Fix a misheard name once and the dictionary applies it to every future meeting. Accuracy depends on audio quality.",
+      "Nootle uses Parakeet, a state-of-the-art speech recognition model running via ONNX Runtime, or Underdog Bark 3.0 Plus, a smaller English-only version of it that's as accurate. Nootle splits audio where people pause, so whole sentences are transcribed together, and after each meeting it compares every speaker's voice across the whole recording to tell people apart. Fix a misheard name once and the dictionary applies it to every future meeting. Accuracy depends on audio quality.",
   },
   {
     question: "Can I search across past meetings?",

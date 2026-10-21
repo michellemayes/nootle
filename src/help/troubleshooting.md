@@ -16,7 +16,8 @@ Common issues and how to fix them.
 
 **No transcript appearing:**
 - Make sure audio is actually being recorded (you should see an active waveform during recording).
-- Transcription runs locally via the Parakeet model. On first launch, the model may take a moment to load.
+- Transcription runs locally via the Parakeet or Bark model. On first launch, the model may take a moment to load; Bark compiles itself for your Mac the first time, which can take a few minutes.
+- Bark is English only. For meetings in other languages, delete it in Settings → Models and download Parakeet.
 - If the transcript is empty after stopping, check that your microphone is picking up sound (try a different mic if available).
 
 **Inaccurate transcription:**

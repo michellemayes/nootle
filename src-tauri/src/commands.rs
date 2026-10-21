@@ -2176,7 +2176,17 @@ pub fn set_linear_setting(
 
 #[tauri::command]
 pub async fn get_available_models() -> Result<serde_json::Value, String> {
-    serde_json::to_value(model_registry::MODEL_REGISTRY).map_err(|e| e.to_string())
+    let mut models =
+        serde_json::to_value(model_registry::MODEL_REGISTRY).map_err(|e| e.to_string())?;
+    // Don't offer a model this Mac can't run.
+    if !transcription::bark_supported() {
+        for model in models.as_array_mut().into_iter().flatten() {
+            if let Some(variants) = model["variants"].as_array_mut() {
+                variants.retain(|v| v["id"] != transcription::BARK_VARIANT);
+            }
+        }
+    }
+    Ok(models)
 }
 
 #[tauri::command]

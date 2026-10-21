@@ -53,6 +53,8 @@ image = { version = "0.25", default-features = false, features = ["jpeg"] }
 symphonia = { version = "0.5", features = ["aac", "alac", "isomp4", "mp3", "aiff", "caf"] }
 ort = { version = "2.0.0-rc.11", features = ["coreml", "ndarray"] }
 ndarray = "0.16"
+# fp16 weights and Core ML tensors for the Bark transcription model.
+half = "2"
 rustfft = "6"
 rmcp = { version = "3.5", features = ["server", "transport-io", "client", "auth", "reqwest-native-tls", "transport-streamable-http-client-reqwest"] }
 schemars = "1.0"

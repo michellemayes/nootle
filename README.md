@@ -34,7 +34,7 @@ Nootle records your meetings (microphone and system audio), transcribes them on 
 ## Features
 
 - **No bot in the call.** Records mic and system audio from Zoom, Meet, Teams, or anything else, and can pop up when a call starts.
-- **Live transcript with speakers.** Transcribed on your Mac with Parakeet. Speakers are told apart and named from the call's video tiles. Nootle can also learn voices and recognize them in later meetings.
+- **Live transcript with speakers.** Transcribed on your Mac with Parakeet, or Underdog Bark 3.0 Plus: a 210 MB English model that's as accurate (better on meetings). Speakers are told apart and named from the call's video tiles. Nootle can also learn voices and recognize them in later meetings.
 - **Summaries and action items.** Every meeting is summarized when it ends, with templates you choose. Decisions and action items are collected across meetings.
 - **Commitment tracker.** Follows what people promised across meetings: what's still owed, what slipped, and the moment a later meeting showed it done.
 - **Pre-meeting brief.** A few minutes before a calendar meeting: who's coming, open action items, last time's decisions, and related docs (opt-in).
@@ -105,3 +105,5 @@ pnpm tauri dev
 ## License
 
 [MIT](LICENSE)
+
+Models are downloaded when you pick them, not bundled. [Underdog Bark 3.0 Plus](https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus) is by Conway Research under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/), derived from NVIDIA's [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) and Moondream's [parakeet-ultra](https://huggingface.co/moondream/parakeet-ultra).
