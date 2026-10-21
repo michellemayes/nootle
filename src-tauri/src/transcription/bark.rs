@@ -480,12 +480,16 @@ fn parse_npy(bytes: &[u8]) -> anyhow::Result<Npy> {
     let mut data: Vec<f32> = match descr {
         "|i1" => data.iter().map(|&b| f32::from(b as i8)).collect(),
         "<f2" => data
-            .chunks_exact(2)
-            .map(|b| half::f16::from_le_bytes([b[0], b[1]]).to_f32())
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&b| half::f16::from_le_bytes(b).to_f32())
             .collect(),
         "<f4" => data
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|&b| f32::from_le_bytes(b))
             .collect(),
         other => bail!("unsupported dtype {other}"),
     };
