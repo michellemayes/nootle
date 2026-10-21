@@ -197,10 +197,7 @@ impl TranscriptionEngine {
 /// The registry id of the Bark variant of the transcription model.
 pub const BARK_VARIANT: &str = "bark";
 
-/// Whether this Mac can run Bark (its Core ML encoder needs macOS 15).
-pub fn bark_supported() -> bool {
-    bark::is_supported()
-}
+pub use bark::is_supported as bark_supported;
 
 impl Parakeet {
     fn load(model_dir: PathBuf) -> anyhow::Result<Self> {

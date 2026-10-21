@@ -11,6 +11,7 @@ export interface ModelFile {
 
 export interface ModelVariant {
   id: string;
+  name: string;
   label: string;
   files: ModelFile[];
   total_size_bytes: number;

@@ -2176,17 +2176,22 @@ pub fn set_linear_setting(
 
 #[tauri::command]
 pub async fn get_available_models() -> Result<serde_json::Value, String> {
-    let mut models =
-        serde_json::to_value(model_registry::MODEL_REGISTRY).map_err(|e| e.to_string())?;
     // Don't offer a model this Mac can't run.
-    if !transcription::bark_supported() {
-        for model in models.as_array_mut().into_iter().flatten() {
-            if let Some(variants) = model["variants"].as_array_mut() {
-                variants.retain(|v| v["id"] != transcription::BARK_VARIANT);
-            }
-        }
-    }
-    Ok(models)
+    let models = model_registry::MODEL_REGISTRY
+        .iter()
+        .map(|model| {
+            let mut json = serde_json::to_value(model)?;
+            let supported: Vec<_> = model
+                .variants
+                .iter()
+                .filter(|v| model_registry::is_variant_supported(v))
+                .collect();
+            json["variants"] = serde_json::to_value(supported)?;
+            Ok(json)
+        })
+        .collect::<Result<Vec<_>, serde_json::Error>>()
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::Value::Array(models))
 }
 
 #[tauri::command]
@@ -2203,6 +2208,9 @@ pub async fn download_model(
 ) -> Result<(), String> {
     let (model, variant) = model_registry::get_variant(&model_id, &variant_id)
         .ok_or_else(|| format!("Unknown model/variant: {model_id}/{variant_id}"))?;
+    if !model_registry::is_variant_supported(variant) {
+        return Err(format!("{} needs a newer macOS", variant.name));
+    }
 
     let cancel = {
         let mut mgr = download_mgr.lock().await;

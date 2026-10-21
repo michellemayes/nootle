@@ -8,7 +8,10 @@
 // The frontend and decoder are ported from the model's reference runtime,
 // coreml/ane/bark_coreml.py on Hugging Face; keep them in step with it.
 
-use super::{argmax_with_prob, sentences, Emission, TranscriptionSegment};
+use super::{
+    apply_preemphasis, argmax_with_prob, sentences, Emission, TranscriptionSegment,
+    HOP_LENGTH as HOP, N_FFT, N_MELS, PREEMPHASIS, SAMPLE_RATE, WIN_LENGTH as WIN,
+};
 use anyhow::{anyhow, bail, Context};
 use ndarray::{s, Array1, Array2, ArrayView1, ArrayView2};
 use rustfft::num_complex::Complex;
@@ -18,52 +21,58 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
-pub(super) const ENCODER: &str = "bark/BarkEncoder.mlpackage";
+// Where the registry's Bark files land (model_registry::BARK_FILES).
+const ENCODER: &str = "bark/BarkEncoder.mlpackage";
 const DECODER: &str = "bark/decoder.npz";
 const VOCAB: &str = "bark/vocab.json";
 
-const SR: usize = 16000;
-const HOP: usize = 160;
-const N_FFT: usize = 512;
-const WIN: usize = 400;
-const N_MELS: usize = 128;
-const PREEMPHASIS: f32 = 0.97;
-/// The encoder reads 15 s windows (its `w15` function).
-const WINDOW_S: usize = 15;
+const SR: usize = SAMPLE_RATE as usize;
+/// Encoder window lengths in seconds (its `w8` and `w15` functions); each
+/// piece uses the smallest that holds it.
+const WINDOWS: [usize; 2] = [8, 15];
 /// Silence put before each piece: the setting the model was scored with.
 const PAD: usize = SR / 4;
+/// The longest piece, so that it fits the largest window with its padding.
+const MAX_PIECE: usize = WINDOWS[1] * SR - PAD;
 /// Three stride-2 convolutions: one encoder frame per 8 feature frames.
 const FRAME_SAMPLES: usize = HOP * 8;
 const FRAME_MS: f64 = (FRAME_SAMPLES * 1000 / SR) as f64;
 
-/// Whether Bark is downloaded in `dir`.
+/// Whether Bark is downloaded in `dir`. The speech detector it ships with
+/// is optional, as for Parakeet.
 pub(super) fn is_downloaded(dir: &Path) -> bool {
-    [ENCODER, DECODER, VOCAB]
+    crate::model_registry::BARK_FILES
         .iter()
-        .all(|f| dir.join(f).exists())
+        .filter(|f| f.local_name != crate::vad::MODEL_FILE)
+        .all(|f| dir.join(f.local_name).exists())
 }
 
 /// Whether this Mac can run Bark: its Core ML encoder needs macOS 15.
-pub(super) fn is_supported() -> bool {
+pub fn is_supported() -> bool {
     Encoder::is_supported()
 }
 
 pub(super) struct Bark {
     frontend: Frontend,
     decoder: Decoder,
-    encoder: Encoder,
+    /// One per window length, shortest first.
+    encoders: Vec<(usize, Encoder)>,
 }
 
 impl Bark {
     pub(super) fn load(dir: &Path) -> anyhow::Result<Self> {
-        let decoder = Decoder::load(&dir.join(DECODER), &dir.join(VOCAB))?;
-        let frontend = Frontend::new(decoder.mel_filters.clone());
-        let encoder = Encoder::load(&dir.join(ENCODER), &format!("w{WINDOW_S}"))?;
+        let arrays = &mut read_npz(&dir.join(DECODER))?;
+        let frontend = Frontend::new(weight(arrays, "mel_filters")?)?;
+        let decoder = Decoder::load(arrays, &dir.join(VOCAB))?;
+        let encoders = WINDOWS
+            .iter()
+            .map(|&w| Ok((w, Encoder::load(&dir.join(ENCODER), &format!("w{w}"))?)))
+            .collect::<anyhow::Result<_>>()?;
         tracing::info!("Transcription engine loaded: Bark 3.0 Plus on Core ML");
         Ok(Self {
             frontend,
             decoder,
-            encoder,
+            encoders,
         })
     }
 
@@ -96,18 +105,19 @@ impl Bark {
         ))
     }
 
-    /// Decodes one piece of at most a window, less the padding.
+    /// Decodes one piece of at most `MAX_PIECE` samples.
     fn piece(&self, audio: &[f32]) -> anyhow::Result<Vec<Emission>> {
         let mut x = vec![0.0; PAD];
         x.extend_from_slice(audio);
         let (feats, valid) = self.frontend.features(&x);
-        let frames = WINDOW_S * 100 + 1;
-        let mut input = Array2::<f32>::zeros((frames, N_MELS));
-        let n = feats.nrows().min(frames);
-        input
-            .slice_mut(s![..n, ..])
-            .assign(&feats.slice(s![..n, ..]));
-        let encoded = self.encoder.encode(&input, valid.min(frames))?;
+        let (window, encoder) = self
+            .encoders
+            .iter()
+            .find(|(w, _)| x.len() <= w * SR)
+            .ok_or_else(|| anyhow!("Audio piece longer than the Bark encoder's window"))?;
+        let mut input = Array2::<f32>::zeros((window * SR / HOP + 1, N_MELS));
+        input.slice_mut(s![..feats.nrows(), ..]).assign(&feats);
+        let encoded = encoder.encode(&input, valid)?;
         let encoded = encoded.slice(s![..encoder_frames(valid).min(encoded.nrows()), ..]);
         if encoded.iter().any(|v| !v.is_finite()) {
             bail!("Core ML encoder returned non-finite values");
@@ -123,11 +133,11 @@ fn encoder_frames(mut n: usize) -> usize {
     n
 }
 
-/// Cuts audio longer than a window at pauses: within each 5 s to 14.75 s
+/// Cuts audio longer than `MAX_PIECE` at pauses: within each 5 s to 14.75 s
 /// stretch, in the middle of the quietest 200 ms (smoothed 10 ms energy), so
 /// no word is split.
 fn segments(x: &[f32]) -> Vec<&[f32]> {
-    let max = WINDOW_S * SR - PAD;
+    let max = MAX_PIECE;
     let min = 5 * SR;
     if x.len() <= max {
         return vec![x];
@@ -171,7 +181,10 @@ struct Frontend {
 }
 
 impl Frontend {
-    fn new(mel: Array2<f32>) -> Self {
+    fn new(mel: Array2<f32>) -> anyhow::Result<Self> {
+        if mel.dim() != (N_MELS, N_FFT / 2 + 1) {
+            bail!("Bark mel filters have shape {:?}", mel.dim());
+        }
         // np.hanning(400), centred in the 512-sample frame.
         let mut window = vec![0.0; N_FFT];
         let off = (N_FFT - WIN) / 2;
@@ -179,20 +192,17 @@ impl Frontend {
             let phase = 2.0 * std::f64::consts::PI * i as f64 / (WIN - 1) as f64;
             *w = (0.5 - 0.5 * phase.cos()) as f32;
         }
-        Self {
+        Ok(Self {
             mel,
             window,
             fft: FftPlanner::new().plan_fft_forward(N_FFT),
-        }
+        })
     }
 
     /// Features [frames, 128] and how many frames hold audio.
     fn features(&self, audio: &[f32]) -> (Array2<f32>, usize) {
         let mut padded = vec![0.0f32; audio.len() + N_FFT];
-        for (i, &v) in audio.iter().enumerate() {
-            let prev = if i == 0 { 0.0 } else { audio[i - 1] };
-            padded[N_FFT / 2 + i] = v - PREEMPHASIS * prev;
-        }
+        padded[N_FFT / 2..][..audio.len()].copy_from_slice(&apply_preemphasis(audio, PREEMPHASIS));
         let n_frames = 1 + audio.len() / HOP;
         let n_freq = N_FFT / 2 + 1;
         let mut power = Array2::<f32>::zeros((n_frames, n_freq));
@@ -212,7 +222,7 @@ impl Frontend {
         }
         let mut feats = power.dot(&self.mel.t()).mapv(|e| (e + 2f32.powi(-24)).ln());
 
-        let valid = (audio.len() / HOP).min(n_frames);
+        let valid = audio.len() / HOP;
         let v = feats.slice(s![..valid, ..]);
         let mean = v
             .mean_axis(ndarray::Axis(0))
@@ -224,19 +234,11 @@ impl Frontend {
                 acc + (&r - &mean).mapv(|d| d * d)
             })
             / valid.saturating_sub(1).max(1) as f32;
-        let std = var.mapv(f32::sqrt);
-        feats
-            .rows_mut()
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, mut row)| {
-                if i < valid {
-                    row.zip_mut_with(&mean, |x, m| *x -= m);
-                    row.zip_mut_with(&std, |x, s| *x /= s + 1e-5);
-                } else {
-                    row.fill(0.0);
-                }
-            });
+        let std = var.mapv(|v| v.sqrt() + 1e-5);
+        let mut v = feats.slice_mut(s![..valid, ..]);
+        v -= &mean;
+        v /= &std;
+        feats.slice_mut(s![valid.., ..]).fill(0.0);
         (feats, valid)
     }
 }
@@ -250,7 +252,8 @@ struct Decoder {
     proj_b: Array1<f32>,
     head_w: Array2<f32>,
     head_b: Array1<f32>,
-    mel_filters: Array2<f32>,
+    /// The decoder output and state before any token: the same every time.
+    start: (Array1<f32>, LstmState),
     pieces: Vec<String>,
     vocab_size: usize,
     blank: usize,
@@ -272,12 +275,11 @@ struct Vocab {
 type LstmState = Vec<(Array1<f32>, Array1<f32>)>;
 
 impl Decoder {
-    fn load(npz: &Path, vocab: &Path) -> anyhow::Result<Self> {
+    fn load(a: &mut Arrays, vocab: &Path) -> anyhow::Result<Self> {
         let vocab: Vocab = serde_json::from_slice(
             &std::fs::read(vocab).with_context(|| format!("Couldn't read {}", vocab.display()))?,
         )
         .context("Bark vocab.json is malformed")?;
-        let a = &mut read_npz(npz)?;
         let lstm = (0..2)
             .map(|l| {
                 Ok((
@@ -293,28 +295,29 @@ impl Decoder {
         let proj_b = vector(a, "decoder.decoder_projector.bias")?;
         let head_w = weight(a, "joint.head.weight")?;
         let head_b = vector(a, "joint.head.bias")?;
-        let mel_filters = weight(a, "mel_filters")?;
-
-        if head_w.nrows() != vocab.vocab_size + vocab.durations.len()
-            || mel_filters.dim() != (N_MELS, N_FFT / 2 + 1)
-        {
+        if head_w.nrows() != vocab.vocab_size + vocab.durations.len() {
             bail!("Bark decoder.npz doesn't match vocab.json");
         }
-        Ok(Self {
+        let mut decoder = Self {
             embedding,
             lstm,
             proj_w,
             proj_b,
             head_w,
             head_b,
-            mel_filters,
+            start: Default::default(),
             pieces: vocab.pieces,
             vocab_size: vocab.vocab_size,
             blank: vocab.blank_id,
             durations: vocab.durations,
             max_symbols: vocab.max_symbols_per_step,
             special: vocab.special_ids,
-        })
+        };
+        let hidden = decoder.embedding.ncols();
+        let zeros = || (Array1::zeros(hidden), Array1::zeros(hidden));
+        let state: LstmState = decoder.lstm.iter().map(|_| zeros()).collect();
+        decoder.start = decoder.step(decoder.blank, &state);
+        Ok(decoder)
     }
 
     fn step(&self, token: usize, state: &LstmState) -> (Array1<f32>, LstmState) {
@@ -338,10 +341,7 @@ impl Decoder {
 
     /// Tokens the decoder emits for projected encoder frames [T, 640].
     fn decode(&self, encoded: ArrayView2<f32>) -> Vec<Emission> {
-        let hidden = self.embedding.ncols();
-        let zeros = || (Array1::zeros(hidden), Array1::zeros(hidden));
-        let (mut dec, mut state) =
-            self.step(self.blank, &self.lstm.iter().map(|_| zeros()).collect());
+        let (mut dec, mut state) = self.start.clone();
         let (mut t, mut symbols) = (0, 0);
         let mut out = Vec::new();
         while t < encoded.nrows() {
@@ -423,7 +423,7 @@ fn matrix(a: Npy) -> anyhow::Result<Array2<f32>> {
 }
 
 /// Reads every array in an .npz (a zip of .npy files).
-fn read_npz(path: &Path) -> anyhow::Result<HashMap<String, Npy>> {
+fn read_npz(path: &Path) -> anyhow::Result<Arrays> {
     let file =
         std::fs::File::open(path).with_context(|| format!("Couldn't open {}", path.display()))?;
     let mut zip = zip::ZipArchive::new(file).context("Bark decoder.npz isn't a zip")?;
@@ -477,7 +477,7 @@ fn parse_npy(bytes: &[u8]) -> anyhow::Result<Npy> {
         .map(str::parse)
         .collect::<Result<_, _>>()?;
     let count: usize = shape.iter().product();
-    let data: Vec<f32> = match descr {
+    let mut data: Vec<f32> = match descr {
         "|i1" => data.iter().map(|&b| f32::from(b as i8)).collect(),
         "<f2" => data
             .chunks_exact(2)
@@ -492,10 +492,8 @@ fn parse_npy(bytes: &[u8]) -> anyhow::Result<Npy> {
     if data.len() < count {
         bail!("truncated .npy data");
     }
-    Ok(Npy {
-        shape,
-        data: data[..count].to_vec(),
-    })
+    data.truncate(count);
+    Ok(Npy { shape, data })
 }
 
 // ── Encoder ──────────────────────────────────────────────────────────────────
@@ -569,7 +567,7 @@ mod tests {
 
     #[test]
     fn short_audio_is_one_segment() {
-        let audio = vec![0.1; WINDOW_S * SR - PAD];
+        let audio = vec![0.1; MAX_PIECE];
         assert_eq!(segments(&audio).len(), 1);
     }
 
@@ -583,7 +581,7 @@ mod tests {
         let cut = pieces[0].len();
         assert!((9 * SR..9 * SR + SR / 2).contains(&cut), "cut at {cut}");
         assert_eq!(pieces.iter().map(|p| p.len()).sum::<usize>(), audio.len());
-        assert!(pieces.iter().all(|p| p.len() <= WINDOW_S * SR - PAD));
+        assert!(pieces.iter().all(|p| p.len() <= MAX_PIECE));
     }
 
     #[test]
@@ -600,7 +598,7 @@ mod tests {
                 },
             );
         let audio: Vec<f32> = (0..SR).map(|i| (i as f32 * 0.3).sin() * 0.1).collect();
-        let (feats, valid) = Frontend::new(mel).features(&audio);
+        let (feats, valid) = Frontend::new(mel).unwrap().features(&audio);
         assert_eq!(feats.dim(), (1 + SR / HOP, N_MELS));
         assert_eq!(valid, SR / HOP);
         let mean: f32 = feats.slice(s![..valid, 10]).mean().unwrap();

@@ -1564,9 +1564,8 @@ function ModelManagementCard() {
                     {model.downloaded && regModel && regModel.variants.length > 1 && (
                       <p className="text-xs text-muted-foreground mt-1">
                         Using:{" "}
-                        {regModel.variants
-                          .find((v) => v.id === model.variant_id)
-                          ?.label.split(" — ")[0] ?? model.variant_id}
+                        {regModel.variants.find((v) => v.id === model.variant_id)?.name ??
+                          model.variant_id}
                       </p>
                     )}
 
