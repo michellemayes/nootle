@@ -20,6 +20,9 @@ jobs:
           sudo apt-get install -y wget apt-transport-https gnupg
           wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
           echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          # The runner image's Microsoft package source sometimes answers 403,
+          # failing the update; nothing here installs from it.
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.*
           sudo apt-get update
           sudo apt-get install -y trivy
 
