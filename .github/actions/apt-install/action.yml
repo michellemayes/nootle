@@ -11,13 +11,19 @@ inputs:
 runs:
   using: composite
   steps:
+    # ImageVersion changes when the runner image does, so cached .debs never
+    # sit on top of newer installed versions. It is a runner environment
+    # variable, which the env expression context doesn't see.
+    - id: key
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: echo "key=apt-$ImageOS-$ImageVersion-$(sha256sum <<< "$PACKAGES" | cut -c1-16)" >> "$GITHUB_OUTPUT"
     - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
       id: cache
       with:
         path: ~/apt-debs
-        # ImageVersion changes when the runner image does, so cached .debs
-        # never sit on top of newer installed versions.
-        key: apt-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ inputs.packages }}
+        key: ${{ steps.key.outputs.key }}
     - shell: bash
       env:
         PACKAGES: ${{ inputs.packages }}
