@@ -41,14 +41,16 @@ runs:
 
         apt_install() {
           timeout 300 sudo apt-get update &&
-            timeout 600 sudo apt-get install -y \
+            timeout 300 sudo apt-get install -y \
               -o Dir::Cache::Archives="$debs" -o APT::Keep-Downloaded-Packages=true $PACKAGES
         }
         mkdir -p "$debs/partial"
         if ! apt_install; then
           echo "::warning::Runner's Ubuntu mirror failed or stalled; retrying on archive.ubuntu.com"
+          # GitHub's runners list their mirrors in apt-mirrors.txt, read through
+          # a mirror+file: source; older images name the mirror in the sources.
           sudo sed -E -i 's|http://[a-z0-9.-]+\.archive\.ubuntu\.com|http://archive.ubuntu.com|g' \
-            /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+            /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           apt_install
         fi
         sudo chown -R "$(id -u):$(id -g)" "$debs"
