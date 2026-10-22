@@ -7,11 +7,20 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 TLA_VERSION=1.8.0
+TLA_SHA256=5bd7b64db99ae4c6c35f290de5e809c0ee41af43f8699cf696099ffb6452b1e2
 JAR=.tools/tla2tools-$TLA_VERSION.jar
+sha256() { { sha256sum "$1" 2>/dev/null || shasum -a 256 "$1"; } | cut -d' ' -f1; }
 if [[ ! -f $JAR ]]; then
   mkdir -p .tools
-  curl -fsSL -o "$JAR" \
+  curl -fsSL --retry 3 -o "$JAR.part" \
     "https://github.com/tlaplus/tlaplus/releases/download/v$TLA_VERSION/tla2tools.jar"
+  mv "$JAR.part" "$JAR"
+fi
+# Checked before every run, not just after the download.
+if [[ $(sha256 "$JAR") != "$TLA_SHA256" ]]; then
+  rm -f "$JAR"
+  echo "tla2tools.jar doesn't match its pinned SHA-256; deleted it" >&2
+  exit 1
 fi
 
 # Endpointer constants are in frames, scaled down from the real ones (pad 6,
