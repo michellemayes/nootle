@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.19.1] - 2026-10-22
+
+### Bug Fixes
+
+- Model the endpointer and cancellable jobs in TLA+, fix the four bugs TLC found (#206) ([65afb6a](https://github.com/michellemayes/nootle/commit/65afb6a451bd6d3a4d4c84e28a3232e008d90d9d))
+
 ## [0.19.0] - 2026-10-21
 
 ### Features
