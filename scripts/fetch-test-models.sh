@@ -15,7 +15,8 @@ fetch() {
   if [ -f "$dir/$name" ] && echo "$sha  $dir/$name" | sha256sum -c --status; then
     return
   fi
-  curl -sSfL --retry 3 -o "$dir/$name.part" "$url"
+  # Abort a download that stalls below 100 KB/s for a minute; --retry tries again.
+  curl -sSfL --retry 3 --connect-timeout 30 --speed-limit 100000 --speed-time 60 -o "$dir/$name.part" "$url"
   echo "$sha  $dir/$name.part" | sha256sum -c --quiet
   mv "$dir/$name.part" "$dir/$name"
 }

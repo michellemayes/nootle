@@ -1,0 +1,55 @@
+name: apt install
+description: >-
+  Installs Ubuntu packages without hanging on a slow mirror. Downloaded .debs
+  are cached per runner image, so most runs skip apt-get update entirely. A
+  cold run gives up on a stalled mirror after a minute and retries against
+  archive.ubuntu.com.
+inputs:
+  packages:
+    description: Space-separated package names.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+      id: cache
+      with:
+        path: ~/apt-debs
+        # ImageVersion changes when the runner image does, so cached .debs
+        # never sit on top of newer installed versions.
+        key: apt-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ inputs.packages }}
+    - shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+      run: |
+        set -euo pipefail
+        debs=~/apt-debs
+        if [ "$CACHE_HIT" = true ] && sudo dpkg -i "$debs"/*.deb; then
+          exit 0
+        fi
+
+        # Fail fast on a stalled connection instead of waiting for TCP to
+        # give up, and retry transient errors.
+        sudo tee /etc/apt/apt.conf.d/99ci-timeouts > /dev/null <<'CONF'
+        Acquire::Retries "3";
+        Acquire::http::Timeout "30";
+        CONF
+        # The runner image's Microsoft package source sometimes answers 403,
+        # failing the update; nothing here installs from it.
+        sudo rm -f /etc/apt/sources.list.d/microsoft-prod.*
+
+        apt_install() {
+          timeout 300 sudo apt-get update &&
+            timeout 600 sudo apt-get install -y \
+              -o Dir::Cache::Archives="$debs" -o APT::Keep-Downloaded-Packages=true $PACKAGES
+        }
+        mkdir -p "$debs/partial"
+        if ! apt_install; then
+          echo "::warning::Runner's Ubuntu mirror failed or stalled; retrying on archive.ubuntu.com"
+          sudo sed -E -i 's|http://[a-z0-9.-]+\.archive\.ubuntu\.com|http://archive.ubuntu.com|g' \
+            /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+          apt_install
+        fi
+        sudo chown -R "$(id -u):$(id -g)" "$debs"
+        rm -rf "$debs/partial" "$debs/lock"
