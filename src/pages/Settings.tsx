@@ -15,6 +15,7 @@ import { Collapsible } from "@/components/Collapsible";
 import { PageHeader } from "@/components/PageHeader";
 import { McpSetup } from "@/components/McpSetup";
 import { ContinueInSettings } from "@/components/ContinueInSettings";
+import { AiConnectorCard } from "@/components/AiConnectorCard";
 import { CopyButton } from "@/components/CopyButton";
 import { DictionaryManager } from "@/components/DictionaryManager";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -1332,6 +1333,7 @@ export function SettingsPage() {
         <TabsContent value="integrations" className="mt-0 flex-1 overflow-auto">
           <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <IntegrationsManager />
+            <AiConnectorCard />
             <ContinueInSettings />
           </div>
         </TabsContent>

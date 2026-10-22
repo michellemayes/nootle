@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ChevronDown, ExternalLink, Link2, Lock, RotateCw } from "lucide-react";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CopyButton } from "@/components/CopyButton";
 import { formatDate } from "@/lib/utils";
+import { useBusyAction } from "@/hooks/useBusyAction";
 import type { Meeting, MeetingShare } from "@/types";
 
 /**
@@ -18,33 +20,24 @@ import type { Meeting, MeetingShare } from "@/types";
 export function ShareMenu({ meeting }: { meeting: Meeting }) {
   const [share, setShare] = useState<MeetingShare | null>(null);
   const [includeTranscript, setIncludeTranscript] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [aiAccess, setAiAccess] = useState(false);
+  const [hasConnector, setHasConnector] = useState(false);
+  const { busy, error, setError, run: act } = useBusyAction();
 
   useEffect(() => {
     invoke<MeetingShare | null>("get_meeting_share", { meetingId: meeting.id })
       .then((s) => {
         setShare(s);
         setIncludeTranscript(s?.include_transcript ?? false);
+        setAiAccess(s?.ai_access ?? false);
       })
       .catch(() => setShare(null));
   }, [meeting.id]);
 
-  const act = async (action: () => Promise<void>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const publish = () =>
     act(async () => {
-      setShare(await invoke<MeetingShare>("share_meeting", { meetingId: meeting.id, includeTranscript }));
+      setShare(await invoke<MeetingShare>("share_meeting", { meetingId: meeting.id, includeTranscript, aiAccess }));
     });
 
   const revoke = () =>
@@ -54,7 +47,13 @@ export function ShareMenu({ meeting }: { meeting: Meeting }) {
     });
 
   return (
-    <Popover onOpenChange={(open) => open && setError(null)}>
+    <Popover
+      onOpenChange={(open) => {
+        if (!open) return;
+        setError(null);
+        invoke<string | null>("get_ai_connector").then((url) => setHasConnector(url !== null)).catch(() => {});
+      }}
+    >
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="text-xs gap-1.5">
           <Link2 className={`h-3 w-3 ${share ? "text-success-foreground" : ""}`} />
@@ -94,6 +93,26 @@ export function ShareMenu({ meeting }: { meeting: Meeting }) {
           <Checkbox checked={includeTranscript} onCheckedChange={(v) => setIncludeTranscript(v === true)} />
           Include the transcript
         </label>
+
+        <div className="space-y-1">
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={aiAccess} onCheckedChange={(v) => setAiAccess(v === true)} />
+            Let AI connectors read this
+          </label>
+          <p className="pl-6 text-xs text-muted-foreground">
+            {hasConnector ? (
+              "AI apps you've connected can list and read it. nootle.ai opens it only while answering them."
+            ) : (
+              <>
+                Set up the connector in{" "}
+                <Link to="/settings?tab=integrations" className="underline">
+                  Settings → Integrations
+                </Link>{" "}
+                to let Claude and other AI apps read it.
+              </>
+            )}
+          </p>
+        </div>
 
         {error && <p className="text-xs text-destructive">{error}</p>}
 

@@ -1,8 +1,5 @@
-import { createShare, parseSealed } from "@/lib/shares";
+import { createRoute } from "@/lib/sealed-routes";
+import { shares } from "@/lib/shares";
 
 /** Stores an encrypted note from the Nootle app. */
-export async function POST(request: Request) {
-  const sealed = parseSealed(await request.json().catch(() => null));
-  if (!sealed) return Response.json({ error: "Expected { iv, ciphertext }" }, { status: 400 });
-  return Response.json(await createShare(sealed), { status: 201 });
-}
+export const POST = createRoute(shares);
