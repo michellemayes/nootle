@@ -87,10 +87,12 @@ impl SummaryJobsState {
     }
 
     /// Forgets a job that ran to the end. A cancelled one was already removed
-    /// or replaced by a newer job.
+    /// or replaced by a newer job. Checked under the lock, so a job started
+    /// in between (which cancels this one) isn't the one forgotten.
     fn finish(&self, meeting_id: &str, token: &CancellationToken) {
+        let mut jobs = self.jobs();
         if !token.is_cancelled() {
-            self.jobs().remove(meeting_id);
+            jobs.remove(meeting_id);
         }
     }
 }
@@ -2217,11 +2219,11 @@ pub async fn download_model(
         mgr.new_token()
     };
 
-    let result = model_download::download_variant(app, model, variant, cancel).await;
+    let result = model_download::download_variant(app, model, variant, cancel.clone()).await;
 
     {
         let mut mgr = download_mgr.lock().await;
-        mgr.clear_token();
+        mgr.finish(&cancel);
     }
 
     result
@@ -2977,6 +2979,32 @@ mod tests {
         let title = fallback_title();
         assert!(title.starts_with("Meeting "));
         assert!(title.len() > "Meeting ".len());
+    }
+
+    // Found by formal/tla/CancelRegistry.tla (MODE "summary"): a job that
+    // ran to the end must not forget a newer job started as it finished.
+    #[test]
+    fn a_finishing_summary_keeps_its_replacement_cancellable() {
+        let jobs = std::sync::Arc::new(SummaryJobsState::default());
+        let first = jobs.start("m");
+        // Hold the lock so the first job's `finish` waits on it.
+        let mut held = jobs.jobs();
+        let finishing = {
+            let (jobs, first) = (jobs.clone(), first.clone());
+            std::thread::spawn(move || jobs.finish("m", &first))
+        };
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        // Meanwhile a second summary starts, as `start` does under the lock.
+        let second = CancellationToken::new();
+        held.insert("m".into(), second.clone()).unwrap().cancel();
+        drop(held);
+        finishing.join().unwrap();
+
+        jobs.cancel("m");
+        assert!(
+            second.is_cancelled(),
+            "Stop no longer reaches the running summary"
+        );
     }
 }
 

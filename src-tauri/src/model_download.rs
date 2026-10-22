@@ -69,8 +69,12 @@ impl DownloadManager {
         token
     }
 
-    pub fn clear_token(&mut self) {
-        self.cancel_token = None;
+    /// Forgets a download that returned. A cancelled one was already taken
+    /// out or replaced by a newer download, which must stay cancellable.
+    pub fn finish(&mut self, token: &CancellationToken) {
+        if !token.is_cancelled() {
+            self.cancel_token = None;
+        }
     }
 }
 
@@ -362,4 +366,26 @@ pub fn get_all_model_status() -> Vec<ModelOnDiskStatus> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Found by formal/tla/CancelRegistry.tla (MODE "download").
+    #[test]
+    fn a_replaced_download_finishing_keeps_the_new_one_cancellable() {
+        let mut mgr = DownloadManager::new();
+        let first = mgr.new_token();
+        // Downloading a second model stops the first...
+        let second = mgr.new_token();
+        assert!(first.is_cancelled());
+        // ...whose command then returns and gives the slot back.
+        mgr.finish(&first);
+        mgr.cancel();
+        assert!(
+            second.is_cancelled(),
+            "Cancel no longer reaches the running download"
+        );
+    }
 }
