@@ -37,6 +37,8 @@ cd src-tauri && XDG_DATA_HOME=~/nootle-test-models cargo test --release --test m
 
 On macOS, point the golden tests at your own downloaded models instead by leaving `XDG_DATA_HOME` unset. CI runs these on every backend change.
 
+[`formal/`](../formal/README.md) has TLA+ models of the speech endpointer and the cancellable download and summary jobs. Run `formal/tla/check.sh` (needs Java) after changing `vad.rs`, `DownloadManager` or `SummaryJobsState`.
+
 ## Built with
 
 - [Tauri 2](https://tauri.app) — native app shell
