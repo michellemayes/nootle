@@ -20,8 +20,6 @@
 (* FIXED models the corrected code: the job empties the slot only if its   *)
 (* own token is not cancelled, checked under the same lock.                *)
 (***************************************************************************)
-EXTENDS FiniteSets
-
 CONSTANTS Jobs, MODE, FIXED, NoJob
 
 VARIABLES

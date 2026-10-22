@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Model-checks every TLA+ spec here with TLC. Configs named *_fixed.cfg (or
-# with FIXED = TRUE) model the current code and must pass; the others model
-# the code before its fix and must still find the bug they were written for.
+# Model-checks the TLA+ specs here with TLC. FIXED = TRUE models the code as
+# it is now and must pass; FIXED = FALSE models the code before its fix and
+# must still find the bug it was written for, which keeps the model honest.
 # Needs Java 11+. Downloads tla2tools.jar once, into .tools/.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -14,35 +14,48 @@ if [[ ! -f $JAR ]]; then
     "https://github.com/tlaplus/tlaplus/releases/download/v$TLA_VERSION/tla2tools.jar"
 fi
 
-# spec, config, expected result ("pass" or the invariant TLC must break)
+# Endpointer constants are in frames, scaled down from the real ones (pad 6,
+# speech 8, silence 16, split search 125, limit 469) keeping their order and
+# 2 * PAD <= SIL. The second set has a pad of 3, which the retain bug needs.
+ENDPOINTER="SIL = 5 SPEECH = 3 PAD = 2 MAXF = 9 SEARCH = 6 MAXFRAMES = 14"
+ENDPOINTER_PAD="SIL = 6 SPEECH = 4 PAD = 3 MAXF = 10 SEARCH = 7 MAXFRAMES = 15"
+REGISTRY="Jobs = {j1, j2, j3} NoJob = NoJob"
+
+# spec | constants | invariant TLC must break before the fix
 checks=(
-  "Endpointer Endpointer.cfg NotInverted"
-  "Endpointer EndpointerPad.cfg RetainHonoured"
-  "Endpointer Endpointer_fixed.cfg pass"
-  "Endpointer EndpointerPad_fixed.cfg pass"
-  "CancelRegistry CancelRegistry_download_FALSE.cfg CancelReachesRunningJob"
-  "CancelRegistry CancelRegistry_download_TRUE.cfg pass"
-  "CancelRegistry CancelRegistry_summary_FALSE.cfg CancelReachesRunningJob"
-  "CancelRegistry CancelRegistry_summary_TRUE.cfg pass"
+  "Endpointer|$ENDPOINTER|NotInverted"
+  "Endpointer|$ENDPOINTER_PAD|RetainHonoured"
+  "CancelRegistry|$REGISTRY MODE = \"download\"|CancelReachesRunningJob"
+  "CancelRegistry|$REGISTRY MODE = \"summary\"|CancelReachesRunningJob"
+)
+# FIXED = TRUE checks them all; FIXED = FALSE only the bug at hand, so one
+# bug can't hide another.
+declare -A invariants=(
+  [Endpointer]="TypeOK NotInverted RetainHonoured NoRepeatedAudio"
+  [CancelRegistry]="TypeOK CancelReachesRunningJob"
 )
 
 failed=0
 for check in "${checks[@]}"; do
-  read -r spec cfg expected <<<"$check"
-  out=$(java -XX:+UseParallelGC -cp "$JAR" tlc2.TLC -workers auto -deadlock \
-    -config "$cfg" -metadir .tools/states "$spec.tla" 2>&1 || true)
-  rm -f ./*_TTrace_*.tla ./*_TTrace_*.bin
-  if [[ $expected == pass ]]; then
-    grep -q "No error has been found" <<<"$out" && ok=1 || ok=0
-  else
-    grep -q "Invariant $expected is violated" <<<"$out" && ok=1 || ok=0
-  fi
-  if ((ok)); then
-    echo "ok    $cfg ($expected)"
-  else
-    echo "FAIL  $cfg (expected $expected)"
-    echo "$out" | tail -40
-    failed=1
-  fi
+  IFS='|' read -r spec constants bug <<<"$check"
+  for fixed in FALSE TRUE; do
+    cfg=.tools/$spec.cfg
+    if [[ $fixed == TRUE ]]; then
+      checked=${invariants[$spec]} expected="No error has been found"
+    else
+      checked="TypeOK $bug" expected="Invariant $bug is violated"
+    fi
+    printf 'CONSTANTS %s FIXED = %s\nSPECIFICATION Spec\nINVARIANTS %s\n' \
+      "$constants" "$fixed" "$checked" >"$cfg"
+    out=$(java -XX:+UseParallelGC -cp "$JAR" tlc2.TLC -workers auto -deadlock \
+      -noGenerateSpecTE -config "$cfg" -metadir .tools/states "$spec.tla" 2>&1 || true)
+    if grep -q "$expected" <<<"$out"; then
+      echo "ok    $spec FIXED = $fixed ($constants): $expected"
+    else
+      echo "FAIL  $spec FIXED = $fixed ($constants): expected \"$expected\""
+      echo "$out" | tail -40
+      failed=1
+    fi
+  done
 done
 exit $failed

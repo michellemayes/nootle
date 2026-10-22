@@ -9,10 +9,11 @@ test that reproduces it with the real code and constants.
 formal/tla/check.sh   # needs Java 11+; fetches tla2tools.jar on first run
 ```
 
-Configs with `FIXED = TRUE` (or named `*_fixed.cfg`) model the code as it is
-now and must pass. The others model the code before its fix and must still
-find the bug, which keeps the models honest: a model that can't find a
-known bug proves little about the fix.
+Each spec has a `FIXED` constant. `check.sh` runs both: `FIXED = TRUE`
+models the code as it is now and must pass; `FALSE` models the code before
+its fix and must still find the bug, which keeps the models honest (a model
+that can't find a known bug proves little about the fix). It writes the
+TLC configs itself, from the constants at its top.
 
 ## `tla/Endpointer.tla`: speech endpointing and the live audio buffer
 
@@ -23,8 +24,7 @@ audio before `retain_from()` at the end of every chunk. Invariants:
 | Invariant | Meaning |
 |---|---|
 | `NotInverted` | every utterance handed out ends after it starts |
-| `RetainHonoured` | no utterance starts before a `retain_from()` already returned |
-| `NoClippedAudio` | the transcriber still holds all of an utterance's audio |
+| `RetainHonoured` | no utterance starts before a `retain_from()` already returned, so the transcriber still holds all its audio |
 | `NoRepeatedAudio` | consecutive utterances never share audio |
 
 **Found:** when an utterance reaches the 15 s limit inside a pause, the cut
@@ -41,16 +41,18 @@ utterance, the endpointer:
 
 Tests: `vad::tests::a_cut_followed_only_by_silence_is_not_an_utterance`,
 `vad::tests::retain_from_never_takes_back_audio_it_released`.
-Fix: the endpointer remembers where its last utterance ended and never pads
-back past it, and a piece with nothing after the cut is dropped.
+Fix: a cut that lands after the last speech now ends the utterance, as the
+pause would have, instead of carrying on with a piece of silence. And the
+endpointer remembers where its last utterance ended and never pads (or
+lets `retain_from()` reach) back past it.
 
 The constants are scaled down from the real ones (in frames: pad 6, minimum
 speech 8, silence 16, split search 125, limit 469) keeping their order. The
-ratios matter: `Endpointer.cfg` (pad 2) finds the backwards utterance but
-can't show the retain bug, which needs a pad of 3 or more frames
-(`EndpointerPad.cfg`). The model also shows the code relies on
-`2 * PAD_MS <= MIN_SILENCE_MS`; with a longer pad, neighbouring utterances
-would repeat audio.
+ratios matter: with a pad of 2 frames TLC finds the backwards utterance but
+can't show the retain bug, which needs a pad of 3 or more, so `check.sh`
+runs both. The model also showed that, before the fix, the code relied on
+`2 * PAD_MS <= MIN_SILENCE_MS`: with a longer pad, neighbouring utterances
+would repeat audio. Padding now stops at the previous utterance instead.
 
 ## `tla/CancelRegistry.tla`: cancellable jobs
 

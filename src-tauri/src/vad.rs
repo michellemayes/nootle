@@ -162,10 +162,11 @@ pub struct Endpointer {
     /// Probabilities of the utterance in progress, for picking a split.
     probs: Vec<f32>,
     /// The utterance in progress continues one cut at the length limit, so
-    /// its start isn't padded back into audio the previous piece already has.
+    /// it's kept however short it turns out.
     continues_split: bool,
-    /// End frame of the last utterance handed out. Padding never reaches
-    /// back past it, so no audio is repeated or needed again once released.
+    /// End frame of the last utterance handed out. Start padding never
+    /// reaches back past it, so a piece continuing a cut isn't padded into
+    /// audio the previous piece has, and audio released stays released.
     floor: usize,
 }
 
@@ -202,9 +203,15 @@ impl Endpointer {
                 .min_by(|&a, &b| self.probs[a].total_cmp(&self.probs[b]))
                 .unwrap_or(self.probs.len() - 1);
             let end = start + split;
+            if end > self.last_speech {
+                // The quietest moment is in the pause after the speech:
+                // that pause ends the utterance.
+                self.speech_start = None;
+                return self.finish(start, self.last_speech + 1);
+            }
             self.probs.drain(..split);
             self.speech_start = Some(end);
-            let piece = self.span(start, end, !self.continues_split, false);
+            let piece = self.span(start, end, false);
             self.continues_split = true;
             return Some(piece);
         }
@@ -214,12 +221,8 @@ impl Endpointer {
     /// The earliest sample a future utterance can include. Audio before it
     /// will never be needed again.
     pub fn retain_from(&self) -> usize {
-        let frame = match self.speech_start {
-            Some(start) if self.continues_split => start,
-            Some(start) => start.saturating_sub(PAD_MS / FRAME_MS),
-            None => self.frames_seen.saturating_sub(PAD_MS / FRAME_MS),
-        };
-        frame.max(self.floor) * FRAME_SAMPLES
+        let frame = self.speech_start.unwrap_or(self.frames_seen);
+        frame.saturating_sub(PAD_MS / FRAME_MS).max(self.floor) * FRAME_SAMPLES
     }
 
     /// End of stream: the utterance in progress, if any.
@@ -230,25 +233,17 @@ impl Endpointer {
 
     fn finish(&mut self, start: usize, end: usize) -> Option<Utterance> {
         self.probs.clear();
-        // Only silence followed the last cut: nothing is left to transcribe.
-        if end <= start {
-            return None;
-        }
         let long_enough = self.continues_split || (end - start) * FRAME_MS >= MIN_SPEECH_MS;
-        long_enough.then(|| self.span(start, end, !self.continues_split, true))
+        long_enough.then(|| self.span(start, end, true))
     }
 
-    /// Sample range for frames `start..end`, padded on the sides that meet
-    /// silence. A side cut mid-speech isn't padded: that would repeat audio
-    /// in both pieces.
-    fn span(&mut self, start: usize, end: usize, pad_start: bool, pad_end: bool) -> Utterance {
+    /// Sample range for frames `start..end`, padded back to the previous
+    /// utterance at most, and forward when `pad_end` (the end meets silence;
+    /// a cut mid-speech isn't padded, as that would repeat audio).
+    fn span(&mut self, start: usize, end: usize, pad_end: bool) -> Utterance {
         let pad = PAD_MS / FRAME_MS;
-        let start = if pad_start {
-            start.saturating_sub(pad).max(self.floor)
-        } else {
-            start
-        };
-        let end = if pad_end { end + pad } else { end }.min(self.frames_seen);
+        let start = start.saturating_sub(pad).max(self.floor);
+        let end = (if pad_end { end + pad } else { end }).min(self.frames_seen);
         self.floor = end;
         Utterance {
             start: start * FRAME_SAMPLES,
@@ -348,7 +343,7 @@ mod tests {
     #[test]
     fn retain_from_never_takes_back_audio_it_released() {
         let mut probs = speech_cut_in_its_trailing_pause();
-        probs.extend(vec![0.0; 1]);
+        probs.push(0.0);
         probs.extend(vec![0.9; frames(1000)]);
         probs.extend(vec![0.0; frames(1000)]);
         let mut e = Endpointer::default();

@@ -1,8 +1,8 @@
 ---------------------------- MODULE Endpointer ----------------------------
 (***************************************************************************)
 (* Model of `vad::Endpointer` (src-tauri/src/vad.rs) together with the way *)
-(* `pipeline::LiveTranscriber::push` trims its audio buffer to             *)
-(* `Endpointer::retain_from()`.                                            *)
+(* `pipeline::LiveTranscriber::push` drops audio before                    *)
+(* `Endpointer::retain_from()` at the end of every chunk.                  *)
 (*                                                                         *)
 (* Everything is measured in 32 ms frames. Speech probabilities are        *)
 (* abstracted to four ordered levels:                                      *)
@@ -11,6 +11,10 @@
 (*   3     at least START_THRESHOLD (speech)                               *)
 (* The millisecond constants become frame counts, scaled down so TLC can   *)
 (* explore every probability sequence up to MAXFRAMES frames.             *)
+(*                                                                         *)
+(* FIXED = FALSE is the code before the fix; FIXED = TRUE the code now:    *)
+(* a cut that lands after the last speech ends the utterance, and `floor`  *)
+(* (the end of the last utterance) bounds start padding and retain_from(). *)
 (***************************************************************************)
 EXTENDS Integers, Sequences
 
@@ -21,7 +25,7 @@ CONSTANTS
     MAXF,      \* MAX_UTTERANCE_MS in frames
     SEARCH,    \* SPLIT_SEARCH_MS in frames
     MAXFRAMES, \* length of the probability streams explored
-    FIXED      \* model the corrected code (see `floor` below)
+    FIXED
 
 START == 3
 END == 2
@@ -39,31 +43,29 @@ VARIABLES
     last,     \* Endpointer.last_speech
     probs,    \* Endpointer.probs
     cont,     \* Endpointer.continues_split
+    floor,    \* Endpointer.floor (FIXED only)
     flushed,  \* the stream has ended and flush() ran
-    base,     \* LiveTranscriber.base: audio before this frame is dropped
     out,      \* utterance emitted by the last step, or NoUtt
     prevEnd,  \* end of the previously emitted utterance
-    promised, \* highest retain_from() the pipeline has been told
-    floor     \* FIXED only: Endpointer.floor, end of the last utterance
+    promised  \* highest retain_from() the pipeline has dropped audio up to
 
-vars == <<seen, start, last, probs, cont, flushed, base, out, prevEnd, promised, floor>>
+vars == <<seen, start, last, probs, cont, floor, flushed, out, prevEnd, promised>>
 
-\* Endpointer::span, with `fs` the already-incremented frames_seen. The fix
-\* stops start padding at the end of the previous utterance.
+\* Endpointer::span, with `fs` the already-incremented frames_seen. Before
+\* the fix a side was padded unless it was cut mid-speech; now the start is
+\* always padded, back to `floor` at most.
 Span(s, e, padS, padE, fs) ==
     [ok    |-> TRUE,
-     start |-> IF padS
-                 THEN IF FIXED THEN Max(Max(s - PAD, 0), floor) ELSE Max(s - PAD, 0)
-                 ELSE s,
+     start |-> IF FIXED THEN Max(s - PAD, floor)
+               ELSE IF padS THEN Max(s - PAD, 0) ELSE s,
      end   |-> Min(IF padE THEN e + PAD ELSE e, fs)]
 
 \* Endpointer::retain_from
-RetainAsWritten ==
-    IF start # NONE /\ cont THEN start
+Retain ==
+    IF FIXED THEN Max((IF start # NONE THEN start ELSE seen) - PAD, floor)
+    ELSE IF start # NONE /\ cont THEN start
     ELSE IF start # NONE THEN Max(start - PAD, 0)
     ELSE Max(seen - PAD, 0)
-
-Retain == IF FIXED THEN Max(RetainAsWritten, floor) ELSE RetainAsWritten
 
 \* First index (0-based) of the minimum of s[from+1..Len(s)], like
 \* Iterator::min_by, which returns the first of equal minima.
@@ -72,24 +74,25 @@ MinIdx(s, from) ==
         \A j \in from..(Len(s) - 1) :
             s[i + 1] < s[j + 1] \/ (s[i + 1] = s[j + 1] /\ i <= j)
 
-Emit(u) == /\ out' = u
-           /\ prevEnd' = IF ~out.ok THEN prevEnd ELSE out.end
-           /\ floor' = IF FIXED THEN u.end ELSE floor
+\* Every step moves the last output into prevEnd.
+Output(u) == /\ out' = u
+             /\ prevEnd' = IF out.ok THEN out.end ELSE prevEnd
 
-NoEmit == /\ out' = NoUtt
-          /\ prevEnd' = IF ~out.ok THEN prevEnd ELSE out.end
-          /\ UNCHANGED floor
+Emit(u) == Output(u) /\ floor' = IF FIXED THEN u.end ELSE floor
+NoEmit == Output(NoUtt) /\ UNCHANGED floor
 
-\* Endpointer::finish: whether an utterance is handed out. The fix drops a
-\* piece that is all silence after a cut (end <= start).
-Finishes(s, e, c) ==
-    /\ FIXED => e > s
-    /\ c \/ (e - s) >= SPEECH
+\* Endpointer::finish(s, e): the utterance ends; short bursts are dropped
+\* unless they continue a cut (`||` short-circuits on cont).
+Finish(s, e, fs) ==
+    /\ start' = NONE /\ probs' = <<>> /\ cont' = cont
+    /\ IF cont \/ (e - s) >= SPEECH
+         THEN Emit(Span(s, e, ~cont, TRUE, fs))
+         ELSE NoEmit
 
 Init ==
     /\ seen = 0 /\ start = NONE /\ last = 0 /\ probs = <<>>
-    /\ cont = FALSE /\ flushed = FALSE /\ base = 0
-    /\ out = NoUtt /\ prevEnd = 0 /\ promised = 0 /\ floor = 0
+    /\ cont = FALSE /\ floor = 0 /\ flushed = FALSE
+    /\ out = NoUtt /\ prevEnd = 0 /\ promised = 0
 
 \* Endpointer::push(p)
 Push(p) ==
@@ -99,7 +102,7 @@ Push(p) ==
     /\ ~flushed
     /\ seen < MAXFRAMES
     /\ seen' = fs
-    /\ UNCHANGED <<flushed, base, promised>>
+    /\ UNCHANGED <<flushed, promised>>
     /\ IF start = NONE THEN
           /\ IF p >= START
                THEN /\ start' = frame /\ last' = frame
@@ -111,18 +114,14 @@ Push(p) ==
               ls == IF p >= END THEN frame ELSE last
           IN
           /\ last' = ls
-          /\ IF frame - ls >= SIL THEN
-                \* finish(start, last_speech + 1); `||` short-circuits on cont
-                /\ start' = NONE /\ probs' = <<>> /\ cont' = cont
-                /\ IF Finishes(start, ls + 1, cont)
-                     THEN Emit(Span(start, ls + 1, ~cont, TRUE, fs))
-                     ELSE NoEmit
+          /\ IF frame - ls >= SIL THEN Finish(start, ls + 1, fs)
              ELSE IF frame + 1 - start >= MAXF THEN
                 LET search == Min(SEARCH, Len(ps) - 1)
-                    from == Len(ps) - search
-                    split == MinIdx(ps, from)
+                    split == MinIdx(ps, Len(ps) - search)
                     e == start + split
                 IN
+                IF FIXED /\ e > ls THEN Finish(start, ls + 1, fs)
+                ELSE
                 /\ probs' = SubSeq(ps, split + 1, Len(ps))
                 /\ start' = e
                 /\ cont' = TRUE
@@ -132,11 +131,11 @@ Push(p) ==
                 /\ UNCHANGED <<start, cont>>
                 /\ NoEmit
 
-\* LiveTranscriber::push at the end of a chunk (any frame can end a chunk):
-\* drop audio before min(retain_from(), scored).
+\* The end of a chunk (any frame can end one): the pipeline drops audio
+\* before retain_from(). (It takes min(retain_from(), scored), but
+\* retain_from() never exceeds the frames scored.)
 Trim ==
     /\ ~flushed
-    /\ base' = Max(base, Min(Retain, seen))
     /\ promised' = Max(promised, Retain)
     /\ NoEmit
     /\ UNCHANGED <<seen, start, last, probs, cont, flushed>>
@@ -145,13 +144,10 @@ Trim ==
 Flush ==
     /\ ~flushed
     /\ flushed' = TRUE
-    /\ start' = NONE
-    /\ probs' = <<>>
-    /\ UNCHANGED <<seen, last, cont, base, promised>>
-    /\ IF start = NONE THEN NoEmit
-       ELSE IF Finishes(start, last + 1, cont)
-            THEN Emit(Span(start, last + 1, ~cont, TRUE, seen))
-            ELSE NoEmit
+    /\ UNCHANGED <<seen, last, promised>>
+    /\ IF start = NONE
+         THEN NoEmit /\ UNCHANGED <<start, probs, cont>>
+         ELSE Finish(start, last + 1, seen)
 
 Next == (\E p \in Levels : Push(p)) \/ Trim \/ Flush
 
@@ -164,11 +160,9 @@ Spec == Init /\ [][Next]_vars
 NotInverted == out.ok => out.end >= out.start
 
 \* retain_from() documents: "Audio before it will never be needed again".
-\* No utterance may start before a value it already promised.
+\* The pipeline has dropped audio before `promised`, so no utterance may
+\* start before it.
 RetainHonoured == out.ok /\ out.end > out.start => out.start >= promised
-
-\* ...so the transcriber never receives an utterance whose audio was dropped.
-NoClippedAudio == out.ok /\ out.end > out.start => out.start >= base
 
 \* Consecutive utterances never repeat audio.
 NoRepeatedAudio == out.ok /\ out.end > out.start => out.start >= prevEnd
