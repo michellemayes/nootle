@@ -139,3 +139,10 @@ body::after {
     display: none;
   }
 }
+
+/* Landing-page hero start state; LandingMotion plays it in. Reduced motion skips both. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-hero] {
+    opacity: 0;
+  }
+}

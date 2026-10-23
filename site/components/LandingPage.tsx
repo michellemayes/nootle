@@ -4,6 +4,7 @@ import { Navbar } from "@/components/Navbar";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CopyCommand } from "@/components/CopyCommand";
 import { DownloadButton } from "@/components/DownloadButton";
+import { LandingMotion } from "@/components/LandingMotion";
 import { linkClass, outfit } from "@/components/site-config";
 import ogImage from "@/app/opengraph-image.png";
 
@@ -83,29 +84,42 @@ export function LandingPage({ content }: { content: LandingContent }) {
 
   return (
     <>
+      <noscript>
+        <style>{"[data-hero]{opacity:1}"}</style>
+      </noscript>
       <Navbar />
-      <main id="main-content" className="relative overflow-hidden">
-        <section aria-label="Introduction" className="pt-36 pb-16 px-6">
+      <LandingMotion id="main-content" className="relative overflow-hidden">
+        <section aria-label="Introduction" className="relative pt-36 pb-16 px-6">
+          <div
+            aria-hidden="true"
+            data-parallax
+            className="absolute inset-x-0 top-0 -z-10 h-[560px]"
+            style={{
+              background:
+                "radial-gradient(55% 50% at 50% 0%, color-mix(in srgb, var(--color-accent) 18%, transparent), transparent 70%)",
+            }}
+          />
           <div className="max-w-3xl mx-auto text-center">
-            <p className="text-sm font-semibold uppercase tracking-wider text-[var(--color-accent)] mb-4">
+            <p data-hero className="text-sm font-semibold uppercase tracking-wider text-[var(--color-accent)] mb-4">
               {eyebrow}
             </p>
             <h1
+              data-hero
               className={`${outfit} text-4xl md:text-6xl font-extrabold tracking-tight mb-6 text-[var(--color-text)]`}
             >
               {headline}
             </h1>
-            <p className="text-lg md:text-xl text-[var(--color-text-secondary)] mb-6 max-w-2xl mx-auto">
+            <p data-hero className="text-lg md:text-xl text-[var(--color-text-secondary)] mb-6 max-w-2xl mx-auto">
               {subhead}
             </p>
-            <p className="text-sm text-[var(--color-text-secondary)] mb-10">
+            <p data-hero className="text-sm text-[var(--color-text-secondary)] mb-10">
               By{" "}
               <a href="https://michellemayes.me" className={linkClass}>
                 Michelle Mayes
               </a>{" "}
               &middot; Published <DateStamp date={published} /> &middot; Updated <DateStamp date={updated} />
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <div data-hero className="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <DownloadButton />
               <a
                 href="#install"
@@ -118,7 +132,7 @@ export function LandingPage({ content }: { content: LandingContent }) {
         </section>
 
         <section aria-labelledby="answer-heading" className="pb-20 px-6">
-          <div className="max-w-3xl mx-auto">
+          <div data-reveal className="max-w-3xl mx-auto">
             <h2
               id="answer-heading"
               className={`${outfit} text-2xl md:text-3xl font-bold mb-4 text-[var(--color-text)]`}
@@ -133,11 +147,12 @@ export function LandingPage({ content }: { content: LandingContent }) {
           <div className="max-w-3xl mx-auto">
             <h2
               id="why-heading"
+              data-reveal
               className={`${outfit} text-3xl md:text-4xl font-bold mb-12 text-[var(--color-text)]`}
             >
               {why.heading}
             </h2>
-            <ol className="space-y-10">
+            <ol data-reveal-stagger className="space-y-10">
               {why.points.map((point, i) => (
                 <li key={point.title} className="grid grid-cols-[2.5rem_1fr] gap-4">
                   <span
@@ -163,14 +178,15 @@ export function LandingPage({ content }: { content: LandingContent }) {
             <div className="max-w-4xl mx-auto">
               <h2
                 id="table-heading"
+                data-reveal
                 className={`${outfit} text-3xl md:text-4xl font-bold mb-4 text-[var(--color-text)]`}
               >
                 {table.heading}
               </h2>
               {table.intro && (
-                <p className="text-[var(--color-text-secondary)] mb-8 max-w-2xl">{table.intro}</p>
+                <p data-reveal className="text-[var(--color-text-secondary)] mb-8 max-w-2xl">{table.intro}</p>
               )}
-              <div className="overflow-x-auto rounded-2xl border border-[var(--color-border)]">
+              <div data-reveal className="overflow-x-auto rounded-2xl border border-[var(--color-border)]">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-[var(--color-surface-elevated)]">
                     <tr>
@@ -219,11 +235,12 @@ export function LandingPage({ content }: { content: LandingContent }) {
           <div className="max-w-3xl mx-auto">
             <h2
               id="faq-heading"
+              data-reveal
               className={`${outfit} text-3xl md:text-4xl font-bold mb-10 text-[var(--color-text)]`}
             >
               Questions
             </h2>
-            <div className="space-y-3">
+            <div data-reveal-stagger className="space-y-3">
               {faqs.map((faq) => (
                 <details
                   key={faq.question}
@@ -246,7 +263,7 @@ export function LandingPage({ content }: { content: LandingContent }) {
         </section>
 
         <section id="install" aria-labelledby="install-heading" className="py-24 px-6">
-          <div className="max-w-2xl mx-auto text-center">
+          <div data-reveal className="max-w-2xl mx-auto text-center">
             {disclaimer && (
               <p className="mb-12 text-sm text-[var(--color-text-secondary)] border-l-2 border-[var(--color-accent)] pl-4 text-left">
                 {disclaimer}
@@ -266,7 +283,7 @@ export function LandingPage({ content }: { content: LandingContent }) {
             <CopyCommand />
           </div>
         </section>
-      </main>
+      </LandingMotion>
       <SiteFooter />
     </>
   );
