@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.22.0] - 2026-10-23
+
+### Bug Fixes
+
+- **deps:** Bump @tauri-apps/api to 2.12 to match the tauri crate (#214) ([36fc58e](https://github.com/michellemayes/nootle/commit/36fc58efbf0793d4a3babd70f9cd325fab1c1253))
+
+### Build
+
+- **deps:** Bump the cargo group across 1 directory with 3 updates (#213) ([5c9e7cc](https://github.com/michellemayes/nootle/commit/5c9e7ccd292404fe9f2a23731e17d44265ef7a4a))
+
+### Features
+
+- **site:** Playful GSAP motion on the home and landing pages (#210) ([addcaa3](https://github.com/michellemayes/nootle/commit/addcaa36616af6ca7209030f1904fe67486b5ca6))
+
 ## [0.21.0] - 2026-10-23
 
 ### Features
