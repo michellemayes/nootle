@@ -47,6 +47,7 @@ Nootle records your meetings (microphone and system audio), transcribes them on 
 - **Snapshots.** Captures shared slides and screens into your notes, and reads the text on them. Summaries cite slides as clickable thumbnails, and a slide recap says what was said while each was up.
 - **Workflows.** Send recaps and action items to Slack, Notion, Linear, GitHub, Asana, Confluence, Obsidian, or email.
 - **Share links.** End-to-end encrypted `nootle.ai` links to a meeting's notes.
+- **AI connector.** A private link that lets Claude, ChatGPT and other cloud AI apps read the shared meetings you pick.
 - **Continue in Claude.** One click opens a meeting in Claude, ChatGPT, Codex, Perplexity, or any app that takes a prompt in a link, with your own icon if you like.
 - **Built for agents.** A CLI and an MCP server (with a read-only mode) give Claude Code and other agents your meetings, and let them pin notes to a meeting's timeline.
 - **Plain files you own.** Export any meeting, or all of them, as Markdown, text, SRT or WebVTT. Import recordings and transcripts from Otter, Fathom, Granola, Zoom, Teams and Meet.
@@ -92,6 +93,12 @@ claude mcp add --scope user nootle -- /Applications/Nootle.app/Contents/MacOS/no
 ```
 
 Add `--read-only` to the end to stop agents editing or sending anything. The [CLI, MCP and URL scheme guide](docs/cli.md) covers every command.
+
+### Cloud AI connector
+
+Claude on the web, ChatGPT and other cloud AI apps can't run `nootle-cli`, so nootle.ai hosts a read-only MCP server for meetings you've shared. In Settings → Integrations → **AI connector**, click **Create connector link** and add the link as a custom connector (in Claude: Settings → Connectors → Add custom connector). It lists only the shares you tick **Let AI connectors read this** on in the Share menu, with the tools `list_shared_meetings`, `get_shared_meeting`, `search_shared_meetings` and `read_share_link`.
+
+Shares stay encrypted on nootle.ai. The connector link holds the key to its list of shares (and that list holds each share's key), so nootle.ai decrypts them in memory only while answering your AI, and never stores a key. Clients that can send headers can use `https://nootle.ai/mcp` with `Authorization: Bearer <id>.<key>` (the part after `/mcp/`) instead, which keeps the key out of URLs and request logs. **Reset link** revokes the old link; **Turn off** removes the connector.
 
 ## Development
 

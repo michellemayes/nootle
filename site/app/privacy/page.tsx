@@ -124,6 +124,24 @@ export default function PrivacyPage() {
               </p>
             </div>
 
+            <div id="ai-connector" className="scroll-mt-24">
+              <h2 className="font-[family-name:var(--font-outfit)] text-2xl font-bold mb-4 text-[var(--color-text)]">
+                AI connector
+              </h2>
+              <p>
+                If you turn on the AI connector, Claude, ChatGPT or another AI app you
+                connect can read the shared notes you choose for it. The app encrypts the
+                list of those notes, with their keys, under a key that only your private
+                connector link holds. Your AI app sends that link with each request, so
+                nootle.ai decrypts those notes in memory only to answer it, then forgets
+                them. Keys and decrypted notes are never stored, though, like any web
+                request, the link may appear in short-lived request logs. Notes you
+                don&apos;t choose for the connector stay unreadable to nootle.ai.
+                Resetting or turning off the connector in the app stops the old link
+                working.
+              </p>
+            </div>
+
             <div>
               <h2 className="font-[family-name:var(--font-outfit)] text-2xl font-bold mb-4 text-[var(--color-text)]">
                 Website analytics

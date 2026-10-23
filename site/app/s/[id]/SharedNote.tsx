@@ -160,6 +160,10 @@ function EncryptionInfo() {
             Meeting notes are private. Encrypting them before they leave the Mac means only people holding the link
             can read them, and a breach of nootle.ai would expose nothing readable. Stop sharing deletes the copy.
           </p>
+          <p>
+            If the sender lets their own AI assistant read these notes through Nootle&apos;s connector, nootle.ai unlocks
+            them in memory only while answering it, and never keeps the key.
+          </p>
           <Link href="/privacy#share-links" className={styles.btnLink}>
             Read the privacy policy →
           </Link>
