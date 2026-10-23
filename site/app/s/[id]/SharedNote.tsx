@@ -169,21 +169,6 @@ function EncryptionInfo() {
   );
 }
 
-/** A slim strip above the notes for readers who don't know Nootle yet. */
-function GetNootle() {
-  return (
-    <aside className={styles.getStrip}>
-      <Image src="/nootle-icon.svg" alt="" width={20} height={20} />
-      <p>
-        Made with <strong>Nootle</strong>, the free AI notetaker for Mac. No bot joins your calls.
-      </p>
-      <a href={RELEASES_URL} className={styles.btnLink}>
-        Get Nootle →
-      </a>
-    </aside>
-  );
-}
-
 function Header() {
   const [theme, toggleTheme] = useTheme();
   const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
@@ -459,7 +444,6 @@ export function SharedNote({ id }: { id: string }) {
         )}
         {state.status === "ready" && (
           <>
-            <GetNootle />
             <article className={styles.paper}>
               <Hero note={state.note} />
               <AskAi markdown={state.markdown} note={state.note} />

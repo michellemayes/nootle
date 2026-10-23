@@ -197,34 +197,6 @@
   margin-top: 0.3rem;
 }
 
-/* "Get Nootle" strip above the notes */
-
-.getStrip {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.75rem;
-  padding: 0.6rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--paper);
-  font-size: 0.875rem;
-}
-.getStrip img {
-  width: 1.25rem;
-  height: 1.25rem;
-  flex-shrink: 0;
-}
-.getStrip p {
-  flex: 1;
-  margin: 0;
-}
-.getStrip strong {
-  color: var(--text);
-}
-.getStrip a {
-  white-space: nowrap;
-}
 .getButton {
   padding: 0.45rem 1rem;
   white-space: nowrap;
@@ -950,10 +922,6 @@
     left: 1rem;
     right: 1rem;
     width: auto;
-  }
-  .getStrip {
-    border-radius: 1rem;
-    font-size: 0.8125rem;
   }
   .skeleton {
     padding: 2rem 1.25rem;
