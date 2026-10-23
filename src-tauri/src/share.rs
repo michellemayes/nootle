@@ -8,10 +8,10 @@
 //!
 //! The AI connector lets Claude and other cloud AI clients read the shares the
 //! user ticks for it, through nootle.ai's MCP server. Its list of those shares,
-//! with their keys, is sealed the same way under a key of its own, which only
-//! the connector link holds. The AI client sends that link with each request,
-//! so nootle.ai can open the notes in memory to answer it, and never stores
-//! the key.
+//! with their keys, is sealed the same way under a key of its own, which the
+//! user pastes when their AI client signs in to nootle.ai/mcp. The client's
+//! token carries it with each request, so nootle.ai can open the notes in
+//! memory to answer it, and never stores the key.
 
 use crate::db::{Database, MeetingShare};
 use crate::export::meeting_as_markdown;
@@ -235,15 +235,26 @@ pub fn revoke_after_delete(db: &Arc<Database>, meeting_id: &str) {
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Connector {
     id: String,
-    /// Opens the connector's list of shares, base64url. Only the link holds it.
+    /// Opens the connector's list of shares, base64url. Only AI clients signed in with it hold it.
     key: String,
     /// Lets this Mac update or delete the connector.
     token: String,
 }
 
+/// What a person needs to connect an AI app: the MCP server's URL, and the
+/// key they paste when it asks them to sign in.
+#[derive(Debug, serde::Serialize)]
+pub struct ConnectorAccess {
+    pub server_url: String,
+    pub key: String,
+}
+
 impl Connector {
-    fn url(&self) -> String {
-        format!("{SHARE_SITE}/mcp/{}.{}", self.id, self.key)
+    fn access(&self) -> ConnectorAccess {
+        ConnectorAccess {
+            server_url: format!("{SHARE_SITE}/mcp"),
+            key: format!("{}.{}", self.id, self.key),
+        }
     }
 
     fn path(&self) -> String {
@@ -280,14 +291,14 @@ fn sealed_connector_list(db: &Database, key: &str) -> Result<serde_json::Value, 
     Ok(seal(Key::<Aes256Gcm>::from_slice(&key), &list))
 }
 
-/// The connector link to paste into an AI client, if the connector is on.
-pub fn connector_url(db: &Database) -> Result<Option<String>, String> {
-    Ok(connector(db)?.map(|c| c.url()))
+/// How to connect an AI app to the connector, if it's on.
+pub fn connector_access(db: &Database) -> Result<Option<ConnectorAccess>, String> {
+    Ok(connector(db)?.map(|c| c.access()))
 }
 
-/// Turns the connector on with a new link, replacing (and so revoking) any
-/// earlier one. Returns the link.
-pub async fn create_connector(db: &Arc<Database>) -> Result<String, String> {
+/// Turns the connector on with a new key, replacing (and so revoking) any
+/// earlier one.
+pub async fn create_connector(db: &Arc<Database>) -> Result<ConnectorAccess, String> {
     crate::llm::ensure_may_send(db, "nootle.ai")?;
     let key = BASE64URL.encode(Aes256Gcm::generate_key(OsRng));
     let body = sealed_connector_list(db, &key)?;
@@ -304,9 +315,9 @@ pub async fn create_connector(db: &Arc<Database>) -> Result<String, String> {
     };
     save_connector(db, Some(&connector))?;
     if let Some(old) = old {
-        delete_api(&old.path(), &old.token, "revoke the old connector link").await?;
+        delete_api(&old.path(), &old.token, "revoke the old connector key").await?;
     }
-    Ok(connector.url())
+    Ok(connector.access())
 }
 
 /// Turns the connector off: its link stops working.
@@ -462,13 +473,15 @@ mod tests {
     }
 
     #[test]
-    fn connector_link_carries_its_id_and_key() {
+    fn connector_key_carries_its_id_and_key() {
         let connector = Connector {
             id: "c".into(),
             key: "k".into(),
             token: "t".into(),
         };
-        assert_eq!(connector.url(), "https://nootle.ai/mcp/c.k");
+        let access = connector.access();
+        assert_eq!(access.server_url, "https://nootle.ai/mcp");
+        assert_eq!(access.key, "c.k");
     }
 
     #[test]

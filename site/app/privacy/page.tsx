@@ -131,14 +131,15 @@ export default function PrivacyPage() {
               <p>
                 If you turn on the AI connector, Claude, ChatGPT or another AI app you
                 connect can read the shared notes you choose for it. The app encrypts the
-                list of those notes, with their keys, under a key that only your private
-                connector link holds. Your AI app sends that link with each request, so
-                nootle.ai decrypts those notes in memory only to answer it, then forgets
-                them. Keys and decrypted notes are never stored, though, like any web
-                request, the link may appear in short-lived request logs. Notes you
-                don&apos;t choose for the connector stay unreadable to nootle.ai.
-                Resetting or turning off the connector in the app stops the old link
-                working.
+                list of those notes, with their keys, under your private connector key.
+                You paste that key once when your AI app signs in to nootle.ai; the
+                sign-in token the AI app then holds carries it, sealed so only nootle.ai
+                can open it. Your AI app sends that token with each request, so nootle.ai
+                decrypts those notes in memory only to answer it, then forgets them.
+                nootle.ai has no accounts and stores no keys, tokens or decrypted notes.
+                Notes you don&apos;t choose for the connector stay unreadable to
+                nootle.ai. Resetting or turning off the connector in the app signs every
+                AI app out.
               </p>
             </div>
 

@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.0] - 2026-10-23
+
+### Bug Fixes
+
+- **site:** Remove "Made with Nootle" strip from shared notes page (#207) ([98a26a0](https://github.com/michellemayes/nootle/commit/98a26a0532979655124520a843a68b4530772496))
+
+### CI
+
+- Stop jobs hanging on slow apt mirrors and cut wasted minutes (#209) ([402e12f](https://github.com/michellemayes/nootle/commit/402e12faf8257666d4375cdfc9bfdd1b0e90a093))
+
+### Features
+
+- **share:** Let cloud AI apps read shared meetings through an AI connector (#208) ([3ab9555](https://github.com/michellemayes/nootle/commit/3ab955583f70b6ffe75d61b80cf797b4895c7d08))
+
 ## [0.19.1] - 2026-10-22
 
 ### Bug Fixes

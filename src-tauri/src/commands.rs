@@ -1614,19 +1614,23 @@ pub async fn unshare_meeting(db: State<'_, DbState>, meeting_id: String) -> Resu
     crate::share::unshare_meeting(&db, &meeting_id).await
 }
 
-/// The AI connector's link, if it's on.
+/// How to connect an AI app to the AI connector, if it's on.
 #[tauri::command(async)]
-pub fn get_ai_connector(db: State<'_, DbState>) -> Result<Option<String>, String> {
-    crate::share::connector_url(&db)
+pub fn get_ai_connector(
+    db: State<'_, DbState>,
+) -> Result<Option<crate::share::ConnectorAccess>, String> {
+    crate::share::connector_access(&db)
 }
 
-/// Turns the AI connector on with a new link, revoking any earlier one.
+/// Turns the AI connector on with a new key, revoking any earlier one.
 #[tauri::command]
-pub async fn create_ai_connector(db: State<'_, DbState>) -> Result<String, String> {
+pub async fn create_ai_connector(
+    db: State<'_, DbState>,
+) -> Result<crate::share::ConnectorAccess, String> {
     crate::share::create_connector(&db).await
 }
 
-/// Turns the AI connector off, so its link stops working.
+/// Turns the AI connector off, so its key stops working.
 #[tauri::command]
 pub async fn delete_ai_connector(db: State<'_, DbState>) -> Result<(), String> {
     crate::share::delete_connector(&db).await

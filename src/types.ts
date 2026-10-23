@@ -419,6 +419,13 @@ export interface Commitment {
 }
 
 /** A meeting's share link on nootle.ai; `url` carries the decryption key after `#`. */
+/** How to connect an AI app to the AI connector (nootle.ai's MCP server). */
+export interface ConnectorAccess {
+  server_url: string;
+  /** Pasted when the AI app asks you to sign in. */
+  key: string;
+}
+
 export interface MeetingShare {
   meeting_id: string;
   share_id: string;
