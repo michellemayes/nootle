@@ -55,6 +55,9 @@ function ShotFigure({ shot }: { shot: (typeof SHOTS)[number] }) {
         width={1600}
         height={1060}
         priority={shot.id === "library"}
+        // Fetch every tab up front so switching never waits on the network; the rest queue behind the first.
+        loading="eager"
+        fetchPriority={shot.id === "library" ? "high" : "low"}
         className="w-full h-auto"
       />
       <figcaption className="mt-4 text-center text-[var(--color-text-secondary)]">{shot.caption}</figcaption>
@@ -137,8 +140,9 @@ export function Screenshots() {
           })}
         </div>
 
-        <div data-reveal className="relative mx-auto max-w-5xl">
-          {/* Every panel stays in the HTML, inactive ones hidden, so crawlers and agents read each caption and alt text. */}
+        <div data-reveal className="relative mx-auto grid max-w-5xl">
+          {/* Every panel stays in the HTML so crawlers and agents read each caption and alt text. Panels share one grid
+              cell and inactive ones are only invisible, not display:none, so a switch never waits on layout or a reflow. */}
           {SHOTS.map((s) => {
             const selected = s.id === shot.id;
             return (
@@ -146,7 +150,7 @@ export function Screenshots() {
                 key={s.id}
                 id={`screenshot-${s.id}`}
                 role="tabpanel"
-                hidden={!selected}
+                className={`[grid-area:1/1] ${selected ? "" : "invisible"}`}
                 initial={false}
                 animate={selected ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 12, scale: 0.98 }}
                 transition={{ duration: 0.3, ease: EASE_OUT }}
