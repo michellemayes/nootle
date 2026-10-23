@@ -7,36 +7,39 @@ import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CopyButton } from "@/components/CopyButton";
 import { useBusyAction } from "@/hooks/useBusyAction";
+import type { ConnectorAccess } from "@/types";
 
 /**
- * The AI connector: a private nootle.ai MCP link that lets Claude and other
- * cloud AI apps read the shared meetings you tick for it in the Share menu.
+ * The AI connector: lets Claude and other cloud AI apps read the shared
+ * meetings you tick for it in the Share menu, through nootle.ai's MCP server.
+ * You sign in there with the connector's key, so in a team workspace everyone
+ * connects to their own meetings.
  */
 export function AiConnectorCard() {
-  const [url, setUrl] = useState<string | null>(null);
+  const [access, setAccess] = useState<ConnectorAccess | null>(null);
   const { busy, error, run: act } = useBusyAction();
   const [confirming, setConfirming] = useState<keyof typeof dialogs | null>(null);
 
   useEffect(() => {
-    invoke<string | null>("get_ai_connector").then(setUrl).catch(() => setUrl(null));
+    invoke<ConnectorAccess | null>("get_ai_connector").then(setAccess).catch(() => setAccess(null));
   }, []);
 
-  const create = () => act(async () => setUrl(await invoke<string>("create_ai_connector")));
+  const create = () => act(async () => setAccess(await invoke<ConnectorAccess>("create_ai_connector")));
   const turnOff = () =>
     act(async () => {
       await invoke("delete_ai_connector");
-      setUrl(null);
+      setAccess(null);
     });
   const dialogs = {
     reset: {
-      title: "Reset the connector link?",
-      description: "The current link stops working. Paste the new one into your AI apps.",
-      confirmLabel: "Reset link",
+      title: "Reset the connector key?",
+      description: "AI apps signed in with the current key lose access. Sign in again with the new one.",
+      confirmLabel: "Reset key",
       onConfirm: create,
     },
     off: {
       title: "Turn off the AI connector?",
-      description: "AI apps using the link lose access to your shared meetings. The share links themselves keep working.",
+      description: "AI apps signed in with your key lose access to your shared meetings. The share links themselves keep working.",
       confirmLabel: "Turn off",
       onConfirm: turnOff,
     },
@@ -52,42 +55,53 @@ export function AiConnectorCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {url ? (
+        {access ? (
           <>
-            <div className="flex items-center gap-1">
-              <Input readOnly value={url} className="h-8 text-xs" onFocus={(e) => e.target.select()} aria-label="Connector link" />
-              <CopyButton text={url} />
+            <div className="space-y-1">
+              <p className="text-xs font-medium">Server URL</p>
+              <div className="flex items-center gap-1">
+                <Input readOnly value={access.server_url} className="h-8 text-xs" onFocus={(e) => e.target.select()} aria-label="Server URL" />
+                <CopyButton text={access.server_url} />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-medium">Your key</p>
+              <div className="flex items-center gap-2">
+                <Input readOnly type="password" value={access.key} className="h-8 text-xs" aria-label="Connector key" />
+                <CopyButton text={access.key} variant="button" label="Copy key" />
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Add it as a custom connector (in Claude: Settings → Connectors → Add custom connector). Keep it private:
-              the link holds the key to the meetings it lists. nootle.ai unlocks them only while answering your AI,
-              and never stores the key.
+              Add the server URL as a custom connector (in Claude: Settings → Connectors → Add custom connector), then
+              paste your key when it asks you to sign in. On a Claude Team or Enterprise plan, an owner adds the
+              connector once and each member signs in with their own key. Keep the key private: it unlocks the
+              meetings it lists. nootle.ai uses it only while answering your AI, and never stores it.
             </p>
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Nootle makes a private link to nootle.ai's MCP server for you to add to your AI app. Notes stay encrypted on
-            nootle.ai, and the link holds the key.
+            Nootle makes a private key for nootle.ai's MCP server, which you paste when your AI app asks you to sign in.
+            Notes stay encrypted on nootle.ai, and only the key unlocks them.
           </p>
         )}
 
         {error && <p className="text-xs text-destructive">{error}</p>}
 
         <div className="flex justify-end gap-2">
-          {url ? (
+          {access ? (
             <>
               <Button variant="ghost" size="sm" className="text-destructive" disabled={busy} onClick={() => setConfirming("off")}>
                 Turn off
               </Button>
               <Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirming("reset")}>
                 {busy && <RotateCw className="h-3 w-3 animate-spin" />}
-                Reset link
+                Reset key
               </Button>
             </>
           ) : (
             <Button size="sm" disabled={busy} onClick={create}>
               {busy && <RotateCw className="h-3 w-3 animate-spin" />}
-              Create connector link
+              Create connector key
             </Button>
           )}
         </div>

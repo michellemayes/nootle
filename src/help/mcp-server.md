@@ -10,11 +10,11 @@ Add `--read-only` to the command (`nootle-cli mcp --read-only`) to offer only to
 
 ### Claude on the web, ChatGPT, and other cloud AI apps
 
-Cloud AI apps can't run `nootle-cli` on your Mac, so nootle.ai hosts a separate, read-only MCP server for meetings you've **shared**. In Settings → Integrations → **AI connector**, click **Create connector link** and add the link as a custom connector (in Claude: Settings → Connectors → Add custom connector). Then tick **Let AI connectors read this** in a meeting's Share menu and click **Create link** or **Update link**. Only those meetings are listed.
+Cloud AI apps can't run `nootle-cli` on your Mac, so nootle.ai hosts a separate, read-only MCP server for meetings you've **shared**. Add `https://nootle.ai/mcp` as a custom connector (in Claude: Settings → Connectors → Add custom connector). When it asks you to sign in, paste the key from Settings → Integrations → **AI connector** (click **Create connector key** the first time). On a Claude Team or Enterprise plan, an owner adds the connector once and each member signs in with their own key. Then tick **Let AI connectors read this** in a meeting's Share menu and click **Create link** or **Update link**. Only those meetings are listed.
 
 Its tools are **list_shared_meetings**, **get_shared_meeting**, **search_shared_meetings**, and **read_share_link** (reads any Nootle share link you paste into the chat).
 
-Shares stay encrypted on nootle.ai. The connector link holds the key, so treat it like a password: nootle.ai decrypts only while answering your AI and never stores the key. **Reset link** makes a new link and stops the old one working.
+Shares stay encrypted on nootle.ai. Your key unlocks them, so treat it like a password: nootle.ai decrypts only while answering your AI and never stores the key. **Reset key** makes a new key and signs every AI app out.
 
 ## What is MCP?
 

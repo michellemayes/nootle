@@ -1,8 +1,8 @@
-import { bearer, handleMcp, methodNotAllowed } from "@/lib/mcp";
+import { handleMcp, methodNotAllowed } from "@/lib/mcp";
 
-/** The MCP server at the connector link, `/mcp/<id>.<key>`, for clients that only take a URL. */
+/** The MCP server at an old-style connector link, `/mcp/<id>.<key>`, which carries the key itself. */
 export async function POST(request: Request, { params }: { params: Promise<{ credential: string }> }) {
-  return handleMcp(request, bearer(request) ?? (await params).credential);
+  return handleMcp(request, (await params).credential);
 }
 export const GET = methodNotAllowed;
 export const DELETE = methodNotAllowed;
