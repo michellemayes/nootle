@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { motion, useInView, useReducedMotion } from "framer-motion";
-import { AnimateIn } from "@/components/AnimateIn";
 import { EASE_OUT } from "@/components/motion";
 
 const SHOTS = [
@@ -82,14 +81,14 @@ export function Screenshots() {
   return (
     <section ref={sectionRef} aria-label="Screenshots" className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
-        <AnimateIn>
+        <div data-reveal>
           <h2 className="font-[family-name:var(--font-outfit)] text-4xl md:text-5xl font-bold text-center mb-4 text-[var(--color-text)]">
             See it in action
           </h2>
           <p className="text-xl text-[var(--color-text-secondary)] text-center mb-10 max-w-2xl mx-auto">
             Record meetings, get transcripts with speaker labels, then let AI surface what matters.
           </p>
-        </AnimateIn>
+        </div>
 
         <div
           role="tablist"
@@ -138,7 +137,7 @@ export function Screenshots() {
           })}
         </div>
 
-        <AnimateIn delay={0.1} className="relative mx-auto max-w-5xl">
+        <div data-reveal className="relative mx-auto max-w-5xl">
           {/* Every panel stays in the HTML, inactive ones hidden, so crawlers and agents read each caption and alt text. */}
           {SHOTS.map((s) => {
             const selected = s.id === shot.id;
@@ -163,7 +162,7 @@ export function Screenshots() {
             className="absolute -inset-8 -z-10 rounded-3xl opacity-20 blur-[60px]"
             style={{ background: "linear-gradient(135deg, var(--color-accent), var(--color-cyan))" }}
           />
-        </AnimateIn>
+        </div>
       </div>
     </section>
   );

@@ -11,12 +11,13 @@ import { SystemRequirements } from "@/components/SystemRequirements";
 import { FAQ } from "@/components/FAQ";
 import { SponsorCTA } from "@/components/SponsorCTA";
 import { SiteFooter } from "@/components/SiteFooter";
+import { PageMotion } from "@/components/PageMotion";
 
 export default function Home() {
   return (
     <>
       <Navbar />
-      <main id="main-content" className="relative overflow-hidden">
+      <PageMotion id="main-content" className="relative overflow-hidden">
         <Hero />
         <Stats />
         <Introduction />
@@ -28,7 +29,7 @@ export default function Home() {
         <SystemRequirements />
         <FAQ />
         <SponsorCTA />
-      </main>
+      </PageMotion>
       <SiteFooter />
     </>
   );

@@ -1,15 +1,14 @@
-import { AnimateIn } from "@/components/AnimateIn";
 
 export function Introduction() {
   return (
     <section aria-label="About Nootle" className="py-20 px-6">
       <div className="max-w-3xl mx-auto">
-        <AnimateIn>
+        <div data-reveal>
           <h2 className="font-[family-name:var(--font-outfit)] text-3xl md:text-4xl font-bold text-center mb-8 text-[var(--color-text)]">
             What is Nootle?
           </h2>
-        </AnimateIn>
-        <AnimateIn delay={0.1}>
+        </div>
+        <div data-reveal>
           <div className="space-y-5 text-[var(--color-text-secondary)] text-base leading-relaxed">
             <p>
               Nootle is a free, open-source AI meeting recorder for Mac users who spend their
@@ -60,7 +59,7 @@ export function Introduction() {
               .
             </p>
           </div>
-        </AnimateIn>
+        </div>
       </div>
     </section>
   );

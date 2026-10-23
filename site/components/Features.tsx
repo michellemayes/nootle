@@ -1,6 +1,5 @@
 import type { ComponentType } from "react";
 import { Check } from "lucide-react";
-import { AnimateIn } from "@/components/AnimateIn";
 import { SpotlightCard } from "@/components/SpotlightCard";
 import {
   EnrichVignette,
@@ -117,22 +116,22 @@ export function Features() {
   return (
     <section id="features" aria-label="Meeting recording features" className="py-24 px-6 bg-[var(--color-surface)] scroll-mt-16">
       <div className="max-w-6xl mx-auto">
-        <AnimateIn>
+        <div data-reveal>
           <h2 className={`${outfit} text-4xl md:text-5xl font-bold text-center mb-4 text-[var(--color-text)]`}>
             Meeting recording features
           </h2>
-        </AnimateIn>
-        <AnimateIn delay={0.1}>
+        </div>
+        <div data-reveal>
           <p className="text-center text-[var(--color-text-secondary)] text-lg mb-16 max-w-xl mx-auto">
             Everything you need to capture, understand, and act on your meetings, and now your docs too.
           </p>
-        </AnimateIn>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-          {spotlights.map((feature, i) => {
+          {spotlights.map((feature) => {
             const Vignette = feature.vignette;
             return (
-              <AnimateIn key={feature.title} className={feature.span} delay={(i % 3) * 0.08}>
+              <div key={feature.title} data-reveal className={feature.span}>
                 <SpotlightCard id={feature.id} className="p-5">
                   <Vignette />
                   <div className="px-1 pt-5 pb-1">
@@ -147,19 +146,19 @@ export function Features() {
                     <p className="text-[var(--color-text-secondary)] text-sm leading-relaxed">{feature.description}</p>
                   </div>
                 </SpotlightCard>
-              </AnimateIn>
+              </div>
             );
           })}
         </div>
 
-        <AnimateIn className="mt-20 mb-10">
+        <div data-reveal className="mt-20 mb-10">
           <h3 className={`${outfit} text-2xl md:text-3xl font-bold text-center text-[var(--color-text)]`}>
             And everything around the call
           </h3>
-        </AnimateIn>
+        </div>
         <div className="grid gap-10 md:grid-cols-3">
-          {groups.map((group, g) => (
-            <AnimateIn key={group.heading} delay={g * 0.1}>
+          {groups.map((group) => (
+            <div key={group.heading} data-reveal>
               <p className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">
                 {group.heading}
               </p>
@@ -175,7 +174,7 @@ export function Features() {
                   </li>
                 ))}
               </ul>
-            </AnimateIn>
+            </div>
           ))}
         </div>
       </div>
