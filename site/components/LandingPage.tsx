@@ -4,7 +4,8 @@ import { Navbar } from "@/components/Navbar";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CopyCommand } from "@/components/CopyCommand";
 import { DownloadButton } from "@/components/DownloadButton";
-import { LandingMotion } from "@/components/LandingMotion";
+import { Doodles, Squiggle } from "@/components/Doodles";
+import { PageMotion } from "@/components/PageMotion";
 import { linkClass, outfit } from "@/components/site-config";
 import ogImage from "@/app/opengraph-image.png";
 
@@ -81,14 +82,15 @@ function DateStamp({ date }: { date: string }) {
 
 export function LandingPage({ content }: { content: LandingContent }) {
   const { eyebrow, headline, subhead, answer, published, updated, why, table, faqs, disclaimer } = content;
+  const splitAt = headline.lastIndexOf(" ") + 1;
 
   return (
     <>
       <noscript>
-        <style>{"[data-hero]{opacity:1}"}</style>
+        <style>{"[data-hero],[data-wiggle],[data-doodle]{opacity:1}[data-squiggle] path{stroke-dashoffset:0}"}</style>
       </noscript>
       <Navbar />
-      <LandingMotion id="main-content" className="relative overflow-hidden">
+      <PageMotion id="main-content" className="relative overflow-hidden">
         <section aria-label="Introduction" className="relative pt-36 pb-16 px-6">
           <div
             aria-hidden="true"
@@ -99,15 +101,17 @@ export function LandingPage({ content }: { content: LandingContent }) {
                 "radial-gradient(55% 50% at 50% 0%, color-mix(in srgb, var(--color-accent) 18%, transparent), transparent 70%)",
             }}
           />
+          <Doodles />
           <div className="max-w-3xl mx-auto text-center">
-            <p data-hero className="text-sm font-semibold uppercase tracking-wider text-[var(--color-accent)] mb-4">
+            <p data-wiggle className="inline-block text-sm font-semibold uppercase tracking-wider text-[var(--color-accent)] mb-4">
               {eyebrow}
             </p>
             <h1
               data-hero
               className={`${outfit} text-4xl md:text-6xl font-extrabold tracking-tight mb-6 text-[var(--color-text)]`}
             >
-              {headline}
+              {headline.slice(0, splitAt)}
+              <Squiggle>{headline.slice(splitAt)}</Squiggle>
             </h1>
             <p data-hero className="text-lg md:text-xl text-[var(--color-text-secondary)] mb-6 max-w-2xl mx-auto">
               {subhead}
@@ -119,7 +123,7 @@ export function LandingPage({ content }: { content: LandingContent }) {
               </a>{" "}
               &middot; Published <DateStamp date={published} /> &middot; Updated <DateStamp date={updated} />
             </p>
-            <div data-hero className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <div data-hero data-jelly className="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <DownloadButton />
               <a
                 href="#install"
@@ -157,7 +161,8 @@ export function LandingPage({ content }: { content: LandingContent }) {
                 <li key={point.title} className="grid grid-cols-[2.5rem_1fr] gap-4">
                   <span
                     aria-hidden="true"
-                    className={`${outfit} text-2xl font-bold text-[var(--color-accent)] tabular-nums`}
+                    data-pop
+                    className={`${outfit} inline-block text-2xl font-bold text-[var(--color-accent)] tabular-nums`}
                   >
                     {String(i + 1).padStart(2, "0")}
                   </span>
@@ -283,7 +288,7 @@ export function LandingPage({ content }: { content: LandingContent }) {
             <CopyCommand />
           </div>
         </section>
-      </LandingMotion>
+      </PageMotion>
       <SiteFooter />
     </>
   );

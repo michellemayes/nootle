@@ -1,11 +1,10 @@
 import { Heart } from "lucide-react";
-import { AnimateIn } from "@/components/AnimateIn";
 import { SPONSOR_URL } from "@/components/site-config";
 
 export function SponsorCTA() {
   return (
     <section aria-label="Support Nootle" className="py-24 px-6">
-      <AnimateIn>
+      <div data-reveal>
         <div className="max-w-2xl mx-auto text-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-8 py-12 md:px-16 md:py-16 relative overflow-hidden">
           <div
             aria-hidden="true"
@@ -33,7 +32,7 @@ export function SponsorCTA() {
             </a>
           </div>
         </div>
-      </AnimateIn>
+      </div>
     </section>
   );
 }

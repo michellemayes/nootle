@@ -20,7 +20,6 @@ import { BsMicrosoftTeams } from "react-icons/bs";
 import { HiOutlineMail } from "react-icons/hi";
 import { Cloud, Globe, Route, Terminal, Video, Zap } from "lucide-react";
 import type { ComponentType } from "react";
-import { AnimateIn } from "@/components/AnimateIn";
 
 type Item = { name: string; color: string; icon: ComponentType<{ size?: number }> };
 
@@ -99,26 +98,26 @@ export function Integrations() {
   return (
     <section aria-label="Meeting app integrations" className="py-20 bg-[var(--color-surface)]">
       <div className="max-w-4xl mx-auto px-6">
-        <AnimateIn>
+        <div data-reveal>
           <p className="font-[family-name:var(--font-outfit)] text-sm font-semibold tracking-[0.2em] uppercase text-center mb-4 text-[var(--color-accent)]">
             Integrations
           </p>
-        </AnimateIn>
-        <AnimateIn delay={0.05}>
+        </div>
+        <div data-reveal>
           <h2 className="font-[family-name:var(--font-outfit)] text-3xl md:text-4xl font-bold text-center mb-4 text-[var(--color-text)]">
             Meeting app integrations
           </h2>
-        </AnimateIn>
-        <AnimateIn delay={0.1}>
+        </div>
+        <div data-reveal>
           <p className="text-center text-[var(--color-text-secondary)] text-base mb-14 max-w-lg mx-auto">
             Works with whatever your call runs on, the AI you already use, and the tools your notes belong in.
           </p>
-        </AnimateIn>
+        </div>
       </div>
 
       <div className="space-y-8">
-        {rows.map((row, i) => (
-          <AnimateIn key={row.label} delay={0.1 + i * 0.08}>
+        {rows.map((row) => (
+          <div key={row.label} data-reveal>
             <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-text-secondary)]">
               {row.label}
             </p>
@@ -131,7 +130,7 @@ export function Integrations() {
                 <Group items={row.items} hidden />
               </div>
             </div>
-          </AnimateIn>
+          </div>
         ))}
       </div>
     </section>

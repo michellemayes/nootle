@@ -2,7 +2,6 @@
 
 import { useRef } from "react";
 import { motion, useScroll, useSpring } from "framer-motion";
-import { AnimateIn } from "@/components/AnimateIn";
 import { EASE_OUT } from "@/components/motion";
 
 const steps = [
@@ -46,11 +45,11 @@ export function HowItWorks() {
   return (
     <section id="how-it-works" aria-label="How Nootle works" className="py-24 px-6 scroll-mt-16">
       <div className="max-w-3xl mx-auto">
-        <AnimateIn>
+        <div data-reveal>
           <h2 className="font-[family-name:var(--font-outfit)] text-4xl md:text-5xl font-bold text-center mb-16 text-[var(--color-text)]">
             How Nootle works
           </h2>
-        </AnimateIn>
+        </div>
 
         <div ref={listRef} className="relative">
           <div aria-hidden="true" className="absolute left-6 top-6 bottom-6 w-px bg-[var(--color-border)]" />

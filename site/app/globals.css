@@ -142,7 +142,13 @@ body::after {
 
 /* Landing-page hero start state; LandingMotion plays it in. Reduced motion skips both. */
 @media (prefers-reduced-motion: no-preference) {
-  [data-hero] {
+  [data-hero],
+  [data-wiggle],
+  [data-doodle] {
     opacity: 0;
+  }
+  [data-squiggle] path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
   }
 }

@@ -2,7 +2,6 @@
 
 import { motion, type Variants } from "framer-motion";
 import { Check, X } from "lucide-react";
-import { AnimateIn } from "@/components/AnimateIn";
 
 type Cell = { ok?: boolean; text?: string };
 
@@ -82,19 +81,19 @@ export function Comparison() {
   return (
     <section id="compare" aria-label="Why choose Nootle" className="py-24 px-6 scroll-mt-16">
       <div className="max-w-5xl mx-auto">
-        <AnimateIn>
+        <div data-reveal>
           <h2 className="font-[family-name:var(--font-outfit)] text-3xl md:text-4xl font-bold text-center mb-4 text-[var(--color-text)]">
             How Nootle compares
           </h2>
-        </AnimateIn>
-        <AnimateIn delay={0.1}>
+        </div>
+        <div data-reveal>
           <p className="text-center text-[var(--color-text-secondary)] text-base mb-12 max-w-2xl mx-auto">
             Cloud recorders like Otter.ai and Fireflies.ai upload your audio to their servers. Nootle records and
             transcribes on your Mac, works offline for capture, and costs nothing.
           </p>
-        </AnimateIn>
+        </div>
 
-        <AnimateIn delay={0.15}>
+        <div data-reveal>
           <div className="overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
@@ -145,7 +144,7 @@ export function Comparison() {
           <p className="mt-4 text-xs text-center text-[var(--color-text-secondary)]">
             Competitor details are as of October 2026 and change often; check their sites.
           </p>
-        </AnimateIn>
+        </div>
       </div>
     </section>
   );
