@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.0] - 2026-10-23
+
+### Features
+
+- **share:** Sign each person in to the nootle.ai MCP server with OAuth (#211) ([e18e271](https://github.com/michellemayes/nootle/commit/e18e2711c390d44cd16ac3efa417d6e4f75e47db))
+
 ## [0.20.0] - 2026-10-23
 
 ### Bug Fixes
