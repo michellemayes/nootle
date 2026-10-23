@@ -17,7 +17,7 @@ Common issues and how to fix them.
 **No transcript appearing:**
 - Make sure audio is actually being recorded (you should see an active waveform during recording).
 - Transcription runs locally via the Parakeet or Bark model. On first launch, the model may take a moment to load; Bark compiles itself for your Mac the first time, which can take a few minutes.
-- Bark is English only. For meetings in other languages, delete it in Settings → Models and download Parakeet.
+- Bark is English only. For meetings in other languages, download Parakeet in Settings → Models and delete Bark there. While both are downloaded, Bark is the one in use.
 - If the transcript is empty after stopping, check that your microphone is picking up sound (try a different mic if available).
 
 **Inaccurate transcription:**
@@ -53,3 +53,8 @@ See the **MCP Server** tab for detailed MCP troubleshooting.
 **Data location:**
 - Database: `~/Library/Application Support/Nootle/nootle.db`
 - Audio files are stored alongside the database.
+
+**Running low on disk space:**
+- Settings → Models shows how much each model, your meeting audio, and the logs take.
+- Delete models you don't use there. Parakeet's full-precision model alone is about 2.5 GB.
+- **Clean up** frees unfinished model downloads, models older versions of Nootle used, audio from meetings you deleted, and old logs.

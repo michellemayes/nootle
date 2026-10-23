@@ -276,13 +276,17 @@ pub fn get_variant(
     Some((model, variant))
 }
 
-/// Get the local directory path for a model.
-pub fn model_dir(model: &ModelDefinition) -> std::path::PathBuf {
+/// The folder every model's folder is in.
+pub fn models_root() -> std::path::PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("Nootle")
         .join("models")
-        .join(model.dir_name)
+}
+
+/// Get the local directory path for a model.
+pub fn model_dir(model: &ModelDefinition) -> std::path::PathBuf {
+    models_root().join(model.dir_name)
 }
 
 /// Check if all files for a variant are present in a given directory.
@@ -319,24 +323,85 @@ fn migrate_legacy_files_in(dir: &std::path::Path) {
     }
 }
 
-/// The variant on disk, if any.
+/// The variant in use, if any.
 pub fn downloaded_variant(model: &ModelDefinition) -> Option<&'static ModelVariant> {
-    variant_in_dir(&model_dir(model), model)
+    in_use(&installed_variants(model))
 }
 
-/// Variants can share files (Parakeet's quantized files are a subset of its
-/// full-precision ones), so the most complete one in `dir` wins.
-fn variant_in_dir(dir: &std::path::Path, model: &ModelDefinition) -> Option<&'static ModelVariant> {
-    model
+/// Of the variants on disk, the one transcription loads (Bark before
+/// Parakeet).
+pub fn in_use(installed: &[&'static ModelVariant]) -> Option<&'static ModelVariant> {
+    installed
+        .iter()
+        .find(|v| v.id == crate::transcription::BARK_VARIANT)
+        .or(installed.first())
+        .copied()
+}
+
+/// Every variant on disk.
+pub fn installed_variants(model: &ModelDefinition) -> Vec<&'static ModelVariant> {
+    installed_variants_in(&model_dir(model), model)
+}
+
+/// Variants can share file names (Parakeet's quantized files are a subset of
+/// its full-precision ones), so a variant whose files are all part of a more
+/// complete one on disk is that one.
+pub(crate) fn installed_variants_in(
+    dir: &std::path::Path,
+    model: &ModelDefinition,
+) -> Vec<&'static ModelVariant> {
+    let present: Vec<_> = model
         .variants
         .iter()
         .filter(|v| is_variant_in_dir(dir, v))
-        .max_by_key(|v| v.files.len())
+        .collect();
+    present
+        .iter()
+        .filter(|v| {
+            !present.iter().any(|w| {
+                w.files.len() > v.files.len()
+                    && v.files
+                        .iter()
+                        .all(|f| w.files.iter().any(|g| g.local_name == f.local_name))
+            })
+        })
+        .copied()
+        .collect()
+}
+
+/// Whether two variants save different files under the same name, so only
+/// one of them can be on disk at a time.
+pub fn variants_conflict(a: &ModelVariant, b: &ModelVariant) -> bool {
+    a.id != b.id
+        && a.files.iter().any(|f| {
+            b.files
+                .iter()
+                .any(|g| g.local_name == f.local_name && g.sha256 != f.sha256)
+        })
+}
+
+/// The entries directly inside the model folder that a variant's files live
+/// under, e.g. "bark" for "bark/vocab.json".
+pub fn top_level_entries(variant: &ModelVariant) -> impl Iterator<Item = &'static str> {
+    variant
+        .files
+        .iter()
+        .map(|f| f.local_name.split('/').next().unwrap_or(f.local_name))
 }
 
 /// Whether this Mac can run a variant.
 pub fn is_variant_supported(variant: &ModelVariant) -> bool {
     variant.id != crate::transcription::BARK_VARIANT || crate::transcription::bark_supported()
+}
+
+/// Puts a variant's files (empty) in `dir`.
+#[cfg(test)]
+pub(crate) fn install(dir: &std::path::Path, variant: &ModelVariant) {
+    for file in variant.files {
+        let path = dir.join(file.local_name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"").unwrap();
+    }
 }
 
 #[cfg(test)]
@@ -395,7 +460,40 @@ mod tests {
         for file in full.files {
             std::fs::write(dir.path().join(file.local_name), b"").unwrap();
         }
-        assert_eq!(variant_in_dir(dir.path(), model).unwrap().id, "full");
+        let installed = installed_variants_in(dir.path(), model);
+        assert_eq!(installed.len(), 1);
+        assert_eq!(installed[0].id, "full");
+    }
+
+    #[test]
+    fn bark_and_parakeet_can_both_be_installed() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = get_model("parakeet-tdt-0.6b-v3").unwrap();
+        for id in ["int8", "bark"] {
+            install(dir.path(), get_variant(model.id, id).unwrap().1);
+        }
+        let ids: Vec<_> = installed_variants_in(dir.path(), model)
+            .iter()
+            .map(|v| v.id)
+            .collect();
+        assert_eq!(ids, ["int8", "bark"]);
+    }
+
+    #[test]
+    fn quantized_and_full_conflict_but_bark_does_not() {
+        let model = get_model("parakeet-tdt-0.6b-v3").unwrap();
+        let [int8, full, bark] = [&model.variants[0], &model.variants[1], &model.variants[2]];
+        assert!(variants_conflict(int8, full));
+        assert!(!variants_conflict(int8, bark));
+        assert!(!variants_conflict(full, bark));
+    }
+
+    #[test]
+    fn bark_lives_in_its_own_folder() {
+        let (_, bark) = get_variant("parakeet-tdt-0.6b-v3", "bark").unwrap();
+        let mut tops: Vec<_> = top_level_entries(bark).collect();
+        tops.dedup();
+        assert_eq!(tops, ["bark", crate::vad::MODEL_FILE]);
     }
 
     #[test]
