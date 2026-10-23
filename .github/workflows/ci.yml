@@ -10,9 +10,19 @@ permissions:
   contents: read
   pull-requests: read
 
+# Tauri build dependencies on Linux; one list keeps both jobs on one apt cache.
+env:
+  TAURI_LINUX_DEPS: libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libasound2-dev libssl-dev pkg-config
+
+# A new push to a PR cancels the run it replaces; runs on main always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
     steps:
@@ -30,6 +40,7 @@ jobs:
   # Type-checks and builds the frontend on every PR, not just Rust changes.
   check-frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -47,6 +58,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
@@ -54,12 +66,9 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
       - name: Install system libraries
-        run: |
-          # The runner image's Microsoft package source sometimes answers 403,
-          # failing the update; nothing here installs from it.
-          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.*
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libasound2-dev libssl-dev pkg-config
+        uses: ./.github/actions/apt-install
+        with:
+          packages: ${{ env.TAURI_LINUX_DEPS }}
       - name: Run tests
         run: cd src-tauri && cargo test
 
@@ -70,6 +79,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
@@ -78,12 +88,9 @@ jobs:
           workspaces: "./src-tauri -> target"
           key: golden-release
       - name: Install system libraries
-        run: |
-          # The runner image's Microsoft package source sometimes answers 403,
-          # failing the update; nothing here installs from it.
-          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.*
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libasound2-dev libssl-dev pkg-config
+        uses: ./.github/actions/apt-install
+        with:
+          packages: ${{ env.TAURI_LINUX_DEPS }}
       - name: Cache models
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
@@ -94,10 +101,13 @@ jobs:
       - name: Golden tests
         run: cd src-tauri && XDG_DATA_HOME=~/test-models cargo test --release --test models_test -- --ignored --nocapture
 
+  # macOS minutes bill at 10x Linux, so this runs on PRs only. Changes reach
+  # main through PRs, and Publish's test job still runs the macOS tests there.
   check-rust:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' && github.event_name == 'pull_request'
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
