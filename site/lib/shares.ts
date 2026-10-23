@@ -49,11 +49,16 @@ export function parseSealed(body: unknown): Sealed | null {
   return { iv, ciphertext };
 }
 
-/** Decrypts what the app sealed with `key` (base64url), or null if the key doesn't fit. */
-export function openSealed({ iv, ciphertext }: Sealed, key: string): string | null {
+/**
+ * Decrypts what was sealed with `key` (base64url, or raw bytes) and `aad`, or
+ * null if either doesn't fit.
+ */
+export function openSealed({ iv, ciphertext }: Sealed, key: string | Buffer, aad?: string): string | null {
   try {
     const data = Buffer.from(ciphertext, "base64url");
-    const decipher = createDecipheriv("aes-256-gcm", Buffer.from(key, "base64url"), Buffer.from(iv, "base64url"));
+    const keyBytes = typeof key === "string" ? Buffer.from(key, "base64url") : key;
+    const decipher = createDecipheriv("aes-256-gcm", keyBytes, Buffer.from(iv, "base64url"));
+    if (aad) decipher.setAAD(Buffer.from(aad));
     decipher.setAuthTag(data.subarray(data.length - TAG_BYTES));
     return Buffer.concat([decipher.update(data.subarray(0, data.length - TAG_BYTES)), decipher.final()]).toString("utf8");
   } catch {

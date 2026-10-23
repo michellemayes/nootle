@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { CopyButton } from "@/components/CopyButton";
 import { formatDate } from "@/lib/utils";
 import { useBusyAction } from "@/hooks/useBusyAction";
-import type { Meeting, MeetingShare } from "@/types";
+import type { ConnectorAccess, Meeting, MeetingShare } from "@/types";
 
 /**
  * Creates, refreshes, or revokes a link to the meeting's notes on nootle.ai.
@@ -51,7 +51,7 @@ export function ShareMenu({ meeting }: { meeting: Meeting }) {
       onOpenChange={(open) => {
         if (!open) return;
         setError(null);
-        invoke<string | null>("get_ai_connector").then((url) => setHasConnector(url !== null)).catch(() => {});
+        invoke<ConnectorAccess | null>("get_ai_connector").then((access) => setHasConnector(access !== null)).catch(() => {});
       }}
     >
       <PopoverTrigger asChild>

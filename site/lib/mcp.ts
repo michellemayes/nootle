@@ -2,14 +2,15 @@
 // Claude and other cloud AI clients read the meetings a user shared from the
 // Nootle app and chose to let their AI read.
 //
-// The connector link carries `<connector id>.<connector key>`, in its path or
-// as a bearer token. The key opens the connector's list of shares, which
-// holds each share's own key, so a request can decrypt those notes in memory
-// to answer it. Nothing decrypted, and no key, is ever stored here.
+// Each request carries the person's connector credential, `<connector id>.<connector key>`:
+// inside an OAuth access token (lib/oauth.ts) when the client connected to
+// /mcp and signed in, or as is, in the bearer token or an old connector link's
+// path. The key opens the connector's list of shares, which holds each share's
+// own key, so a request can decrypt those notes in memory to answer it.
+// Nothing decrypted, and no key, is ever stored here.
 
-import { connectors, isId, openSealed, shares } from "@/lib/shares";
-
-export { bearer } from "@/lib/shares";
+import { challenge, credentialFromBearer } from "@/lib/oauth";
+import { bearer, connectors, isId, openSealed, shares } from "@/lib/shares";
 
 const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 const SERVER_INFO = { name: "nootle", title: "Nootle shared meetings", version: "1.0.0" };
@@ -153,16 +154,21 @@ const rpcResult = (id: unknown, result: unknown) => Response.json({ jsonrpc: "2.
 const rpcError = (id: unknown, code: number, message: string, status = 200) =>
   Response.json({ jsonrpc: "2.0", id, error: { code, message } }, { status });
 
-/** Handles one MCP POST for the connector `credential` (`<id>.<key>`). */
-export async function handleMcp(request: Request, credential: string | undefined): Promise<Response> {
+/**
+ * Handles one MCP POST, authorized by its bearer token or else `pathCredential`
+ * (an old-style connector link). Without either, the client is pointed at sign-in.
+ */
+export async function handleMcp(request: Request, pathCredential?: string): Promise<Response> {
+  const token = bearer(request);
+  const credential = token ? credentialFromBearer(token) : pathCredential;
   const [message, meetings] = await Promise.all([
     request.json().catch(() => null) as Promise<Json | null>,
     credential ? openConnector(credential) : null,
   ]);
   if (!meetings) {
     return Response.json(
-      { error: "This Nootle connector link isn't valid. Copy it again from Nootle's Settings → Integrations." },
-      { status: 401 },
+      { error: "Sign in to Nootle again: this connector key isn't valid any more." },
+      { status: 401, headers: { "WWW-Authenticate": challenge(new URL(request.url).origin) } },
     );
   }
 
