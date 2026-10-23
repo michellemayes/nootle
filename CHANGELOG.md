@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.23.0] - 2026-10-23
+
+### Features
+
+- **models:** Delete individual models and clean up leftover storage (#215) ([dafe64b](https://github.com/michellemayes/nootle/commit/dafe64b8f2c17d694a30cadb54a69c48cad6d613))
+
 ## [0.22.0] - 2026-10-23
 
 ### Bug Fixes
