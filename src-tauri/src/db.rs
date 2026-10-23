@@ -1955,6 +1955,16 @@ impl Database {
         Ok(meeting)
     }
 
+    /// Every meeting's id and audio file, archived ones included.
+    pub fn meeting_audio_paths(&self) -> Result<Vec<(String, Option<String>)>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare("SELECT id, audio_path FROM meetings")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Meetings newest first, optionally only those whose title or transcript
     /// contains `search`, or that carry the label `label_id`.
     pub fn list_meetings(

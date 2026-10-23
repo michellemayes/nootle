@@ -113,4 +113,4 @@ pnpm tauri dev
 
 [MIT](LICENSE)
 
-Models are downloaded when you pick them, not bundled. [Underdog Bark 3.0 Plus](https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus) is by Conway Research under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/), derived from NVIDIA's [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) and Moondream's [parakeet-ultra](https://huggingface.co/moondream/parakeet-ultra).
+Models are downloaded when you pick them, not bundled, and Settings → Models shows what each takes on disk, deletes the ones you don't use, and cleans up unfinished downloads, audio from deleted meetings, and old logs. [Underdog Bark 3.0 Plus](https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus) is by Conway Research under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/), derived from NVIDIA's [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) and Moondream's [parakeet-ultra](https://huggingface.co/moondream/parakeet-ultra).

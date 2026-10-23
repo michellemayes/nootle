@@ -23,7 +23,8 @@ import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
 import { INSIGHT_ICONS } from "@/lib/insightIcons";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLLM } from "@/hooks/useLLM";
-import { useModelDownload } from "@/hooks/useModelDownload";
+import { useModelDownload, type ModelOnDiskStatus, type StorageUsage } from "@/hooks/useModelDownload";
+import { toast } from "@/components/Toaster";
 import { useTheme } from "@/hooks/useTheme";
 import { useBooleanSetting, useSetting } from "@/hooks/useBooleanSetting";
 import { plural } from "@/lib/utils";
@@ -1489,6 +1490,7 @@ function ModelManagementCard() {
     registry,
     diskStatus,
     progress,
+    refresh,
     downloadModel,
     cancelDownload,
     deleteModel,
@@ -1497,44 +1499,52 @@ function ModelManagementCard() {
   const [selectedVariants, setSelectedVariants] = useState<
     Record<string, string>
   >({});
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    modelId: string;
+    variantId: string;
+    name: string;
+    size: number;
+  } | null>(null);
 
   const isDownloading =
     progress !== null &&
     typeof progress.state === "string" &&
     (progress.state === "downloading" || progress.state === "verifying");
 
-  const getSelectedVariant = (modelId: string): string => {
-    if (selectedVariants[modelId]) return selectedVariants[modelId];
-    const model = registry.find((m) => m.id === modelId);
-    if (!model) return "default";
-    if (model.variants.length === 1) return model.variants[0].id;
-    const int8 = model.variants.find((v) => v.id === "int8");
-    return int8 ? "int8" : model.variants[0].id;
+  const getSelectedVariant = (model: ModelOnDiskStatus): string => {
+    const choice = selectedVariants[model.model_id];
+    if (choice && model.downloadable.includes(choice)) return choice;
+    return model.downloadable.includes("int8") ? "int8" : model.downloadable[0];
   };
 
-  const handleDelete = async (modelId: string) => {
-    setDeleting(modelId);
+  const handleDelete = async () => {
+    if (!pendingDelete) return;
     try {
-      await deleteModel(modelId);
-    } finally {
-      setDeleting(null);
+      await deleteModel(pendingDelete.modelId, pendingDelete.variantId);
+      toast(`Deleted ${pendingDelete.name}, freeing ${formatBytes(pendingDelete.size)}`);
+    } catch (e) {
+      toast(`Couldn't delete ${pendingDelete.name}: ${e}`);
     }
   };
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle>Local models</CardTitle>
         <CardDescription>
           Models for transcription and speaker identification. They run entirely on your Mac.
+          Delete the ones you don't use to free up space.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="divide-y">
-          {diskStatus
-            .map((model) => {
+          {diskStatus.map((model) => {
             const regModel = registry.find((r) => r.id === model.model_id);
+            const variantName = (id: string) =>
+              regModel?.variants.find((v) => v.id === id)?.name ?? id;
+            const downloadable =
+              regModel?.variants.filter((v) => model.downloadable.includes(v.id)) ?? [];
             const isThisModelDownloading =
               isDownloading && progress?.model_id === model.model_id;
             const errorMessage =
@@ -1546,108 +1556,196 @@ function ModelManagementCard() {
 
             return (
               <div key={model.model_id} className="py-4 first:pt-0 last:pb-0">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium">
-                        {model.name}
-                      </span>
-                      <Badge
-                        variant={model.downloaded ? "success" : "secondary"}
-                        size="sm"
-                      >
-                        {model.downloaded ? "Downloaded" : "Not downloaded"}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {model.description}
-                    </p>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-medium">{model.name}</span>
+                  <Badge variant={model.downloaded ? "success" : "secondary"} size="sm">
+                    {model.downloaded ? "Downloaded" : "Not downloaded"}
+                  </Badge>
+                  {model.size_on_disk > 0 && (
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {formatBytes(model.size_on_disk)} on disk
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">{model.description}</p>
 
-                    {model.downloaded && regModel && regModel.variants.length > 1 && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Using:{" "}
-                        {regModel.variants.find((v) => v.id === model.variant_id)?.name ??
-                          model.variant_id}
-                      </p>
-                    )}
-
-                    {model.downloaded && model.size_on_disk > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Size on disk: {formatBytes(model.size_on_disk)}
-                      </p>
-                    )}
-
-                    {!model.downloaded &&
-                      regModel &&
-                      regModel.variants.length > 1 && (
-                        <div className="mt-2">
-                          <VariantPicker
-                            name={`settings-variant-${model.model_id}`}
-                            variants={regModel.variants}
-                            selected={getSelectedVariant(model.model_id)}
-                            onSelect={(variantId) =>
-                              setSelectedVariants((prev) => ({
-                                ...prev,
-                                [model.model_id]: variantId,
-                              }))
+                {model.installed.length > 0 && (
+                  <div className="mt-2 flex flex-col gap-1">
+                    {model.installed.map((installed) => {
+                      const name = variantName(installed.variant_id);
+                      return (
+                        <div
+                          key={installed.variant_id}
+                          className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1"
+                        >
+                          <span className="text-xs">{name}</span>
+                          {model.installed.length > 1 &&
+                            installed.variant_id === model.variant_id && (
+                              <Badge variant="secondary" size="sm">
+                                In use
+                              </Badge>
+                            )}
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {formatBytes(installed.size_on_disk)}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-destructive"
+                            aria-label={`Delete ${name}`}
+                            disabled={isDownloading}
+                            onClick={() =>
+                              setPendingDelete({
+                                modelId: model.model_id,
+                                variantId: installed.variant_id,
+                                name,
+                                size: installed.size_on_disk,
+                              })
                             }
-                          />
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
                         </div>
-                      )}
+                      );
+                    })}
+                  </div>
+                )}
 
-                    {isThisModelDownloading && progress && (
-                      <div className="mt-2">
-                        <DownloadProgressBar progress={progress} />
+                {downloadable.length > 0 && !isThisModelDownloading && (
+                  <div className="mt-2 flex items-center gap-3">
+                    {downloadable.length > 1 && (
+                      <div className="flex-1 min-w-0">
+                        <VariantPicker
+                          name={`settings-variant-${model.model_id}`}
+                          variants={downloadable}
+                          selected={getSelectedVariant(model)}
+                          onSelect={(variantId) =>
+                            setSelectedVariants((prev) => ({
+                              ...prev,
+                              [model.model_id]: variantId,
+                            }))
+                          }
+                        />
                       </div>
                     )}
-
-                    {errorMessage && (
-                      <p className="mt-2 text-xs text-destructive">
-                        Download failed: {errorMessage}
-                      </p>
-                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto shrink-0"
+                      onClick={() => downloadModel(model.model_id, getSelectedVariant(model))}
+                      disabled={isDownloading}
+                    >
+                      {model.downloaded ? "Download another" : "Download"}
+                    </Button>
                   </div>
+                )}
 
-                  {/* Action buttons */}
-                  <div className="flex items-center gap-2 shrink-0 pt-0.5">
-                    {isThisModelDownloading ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={cancelDownload}
-                      >
-                        Cancel
-                      </Button>
-                    ) : model.downloaded ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => handleDelete(model.model_id)}
-                        disabled={deleting === model.model_id}
-                      >
-                        {deleting === model.model_id ? "Deleting…" : "Delete"}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          downloadModel(
-                            model.model_id,
-                            getSelectedVariant(model.model_id)
-                          )
-                        }
-                        disabled={isDownloading}
-                      >
-                        Download
-                      </Button>
-                    )}
+                {isThisModelDownloading && progress && (
+                  <div className="mt-2 flex items-center gap-3">
+                    <div className="flex-1">
+                      <DownloadProgressBar progress={progress} />
+                    </div>
+                    <Button variant="outline" size="sm" onClick={cancelDownload}>
+                      Cancel
+                    </Button>
                   </div>
-                </div>
+                )}
+
+                {errorMessage && (
+                  <p className="mt-2 text-xs text-destructive">
+                    Download failed: {errorMessage}
+                  </p>
+                )}
               </div>
             );
           })}
+        </div>
+      </CardContent>
+    </Card>
+    <StorageCard refreshKey={diskStatus} onCleaned={refresh} />
+    <ConfirmDialog
+      open={pendingDelete !== null}
+      onOpenChange={(open) => !open && setPendingDelete(null)}
+      title={`Delete ${pendingDelete?.name ?? "model"}?`}
+      description={`This frees ${formatBytes(pendingDelete?.size ?? 0)}. You can download it again any time.`}
+      onConfirm={handleDelete}
+    />
+    </>
+  );
+}
+
+/** How much space Nootle uses, and a button to free what it no longer needs. */
+function StorageCard({ refreshKey, onCleaned }: { refreshKey: unknown; onCleaned: () => void }) {
+  const [usage, setUsage] = useState<StorageUsage | null>(null);
+  const [cleaning, setCleaning] = useState(false);
+
+  const load = useCallback(() => {
+    invoke<StorageUsage>("get_storage_usage")
+      .then(setUsage)
+      .catch((e) => console.error("Failed to load storage usage:", e));
+  }, []);
+
+  useEffect(load, [load, refreshKey]);
+
+  const handleCleanUp = async () => {
+    setCleaning(true);
+    try {
+      const freed = await invoke<number>("clean_up_storage");
+      toast(`Freed ${formatBytes(freed)}`);
+      // Refreshing the models refreshes this card too.
+      onCleaned();
+    } catch (e) {
+      toast(`Couldn't clean up: ${e}`);
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  if (!usage) return null;
+
+  const reclaimable = [
+    { label: "Unfinished downloads and old models", bytes: usage.model_leftover_bytes },
+    { label: "Audio and snapshots from deleted meetings", bytes: usage.orphaned_recording_bytes },
+    { label: "Old logs", bytes: usage.old_log_bytes },
+  ].filter((row) => row.bytes > 0);
+  const reclaimableTotal = reclaimable.reduce((sum, row) => sum + row.bytes, 0);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Storage</CardTitle>
+        <CardDescription>What Nootle keeps on this Mac.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm [&>dd]:text-right">
+          <dt className="text-muted-foreground">Models</dt>
+          <dd>{formatBytes(usage.models_bytes)}</dd>
+          <dt className="text-muted-foreground">Meeting audio and snapshots</dt>
+          <dd>{formatBytes(usage.recordings_bytes)}</dd>
+          <dt className="text-muted-foreground">Logs</dt>
+          <dd>{formatBytes(usage.logs_bytes)}</dd>
+        </dl>
+        <div className="flex items-center gap-4 border-t pt-4">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">
+              {reclaimableTotal > 0
+                ? `${formatBytes(reclaimableTotal)} can be freed`
+                : "Nothing to clean up"}
+            </p>
+            {reclaimable.map((row) => (
+              <p key={row.label} className="text-xs text-muted-foreground">
+                {row.label}: {formatBytes(row.bytes)}
+              </p>
+            ))}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCleanUp}
+            disabled={cleaning || reclaimableTotal === 0}
+          >
+            {cleaning ? "Cleaning up…" : "Clean up"}
+          </Button>
         </div>
       </CardContent>
     </Card>

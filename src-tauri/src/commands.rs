@@ -2221,7 +2221,10 @@ pub async fn get_available_models() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 pub async fn get_downloaded_models() -> Result<Vec<model_download::ModelOnDiskStatus>, String> {
-    Ok(model_download::get_all_model_status())
+    // Sizing the model folders walks them.
+    tokio::task::spawn_blocking(model_download::get_all_model_status)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2260,10 +2263,55 @@ pub async fn cancel_download(download_mgr: State<'_, DownloadManagerState>) -> R
 }
 
 #[tauri::command]
-pub async fn delete_model(model_id: String) -> Result<(), String> {
-    let model =
-        model_registry::get_model(&model_id).ok_or_else(|| format!("Unknown model: {model_id}"))?;
-    model_download::delete_model_files(model)
+pub async fn delete_model(
+    recording: State<'_, RecordingState>,
+    download_mgr: State<'_, DownloadManagerState>,
+    model_id: String,
+    variant_id: String,
+) -> Result<(), String> {
+    ensure_disk_is_idle(&recording, &download_mgr).await?;
+    let (model, variant) = model_registry::get_variant(&model_id, &variant_id)
+        .ok_or_else(|| format!("Unknown model/variant: {model_id}/{variant_id}"))?;
+    model_download::delete_variant_files(model, variant)
+}
+
+/// Deleting files a recording or download is using would break it.
+async fn ensure_disk_is_idle(
+    recording: &RecordingState,
+    download_mgr: &DownloadManagerState,
+) -> Result<(), String> {
+    if recording.lock().await.is_some() {
+        return Err("Stop recording first".to_string());
+    }
+    if download_mgr.lock().await.cancel_token.is_some() {
+        return Err("Wait for the download to finish".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_storage_usage(
+    db: State<'_, DbState>,
+) -> Result<crate::storage::StorageUsage, String> {
+    let db = db.inner().clone();
+    tokio::task::spawn_blocking(move || crate::storage::usage(&db))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Frees leftover downloads, audio from deleted meetings, and old logs.
+/// Returns the bytes freed.
+#[tauri::command]
+pub async fn clean_up_storage(
+    db: State<'_, DbState>,
+    recording: State<'_, RecordingState>,
+    download_mgr: State<'_, DownloadManagerState>,
+) -> Result<u64, String> {
+    ensure_disk_is_idle(&recording, &download_mgr).await?;
+    let db = db.inner().clone();
+    tokio::task::spawn_blocking(move || crate::storage::clean_up(&db))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

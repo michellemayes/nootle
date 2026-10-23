@@ -41,6 +41,7 @@ pub mod share;
 pub mod shell_env;
 pub mod slides;
 pub mod snapshots;
+pub mod storage;
 pub mod summarization;
 pub mod transcript_import;
 pub mod transcription;
@@ -88,6 +89,11 @@ pub fn logs_dir() -> std::path::PathBuf {
         .join("logs")
 }
 
+/// Where the log is rotated to.
+pub fn old_log_path() -> std::path::PathBuf {
+    logs_dir().join("nootle.log.1")
+}
+
 /// Past this size the log is rotated to `nootle.log.1` at launch, so the
 /// two files never take more than twice this.
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
@@ -100,7 +106,7 @@ fn init_logging() {
     let file = std::fs::create_dir_all(&dir).ok().and_then(|_| {
         let path = dir.join("nootle.log");
         if std::fs::metadata(&path).is_ok_and(|m| m.len() > MAX_LOG_BYTES) {
-            let _ = std::fs::rename(&path, dir.join("nootle.log.1"));
+            let _ = std::fs::rename(&path, old_log_path());
         }
         std::fs::OpenOptions::new()
             .create(true)
@@ -495,6 +501,8 @@ pub fn run() {
             commands::download_model,
             commands::cancel_download,
             commands::delete_model,
+            commands::get_storage_usage,
+            commands::clean_up_storage,
             commands::embed_meeting_cmd,
             commands::embed_all_meetings,
             commands::get_embedding_status,

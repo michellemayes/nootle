@@ -32,8 +32,28 @@ export interface ModelOnDiskStatus {
   description: string;
   category: string;
   downloaded: boolean;
+  /** The variant in use. */
   variant_id: string | null;
+  /** Everything in the model's folder, leftovers included. */
   size_on_disk: number;
+  installed: InstalledVariant[];
+  /** Variants that can be downloaded alongside the installed ones. */
+  downloadable: string[];
+}
+
+export interface InstalledVariant {
+  variant_id: string;
+  /** What deleting this variant frees. */
+  size_on_disk: number;
+}
+
+export interface StorageUsage {
+  models_bytes: number;
+  recordings_bytes: number;
+  logs_bytes: number;
+  model_leftover_bytes: number;
+  orphaned_recording_bytes: number;
+  old_log_bytes: number;
 }
 
 export interface DownloadProgress {
@@ -109,8 +129,8 @@ export function useModelDownload() {
   }, []);
 
   const deleteModel = useCallback(
-    async (modelId: string) => {
-      await invoke("delete_model", { modelId });
+    async (modelId: string, variantId: string) => {
+      await invoke("delete_model", { modelId, variantId });
       await refresh();
     },
     [refresh]
