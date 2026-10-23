@@ -27,6 +27,7 @@ jobs:
   # invisible to the updater, until this passes.
   test:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -41,6 +42,7 @@ jobs:
 
   build:
     runs-on: macos-latest
+    timeout-minutes: 45
     outputs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
@@ -166,6 +168,7 @@ jobs:
   release:
     needs: [test, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -213,12 +216,16 @@ jobs:
           done
           exit 1
 
-  # Drop the draft if tests or the build failed, so the next run's draft for
-  # the same version starts clean.
+  # Drop the draft if tests or the build failed or timed out, so the next
+  # run's draft for the same version starts clean. A timed-out job counts as
+  # cancelled, which failure() misses.
   discard-draft:
     needs: [test, build]
-    if: failure() && needs.build.outputs.tag != ''
+    if: >-
+      always() && needs.build.outputs.tag != '' &&
+      (needs.test.result != 'success' || needs.build.result != 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}

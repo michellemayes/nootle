@@ -924,7 +924,18 @@ pub struct MeetingShare {
     #[serde(skip_serializing)]
     pub token: String,
     pub include_transcript: bool,
+    /// Whether the AI connector lists this share (see `share.rs`).
+    pub ai_access: bool,
     pub updated_at: String,
+}
+
+/// A shared meeting the AI connector lists, with the key that opens it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectorMeeting {
+    pub id: String,
+    pub key: String,
+    pub title: String,
+    pub date: String,
 }
 
 pub struct Database {
@@ -1776,6 +1787,8 @@ impl Database {
                  include_transcript INTEGER NOT NULL DEFAULT 0,
                  updated_at TEXT NOT NULL
              );",
+            // 8: which shares the AI connector may list.
+            "ALTER TABLE meeting_shares ADD COLUMN ai_access INTEGER NOT NULL DEFAULT 0;",
         ];
 
         let current: usize =
@@ -2144,7 +2157,7 @@ impl Database {
         let conn = self.lock_conn()?;
         Ok(conn
             .query_row(
-                "SELECT meeting_id, share_id, url, key, token, include_transcript, updated_at
+                "SELECT meeting_id, share_id, url, key, token, include_transcript, ai_access, updated_at
                  FROM meeting_shares WHERE meeting_id = ?1",
                 params![meeting_id],
                 |row| {
@@ -2155,7 +2168,8 @@ impl Database {
                         key: row.get(3)?,
                         token: row.get(4)?,
                         include_transcript: row.get(5)?,
-                        updated_at: row.get(6)?,
+                        ai_access: row.get(6)?,
+                        updated_at: row.get(7)?,
                     })
                 },
             )
@@ -2170,8 +2184,8 @@ impl Database {
         };
         self.lock_conn()?.execute(
             "INSERT OR REPLACE INTO meeting_shares
-                 (meeting_id, share_id, url, key, token, include_transcript, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (meeting_id, share_id, url, key, token, include_transcript, ai_access, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 share.meeting_id,
                 share.share_id,
@@ -2179,10 +2193,30 @@ impl Database {
                 share.key,
                 share.token,
                 share.include_transcript,
+                share.ai_access,
                 share.updated_at
             ],
         )?;
         Ok(share)
+    }
+
+    /// The shares the AI connector lists, newest meeting first.
+    pub fn list_connector_meetings(&self) -> Result<Vec<ConnectorMeeting>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT s.share_id, s.key, m.title, m.start_time
+             FROM meeting_shares s JOIN meetings m ON m.id = s.meeting_id
+             WHERE s.ai_access = 1 ORDER BY m.start_time DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ConnectorMeeting {
+                id: row.get(0)?,
+                key: row.get(1)?,
+                title: row.get(2)?,
+                date: row.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     pub fn delete_meeting_share(&self, meeting_id: &str) -> Result<()> {

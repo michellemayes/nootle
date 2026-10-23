@@ -424,6 +424,7 @@ export interface MeetingShare {
   share_id: string;
   url: string;
   include_transcript: boolean;
+  ai_access: boolean;
   updated_at: string;
 }
 

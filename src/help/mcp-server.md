@@ -8,6 +8,14 @@ The server is `nootle-cli`, which ships inside Nootle.app and never opens the ap
 
 Add `--read-only` to the command (`nootle-cli mcp --read-only`) to offer only tools that read: the agent can search and read meetings, but can't edit, delete, or send anything to an integration. Anyone in a meeting can influence what its transcript says, so read-only is the safer choice for agents that act on what they read.
 
+### Claude on the web, ChatGPT, and other cloud AI apps
+
+Cloud AI apps can't run `nootle-cli` on your Mac, so nootle.ai hosts a separate, read-only MCP server for meetings you've **shared**. In Settings → Integrations → **AI connector**, click **Create connector link** and add the link as a custom connector (in Claude: Settings → Connectors → Add custom connector). Then tick **Let AI connectors read this** in a meeting's Share menu and click **Create link** or **Update link**. Only those meetings are listed.
+
+Its tools are **list_shared_meetings**, **get_shared_meeting**, **search_shared_meetings**, and **read_share_link** (reads any Nootle share link you paste into the chat).
+
+Shares stay encrypted on nootle.ai. The connector link holds the key, so treat it like a password: nootle.ai decrypts only while answering your AI and never stores the key. **Reset link** makes a new link and stops the old one working.
+
 ## What is MCP?
 
 MCP (Model Context Protocol) is an open standard that lets AI assistants connect to external tools and data sources. When you enable Nootle's MCP server, Claude can search your meetings, read transcripts, and answer questions about what was discussed — all without you having to copy and paste anything.
