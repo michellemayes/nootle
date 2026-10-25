@@ -29,7 +29,7 @@
 
 Nootle records your meetings (microphone and system audio), transcribes them on your Mac with speaker names, and lets you ask an AI about what was said. Point it at your project folders and it answers from those too, even live during a call.
 
-**Private by default.** Recording and transcription happen on your Mac, and audio is never uploaded. Summaries and chat use the AI you pick: a local Ollama model keeps everything on-device, or bring an OpenAI, Anthropic, Google, Groq, OpenRouter or Bedrock key, or your Claude or ChatGPT subscription through the Claude Code or Codex CLI. **Local-only mode** (Settings → Privacy) allows only local models. There's no telemetry. Nootle only goes online for things you set up, plus model downloads and update checks.
+**Private by default.** Recording and transcription happen on your Mac, and audio is never uploaded. Summaries and chat use the AI you pick: a local Ollama model keeps everything on-device, or bring an OpenAI, Anthropic, Google, Groq, OpenRouter or Bedrock key, or your Claude or ChatGPT subscription through the Claude Code or Codex CLI. **Local-only mode** (Settings → Privacy) allows only local models. There's no telemetry. Crash reports are off unless you turn them on (Settings → Privacy), and never include meeting content. Nootle only goes online for things you set up, plus model downloads and update checks.
 
 ## Features
 

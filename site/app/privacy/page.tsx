@@ -20,7 +20,7 @@ export default function PrivacyPage() {
             Privacy Policy
           </h1>
           <p className="text-[var(--color-text-secondary)] text-sm mb-12">
-            Last updated: October 15, 2026
+            Last updated: October 25, 2026
           </p>
 
           <section className="space-y-6 text-[var(--color-text-secondary)] text-base leading-relaxed">
@@ -159,6 +159,30 @@ export default function PrivacyPage() {
                 counts. No cookies are used, no personal data is collected, and no
                 cross-site tracking occurs. This analytics data is used solely to
                 understand how the website is used.
+              </p>
+            </div>
+
+            <div id="error-reports" className="scroll-mt-24">
+              <h2 className="font-[family-name:var(--font-outfit)] text-2xl font-bold mb-4 text-[var(--color-text)]">
+                Error reports
+              </h2>
+              <p>
+                The Nootle app can send crash reports to{" "}
+                <a
+                  href="https://sentry.io/privacy/"
+                  className="text-[var(--color-accent)] underline hover:text-[var(--color-accent-hover)]"
+                >
+                  Sentry
+                </a>
+                , but only if you turn on Send crash reports in Settings → Privacy. It&apos;s
+                off by default and always off in Local-only mode. A report holds the error,
+                where in the code it happened, and the Nootle and macOS versions, never
+                recordings, transcripts, notes or names.
+              </p>
+              <p className="mt-4">
+                The nootle.ai website reports its own errors to Sentry too, without cookies,
+                IP addresses or link details: share links, their keys and AI connector keys
+                are removed first. Share pages send no error reports.
               </p>
             </div>
 

@@ -72,6 +72,8 @@ pdf-extract = "0.12"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 quick-xml = "0.41"
 aes-gcm = "0.10"
+# Opt-in crash reports. No release-health sessions, logs or metrics: only crashes.
+sentry = { version = "0.49", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "reqwest", "native-tls"] }
 base64 = "0.22"
 
 [target.'cfg(target_os = "macos")'.dependencies]
