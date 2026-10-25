@@ -41,6 +41,7 @@ Nootle records your meetings (microphone and system audio), transcribes them on 
 - **Menu bar mode.** Record, pause, jot a note and see what's next from the menu bar, with or without a Dock icon.
 - **Live Assist.** During a call, answers questions from your documents and past meetings, including ones it hears asked aloud.
 - **Ask the Room.** Listen to a meeting as a short spoken recap, each point in the voice of whoever raised it, made on your Mac. Then type a question and hear the answer in their voice.
+- **Translate any meeting.** Read the transcript and summaries in another language, line by line and still synced to playback, with the AI you choose.
 - **Ask your meetings and docs.** Chat across every meeting and your knowledge base (PDF, Word, PowerPoint, Excel, web pages and more), with citations.
 - **Meeting Coach (opt-in).** A private card after each call on how you showed up (talk share, interruptions, questions, filler words, pace), with trends over time.
 - **Your notes, expanded.** Jot shorthand while recording, and highlight the moments that matter in one click (⌘⇧H). Nootle fills your notes out from the transcript afterwards, and summaries give your highlights extra attention.

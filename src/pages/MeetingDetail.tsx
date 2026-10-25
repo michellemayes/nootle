@@ -41,6 +41,8 @@ import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
 import { useScratchPad } from "@/hooks/useScratchPad";
 import { useAnnotations } from "@/hooks/useAnnotations";
+import { useTranslations } from "@/hooks/useTranslations";
+import { TranslateMenu } from "@/components/TranslateMenu";
 import { useSnapshots } from "@/hooks/useSnapshots";
 import { useCallNames } from "@/hooks/useCallNames";
 import { SnapshotsSection } from "@/components/SnapshotsSection";
@@ -94,6 +96,7 @@ import {
   StickyNote,
   X,
   Zap,
+  Languages,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCompactMode } from "@/contexts/CompactModeContext";
@@ -174,11 +177,14 @@ function pluralLines(n: number): string {
  */
 function SegmentText({
   seg,
+  original,
   speaker,
   query,
   onSave,
 }: {
   seg: TranscriptSegment;
+  /** Set while `seg` is shown translated: the original line, a hover away. Translated lines aren't edited. */
+  original?: string;
   /** Find-in-transcript text to highlight. */
   query: string;
   /** The speaker name, rendered before the line (it has its own editor). */
@@ -188,6 +194,15 @@ function SegmentText({
   const [draft, setDraft] = useState<string | null>(null);
   // Closing the editor can fire blur as the textarea unmounts; finish once.
   const closedRef = useRef(false);
+
+  if (original !== undefined) {
+    return (
+      <p className="min-w-0 flex-1 text-sm text-foreground leading-relaxed" title={`Original: ${original}`}>
+        {speaker}
+        {highlightMatches(seg.text, query)}
+      </p>
+    );
+  }
 
   if (draft === null) {
     return (
@@ -1127,6 +1142,16 @@ export function MeetingDetail() {
     (templates.find((t) => t.id === meeting?.template_id) ?? templates[0])?.id ||
     "";
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
+  const { translations, translation, show: showLanguage, translating, translate } = useTranslations(id ?? null);
+  const translateInto = useCallback(
+    (language: string) => {
+      if (!selectedProvider || !selectedModel) return;
+      translate(language, selectedProvider, selectedModel).catch((err) =>
+        toast(`Couldn't translate into ${language}: ${err}`),
+      );
+    },
+    [translate, selectedProvider, selectedModel],
+  );
   const { isCompact } = useCompactMode();
   const [compactTranscript, setCompactTranscript] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(true);
@@ -1343,9 +1368,17 @@ export function MeetingDetail() {
   const findInputRef = useRef<HTMLInputElement>(null);
   // Deferred so typing stays responsive while a long transcript re-highlights.
   const trimmedFind = useDeferredValue(findOpen ? findQuery.trim() : "");
+  // The transcript as shown: in the language picked, where a line was translated.
+  const shownSegments = useMemo(
+    () =>
+      translation
+        ? segments.map((s) => (s.id in translation.segments ? { ...s, text: translation.segments[s.id] } : s))
+        : segments,
+    [segments, translation],
+  );
   const lowerSegments = useMemo(
-    () => segments.map((s) => ({ seg: s, text: s.text.toLowerCase(), speaker: s.speaker_label.toLowerCase() })),
-    [segments],
+    () => shownSegments.map((s) => ({ seg: s, text: s.text.toLowerCase(), speaker: s.speaker_label.toLowerCase() })),
+    [shownSegments],
   );
   const findMatches = useMemo(() => {
     if (!trimmedFind) return [];
@@ -1548,6 +1581,14 @@ export function MeetingDetail() {
               refreshRuns={refreshRuns}
               onViewRuns={() => setDetailTab("workflows")}
             />
+            <TranslateMenu
+              translations={translations}
+              showing={translation?.language ?? null}
+              translating={translating}
+              canTranslate={!!selectedProvider && !!selectedModel}
+              onShow={showLanguage}
+              onTranslate={translateInto}
+            />
             <ExportMenu meeting={meeting} />
             <ContinueInButton meetingId={meeting.id} />
           </div>
@@ -1584,7 +1625,7 @@ export function MeetingDetail() {
                       <Search className="h-4 w-4" />
                     </Button>
                     <CopyButton
-                      text={segments.map((s) => `${s.speaker_label}: ${s.text}`).join("\n")}
+                      text={shownSegments.map((s) => `${s.speaker_label}: ${s.text}`).join("\n")}
                     />
                     <Button
                       variant="ghost"
@@ -1607,6 +1648,18 @@ export function MeetingDetail() {
                     </Button>
                   </div>
                 </div>
+                {translation && (
+                  <div className="flex items-center gap-2 border-b bg-muted/30 px-5 py-1.5 text-xs text-muted-foreground">
+                    <Languages className="h-3.5 w-3.5 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      In {translation.language}, translated by {translation.provider}/{translation.model}. Hover a line
+                      for the original.
+                    </span>
+                    <Button size="xs" variant="ghost" onClick={() => showLanguage(null)}>
+                      Show original
+                    </Button>
+                  </div>
+                )}
                 {findOpen && (
                   <div className="flex items-center gap-1.5 border-b px-5 py-2">
                     <Input
@@ -1676,7 +1729,7 @@ export function MeetingDetail() {
                         No transcript for this meeting.
                       </p>
                     ) : (
-                      segments.map((seg) => {
+                      shownSegments.map((seg, i) => {
                         const speakerColor = speakerMap.get(seg.speaker_label) ?? "text-foreground";
                         const pinned = segmentAnnotations.get(seg.id);
                         const mine = myHighlights.get(seg.start_ms);
@@ -1701,6 +1754,7 @@ export function MeetingDetail() {
                           />
                           <SegmentText
                             seg={seg}
+                            original={translation && segments[i].text}
                             speaker={
                               speakerEdit?.segmentId === seg.id ? (
                               <>
@@ -1887,6 +1941,7 @@ export function MeetingDetail() {
                 ) : (
                   <div className="p-5 space-y-6">
                     {summaries.map((s, index) => {
+                      const content = translation?.summaries[s.id] ?? s.content;
                       const tmpl = s.template_id
                         ? templates.find((t) => t.id === s.template_id)
                         : null;
@@ -1902,18 +1957,18 @@ export function MeetingDetail() {
                             <div className="ml-auto flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => openMailDraft(`Recap: ${meeting.title}`, s.content)}
+                                onClick={() => openMailDraft(`Recap: ${meeting.title}`, content)}
                                 title="Email this summary"
                                 aria-label="Email this summary"
                                 className="inline-flex items-center rounded text-muted-foreground transition-colors hover:text-foreground"
                               >
                                 <Mail className="h-3.5 w-3.5" />
                               </button>
-                              <CopyButton text={s.content} markdown />
+                              <CopyButton text={content} markdown />
                             </div>
                           </div>
                           <Markdown
-                            content={linkSlideCitations(s.content, slides.length)}
+                            content={linkSlideCitations(content, slides.length)}
                             components={slideLinks}
                           />
                           {hasLinear && (

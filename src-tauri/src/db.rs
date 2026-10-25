@@ -1795,6 +1795,14 @@ impl Database {
             "ALTER TABLE meeting_shares ADD COLUMN ai_access INTEGER NOT NULL DEFAULT 0;",
             // 9: annotations the user made in the app, apart from agents'.
             "ALTER TABLE meeting_annotations ADD COLUMN by_user INTEGER NOT NULL DEFAULT 0;",
+            // 10: meetings translated into other languages, one row per
+            // language, the translation as JSON (see `translation`).
+            "CREATE TABLE meeting_translations (
+                 meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                 language TEXT NOT NULL,
+                 data TEXT NOT NULL,
+                 PRIMARY KEY (meeting_id, language)
+             );",
         ];
 
         let current: usize =
@@ -2163,8 +2171,48 @@ impl Database {
             "DELETE FROM meeting_shares WHERE meeting_id = ?1",
             params![id],
         )?;
+        conn.execute(
+            "DELETE FROM meeting_translations WHERE meeting_id = ?1",
+            params![id],
+        )?;
 
         Ok(())
+    }
+
+    // --- Translations ---
+
+    /// Saves a meeting's translation, replacing any earlier one into the same language.
+    pub fn save_meeting_translation(
+        &self,
+        meeting_id: &str,
+        translation: &crate::translation::MeetingTranslation,
+    ) -> Result<()> {
+        let data =
+            serde_json::to_string(translation).map_err(|e| NootleError::Other(e.to_string()))?;
+        self.lock_conn()?.execute(
+            "INSERT OR REPLACE INTO meeting_translations (meeting_id, language, data) VALUES (?1, ?2, ?3)",
+            params![meeting_id, translation.language, data],
+        )?;
+        Ok(())
+    }
+
+    /// Every translation of a meeting, by language.
+    pub fn list_meeting_translations(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Vec<crate::translation::MeetingTranslation>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT data FROM meeting_translations WHERE meeting_id = ?1 ORDER BY language",
+        )?;
+        let rows = stmt
+            .query_map(params![meeting_id], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        // A row that no longer parses is skipped rather than failing the meeting.
+        Ok(rows
+            .iter()
+            .filter_map(|data| serde_json::from_str(data).ok())
+            .collect())
     }
 
     // --- Share links ---

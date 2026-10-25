@@ -1178,6 +1178,7 @@ export const FIXTURES = {
   list_voice_profiles: [],
   list_dictionary_entries: [],
   list_meeting_annotations: {},
+  list_meeting_translations: [],
 
   list_labels: LABELS,
   get_all_meeting_labels: MEETING_LABELS,

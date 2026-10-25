@@ -45,6 +45,7 @@ pub mod storage;
 pub mod summarization;
 pub mod transcript_import;
 pub mod transcription;
+pub mod translation;
 pub mod vad;
 pub mod voices;
 pub mod workflows;
@@ -526,6 +527,8 @@ pub fn run() {
             commands::set_app_setting,
             commands::get_remote_control_token,
             commands::catch_up,
+            commands::list_meeting_translations,
+            commands::translate_meeting,
             commands::list_people,
             commands::get_person,
             commands::export_all_meetings,

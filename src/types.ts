@@ -339,6 +339,18 @@ export interface MeetingAnnotation {
   resolved_at: string | null;
 }
 
+/** A meeting translated into another language with the chosen AI. */
+export interface MeetingTranslation {
+  language: string;
+  /** Each transcript line's translation, by segment id; lines missing here show in the original. */
+  segments: Record<string, string>;
+  /** Each summary's translation, by summary id. */
+  summaries: Record<string, string>;
+  provider: string;
+  model: string;
+  created_at: string;
+}
+
 /** A picture of content shared on screen during a meeting. */
 export interface Snapshot {
   id: string;

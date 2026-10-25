@@ -25,6 +25,15 @@
     // Annotations are keyed by meeting id, and can be added, resolved, or deleted.
     const annotations = fixtures.list_meeting_annotations || {};
     if (cmd === "list_meeting_annotations") return annotations[args?.meetingId] || [];
+    // A translation is saved once made, so the menu lists it afterwards.
+    if (cmd === "translate_meeting" && fixtures.translate_meeting) {
+      const done = { ...fixtures.translate_meeting, language: args.language };
+      fixtures.list_meeting_translations = [
+        ...(fixtures.list_meeting_translations || []).filter((t) => t.language !== args.language),
+        done,
+      ];
+      return done;
+    }
     if (cmd === "highlight_transcript") {
       const added = {
         id: `hl-${nextId++}`,

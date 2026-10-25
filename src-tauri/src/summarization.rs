@@ -86,7 +86,7 @@ fn transcript_budget_chars(provider: &str) -> usize {
 
 /// Splits a formatted transcript into parts of at most `max_chars`, at line
 /// (speaker turn) boundaries.
-fn split_transcript(text: &str, max_chars: usize) -> Vec<String> {
+pub(crate) fn split_transcript(text: &str, max_chars: usize) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
     for line in text.lines() {

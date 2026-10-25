@@ -1845,6 +1845,32 @@ pub async fn check_meeting_followups(
         .map_err(|e| e.to_string())
 }
 
+/// A meeting's saved translations, by language.
+#[tauri::command(async)]
+pub fn list_meeting_translations(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<crate::translation::MeetingTranslation>, String> {
+    db.list_meeting_translations(&meeting_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Translates a meeting's transcript and summaries with the chosen model.
+#[tauri::command]
+pub async fn translate_meeting(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    language: String,
+    provider: String,
+    model: String,
+) -> Result<crate::translation::MeetingTranslation, String> {
+    let llm = llm.read().await;
+    crate::translation::translate_meeting(&db, &llm, &meeting_id, &language, &provider, &model)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// "What did I miss?" during (or after) a meeting.
 #[tauri::command]
 pub async fn catch_up(

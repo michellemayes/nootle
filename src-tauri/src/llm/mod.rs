@@ -108,6 +108,16 @@ pub fn runs_locally(provider: &str) -> bool {
     provider == "ollama"
 }
 
+/// How many requests to send `provider` at once: a local model serves one at
+/// a time, hosted ones take several.
+pub fn concurrent_requests(provider: &str) -> usize {
+    if runs_locally(provider) {
+        1
+    } else {
+        4
+    }
+}
+
 impl LlmRegistry {
     pub fn new() -> Self {
         Self { providers: vec![] }
