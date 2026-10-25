@@ -336,9 +336,17 @@ pub fn to_markdown(
         let _ = writeln!(out, "## Notes\n\n{notes}\n");
     }
 
-    if !annotations.is_empty() {
+    let (highlights, agent_notes): (Vec<_>, Vec<_>) = annotations.iter().partition(|a| a.by_user);
+    if !highlights.is_empty() {
+        out.push_str("## Your highlights\n\n");
+        for a in highlights {
+            let _ = writeln!(out, "- **[{}]** {}", format_ms(a.start_ms), a.body.trim());
+        }
+        out.push('\n');
+    }
+    if !agent_notes.is_empty() {
         out.push_str("## Agent notes\n\n");
-        write_annotations(&mut out, annotations);
+        write_annotations(&mut out, &agent_notes);
         out.push('\n');
     }
 
@@ -359,7 +367,7 @@ pub fn to_markdown(
 }
 
 /// Agents' annotations as a Markdown list, one item each.
-fn write_annotations(out: &mut String, annotations: &[MeetingAnnotation]) {
+fn write_annotations(out: &mut String, annotations: &[&MeetingAnnotation]) {
     for a in annotations {
         let mut when = format_ms(a.start_ms);
         if let Some(end) = a.end_ms {
@@ -531,20 +539,22 @@ mod tests {
                 kind: crate::db::AnnotationKind::Flag,
                 body: "Contradicts ADR-12.\nSee the doc.".into(),
                 author: "claude-code".into(),
+                by_user: false,
             })
             .unwrap();
         db.set_meeting_annotation_resolved(&flag.id, true).unwrap();
+        crate::ops::highlight_transcript(&db, &meeting.id, 0, 1_000, "Morning all.").unwrap();
 
         let md = export_meeting(&db, &meeting.id, ExportFormat::Markdown).unwrap();
         assert!(md.starts_with("# Launch sync\n\n"), "{md}");
         assert!(
-            md.contains("## Agent notes\n\n- **[00:00–00:01] Flag** (claude-code, resolved): Contradicts ADR-12.\n  See the doc.\n\n## Transcript"),
+            md.contains("## Your highlights\n\n- **[00:00]** Morning all.\n\n## Agent notes\n\n- **[00:00–00:01] Flag** (claude-code, resolved): Contradicts ADR-12.\n  See the doc.\n\n## Transcript"),
             "{md}"
         );
         // Shared notes leave them out.
         assert!(!meeting_as_markdown(&db, &meeting.id, true)
             .unwrap()
-            .contains("Agent notes"));
+            .contains("notes\n\n- **"));
         assert!(md.contains("## Summary\n\nWe agreed to ship.\n"), "{md}");
         assert!(md.contains("## Notes\n\nRemember the changelog\n"), "{md}");
         assert!(md.contains("**[00:00] Alex:** Morning all.\n"), "{md}");

@@ -7,8 +7,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 
 use crate::db::{
-    ChatConversation, Database, InsightWithActionItem, Label, Meeting, MeetingAnnotation,
-    NewMeetingAnnotation, NewRecipe, Recipe, SentimentSegment, TranscriptSegment,
+    AnnotationKind, ChatConversation, Database, InsightWithActionItem, Label, Meeting,
+    MeetingAnnotation, NewMeetingAnnotation, NewRecipe, Recipe, SentimentSegment,
+    TranscriptSegment,
 };
 use crate::dictionary::DictionaryEntry;
 use crate::embedding::EmbeddingEngine;
@@ -434,9 +435,12 @@ fn meeting_length_ms(db: &Database, meeting: &Meeting) -> Result<i64> {
     Ok(wall.max(db.transcript_end_ms(&meeting.id)?))
 }
 
-/// Pins an agent's annotation to a meeting, checking its body and that it
-/// falls within the meeting. An empty range becomes a moment.
-pub fn add_annotation(db: &Database, mut a: NewMeetingAnnotation) -> Result<MeetingAnnotation> {
+/// Who highlights you make yourself in the app are shown as by.
+pub const USER_ANNOTATION_AUTHOR: &str = "You";
+
+/// Checks an annotation's body and that it falls within the meeting, then
+/// saves it. An empty range becomes a moment.
+fn insert_annotation(db: &Database, mut a: NewMeetingAnnotation) -> Result<MeetingAnnotation> {
     a.body = non_empty_name("Annotation body", &a.body)?.to_string();
     let chars = a.body.chars().count();
     if chars > MAX_ANNOTATION_CHARS {
@@ -455,11 +459,40 @@ pub fn add_annotation(db: &Database, mut a: NewMeetingAnnotation) -> Result<Meet
         );
     }
     a.end_ms = a.end_ms.filter(|end| *end > a.start_ms);
+    Ok(db.add_meeting_annotation(a)?)
+}
+
+/// Pins an agent's annotation to a meeting (see `insert_annotation`).
+pub fn add_annotation(db: &Database, mut a: NewMeetingAnnotation) -> Result<MeetingAnnotation> {
     a.author = match a.author.trim() {
         "" => "agent".to_string(),
         author => author.chars().take(100).collect(),
     };
-    Ok(db.add_meeting_annotation(a)?)
+    a.by_user = false;
+    insert_annotation(db, a)
+}
+
+/// Highlights a stretch of the transcript as the user, quoting what was said
+/// so exports, summaries, and agents read it without looking it up.
+pub fn highlight_transcript(
+    db: &Database,
+    meeting_id: &str,
+    start_ms: i64,
+    end_ms: i64,
+    text: &str,
+) -> Result<MeetingAnnotation> {
+    insert_annotation(
+        db,
+        NewMeetingAnnotation {
+            meeting_id: meeting_id.to_string(),
+            start_ms,
+            end_ms: Some(end_ms),
+            kind: AnnotationKind::Highlight,
+            body: text.to_string(),
+            author: USER_ANNOTATION_AUTHOR.to_string(),
+            by_user: true,
+        },
+    )
 }
 
 /// Updates a dictionary entry; `None` keeps a field. Returns the entry.
@@ -1283,6 +1316,34 @@ mod tests {
     }
 
     #[test]
+    fn highlights_are_yours_and_agents_cannot_pose_as_you() {
+        let (db, id) = db_with_meeting();
+        let mine = highlight_transcript(&db, &id, 0, 3_000, "  We ship next week. ").unwrap();
+        assert_eq!(mine.author, USER_ANNOTATION_AUTHOR);
+        assert!(mine.by_user);
+        assert_eq!(mine.kind, AnnotationKind::Highlight);
+        assert_eq!(mine.body, "We ship next week.");
+        assert_eq!(mine.end_ms, Some(3_000));
+        assert!(highlight_transcript(&db, &id, 0, 3_000, "  ").is_err());
+        assert!(highlight_transcript(&db, "nope", 0, 3_000, "Hi").is_err());
+
+        let posing = add_annotation(
+            &db,
+            NewMeetingAnnotation {
+                meeting_id: id.clone(),
+                start_ms: 0,
+                end_ms: None,
+                kind: AnnotationKind::Highlight,
+                body: "Mine, honest".into(),
+                author: "You".into(),
+                by_user: true,
+            },
+        )
+        .unwrap();
+        assert!(!posing.by_user);
+    }
+
+    #[test]
     fn annotations_stay_within_the_meeting() {
         let (db, id) = db_with_meeting();
         // Ended a second after it started, so the 3s transcript is longer.
@@ -1301,6 +1362,7 @@ mod tests {
                     kind,
                     body: body.into(),
                     author: " ".into(),
+                    by_user: false,
                 },
             )
         };
@@ -1332,6 +1394,7 @@ mod tests {
                 kind: AnnotationKind::Comment,
                 body: "No meeting".into(),
                 author: "cli".into(),
+                by_user: false,
             }
         )
         .is_err());

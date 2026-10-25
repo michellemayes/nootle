@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useRef, useCallback } from "react";
+import { memo, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,10 @@ import { useRecording } from "@/hooks/useRecording";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useTranscript } from "@/hooks/useTranscripts";
 import { useSnapshots, useSnapshotsEnabled } from "@/hooks/useSnapshots";
-import type { TranscriptSegment } from "@/types";
+import type { MeetingAnnotation, TranscriptSegment } from "@/types";
+import { HighlightLineButton, highlightsByStart } from "@/components/Annotations";
+import { toast } from "@/components/Toaster";
+import { useAnnotations } from "@/hooks/useAnnotations";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ScratchPad } from "@/components/ScratchPad";
@@ -18,26 +21,90 @@ import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Kbd } from "@/components/Kbd";
 import { AudioLevelMeter } from "@/components/AudioLevelMeter";
-import { formatDuration } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 import { Markdown } from "@/components/Markdown";
 import { useStickToBottom } from "@/hooks/useStickToBottom";
-import { Square, ArrowLeft, ArrowDown, ChevronDown, ChevronRight, FileText, MicOff, Pause, Play, ScanLine } from "lucide-react";
+import { Square, ArrowLeft, ArrowDown, ChevronDown, ChevronRight, FileText, Highlighter, MicOff, Pause, Play, ScanLine } from "lucide-react";
 
 const TRANSCRIPT_OPEN_KEY = "recordingTranscriptOpen";
 
-// Memoized so the once-a-second timer tick doesn't re-render every line.
-const LiveSegments = memo(function LiveSegments({
-  segments,
+/** One live line, with its highlight button. Memoized so a new line doesn't re-render the rest. */
+const LiveSegment = memo(function LiveSegment({
+  seg,
+  mine,
+  onHighlight,
+  onRemove,
 }: {
-  segments: TranscriptSegment[];
+  seg: TranscriptSegment;
+  /** Your highlight on this line, if any. */
+  mine: MeetingAnnotation | undefined;
+  onHighlight: (seg: TranscriptSegment) => Promise<void>;
+  onRemove: (id: string) => Promise<void>;
 }) {
-  return segments.map((seg) => (
-    <div key={seg.id} className="text-sm leading-relaxed">
-      <span className="font-medium text-primary">{seg.speaker_label}:</span>{" "}
-      <span className="text-foreground">{seg.text}</span>
+  return (
+    <div
+      className={cn(
+        "group -mx-2 flex gap-2 rounded-md px-2 text-sm leading-relaxed",
+        mine && "rounded-l-none border-l-2 border-l-highlight bg-highlight/10",
+      )}
+    >
+      <p className="min-w-0 flex-1">
+        <span className="font-medium text-primary">{seg.speaker_label}:</span>{" "}
+        <span className="text-foreground">{seg.text}</span>
+      </p>
+      <HighlightLineButton mine={mine} onHighlight={() => onHighlight(seg)} onRemove={onRemove} />
     </div>
-  ));
+  );
 });
+
+/** Highlights the newest line, the moment you just heard. ⌘⇧H does it too. */
+function HighlightLatest({
+  latest,
+  highlights,
+  onHighlight,
+  compact,
+}: {
+  latest: TranscriptSegment | undefined;
+  highlights: Map<number, MeetingAnnotation>;
+  onHighlight: (seg: TranscriptSegment) => Promise<void>;
+  compact: boolean;
+}) {
+  const highlighted = !!latest && highlights.has(latest.start_ms);
+  // Read by the shortcut, so its listener is added once, not per new line.
+  const highlightRef = useRef(() => {});
+  highlightRef.current = () => {
+    if (!latest || highlighted) return;
+    onHighlight(latest).catch((err) => toast(`Couldn't highlight that line: ${err}`));
+  };
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === "h") {
+        e.preventDefault();
+        highlightRef.current();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  let title = "Nothing to highlight yet";
+  if (highlighted) title = "The latest line is highlighted. Your summary will give it extra attention";
+  else if (latest) title = "Highlight what was just said (⌘⇧H)";
+
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={() => highlightRef.current()}
+      disabled={!latest || highlighted}
+      title={title}
+    >
+      <Highlighter className={cn(highlighted && "fill-highlight/60 text-highlight-foreground")} />
+      {!compact && (highlighted ? "Highlighted" : "Highlight")}
+    </Button>
+  );
+}
 
 interface ConsentReminderState {
   enabled: boolean;
@@ -179,6 +246,13 @@ export function RecordingView() {
   // transcription runs at all. Imports transcribing in the background send
   // these events too, so both are matched to this recording's meeting.
   const { segments } = useTranscript(currentMeeting?.id ?? "");
+  // Agents' notes aren't shown here, so there's nothing to poll for.
+  const { highlights: myHighlights, highlight, remove: removeAnnotation } = useAnnotations(
+    currentMeeting?.id ?? null,
+    { poll: false },
+  );
+  const highlights = useMemo(() => highlightsByStart(myHighlights), [myHighlights]);
+  const latestSegment = segments[segments.length - 1] as TranscriptSegment | undefined;
   const snapshotsEnabled = useSnapshotsEnabled();
   const { snapshots } = useSnapshots(currentMeeting?.id ?? null);
   // Listening from mount: the status can arrive before start_recording returns.
@@ -468,6 +542,14 @@ export function RecordingView() {
 
         <span className="ml-auto" />
         {currentMeeting && isRecording && !isCompact && <CatchUp meetingId={currentMeeting.id} />}
+        {currentMeeting && isRecording && (
+          <HighlightLatest
+            latest={latestSegment}
+            highlights={highlights}
+            onHighlight={highlight}
+            compact={isCompact}
+          />
+        )}
 
         <Button
           size="sm"
@@ -573,7 +655,15 @@ export function RecordingView() {
                         : "Listening. The transcript appears here as people speak."}
                     </p>
                   )}
-                  <LiveSegments segments={segments} />
+                  {segments.map((seg) => (
+                    <LiveSegment
+                      key={seg.id}
+                      seg={seg}
+                      mine={highlights.get(seg.start_ms)}
+                      onHighlight={highlight}
+                      onRemove={removeAnnotation}
+                    />
+                  ))}
                   <div ref={sentinelRef} />
                 </div>
               </ScrollArea>

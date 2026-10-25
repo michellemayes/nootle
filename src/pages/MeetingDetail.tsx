@@ -13,7 +13,15 @@ import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
 import { insightIcon } from "@/lib/insightIcons";
 import { Collapsible } from "@/components/Collapsible";
 import { TimestampButton } from "@/components/TimestampButton";
-import { AgentNotesPanel, AnnotationMarkers, ANNOTATION_KINDS, annotationsBySegment } from "@/components/AgentNotes";
+import {
+  AgentNotesPanel,
+  AnnotationMarkers,
+  ANNOTATION_KINDS,
+  annotationsBySegment,
+  HighlightLineButton,
+  highlightsByStart,
+  HighlightsPanel,
+} from "@/components/Annotations";
 import { Markdown, SafeLink } from "@/components/Markdown";
 import type { Components } from "react-markdown";
 import { NotesEditor } from "@/components/NotesEditor";
@@ -1079,9 +1087,21 @@ export function MeetingDetail() {
   const { storedProviders: storedApiProviders } = useApiKeys();
   const { labels: allLabels, getMeetingLabels, addMeetingLabel, removeMeetingLabel, createLabel, updateLabel, deleteLabel } = useLabels();
   const { notes: scratchNotes } = useScratchPad(id ?? null);
-  const { annotations, setResolved: setAnnotationResolved, remove: removeAnnotation } = useAnnotations(id ?? null);
+  const {
+    annotations,
+    highlights,
+    agentNotes,
+    setResolved: setAnnotationResolved,
+    remove: removeAnnotation,
+    highlight: highlightLine,
+  } = useAnnotations(id ?? null);
   const openAnnotations = useMemo(() => annotations.filter((a) => !a.resolved_at), [annotations]);
-  const segmentAnnotations = useMemo(() => annotationsBySegment(segments, openAnnotations), [segments, openAnnotations]);
+  const openHighlights = useMemo(() => highlights.filter((a) => !a.resolved_at), [highlights]);
+  const myHighlights = useMemo(() => highlightsByStart(openHighlights), [openHighlights]);
+  const segmentAnnotations = useMemo(
+    () => annotationsBySegment(segments, agentNotes.filter((a) => !a.resolved_at)),
+    [segments, agentNotes],
+  );
   const [meetingLabels, setMeetingLabels] = useState<Label[]>([]);
   const hasLinear = storedApiProviders.includes("linear");
   const { tickets, createTicket } = useLinearTickets(id!);
@@ -1659,6 +1679,7 @@ export function MeetingDetail() {
                       segments.map((seg) => {
                         const speakerColor = speakerMap.get(seg.speaker_label) ?? "text-foreground";
                         const pinned = segmentAnnotations.get(seg.id);
+                        const mine = myHighlights.get(seg.start_ms);
                         return (
                         <div
                           key={seg.id}
@@ -1668,7 +1689,9 @@ export function MeetingDetail() {
                             "group -mx-2 flex gap-3 rounded-md px-2 transition-colors data-[active=true]:bg-primary/10",
                             compactTranscript && "items-baseline",
                             currentMatch?.id === seg.id && "ring-1 ring-highlight",
-                            pinned && ["rounded-l-none border-l-2 bg-muted/40", ANNOTATION_KINDS[pinned[0].kind].line],
+                            mine
+                              ? "rounded-l-none border-l-2 border-l-highlight bg-highlight/10"
+                              : pinned && ["rounded-l-none border-l-2 bg-muted/40", ANNOTATION_KINDS[pinned[0].kind].line],
                           )}
                         >
                           <TimestampButton
@@ -1724,6 +1747,11 @@ export function MeetingDetail() {
                             }
                             query={trimmedFind}
                             onSave={saveSegmentEdit}
+                          />
+                          <HighlightLineButton
+                            mine={mine}
+                            onHighlight={() => highlightLine(seg)}
+                            onRemove={removeAnnotation}
                           />
                         </div>
                         );
@@ -2015,8 +2043,9 @@ export function MeetingDetail() {
         </div>
       </div>
 
+      <HighlightsPanel highlights={openHighlights} onSeek={jumpToMs} onRemove={removeAnnotation} />
       <AgentNotesPanel
-        annotations={annotations}
+        annotations={agentNotes}
         onSeek={jumpToMs}
         onResolve={setAnnotationResolved}
         onRemove={removeAnnotation}

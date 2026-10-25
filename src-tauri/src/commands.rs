@@ -302,6 +302,19 @@ pub fn list_meeting_annotations(
         .map_err(|e| e.to_string())
 }
 
+/// Highlights a stretch of the transcript as you (see `ops::highlight_transcript`).
+#[tauri::command(async)]
+pub fn highlight_transcript(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    start_ms: i64,
+    end_ms: i64,
+    text: String,
+) -> Result<MeetingAnnotation, String> {
+    crate::ops::highlight_transcript(&db, &meeting_id, start_ms, end_ms, &text)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command(async)]
 pub fn resolve_meeting_annotation(
     db: State<'_, DbState>,

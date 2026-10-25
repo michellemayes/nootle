@@ -798,8 +798,11 @@ pub struct MeetingAnnotation {
     pub kind: AnnotationKind,
     /// Markdown.
     pub body: String,
-    /// The MCP client's name, or `cli`.
+    /// The MCP client's name, `cli`, or "You" for your own highlights.
     pub author: String,
+    /// Made by the user in the app rather than by an agent.
+    #[serde(default)]
+    pub by_user: bool,
     pub created_at: String,
     pub resolved_at: Option<String>,
 }
@@ -812,6 +815,7 @@ pub struct NewMeetingAnnotation {
     pub kind: AnnotationKind,
     pub body: String,
     pub author: String,
+    pub by_user: bool,
 }
 
 /// A picture of something shared on screen during a meeting, with the text
@@ -1789,6 +1793,8 @@ impl Database {
              );",
             // 8: which shares the AI connector may list.
             "ALTER TABLE meeting_shares ADD COLUMN ai_access INTEGER NOT NULL DEFAULT 0;",
+            // 9: annotations the user made in the app, apart from agents'.
+            "ALTER TABLE meeting_annotations ADD COLUMN by_user INTEGER NOT NULL DEFAULT 0;",
         ];
 
         let current: usize =
@@ -2504,9 +2510,9 @@ impl Database {
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO meeting_annotations (id, meeting_id, start_ms, end_ms, kind, body, author, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![id, a.meeting_id, a.start_ms, a.end_ms, a.kind.as_str(), a.body, a.author, now],
+            "INSERT INTO meeting_annotations (id, meeting_id, start_ms, end_ms, kind, body, author, by_user, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![id, a.meeting_id, a.start_ms, a.end_ms, a.kind.as_str(), a.body, a.author, a.by_user, now],
         )?;
         Ok(MeetingAnnotation {
             id,
@@ -2516,6 +2522,7 @@ impl Database {
             kind: a.kind,
             body: a.body,
             author: a.author,
+            by_user: a.by_user,
             created_at: now,
             resolved_at: None,
         })
@@ -2525,7 +2532,7 @@ impl Database {
     pub fn get_meeting_annotations(&self, meeting_id: &str) -> Result<Vec<MeetingAnnotation>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, meeting_id, start_ms, end_ms, kind, body, author, created_at, resolved_at
+            "SELECT id, meeting_id, start_ms, end_ms, kind, body, author, created_at, resolved_at, by_user
              FROM meeting_annotations
              WHERE meeting_id = ?1
              ORDER BY start_ms ASC, created_at ASC",
@@ -2542,6 +2549,7 @@ impl Database {
                     author: row.get(6)?,
                     created_at: row.get(7)?,
                     resolved_at: row.get(8)?,
+                    by_user: row.get(9)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -5848,6 +5856,7 @@ mod tests {
             kind: AnnotationKind::Comment,
             body: body.into(),
             author: "claude-code".into(),
+            by_user: false,
         };
         let later = db.add_meeting_annotation(new(9_000, "Later")).unwrap();
         db.add_meeting_annotation(new(3_000, "Earlier")).unwrap();

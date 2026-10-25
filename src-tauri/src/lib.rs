@@ -433,6 +433,7 @@ pub fn run() {
             commands::get_scratch_notes,
             commands::delete_scratch_note,
             commands::list_meeting_annotations,
+            commands::highlight_transcript,
             commands::resolve_meeting_annotation,
             commands::delete_meeting_annotation,
             commands::get_transcript,

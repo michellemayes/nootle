@@ -43,7 +43,7 @@ Nootle records your meetings (microphone and system audio), transcribes them on 
 - **Ask the Room.** Listen to a meeting as a short spoken recap, each point in the voice of whoever raised it, made on your Mac. Then type a question and hear the answer in their voice.
 - **Ask your meetings and docs.** Chat across every meeting and your knowledge base (PDF, Word, PowerPoint, Excel, web pages and more), with citations.
 - **Meeting Coach (opt-in).** A private card after each call on how you showed up (talk share, interruptions, questions, filler words, pace), with trends over time.
-- **Your notes, expanded.** Jot shorthand while recording. Nootle fills it out from the transcript afterwards.
+- **Your notes, expanded.** Jot shorthand while recording, and highlight the moments that matter in one click (⌘⇧H). Nootle fills your notes out from the transcript afterwards, and summaries give your highlights extra attention.
 - **Snapshots.** Captures shared slides and screens into your notes, and reads the text on them. Summaries cite slides as clickable thumbnails, and a slide recap says what was said while each was up.
 - **Workflows.** Send recaps and action items to Slack, Notion, Linear, GitHub, Asana, Confluence, Obsidian, or email.
 - **Share links.** End-to-end encrypted `nootle.ai` links to a meeting's notes.

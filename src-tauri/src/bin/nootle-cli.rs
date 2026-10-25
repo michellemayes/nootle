@@ -1808,6 +1808,7 @@ fn run_meetings(db: &Database, action: &MeetingsAction, pretty: bool) -> CliResu
                     kind: *kind,
                     body: read_text_arg(body)?,
                     author: ops::CLI_ANNOTATION_AUTHOR.into(),
+                    by_user: false,
                 },
             )?;
             print_json(&annotation, pretty);
