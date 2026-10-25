@@ -111,6 +111,8 @@ export interface Template {
   is_favorite: boolean;
   is_auto_run: boolean;
   created_at: string;
+  /** A built-in template's stable key, e.g. "follow-up-email"; null for your own. */
+  slug: string | null;
 }
 
 export interface Summary {

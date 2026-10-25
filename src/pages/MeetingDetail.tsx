@@ -121,12 +121,12 @@ function parseResultOutput(json: string | null): string | null {
 }
 
 /**
- * Email drafts are formatted as `Subject: <line>\n\n<body>` by execute_email
- * in workflows.rs. Returns null if the output isn't an email draft.
+ * Email drafts start with a `Subject: <line>` (execute_email in workflows.rs
+ * writes them, and so does the Follow-up Email template, sometimes in bold).
+ * Returns null if `output` isn't one.
  */
 function parseEmailDraft(output: string | null): { subject: string; body: string } | null {
-  if (!output) return null;
-  const match = output.match(/^Subject: (.*?)\n\n([\s\S]*)$/);
+  const match = output?.trimStart().match(/^\**subject:\**\s*(.+?)\**\s*\n+([\s\S]*)$/i);
   if (!match) return null;
   return { subject: match[1], body: match[2] };
 }
@@ -159,6 +159,14 @@ function highlightMatches(text: string, query: string): React.ReactNode {
   if (from < text.length) parts.push(text.slice(from));
   return parts;
 }
+
+/** Built-in templates offered as one-click follow-ups under a meeting's summaries, by slug (see `seed_builtin_templates`). */
+const QUICK_ACTIONS: Record<string, string> = {
+  "follow-up-email": "A follow-up email",
+  "project-update": "A project update",
+  "meeting-minutes": "Meeting minutes",
+  "sales-call": "CRM notes",
+};
 
 /** Opens a new message in the default mail app. */
 function openMailDraft(subject: string, body: string) {
@@ -1441,17 +1449,35 @@ export function MeetingDetail() {
     }
   });
 
-  const handleGenerate = async () => {
-    if (!selectedTemplate || !selectedProvider || !selectedModel) return;
+  // Built-in follow-ups this meeting doesn't have yet, one click each.
+  const quickActions = useMemo(() => {
+    const made = new Set(summaries.map((s) => s.template_id));
+    return templates.filter((t) => t.slug && t.slug in QUICK_ACTIONS && !made.has(t.id));
+  }, [templates, summaries]);
+
+  const canGenerate = !!selectedProvider && !!selectedModel;
+  const handleGenerate = async (templateId = selectedTemplate) => {
+    if (!templateId || !selectedProvider || !selectedModel) return;
     setGenerating(true);
     setGenerateError(null);
     try {
-      await generateSummary(selectedTemplate, selectedProvider, selectedModel);
+      return await generateSummary(templateId, selectedProvider, selectedModel);
     } catch (err) {
       setGenerateError(String(err));
     } finally {
       setGenerating(false);
     }
+  };
+
+  // New summaries go on top, so bring a one-click one into view.
+  const generateAndReveal = async (templateId: string) => {
+    const made = await handleGenerate(templateId);
+    if (!made) return;
+    requestAnimationFrame(() =>
+      document
+        .querySelector(`[data-summary-id="${CSS.escape(made.id)}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
   };
 
   // A finished meeting should open with a summary already there. The backend
@@ -1903,8 +1929,8 @@ export function MeetingDetail() {
                     size="sm"
                     variant="ghost"
                     className="h-7 text-xs"
-                    onClick={handleGenerate}
-                    disabled={!selectedTemplate || !selectedProvider || !selectedModel}
+                    onClick={() => handleGenerate()}
+                    disabled={!selectedTemplate || !canGenerate}
                   >
                     <Sparkles className="h-3 w-3 mr-1" />
                     Generate summary
@@ -1946,7 +1972,7 @@ export function MeetingDetail() {
                         ? templates.find((t) => t.id === s.template_id)
                         : null;
                       return (
-                        <div key={s.id}>
+                        <div key={s.id} data-summary-id={s.id}>
                           <div className="flex items-center gap-2 mb-3">
                             <span className="text-xs font-medium text-foreground">
                               {tmpl?.name ?? "Summary"}
@@ -1957,7 +1983,10 @@ export function MeetingDetail() {
                             <div className="ml-auto flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => openMailDraft(`Recap: ${meeting.title}`, content)}
+                                onClick={() => {
+                                  const draft = parseEmailDraft(content);
+                                  openMailDraft(draft?.subject ?? `Recap: ${meeting.title}`, draft?.body ?? content);
+                                }}
                                 title="Email this summary"
                                 aria-label="Email this summary"
                                 className="inline-flex items-center rounded text-muted-foreground transition-colors hover:text-foreground"
@@ -1992,6 +2021,23 @@ export function MeetingDetail() {
                         </div>
                       );
                     })}
+                    {quickActions.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 border-t pt-4">
+                        <span className="mr-1 text-xs text-muted-foreground">Turn this meeting into</span>
+                        {quickActions.map((t) => (
+                          <Button
+                            key={t.id}
+                            size="xs"
+                            variant="outline"
+                            disabled={generating || !canGenerate}
+                            onClick={() => generateAndReveal(t.id)}
+                            title={t.description}
+                          >
+                            {QUICK_ACTIONS[t.slug!]}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
                 {slides.length > 0 && (

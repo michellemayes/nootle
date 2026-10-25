@@ -138,6 +138,9 @@ pub struct Template {
     pub is_favorite: bool,
     pub is_auto_run: bool,
     pub created_at: String,
+    /// A built-in template's stable key, e.g. `follow-up-email`.
+    #[serde(default)]
+    pub slug: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1355,8 +1358,6 @@ impl Database {
                  ON commitment_evidence(meeting_id);",
         )?;
 
-        Self::seed_builtin_templates(&conn)?;
-
         // Migration: slide recaps on snapshots (idempotent)
         let _ = conn.execute("ALTER TABLE snapshots ADD COLUMN recap TEXT", []);
 
@@ -1667,6 +1668,8 @@ impl Database {
         )?;
 
         Self::run_versioned_migrations(conn)?;
+        // After the migrations, which give built-ins the slugs this keys on.
+        Self::seed_builtin_templates(conn)?;
 
         Ok(())
     }
@@ -1803,6 +1806,23 @@ impl Database {
                  data TEXT NOT NULL,
                  PRIMARY KEY (meeting_id, language)
              );",
+            // 11: a stable key for each built-in template, so renaming one
+            // doesn't hide it from what looks it up, or make seeding add it
+            // again. Existing built-ins are matched by their original name or
+            // prompt.
+            "ALTER TABLE templates ADD COLUMN slug TEXT;
+             UPDATE templates SET slug = CASE
+                 WHEN name = 'General' OR prompt LIKE 'Summarize this meeting transcript.%' THEN 'general'
+                 WHEN name = '1-on-1' OR prompt LIKE 'Summarize this 1-on-1 meeting.%' THEN 'one-on-one'
+                 WHEN name = 'Daily Standup' OR prompt LIKE 'Summarize this standup.%' THEN 'standup'
+                 WHEN name = 'Sprint Retro' OR prompt LIKE 'Summarize this retrospective.%' THEN 'retro'
+                 WHEN name = 'Customer Call' OR prompt LIKE 'Summarize this customer call.%' THEN 'customer-call'
+                 WHEN name = 'User Interview' OR prompt LIKE 'Summarize this user interview.%' THEN 'user-interview'
+                 WHEN name = 'Brainstorm' OR prompt LIKE 'Summarize this brainstorm session.%' THEN 'brainstorm'
+                 WHEN name = 'All-Hands' OR prompt LIKE 'Summarize this all-hands meeting.%' THEN 'all-hands'
+             END
+             WHERE is_builtin = 1;
+             CREATE UNIQUE INDEX idx_templates_slug ON templates(slug) WHERE slug IS NOT NULL;",
         ];
 
         let current: usize =
@@ -1823,74 +1843,104 @@ impl Database {
         Ok(())
     }
 
+    /// Adds each built-in template the library doesn't have yet, by slug, so
+    /// built-ins added in later versions reach existing libraries too.
     fn seed_builtin_templates(conn: &rusqlite::Connection) -> Result<()> {
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM templates WHERE is_builtin = 1",
-            [],
-            |row| row.get(0),
-        )?;
-        if count > 0 {
-            return Ok(());
-        }
-
         let now = chrono::Utc::now().to_rfc3339();
-        let builtins: Vec<(&str, &str, &str, &str)> = vec![
+        let builtins: Vec<(&str, &str, &str, &str, &str)> = vec![
             (
+                "general",
                 "General",
                 "Default for any meeting",
                 "Summarize this meeting transcript. Include key discussion points, decisions made, and action items.",
                 r#"["Summary","Key Discussion Points","Decisions","Action Items"]"#,
             ),
             (
+                "one-on-one",
                 "1-on-1",
                 "Manager/report check-ins",
                 "Summarize this 1-on-1 meeting. Structure as: Updates, Feedback, Blockers, Action Items.",
                 r#"["Updates","Feedback","Blockers","Action Items"]"#,
             ),
             (
+                "standup",
                 "Daily Standup",
                 "Quick team sync",
                 "Summarize this standup. For each speaker list: What they did, what they'll do, blockers.",
                 r#"["Yesterday","Today","Blockers"]"#,
             ),
             (
+                "retro",
                 "Sprint Retro",
                 "What went well/poorly",
                 "Summarize this retrospective. Organize into: What Went Well, What Didn't, Action Items for Improvement.",
                 r#"["What Went Well","What Didn't Go Well","Action Items for Improvement"]"#,
             ),
             (
+                "customer-call",
                 "Customer Call",
                 "External stakeholder meeting",
                 "Summarize this customer call. Include: Customer requests, commitments made, follow-ups needed, sentiment.",
                 r#"["Customer Requests","Commitments Made","Follow-ups","Sentiment"]"#,
             ),
             (
+                "user-interview",
                 "User Interview",
                 "UX research session",
                 "Summarize this user interview. Capture: Key quotes, pain points, feature requests, surprising insights.",
                 r#"["Key Quotes","Pain Points","Feature Requests","Surprising Insights"]"#,
             ),
             (
+                "brainstorm",
                 "Brainstorm",
                 "Ideation session",
                 "Summarize this brainstorm session. List: Ideas proposed, ideas with most support, next steps to evaluate.",
                 r#"["Ideas Proposed","Ideas with Most Support","Next Steps"]"#,
             ),
             (
+                "all-hands",
                 "All-Hands",
                 "Company-wide meeting",
                 "Summarize this all-hands meeting. Cover: Announcements, Q&A highlights, key decisions, action items.",
                 r#"["Announcements","Q&A Highlights","Key Decisions","Action Items"]"#,
             ),
+            (
+                "follow-up-email",
+                "Follow-up Email",
+                "Email to send attendees",
+                "Write a follow-up email to the people in this meeting, ready to send from the user. Start with a line \"Subject: ...\", then a blank line and the body. Open with a one-line thank-you, recap what was decided, list next steps with owners and due dates, and close with any open questions. Keep it under 200 words, warm and plain, in the first person. Write only the email.",
+                r#"["Subject","Recap","Next Steps","Open Questions"]"#,
+            ),
+            (
+                "project-update",
+                "Project Update",
+                "Status for stakeholders",
+                "Write a short project status update from this meeting for stakeholders who weren't in it. Start with the overall status (On track, At risk, or Off track) and one line on why, then cover progress, decisions, risks and blockers, and next steps with owners. Use short bullets and skip anything the meeting didn't cover.",
+                r#"["Status","Progress","Decisions","Risks & Blockers","Next Steps"]"#,
+            ),
+            (
+                "meeting-minutes",
+                "Meeting Minutes",
+                "Formal record of the meeting",
+                "Write formal minutes of this meeting: who attended (if known), each topic discussed in order with a neutral one- or two-sentence record of the discussion, decisions made, action items with owners and due dates, and items deferred to a later meeting. Be factual and neutral, with no opinions.",
+                r#"["Attendees","Discussion","Decisions","Action Items","Deferred"]"#,
+            ),
+            (
+                "sales-call",
+                "Sales Call",
+                "Discovery notes for the CRM",
+                "Summarize this sales call as notes for a CRM. Cover the customer's situation and pain points, budget, decision makers and buying process, timeline, objections and how they were handled, competitors mentioned, and the agreed next steps with dates. Write \"Not covered\" for anything the call didn't discuss.",
+                r#"["Situation & Pain Points","Budget","Decision Process","Timeline","Objections","Competitors","Next Steps"]"#,
+            ),
         ];
 
-        for (name, description, prompt, sections) in builtins {
+        for (slug, name, description, prompt, sections) in builtins {
             let id = uuid::Uuid::new_v4().to_string();
             conn.execute(
-                "INSERT INTO templates (id, name, description, sections, auto_apply_rules, prompt, is_builtin, created_at)
-                 VALUES (?1, ?2, ?3, ?4, '{}', ?5, 1, ?6)",
-                params![id, name, description, sections, prompt, now],
+                "INSERT INTO templates (id, slug, name, description, sections, auto_apply_rules, prompt, is_builtin, created_at)
+                 SELECT ?1, ?2, ?3, ?4, ?5, '{}', ?6, 1, ?7
+                 WHERE NOT EXISTS (SELECT 1 FROM templates WHERE slug = ?2)",
+                params![id, slug, name, description, sections, prompt, now],
             )?;
         }
         Ok(())
@@ -3516,13 +3566,14 @@ impl Database {
             is_favorite: new.is_favorite,
             is_auto_run: new.is_auto_run,
             created_at: now,
+            slug: None,
         })
     }
 
     pub fn list_templates(&self) -> Result<Vec<Template>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at, slug
              FROM templates ORDER BY is_builtin DESC, created_at DESC",
         )?;
 
@@ -3539,6 +3590,7 @@ impl Database {
                     is_favorite: row.get::<_, i32>(7)? != 0,
                     is_auto_run: row.get::<_, i32>(8)? != 0,
                     created_at: row.get(9)?,
+                    slug: row.get(10)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -3549,7 +3601,7 @@ impl Database {
     pub fn get_template(&self, id: &str) -> Result<Template> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at, slug
              FROM templates WHERE id = ?1",
         )?;
 
@@ -3566,6 +3618,7 @@ impl Database {
                     is_favorite: row.get::<_, i32>(7)? != 0,
                     is_auto_run: row.get::<_, i32>(8)? != 0,
                     created_at: row.get(9)?,
+                    slug: row.get(10)?,
                 })
             })
             .map_err(|e| match e {
@@ -3581,7 +3634,7 @@ impl Database {
     pub fn get_auto_run_templates(&self) -> Result<Vec<Template>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at, slug
              FROM templates WHERE is_auto_run = 1 ORDER BY created_at DESC",
         )?;
 
@@ -3598,6 +3651,7 @@ impl Database {
                     is_favorite: row.get::<_, i32>(7)? != 0,
                     is_auto_run: row.get::<_, i32>(8)? != 0,
                     created_at: row.get(9)?,
+                    slug: row.get(10)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -3611,7 +3665,7 @@ impl Database {
         let conn = self.lock_conn()?;
         let template = conn
             .query_row(
-                "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+                "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at, slug
                  FROM templates
                  ORDER BY is_builtin DESC, name = 'General' DESC, created_at ASC, rowid ASC
                  LIMIT 1",
@@ -3628,6 +3682,7 @@ impl Database {
                         is_favorite: row.get::<_, i32>(7)? != 0,
                         is_auto_run: row.get::<_, i32>(8)? != 0,
                         created_at: row.get(9)?,
+                    slug: row.get(10)?,
                     })
                 },
             )
@@ -3673,7 +3728,7 @@ impl Database {
         )?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at
+            "SELECT id, name, description, sections, auto_apply_rules, prompt, is_builtin, is_favorite, is_auto_run, created_at, slug
              FROM templates WHERE id = ?1",
         )?;
 
@@ -3690,6 +3745,7 @@ impl Database {
                     is_favorite: row.get::<_, i32>(7)? != 0,
                     is_auto_run: row.get::<_, i32>(8)? != 0,
                     created_at: row.get(9)?,
+                    slug: row.get(10)?,
                 })
             })
             .map_err(|e| match e {
@@ -5930,6 +5986,78 @@ mod tests {
         assert_eq!(db.get_meeting_annotations(&meeting.id).unwrap().len(), 1);
         db.delete_meeting(&meeting.id).unwrap();
         assert!(db.get_meeting_annotations(&meeting.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn builtin_templates_are_seeded_once_by_slug() {
+        let db = Database::new_in_memory().unwrap();
+        let builtins = |db: &Database| -> Vec<Template> {
+            db.list_templates()
+                .unwrap()
+                .into_iter()
+                .filter(|t| t.is_builtin)
+                .collect()
+        };
+        assert_eq!(builtins(&db).len(), 12);
+        let email = builtins(&db)
+            .into_iter()
+            .find(|t| t.slug.as_deref() == Some("follow-up-email"))
+            .unwrap();
+        assert_eq!(email.name, "Follow-up Email");
+        assert!(email.prompt.contains("\"Subject: ...\""));
+        assert!(db.delete_template(&email.id).is_err());
+
+        // Renamed, it keeps its slug, and opening again adds nothing.
+        db.update_template(&UpdateTemplate {
+            id: email.id.clone(),
+            name: "Thank-you note".into(),
+            description: email.description.clone(),
+            sections: email.sections.clone(),
+            auto_apply_rules: email.auto_apply_rules.clone(),
+            prompt: email.prompt.clone(),
+            is_favorite: false,
+            is_auto_run: false,
+        })
+        .unwrap();
+        db.initialize().unwrap();
+        let after = builtins(&db);
+        assert_eq!(after.len(), 12);
+        let slugs: std::collections::HashSet<_> =
+            after.iter().filter_map(|t| t.slug.clone()).collect();
+        assert_eq!(slugs.len(), 12);
+    }
+
+    #[test]
+    fn libraries_from_before_slugs_get_them_and_only_the_new_builtins() {
+        let db = Database::new_in_memory().unwrap();
+        {
+            // As an older version left it: no slugs, one built-in renamed,
+            // none of the follow-up templates.
+            let conn = db.lock_conn().unwrap();
+            conn.execute_batch(
+                "DROP INDEX idx_templates_slug;
+                 UPDATE templates SET slug = NULL;
+                 DELETE FROM templates WHERE name IN ('Follow-up Email', 'Project Update', 'Meeting Minutes', 'Sales Call');
+                 UPDATE templates SET name = 'Weekly 1:1' WHERE name = '1-on-1';
+                 ALTER TABLE templates DROP COLUMN slug;
+                 PRAGMA user_version = 10;",
+            )
+            .unwrap();
+        }
+        db.initialize().unwrap();
+        let builtins: Vec<Template> = db
+            .list_templates()
+            .unwrap()
+            .into_iter()
+            .filter(|t| t.is_builtin)
+            .collect();
+        assert_eq!(builtins.len(), 12);
+        let one_on_one = builtins
+            .iter()
+            .find(|t| t.slug.as_deref() == Some("one-on-one"))
+            .unwrap();
+        assert_eq!(one_on_one.name, "Weekly 1:1");
+        assert!(builtins.iter().all(|t| t.slug.is_some()));
     }
 
     #[test]
