@@ -59,6 +59,15 @@ const PAGES = [
     },
   },
   {
+    name: "meeting-summary-tabs",
+    route: "/meeting/m1",
+    ready: "role=tab[name='Summaries']",
+    async prepare(page) {
+      await page.getByRole("button", { name: "A follow-up email" }).click();
+      await page.getByRole("tab", { name: /Follow-up/ }).first().waitFor();
+    },
+  },
+  {
     name: "meeting-ask",
     route: "/meeting/m1",
     ready: "role=tab[name='Summaries']",

@@ -10,6 +10,7 @@ import { ResizeHandle } from "@/components/ResizeHandle";
 import { useChat } from "@/hooks/useChat";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useRecipes } from "@/hooks/useRecipes";
+import { useHideChatButton } from "@/hooks/useChatButton";
 import { X, Zap } from "lucide-react";
 
 interface ChatPanelProps {
@@ -153,6 +154,9 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
 
 
   const isLoading = loading || recipeLoading;
+
+  // The floating chat button sits over this panel's messages and input.
+  useHideChatButton(open);
 
   if (!open) return null;
 

@@ -1177,6 +1177,17 @@ export const FIXTURES = {
   get_meeting: MEETINGS[0],
   get_transcript: { [MEETINGS[0].id]: TRANSCRIPT },
   get_summaries: SUMMARIES,
+  // What a one-click "Turn this meeting into" follow-up produces.
+  generate_summary: {
+    id: "s-email",
+    meeting_id: "m1",
+    template_id: "tpl-email",
+    provider: "anthropic",
+    model: "claude-opus-4-6",
+    content:
+      "Subject: Onboarding rebuild — next steps\n\nHi all,\n\nThanks for the review today. We're shipping the inline permissions explainer this sprint and moving calendar access out of onboarding. Copy variants land Thursday.\n\nBest,",
+    created_at: day(28, 18, 10),
+  },
   get_audio_recap: AUDIO_RECAP,
   generate_audio_recap: AUDIO_RECAP,
   ask_the_room: ROOM_ANSWER,
