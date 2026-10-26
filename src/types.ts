@@ -111,6 +111,8 @@ export interface Template {
   is_favorite: boolean;
   is_auto_run: boolean;
   created_at: string;
+  /** A built-in template's stable key, e.g. "follow-up-email"; null for your own. */
+  slug: string | null;
 }
 
 export interface Summary {
@@ -321,7 +323,7 @@ export interface ScratchNote {
 
 export type AnnotationKind = "comment" | "highlight" | "flag";
 
-/** A comment, highlight, or flag an agent pinned to a meeting over MCP or the CLI. */
+/** A comment, highlight, or flag pinned to a meeting: your highlights, or an agent's over MCP or the CLI. */
 export interface MeetingAnnotation {
   id: string;
   meeting_id: string;
@@ -331,10 +333,24 @@ export interface MeetingAnnotation {
   kind: AnnotationKind;
   /** Markdown. */
   body: string;
-  /** The MCP client's name, or "cli". */
+  /** The MCP client's name, "cli", or "You" for your own highlights. */
   author: string;
+  /** Made by you in the app rather than by an agent. */
+  by_user: boolean;
   created_at: string;
   resolved_at: string | null;
+}
+
+/** A meeting translated into another language with the chosen AI. */
+export interface MeetingTranslation {
+  language: string;
+  /** Each transcript line's translation, by segment id; lines missing here show in the original. */
+  segments: Record<string, string>;
+  /** Each summary's translation, by summary id. */
+  summaries: Record<string, string>;
+  provider: string;
+  model: string;
+  created_at: string;
 }
 
 /** A picture of content shared on screen during a meeting. */

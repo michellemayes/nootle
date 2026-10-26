@@ -33,13 +33,28 @@ pub fn format_transcript(segments: &[TranscriptSegment]) -> String {
         .join("\n")
 }
 
-/// Quick notes as prompt lines: `- [00:12:34] "note"`.
-pub(crate) fn format_scratch_notes(notes: &[crate::db::ScratchNote]) -> String {
-    notes
-        .iter()
-        .map(|n| format!("- [{}] \"{}\"", format_ms(n.timestamp_ms), n.content))
+/// Moments as prompt lines: `- [00:12:34] "text"`.
+fn format_moments<'a>(moments: impl Iterator<Item = (i64, &'a str)>) -> String {
+    moments
+        .map(|(ms, text)| format!("- [{}] \"{text}\"", format_ms(ms)))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Quick notes as prompt lines: `- [00:12:34] "note"`.
+pub(crate) fn format_scratch_notes(notes: &[crate::db::ScratchNote]) -> String {
+    format_moments(notes.iter().map(|n| (n.timestamp_ms, n.content.as_str())))
+}
+
+/// Transcript lines the user highlighted, as prompt lines like quick notes.
+fn user_highlights(db: &Database, meeting_id: &str) -> String {
+    let annotations = db.get_meeting_annotations(meeting_id).unwrap_or_default();
+    format_moments(
+        annotations
+            .iter()
+            .filter(|a| a.by_user && a.resolved_at.is_none())
+            .map(|a| (a.start_ms, a.body.as_str())),
+    )
 }
 
 /// The transcript as the LLM reads it: speech, then `meeting_context`.
@@ -71,7 +86,7 @@ fn transcript_budget_chars(provider: &str) -> usize {
 
 /// Splits a formatted transcript into parts of at most `max_chars`, at line
 /// (speaker turn) boundaries.
-fn split_transcript(text: &str, max_chars: usize) -> Vec<String> {
+pub(crate) fn split_transcript(text: &str, max_chars: usize) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
     for line in text.lines() {
@@ -160,12 +175,17 @@ pub async fn summarize_meeting(
     let slides = crate::slides::aligned(db, meeting_id, &transcript).unwrap_or_default();
 
     let scratch_notes = db.get_scratch_notes(meeting_id).unwrap_or_default();
-    let notes_section = if scratch_notes.is_empty() {
+    let highlights = user_highlights(db, meeting_id);
+    let lines = [format_scratch_notes(&scratch_notes), highlights]
+        .into_iter()
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let notes_section = if lines.is_empty() {
         String::new()
     } else {
         format!(
-            "\n\nThe user highlighted these moments during the meeting:\n{}\n\nGive extra attention to these highlighted topics in your summary.",
-            format_scratch_notes(&scratch_notes)
+            "\n\nThe user highlighted these moments during the meeting:\n{lines}\n\nGive extra attention to these highlighted topics in your summary."
         )
     };
 
@@ -376,6 +396,57 @@ mod tests {
         assert!(
             text.ends_with("Slide 1 (01:05–01:05): Revenue Q3: $4.2M"),
             "{text}"
+        );
+    }
+
+    #[test]
+    fn summaries_hear_about_your_open_highlights_only() {
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(crate::db::NewMeeting {
+                title: "Review".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        db.create_transcript_segment(crate::db::NewTranscriptSegment {
+            meeting_id: meeting.id.clone(),
+            speaker_label: "Ana".into(),
+            text: "Pricing goes up in March.".into(),
+            start_ms: 61_000,
+            end_ms: 64_000,
+            confidence: 0.9,
+        })
+        .unwrap();
+        assert_eq!(user_highlights(&db, &meeting.id), "");
+        crate::ops::highlight_transcript(
+            &db,
+            &meeting.id,
+            61_000,
+            64_000,
+            "Pricing goes up in March.",
+        )
+        .unwrap();
+        let resolved =
+            crate::ops::highlight_transcript(&db, &meeting.id, 61_000, 62_000, "Old").unwrap();
+        db.set_meeting_annotation_resolved(&resolved.id, true)
+            .unwrap();
+        crate::ops::add_annotation(
+            &db,
+            crate::db::NewMeetingAnnotation {
+                meeting_id: meeting.id.clone(),
+                start_ms: 61_000,
+                end_ms: None,
+                kind: crate::db::AnnotationKind::Comment,
+                body: "An agent's".into(),
+                author: "claude-code".into(),
+                by_user: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            user_highlights(&db, &meeting.id),
+            "- [01:01] \"Pricing goes up in March.\""
         );
     }
 

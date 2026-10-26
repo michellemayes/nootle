@@ -26,6 +26,8 @@ With calendar access, a recording started while an event is underway (or about t
 
 Type shorthand in the notes area while you record: fragments, arrows, initials are all fine. Notes are saved as you type. When the meeting ends, Nootle expands them, along with your quick notes (⌘⇧N), into full notes from the transcript, using the calendar event's agenda and related passages from your knowledge base. Open the meeting's **Notes** tab and switch between **Original** and **Enriched**.
 
+To mark a moment that matters, click **Highlight** in the recording bar (⌘⇧H) and the line just said is highlighted. Open the live transcript to highlight any earlier line with the marker beside it, or do it later from the meeting's transcript. Highlights show on the player's seek bar and under **Your highlights**, are in Markdown exports, and summaries give them extra attention.
+
 ## Knowledge Base
 
 The **Knowledge** page holds the folders, files, and web pages Nootle can draw on. Click **Add folder** or **Add files**, or paste a web address. Nootle reads PDF, Word, PowerPoint, Excel, Markdown, text, CSV, and HTML files, plus `.webloc` and `.url` bookmarks, and indexes them on your Mac with the search model (Settings → Models). Your files never leave your Mac.

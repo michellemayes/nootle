@@ -302,6 +302,19 @@ pub fn list_meeting_annotations(
         .map_err(|e| e.to_string())
 }
 
+/// Highlights a stretch of the transcript as you (see `ops::highlight_transcript`).
+#[tauri::command(async)]
+pub fn highlight_transcript(
+    db: State<'_, DbState>,
+    meeting_id: String,
+    start_ms: i64,
+    end_ms: i64,
+    text: String,
+) -> Result<MeetingAnnotation, String> {
+    crate::ops::highlight_transcript(&db, &meeting_id, start_ms, end_ms, &text)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command(async)]
 pub fn resolve_meeting_annotation(
     db: State<'_, DbState>,
@@ -1829,6 +1842,32 @@ pub async fn check_meeting_followups(
         emit_commitments_updated(&app, &check);
     }
     db.commitment_followups(&meeting_id, &crate::commitments::today())
+        .map_err(|e| e.to_string())
+}
+
+/// A meeting's saved translations, by language.
+#[tauri::command(async)]
+pub fn list_meeting_translations(
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<Vec<crate::translation::MeetingTranslation>, String> {
+    db.list_meeting_translations(&meeting_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Translates a meeting's transcript and summaries with the chosen model.
+#[tauri::command]
+pub async fn translate_meeting(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    language: String,
+    provider: String,
+    model: String,
+) -> Result<crate::translation::MeetingTranslation, String> {
+    let llm = llm.read().await;
+    crate::translation::translate_meeting(&db, &llm, &meeting_id, &language, &provider, &model)
+        .await
         .map_err(|e| e.to_string())
 }
 

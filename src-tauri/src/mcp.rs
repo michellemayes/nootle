@@ -672,6 +672,7 @@ impl NootleMcpServer {
             kind: p.kind,
             body: p.body,
             author,
+            by_user: false,
         };
         Ok(ops::add_annotation(&self.db, annotation)?)
     }
@@ -772,7 +773,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Get meeting",
-        description = "Get a meeting's details, notes, summaries, labels, scratch notes, Linear tickets, agent annotations, and transcript as \"[HH:MM:SS.mmm] Speaker: text\" lines, 300 per call.",
+        description = "Get a meeting's details, notes, summaries, labels, scratch notes, Linear tickets, annotations (the user's highlights, with by_user true, and agents' notes), and transcript as \"[HH:MM:SS.mmm] Speaker: text\" lines, 300 per call.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     async fn get_meeting(
@@ -1249,7 +1250,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "List meeting annotations",
-        description = "List the comments, highlights, and flags agents pinned to a meeting, in timeline order, with who added each and whether it's resolved.",
+        description = "List the comments, highlights, and flags pinned to a meeting, in timeline order, with who added each and whether it's resolved. Those with by_user true are the user's own highlights of transcript lines, quoting the line: the moments they marked as mattering most.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn list_meeting_annotations(

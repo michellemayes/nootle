@@ -22,9 +22,35 @@
       const byId = fixtures.get_transcript || {};
       return byId[args?.meetingId] || [];
     }
-    // Agent annotations are keyed by meeting id, and can be resolved or deleted.
+    // Annotations are keyed by meeting id, and can be added, resolved, or deleted.
     const annotations = fixtures.list_meeting_annotations || {};
     if (cmd === "list_meeting_annotations") return annotations[args?.meetingId] || [];
+    // A translation is saved once made, so the menu lists it afterwards.
+    if (cmd === "translate_meeting" && fixtures.translate_meeting) {
+      const done = { ...fixtures.translate_meeting, language: args.language };
+      fixtures.list_meeting_translations = [
+        ...(fixtures.list_meeting_translations || []).filter((t) => t.language !== args.language),
+        done,
+      ];
+      return done;
+    }
+    if (cmd === "highlight_transcript") {
+      const added = {
+        id: `hl-${nextId++}`,
+        meeting_id: args.meetingId,
+        start_ms: args.startMs,
+        end_ms: args.endMs,
+        kind: "highlight",
+        body: args.text.trim(),
+        author: "You",
+        by_user: true,
+        created_at: new Date().toISOString(),
+        resolved_at: null,
+      };
+      fixtures.list_meeting_annotations = annotations;
+      annotations[args.meetingId] = [...(annotations[args.meetingId] || []), added];
+      return added;
+    }
     if (cmd === "resolve_meeting_annotation" || cmd === "delete_meeting_annotation") {
       for (const [meetingId, list] of Object.entries(annotations)) {
         annotations[meetingId] =

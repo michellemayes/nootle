@@ -566,6 +566,24 @@ const TEMPLATES = [
     is_auto_run: false,
     created_at: day(9, 14),
   },
+  ...[
+    ["tpl-email", "follow-up-email", "Follow-up Email", "Email to send attendees"],
+    ["tpl-update", "project-update", "Project Update", "Status for stakeholders"],
+    ["tpl-minutes", "meeting-minutes", "Meeting Minutes", "Formal record of the meeting"],
+    ["tpl-sales", "sales-call", "Sales Call", "Discovery notes for the CRM"],
+  ].map(([id, slug, name, description]) => ({
+    id,
+    slug,
+    name,
+    description,
+    sections: "",
+    auto_apply_rules: "",
+    prompt: "",
+    is_builtin: true,
+    is_favorite: false,
+    is_auto_run: false,
+    created_at: day(1, 9),
+  })),
 ];
 
 const RECIPES = [
@@ -1178,6 +1196,7 @@ export const FIXTURES = {
   list_voice_profiles: [],
   list_dictionary_entries: [],
   list_meeting_annotations: {},
+  list_meeting_translations: [],
 
   list_labels: LABELS,
   get_all_meeting_labels: MEETING_LABELS,

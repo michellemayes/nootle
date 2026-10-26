@@ -342,9 +342,9 @@ fn test_search_transcripts() {
 #[test]
 fn test_templates_crud() {
     let db = Database::new_in_memory().unwrap();
-    // The DB seeds 8 built-in templates on init
+    // The DB seeds 12 built-in templates on init
     let initial_templates = db.list_templates().unwrap();
-    assert_eq!(initial_templates.len(), 8);
+    assert_eq!(initial_templates.len(), 12);
     assert!(initial_templates.iter().all(|t| t.is_builtin));
 
     let custom = db
@@ -364,7 +364,7 @@ fn test_templates_crud() {
     assert!(!custom.is_builtin);
 
     let templates = db.list_templates().unwrap();
-    assert_eq!(templates.len(), 9);
+    assert_eq!(templates.len(), initial_templates.len() + 1);
 
     let updated = db
         .update_template(&UpdateTemplate {
@@ -384,7 +384,7 @@ fn test_templates_crud() {
 
     db.delete_template(&custom.id).unwrap();
     let templates = db.list_templates().unwrap();
-    assert_eq!(templates.len(), 8);
+    assert_eq!(templates.len(), initial_templates.len());
 }
 
 #[test]

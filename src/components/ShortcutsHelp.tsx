@@ -30,6 +30,7 @@ const SECTIONS: { title: string; shortcuts: { keys: string[]; label: string }[] 
     title: "Recording",
     shortcuts: [
       { keys: ["⌘", "⇧", "N"], label: "Add a quick note" },
+      { keys: ["⌘", "⇧", "H"], label: "Highlight what was just said" },
       { keys: ["⌘", "↵"], label: "Stop recording" },
     ],
   },
