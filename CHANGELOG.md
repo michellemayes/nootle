@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- **meeting:** Open each summary and follow-up in its own tab (#221) ([93f3118](https://github.com/michellemayes/nootle/commit/93f3118bda89fb6da6feb0813396a4f7a498429f))
+
+## [0.24.1] - 2026-10-26
+
+### Bug Fixes
+
+- **chat:** Hide the floating chat button while Ask Nootle is open (#220) ([cb340e2](https://github.com/michellemayes/nootle/commit/cb340e2a05f817d3f4d2fe2103f7ed17b9131098))
+
 ## [0.24.0] - 2026-10-26
 
 ### Bug Fixes
