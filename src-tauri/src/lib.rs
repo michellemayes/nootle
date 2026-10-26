@@ -27,6 +27,7 @@ pub mod linear;
 pub mod live_assist;
 pub mod llm;
 pub mod mcp;
+pub mod meeting_chat;
 pub mod meeting_popup;
 pub mod menu_bar;
 pub mod model_download;

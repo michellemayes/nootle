@@ -6,7 +6,7 @@ export const MEETING_PROMPTS = [
   "Summarize this meeting in three bullets",
   "What did we decide?",
   "List the action items and who owns them",
-  "What questions were left open?",
+  "Add the open questions to my notes",
 ];
 
 export const LIBRARY_PROMPTS = [

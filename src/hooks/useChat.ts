@@ -1,6 +1,18 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ChatMessage } from "@/types";
+import type { ChatMessage, MeetingChatReply } from "@/types";
+
+/**
+ * A message as the model rereads it: what it changed is spelled out, so a
+ * later turn knows the notes already hold what it added.
+ */
+function forHistory({ role, content, actions }: ChatMessage) {
+  if (!actions?.length) return { role, content };
+  const changes = actions
+    .map((a) => (a.ok ? a.summary : `Failed: ${a.summary}`))
+    .join("; ");
+  return { role, content: `${content}\n\n[Changes made: ${changes}]`.trim() };
+}
 
 export function useChat(meetingId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -24,19 +36,21 @@ export function useChat(meetingId: string) {
       setError(null);
 
       try {
-        const response = await invoke<string>("chat_with_meeting", {
+        const response = await invoke<MeetingChatReply>("chat_with_meeting", {
           meetingId,
           message,
-          history: [...latestMessagesRef.current, userMsg],
+          // The backend adds `message` after the history itself.
+          history: latestMessagesRef.current.map(forHistory),
           provider,
           model,
         });
         const assistantMsg: ChatMessage = {
           role: "assistant",
-          content: response,
+          content: response.reply,
+          actions: response.actions,
         };
         setMessages((prev) => [...prev, assistantMsg]);
-        return response;
+        return response.reply;
       } catch (err) {
         setError(String(err));
         return null;

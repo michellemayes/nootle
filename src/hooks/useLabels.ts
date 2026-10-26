@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { Label, MeetingLabelEntry } from "@/types";
 
 export function useLabels() {
@@ -39,6 +40,17 @@ export function useLabels() {
   useEffect(() => {
     refresh();
     refreshMeetingLabels();
+  }, [refresh, refreshMeetingLabels]);
+
+  // Ask Nootle can create labels and tag meetings.
+  useEffect(() => {
+    const unlisten = listen("labels-updated", () => {
+      refresh();
+      refreshMeetingLabels();
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [refresh, refreshMeetingLabels]);
 
   const createLabel = useCallback(
