@@ -13,9 +13,9 @@
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { LIVE_TRANSCRIPT } from "./demo-data.mjs";
 import {
   TRAFFIC_LIGHTS,
+  emitLiveTranscript,
   launchBrowser,
   newDemoContext,
   openPage,
@@ -60,10 +60,7 @@ const SHOTS = [
     route: "/recording",
     ready: "text=Live transcript",
     async prepare(page) {
-      await page.evaluate((segments) => {
-        window.__NOOTLE_EMIT__("transcription-status", { meeting_id: "m-live", available: true });
-        window.__NOOTLE_EMIT__("transcript-update", segments);
-      }, LIVE_TRANSCRIPT);
+      await emitLiveTranscript(page);
       // The title comes from start_recording's meeting, as it would from
       // the calendar event underway.
       await page.getByRole("button", { name: "Design Review — Onboarding Flow" }).waitFor();

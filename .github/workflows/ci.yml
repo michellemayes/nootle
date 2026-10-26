@@ -52,6 +52,30 @@ jobs:
       - name: Frontend checks
         run: bash scripts/ci-frontend.sh
 
+  # Opens every page at window sizes from the 300 px minimum up to a large
+  # display and fails if anything is cut off (see docs/layout.md).
+  check-layout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: 9
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Layout check
+        run: pnpm check:layout --shots layout-shots
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: layout-shots
+          path: layout-shots
+
   # Fast feedback on the platform-independent backend (search, pipeline,
   # database, LLM plumbing). macOS-only capture is covered by check-rust.
   test-rust-linux:
