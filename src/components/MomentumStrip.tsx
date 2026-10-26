@@ -33,7 +33,7 @@ function Stat({
       whileHover={onClick ? { y: -2 } : undefined}
       transition={{ duration: 0.25, delay }}
       className={cn(
-        "flex min-w-0 flex-1 items-center gap-3 rounded-xl border bg-card px-4 py-3 text-left shadow-sm transition-colors",
+        "flex min-w-0 flex-1 basis-40 items-center gap-3 rounded-xl border bg-card px-4 py-3 text-left shadow-sm transition-colors",
         onClick ? "cursor-pointer hover:bg-accent/30" : "cursor-default",
       )}
     >

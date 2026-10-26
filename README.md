@@ -108,7 +108,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-[docs/development.md](docs/development.md) covers tests, releases, and how integration sign-in works.
+[docs/development.md](docs/development.md) covers tests, releases, and how integration sign-in works. [docs/layout.md](docs/layout.md) has the rules that keep every page fitting any window size, checked by `pnpm check:layout`.
 
 ## License
 

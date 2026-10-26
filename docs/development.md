@@ -39,6 +39,10 @@ On macOS, point the golden tests at your own downloaded models instead by leavin
 
 [`formal/`](../formal/README.md) has TLA+ models of the speech endpointer and the cancellable download and summary jobs. Run `formal/tla/check.sh` (needs Java) after changing `vad.rs`, `DownloadManager` or `SummaryJobsState`.
 
+## Layout
+
+Pages have to fit any window from 300 px wide up. Follow [layout.md](layout.md), and run `pnpm check:layout` after UI changes; CI runs it on every pull request.
+
 ## Built with
 
 - [Tauri 2](https://tauri.app) — native app shell

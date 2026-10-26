@@ -28,6 +28,7 @@ import { NotesEditor } from "@/components/NotesEditor";
 import { AnalyticsPanel } from "@/components/AnalyticsPanel";
 import { ExportMenu } from "@/components/ExportMenu";
 import { ShareMenu } from "@/components/ShareMenu";
+import { Toolbar } from "@/components/Toolbar";
 import { ContinueInButton } from "@/components/ContinueInButton";
 import { useMeeting, updateMeetingTitle } from "@/hooks/useMeetings";
 import { useTranscript } from "@/hooks/useTranscripts";
@@ -1546,11 +1547,11 @@ export function MeetingDetail() {
   }
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden">
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="relative flex flex-1 min-h-0 overflow-hidden">
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="shrink-0 flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4">
-        <div className="flex min-w-64 flex-1 items-center gap-3">
+        <div className="flex min-w-0 flex-1 basis-64 items-center gap-3">
           <Button
             variant="ghost"
             size="icon-sm"
@@ -1597,7 +1598,6 @@ export function MeetingDetail() {
                 {statusLabel(meeting.status)}
               </Badge>
             </div>
-            {!isCompact && (
             <div className="mt-1.5">
             <LabelEditor
               meetingId={meeting.id}
@@ -1610,11 +1610,10 @@ export function MeetingDetail() {
               onDeleteLabel={handleDeleteLabel}
             />
             </div>
-            )}
           </div>
         </div>
-        {!isCompact && (
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        {/* Wraps under the title when the window is too narrow for both. */}
+        <Toolbar className="ml-auto">
           {/* One joined toolbar for the icon actions, then Share and the primary Ask Nootle. */}
           <div className="flex items-center [&>*]:rounded-none [&>*:first-child]:rounded-l-md [&>*:last-child]:rounded-r-md [&>*+*]:-ml-px [&>*:focus-visible]:z-10">
             <RunWorkflowMenu
@@ -1639,24 +1638,34 @@ export function MeetingDetail() {
           <ShareMenu meeting={meeting} />
           {!chatOpen && (
             <Button size="sm" className="text-xs gap-1.5" onClick={() => setChatOpen(true)}>
-              <MessageSquare className="h-3 w-3" /> Ask Nootle
+              <MessageSquare className="h-3 w-3" /> <span className="@max-md/main:sr-only">Ask Nootle</span>
             </Button>
           )}
-        </div>
-        )}
+        </Toolbar>
       </div>
 
-      {/* Two-column layout */}
+      {/* Two-column layout. A narrow window has room for one column, so the
+          transcript, while shown, takes the place of the tabs. */}
       <div ref={containerRef} className="flex flex-1 min-h-0 overflow-hidden">
           {!transcriptCollapsed && (
             <div
-              className="flex overflow-hidden"
+              className="flex overflow-hidden @max-3xl/main:w-full!"
               style={{ width: `${transcriptWidth}%` }}
             >
               <div className="flex flex-1 flex-col overflow-hidden">
                 <div className="flex items-center justify-between px-5 border-b h-12">
                   <h2 className="text-sm font-semibold">Transcript</h2>
                   <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="@3xl/main:hidden"
+                      onClick={() => setTranscriptCollapsed(true)}
+                      title="Hide transcript"
+                      aria-label="Hide transcript"
+                    >
+                      <PanelLeftClose className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -1859,7 +1868,7 @@ export function MeetingDetail() {
                 </ScrollArea>
               </div>
               <div
-                className="w-1.5 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors border-r"
+                className="w-1.5 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors border-r @max-3xl/main:hidden"
                 onMouseDown={() => {
                   resizingRef.current = true;
                   document.body.style.cursor = "col-resize";
@@ -1869,7 +1878,7 @@ export function MeetingDetail() {
             </div>
           )}
 
-        <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
+        <div className={cn("flex flex-col min-w-0 flex-1 overflow-hidden", !transcriptCollapsed && "@max-3xl/main:hidden")}>
           <Tabs value={detailTab} onValueChange={setDetailTab} className="flex flex-1 flex-col overflow-hidden">
             <div className="px-4 border-b flex items-center h-12 gap-2">
               <Button
@@ -1883,22 +1892,22 @@ export function MeetingDetail() {
               </Button>
               <TabsList>
                 <TabsTrigger value="summaries" title="Summaries">
-                  {isCompact ? <Sparkles className="h-4 w-4" /> : "Summaries"}
+                  <Sparkles className="h-4 w-4 @xl/main:hidden" /><span className="@max-xl/main:sr-only">Summaries</span>
                 </TabsTrigger>
                 <TabsTrigger value="notes" title="Notes">
-                  {isCompact ? <FileText className="h-4 w-4" /> : "Notes"}
+                  <FileText className="h-4 w-4 @xl/main:hidden" /><span className="@max-xl/main:sr-only">Notes</span>
                 </TabsTrigger>
                 <TabsTrigger value="insights" title="Insights">
-                  {isCompact ? <Lightbulb className="h-4 w-4" /> : "Insights"}
+                  <Lightbulb className="h-4 w-4 @xl/main:hidden" /><span className="@max-xl/main:sr-only">Insights</span>
                 </TabsTrigger>
                 <TabsTrigger value="analytics" title="Analytics">
-                  {isCompact ? <BarChart3 className="h-4 w-4" /> : "Analytics"}
+                  <BarChart3 className="h-4 w-4 @xl/main:hidden" /><span className="@max-xl/main:sr-only">Analytics</span>
                 </TabsTrigger>
                 <TabsTrigger value="workflows" title="Workflows">
-                  {isCompact ? <Zap className="h-4 w-4" /> : "Workflows"}
+                  <Zap className="h-4 w-4 @xl/main:hidden" /><span className="@max-xl/main:sr-only">Workflows</span>
                 </TabsTrigger>
                 <TabsTrigger value="listen" title="Listen">
-                  {isCompact ? <Headphones className="h-4 w-4" /> : "Listen"}
+                  <Headphones className="h-4 w-4 @xl/main:hidden" /><span className="@max-xl/main:sr-only">Listen</span>
                 </TabsTrigger>
               </TabsList>
             </div>

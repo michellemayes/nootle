@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PageHeader } from "@/components/PageHeader";
+import { Toolbar } from "@/components/Toolbar";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadingState, LOADING_COPY } from "@/components/LoadingState";
 import { useAllInsights } from "@/hooks/useInsights";
@@ -351,7 +352,7 @@ function CommitmentsSection({
 
   return (
     <section>
-      <div className="flex items-center gap-2 pb-2">
+      <Toolbar className="pb-2">
         <Handshake className="h-4 w-4 text-muted-foreground" />
         <h2 className="text-base font-semibold">Commitments</h2>
         <Badge variant="secondary" size="sm">{pending.length}</Badge>
@@ -360,7 +361,7 @@ function CommitmentsSection({
             {showClosed ? "Hide done and dropped" : `Show done and dropped (${closed.length})`}
           </Button>
         )}
-      </div>
+      </Toolbar>
       {!checksOn && (
         <p className="pb-2 text-xs text-muted-foreground">
           Turn on <Link to="/settings?tab=insight-types" className="underline">follow-through checks</Link> and
@@ -452,8 +453,8 @@ export function InsightsDashboard() {
         description="Commitments, action items, decisions, and key moments from your meetings"
       />
 
-      <div className="flex shrink-0 items-center gap-3 px-6 pt-6">
-        <div className="relative flex-1">
+      <Toolbar className="shrink-0 gap-3 px-6 pt-6">
+        <div className="relative min-w-48 flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search insights…"
@@ -494,7 +495,7 @@ export function InsightsDashboard() {
             <option value={UNASSIGNED}>Unassigned</option>
           </Select>
         )}
-      </div>
+      </Toolbar>
 
       {loading ? (
         <LoadingState message={LOADING_COPY.insights} />

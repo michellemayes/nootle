@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { AUDIO_DURATION_SECONDS, DEMO_NOW, FIXTURES } from "./demo-data.mjs";
+import { AUDIO_DURATION_SECONDS, DEMO_NOW, FIXTURES, LIVE_TRANSCRIPT } from "./demo-data.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, "../..");
@@ -114,4 +114,12 @@ export async function openPage(context, route, ready) {
   await page.waitForSelector(ready, { timeout: 15_000 });
   await page.waitForTimeout(1200);
   return page;
+}
+
+/** Fires the backend events that fill the recording view's live transcript. */
+export async function emitLiveTranscript(page) {
+  await page.evaluate((segments) => {
+    window.__NOOTLE_EMIT__("transcription-status", { meeting_id: "m-live", available: true });
+    window.__NOOTLE_EMIT__("transcript-update", segments);
+  }, LIVE_TRANSCRIPT);
 }

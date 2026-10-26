@@ -113,8 +113,10 @@ export function PeoplePage() {
           description="Click a speaker's name in a meeting's transcript and give them their real name. They'll show up here with every meeting you've had together. Turn on Remember voices in Settings to have Nootle name them for you next time."
         />
       ) : (
-        <div className="flex min-h-0 flex-1">
-          <ScrollArea className="w-64 shrink-0 border-r">
+        // Side by side when there's room; in a narrow window the list sits
+        // above the details instead of squeezing them.
+        <div className="flex min-h-0 flex-1 flex-col @2xl/main:flex-row">
+          <ScrollArea className="max-h-48 shrink-0 border-b @2xl/main:max-h-none @2xl/main:w-64 @2xl/main:border-r @2xl/main:border-b-0">
             <ul className="p-2">
               {coachEnabled && (
                 <li>
@@ -159,7 +161,7 @@ export function PeoplePage() {
               ))}
             </ul>
           </ScrollArea>
-          <ScrollArea className="flex-1">
+          <ScrollArea className="min-h-0 flex-1">
             {showYou && <CoachTrends points={trends} />}
             {detail && person && detail.name === person.name && (
               <div className="max-w-3xl space-y-8 p-6">

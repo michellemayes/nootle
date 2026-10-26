@@ -69,7 +69,7 @@ const components: Components = {
     </blockquote>
   ),
   table: ({ children }) => (
-    <div className="my-5 overflow-x-auto rounded-xl border">
+    <div data-layout-scroll-x className="my-5 overflow-x-auto rounded-xl border">
       <table className="w-full text-sm [&_td:first-child]:whitespace-nowrap [&_tr:last-child_td]:border-b-0">{children}</table>
     </div>
   ),

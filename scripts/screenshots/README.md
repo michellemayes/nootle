@@ -1,6 +1,7 @@
 # Screenshots and demo GIF
 
-Generates the landing page's app screenshots and the root `README.md`'s demo GIF.
+Generates the landing page's app screenshots and the root `README.md`'s demo GIF,
+and runs the layout check (`pnpm check:layout`, see [docs/layout.md](../../docs/layout.md)).
 
 ```bash
 pnpm install
