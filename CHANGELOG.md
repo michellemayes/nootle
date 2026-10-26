@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.24.0] - 2026-10-26
+
+### Bug Fixes
+
+- **site:** Load every "See it in action" screenshot up front (#216) ([0f90e09](https://github.com/michellemayes/nootle/commit/0f90e09f4b8c07df518806b9794a948e3e5cab89))
+
+### Features
+
+- Tactiq parity: highlights, translation, one-click follow-ups (#218) ([5a021ed](https://github.com/michellemayes/nootle/commit/5a021ed2d10359c8dff9b20f76a29e14839953f3))
+
 ## [0.23.0] - 2026-10-23
 
 ### Features
