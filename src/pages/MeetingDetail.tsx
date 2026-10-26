@@ -2011,11 +2011,11 @@ export function MeetingDetail() {
                       const content = translation?.summaries[summary.id] ?? summary.content;
                       return (
                         <div>
-                          <div className="flex items-center gap-2 mb-3">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-3">
                             <span className="text-xs font-medium text-foreground">
                               {label}
                             </span>
-                            <span className="text-xs text-muted-foreground">
+                            <span className="min-w-0 break-all text-xs text-muted-foreground">
                               {summary.provider}/{summary.model}
                             </span>
                             <div className="ml-auto flex items-center gap-2">
