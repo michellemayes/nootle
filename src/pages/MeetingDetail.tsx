@@ -1455,29 +1455,47 @@ export function MeetingDetail() {
     return templates.filter((t) => t.slug && t.slug in QUICK_ACTIONS && !made.has(t.id));
   }, [templates, summaries]);
 
+  // Each summary gets its own tab, oldest first, so new ones open beside the
+  // original instead of stacking above it. Repeated templates get a number.
+  const { summaryTabs, defaultTab } = useMemo(() => {
+    const seen = new Map<string, number>();
+    const tabs = [...summaries].reverse().map((s) => {
+      const tmpl = s.template_id ? templates.find((t) => t.id === s.template_id) : undefined;
+      const name = tmpl?.name ?? "Summary";
+      const n = (seen.get(name) ?? 0) + 1;
+      seen.set(name, n);
+      const label = n > 1 ? `${name} (${n})` : name;
+      return {
+        summary: s,
+        label,
+        title: `${label} · ${new Date(s.created_at).toLocaleString()}`,
+        isQuickAction: !!tmpl?.slug && tmpl.slug in QUICK_ACTIONS,
+      };
+    });
+    // Until one is picked (or after switching meetings), show the newest regular summary.
+    const newestFirst = [...tabs].reverse();
+    return {
+      summaryTabs: tabs,
+      defaultTab: newestFirst.find((t) => !t.isQuickAction) ?? newestFirst[0],
+    };
+  }, [summaries, templates]);
+  const [pickedSummaryId, setPickedSummaryId] = useState<string | null>(null);
+  const activeTab = summaryTabs.find((t) => t.summary.id === pickedSummaryId) ?? defaultTab;
+
   const canGenerate = !!selectedProvider && !!selectedModel;
   const handleGenerate = async (templateId = selectedTemplate) => {
     if (!templateId || !selectedProvider || !selectedModel) return;
     setGenerating(true);
     setGenerateError(null);
     try {
-      return await generateSummary(templateId, selectedProvider, selectedModel);
+      const made = await generateSummary(templateId, selectedProvider, selectedModel);
+      if (made) setPickedSummaryId(made.id);
+      return made;
     } catch (err) {
       setGenerateError(String(err));
     } finally {
       setGenerating(false);
     }
-  };
-
-  // New summaries go on top, so bring a one-click one into view.
-  const generateAndReveal = async (templateId: string) => {
-    const made = await handleGenerate(templateId);
-    if (!made) return;
-    requestAnimationFrame(() =>
-      document
-        .querySelector(`[data-summary-id="${CSS.escape(made.id)}"]`)
-        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-    );
   };
 
   // A finished meeting should open with a summary already there. The backend
@@ -1945,7 +1963,29 @@ export function MeetingDetail() {
                 </div>
               )}
 
-              <ScrollArea className="flex-1">
+              {summaryTabs.length > 1 && (
+                <Tabs
+                  value={activeTab?.summary.id}
+                  onValueChange={setPickedSummaryId}
+                  className="border-b px-5"
+                >
+                  <TabsList variant="line" className="h-9 max-w-full justify-start overflow-x-auto">
+                    {summaryTabs.map(({ summary, label, title }) => (
+                      <TabsTrigger
+                        key={summary.id}
+                        value={summary.id}
+                        title={title}
+                        className="flex-none text-xs"
+                      >
+                        {label}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              )}
+
+              {/* Keyed so switching summaries starts at the top. */}
+              <ScrollArea key={activeTab?.summary.id} className="flex-1">
                 {summaries.length === 0 ? (
                   <EmptyState
                     icon={generating || processing ? Sparkles : FileText}
@@ -1966,19 +2006,17 @@ export function MeetingDetail() {
                   />
                 ) : (
                   <div className="p-5 space-y-6">
-                    {summaries.map((s, index) => {
-                      const content = translation?.summaries[s.id] ?? s.content;
-                      const tmpl = s.template_id
-                        ? templates.find((t) => t.id === s.template_id)
-                        : null;
+                    {activeTab && (() => {
+                      const { summary, label } = activeTab;
+                      const content = translation?.summaries[summary.id] ?? summary.content;
                       return (
-                        <div key={s.id} data-summary-id={s.id}>
-                          <div className="flex items-center gap-2 mb-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-3">
                             <span className="text-xs font-medium text-foreground">
-                              {tmpl?.name ?? "Summary"}
+                              {label}
                             </span>
-                            <span className="text-xs text-muted-foreground">
-                              {s.provider}/{s.model}
+                            <span className="min-w-0 break-all text-xs text-muted-foreground">
+                              {summary.provider}/{summary.model}
                             </span>
                             <div className="ml-auto flex items-center gap-2">
                               <button
@@ -2003,8 +2041,8 @@ export function MeetingDetail() {
                           {hasLinear && (
                             <div className="mt-3">
                               <CreateTicketButton
-                                summaryId={s.id}
-                                existingTicket={tickets.find((t) => t.summary_id === s.id)}
+                                summaryId={summary.id}
+                                existingTicket={tickets.find((t) => t.summary_id === summary.id)}
                                 teams={teams}
                                 projects={linearProjects}
                                 defaultTeamId={defaultTeamId}
@@ -2015,12 +2053,9 @@ export function MeetingDetail() {
                               />
                             </div>
                           )}
-                          {index < summaries.length - 1 && (
-                            <hr className="mt-6 border-border" />
-                          )}
                         </div>
                       );
-                    })}
+                    })()}
                     {quickActions.length > 0 && (
                       <div className="flex flex-wrap items-center gap-1.5 border-t pt-4">
                         <span className="mr-1 text-xs text-muted-foreground">Turn this meeting into</span>
@@ -2030,7 +2065,7 @@ export function MeetingDetail() {
                             size="xs"
                             variant="outline"
                             disabled={generating || !canGenerate}
-                            onClick={() => generateAndReveal(t.id)}
+                            onClick={() => handleGenerate(t.id)}
                             title={t.description}
                           >
                             {QUICK_ACTIONS[t.slug!]}
