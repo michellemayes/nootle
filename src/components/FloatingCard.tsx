@@ -16,7 +16,7 @@ export function FloatingCard({
     <AnimatePresence>
       {show && (
         <motion.div
-          className="fixed bottom-4 right-4 z-50 w-80"
+          className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)]"
           initial={{ opacity: 0, y: 16, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 12, scale: 0.98 }}

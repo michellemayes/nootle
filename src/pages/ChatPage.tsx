@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ChatComposer, ChatMessage, ChatThinking } from "@/components/ChatMessage";
 import { ResizeHandle } from "@/components/ResizeHandle";
+import { Toolbar } from "@/components/Toolbar";
 import { useChatConversations, useChatMessages } from "@/hooks/useChatHistory";
 import { useLabels } from "@/hooks/useLabels";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
@@ -244,9 +245,9 @@ export function ChatPage() {
 
       {/* Right panel - chat */}
       {(!isCompact || !sidebarOpen) && (
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* Filters bar */}
-        <div className="flex items-center gap-3 px-4 h-12 border-b">
+        <Toolbar className="min-h-12 shrink-0 gap-x-3 border-b px-4 py-2">
           {isCompact && (
             <Button variant="ghost" size="icon-sm" onClick={() => setSidebarOpen(true)} title="Show conversations" aria-label="Show conversations">
               <PanelLeftOpen className="h-4 w-4" />
@@ -288,24 +289,27 @@ export function ChatPage() {
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </Select>
-          <Input
-            type="date"
-            value={dateFromValue}
-            onChange={(e) => setDateFromValue(e.target.value)}
-            className="h-7 w-auto px-2 text-xs"
-            aria-label="From date"
-          />
-          <span className="text-xs text-muted-foreground">to</span>
-          <Input
-            type="date"
-            value={dateToValue}
-            onChange={(e) => setDateToValue(e.target.value)}
-            className="h-7 w-auto px-2 text-xs"
-            aria-label="To date"
-          />
+          {/* The date range wraps as one piece. */}
+          <span className="flex items-center gap-3">
+            <Input
+              type="date"
+              value={dateFromValue}
+              onChange={(e) => setDateFromValue(e.target.value)}
+              className="h-7 w-auto px-2 text-xs"
+              aria-label="From date"
+            />
+            <span className="text-xs text-muted-foreground">to</span>
+            <Input
+              type="date"
+              value={dateToValue}
+              onChange={(e) => setDateToValue(e.target.value)}
+              className="h-7 w-auto px-2 text-xs"
+              aria-label="To date"
+            />
+          </span>
           </>
           )}
-        </div>
+        </Toolbar>
 
         {/* Messages area */}
         {!activeId ? (

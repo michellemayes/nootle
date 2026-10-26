@@ -48,8 +48,8 @@ export function CommitmentRow({
   const closed = !isPending(c);
   const badge = STATUS_BADGE[c.status];
   return (
-    <div className="group/commitment flex items-start gap-3 rounded-md border p-3 transition-colors hover:bg-accent/30">
-      <div className="min-w-0 flex-1">
+    <div className="group/commitment flex flex-wrap items-start gap-3 rounded-md border p-3 transition-colors hover:bg-accent/30">
+      <div className="min-w-0 flex-1 basis-48">
         <p className={cn("text-sm leading-relaxed", closed && "text-muted-foreground line-through")}>
           {c.content}
         </p>
@@ -79,7 +79,7 @@ export function CommitmentRow({
           </Link>
         )}
       </div>
-      <div className="flex shrink-0 gap-1 opacity-60 transition-opacity group-hover/commitment:opacity-100 focus-within:opacity-100">
+      <div className="ml-auto flex shrink-0 gap-1 opacity-60 transition-opacity group-hover/commitment:opacity-100 focus-within:opacity-100">
         {closed ? (
           <Button variant="ghost" size="xs" onClick={() => onSetStatus(c.id, "open")} title="Reopen">
             <RotateCcw /> Reopen

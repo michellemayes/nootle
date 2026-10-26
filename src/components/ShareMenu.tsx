@@ -57,7 +57,7 @@ export function ShareMenu({ meeting }: { meeting: Meeting }) {
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="text-xs gap-1.5">
           <Link2 className={`h-3 w-3 ${share ? "text-success-foreground" : ""}`} />
-          {share ? "Shared" : "Share"}
+          <span className="@max-md/main:sr-only">{share ? "Shared" : "Share"}</span>
           <ChevronDown className="h-3 w-3 opacity-60" />
         </Button>
       </PopoverTrigger>

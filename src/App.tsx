@@ -74,7 +74,7 @@ function Layout() {
   return (
     <div className="flex h-full bg-background text-foreground">
       <Sidebar />
-      <main className="relative flex flex-1 flex-col overflow-hidden pt-8">
+      <main className="@container/main relative flex min-w-0 flex-1 flex-col overflow-hidden pt-8">
         <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-10 h-8" />
         <Suspense fallback={null}>
           <Outlet />

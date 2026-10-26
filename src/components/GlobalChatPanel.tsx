@@ -175,7 +175,7 @@ export function GlobalChatPanel() {
               right: offset.right,
               bottom: offset.bottom,
             }}
-            className="fixed z-50 flex w-[400px] h-[600px] flex-col rounded-xl border bg-background shadow-2xl"
+            className="fixed z-50 flex h-[600px] max-h-[calc(100vh-3rem)] w-[400px] max-w-[calc(100vw-3rem)] flex-col rounded-xl border bg-background shadow-2xl"
           >
             {/* Header */}
             <div

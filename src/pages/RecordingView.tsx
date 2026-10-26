@@ -184,7 +184,7 @@ function CatchUp({ meetingId }: { meetingId: string }) {
       {state === "done" && (
         <div
           role="status"
-          className="absolute right-6 top-14 z-20 w-96 rounded-lg border bg-popover p-4 text-sm shadow-lg"
+          className="absolute right-6 top-14 z-20 w-96 max-w-[calc(100%-3rem)] rounded-lg border bg-popover p-4 text-sm shadow-lg"
         >
           <div className="mb-2 flex items-center justify-between">
             <p className="font-medium">The last five minutes</p>
@@ -454,8 +454,9 @@ export function RecordingView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Header bar: recording indicator, title, timer, waveform, stop */}
-      <div className="relative flex items-center gap-4 border-b px-6 py-3">
+      {/* Header bar: recording indicator, title, timer, waveform, stop. Wraps
+          onto a second line rather than push the controls out of a narrow window. */}
+      <div className="relative flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-6 py-3">
         <div className="flex items-center gap-2">
           <span
             className={
@@ -630,7 +631,7 @@ export function RecordingView() {
           {transcriptOpen && (
             <div className="relative">
             <ScrollArea
-              className="h-[240px] border-t"
+              className="h-60 max-h-[35vh] border-t"
               viewportRef={scrollRef}
             >
                 <div role="log" aria-live="polite" aria-label="Live transcript" className="px-6 py-3 space-y-1.5">

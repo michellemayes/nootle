@@ -256,11 +256,12 @@ export function UpcomingMeetings() {
           const live = new Date(event.start).getTime() <= now;
           const brief = briefs.get(event.id);
           return (
-            <div key={event.id} className="flex items-center gap-3 px-4 py-2.5">
+            // The buttons drop below the title when the window is too narrow for one line.
+            <div key={event.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
               <span className="w-36 shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
                 {formatClockTime(event.start)} – {formatClockTime(event.end)}
               </span>
-              <span className="min-w-0 flex-1">
+              <span className="min-w-0 flex-1 basis-40">
                 <span className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium">{event.title}</span>
                   {live && (
@@ -282,35 +283,37 @@ export function UpcomingMeetings() {
                 )}
                 {brief && <BriefLine brief={brief} />}
               </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 text-xs"
-                onClick={() => setBriefFor(event)}
-                title={`Brief for "${event.title}"`}
-              >
-                <NotebookText /> Brief
-              </Button>
-              {event.meeting_url && (
+              <span className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
                 <Button
                   size="sm"
                   variant="ghost"
                   className="h-7 text-xs"
-                  onClick={() => openUrl(event.meeting_url!)}
-                  title={event.meeting_url}
+                  onClick={() => setBriefFor(event)}
+                  title={`Brief for "${event.title}"`}
                 >
-                  <Video /> Join
+                  <NotebookText /> Brief
                 </Button>
-              )}
-              <Button
-                size="sm"
-                variant={live ? "default" : "outline"}
-                className="h-7 text-xs"
-                onClick={() => record(event)}
-                title={`Record "${event.title}"`}
-              >
-                <Circle /> Record
-              </Button>
+                {event.meeting_url && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={() => openUrl(event.meeting_url!)}
+                    title={event.meeting_url}
+                  >
+                    <Video /> Join
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant={live ? "default" : "outline"}
+                  className="h-7 text-xs"
+                  onClick={() => record(event)}
+                  title={`Record "${event.title}"`}
+                >
+                  <Circle /> Record
+                </Button>
+              </span>
             </div>
           );
         })}

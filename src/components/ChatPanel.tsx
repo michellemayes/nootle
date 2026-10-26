@@ -159,7 +159,8 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
   return (
         <div
           style={{ width }}
-          className="relative flex shrink-0 flex-col border-l bg-background -mt-8"
+          // In a narrow window it covers the meeting instead of squeezing it.
+          className="relative flex shrink-0 flex-col border-l bg-background @max-2xl/main:absolute @max-2xl/main:inset-0 @max-2xl/main:z-20 @max-2xl/main:w-full! @max-2xl/main:border-l-0"
         >
           <ResizeHandle
             width={width}
@@ -170,7 +171,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
             label="Resize chat panel"
           />
           {/* Header */}
-          <div className="flex items-center justify-between px-4 pt-10 pb-3 border-b">
+          <div className="flex items-center justify-between px-4 py-3 border-b">
             <h3 className="text-sm font-semibold">Ask Nootle</h3>
             <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close chat">
               <X className="h-4 w-4" />

@@ -1,8 +1,7 @@
-import { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
+import { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
+import { COMPACT_QUERY } from "@/lib/layout";
 
 const STORAGE_KEY = "nootle-sidebar-collapsed";
-const COMPACT_THRESHOLD_RATIO = 0.38;
 
 interface CompactModeContextValue {
   isCompact: boolean;
@@ -21,39 +20,17 @@ function readStoredCollapsed(): boolean {
 }
 
 export function CompactModeProvider({ children }: { children: React.ReactNode }) {
-  const [isAutoCompact, setIsAutoCompact] = useState(false);
+  // Below the compact width the sidebar becomes an icon rail, so the page
+  // keeps the room. Keyed to the window's own width (not the display's), so it
+  // behaves the same on every screen and in the browser-driven layout check.
+  const [isAutoCompact, setIsAutoCompact] = useState(() => window.matchMedia(COMPACT_QUERY).matches);
   const [isManuallyCollapsed, setIsManuallyCollapsed] = useState(readStoredCollapsed);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    const appWindow = getCurrentWindow();
-
-    async function checkCompact() {
-      const [monitor, size] = await Promise.all([
-        currentMonitor(),
-        appWindow.innerSize(),
-      ]);
-      if (monitor) {
-        const threshold = monitor.size.width * COMPACT_THRESHOLD_RATIO;
-        setIsAutoCompact(size.width < threshold);
-      }
-    }
-
-    function scheduleCheck() {
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(checkCompact, 150);
-    }
-
-    checkCompact();
-
-    const unlistenResize = appWindow.onResized(scheduleCheck);
-    const unlistenMove = appWindow.onMoved(scheduleCheck);
-
-    return () => {
-      clearTimeout(timerRef.current);
-      unlistenResize.then((fn) => fn());
-      unlistenMove.then((fn) => fn());
-    };
+    const query = window.matchMedia(COMPACT_QUERY);
+    const update = () => setIsAutoCompact(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
   }, []);
 
   const toggleCollapsed = useCallback(() => {
