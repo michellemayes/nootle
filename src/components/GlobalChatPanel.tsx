@@ -14,6 +14,7 @@ import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { X, MessageSquare, GripHorizontal } from "lucide-react";
 import { SourceCitation } from "@/components/SourceCitation";
 import { useCompactMode } from "@/contexts/CompactModeContext";
+import { useChatButtonHidden } from "@/hooks/useChatButton";
 
 const DATE_PRESETS = [
   { label: "Last 7 days", days: 7 },
@@ -141,6 +142,7 @@ export function GlobalChatPanel() {
     embeddingStatus.embedded < embeddingStatus.total;
 
   const { isCompact } = useCompactMode();
+  const buttonHidden = useChatButtonHidden();
 
   if (onChatPage || isCompact) return null;
 
@@ -148,7 +150,7 @@ export function GlobalChatPanel() {
     <>
       {/* Floating Action Button */}
       <AnimatePresence initial={false}>
-        {!open && (
+        {!open && !buttonHidden && (
           <motion.button
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
