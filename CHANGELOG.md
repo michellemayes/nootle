@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- **chat:** Let Ask Nootle change the meeting it's open on (#222) ([7b62c42](https://github.com/michellemayes/nootle/commit/7b62c42a401717bfb06901ac204ea31940c050e3))
+
+## [0.25.1] - 2026-10-26
+
+### Bug Fixes
+
+- **ui:** Fit every page to any window size, and check it in CI (#219) ([dae8fb7](https://github.com/michellemayes/nootle/commit/dae8fb7ebbee290639b121dcc33d37e8250651e9))
+
 ## [0.25.0] - 2026-10-26
 
 ### Features
