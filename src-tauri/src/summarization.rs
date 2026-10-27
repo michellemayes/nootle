@@ -271,6 +271,23 @@ pub async fn run_auto_templates(
     Ok(summaries)
 }
 
+/// The system prompt for answering questions about one meeting: its full
+/// transcript, then the dictionary's glossary.
+pub(crate) fn transcript_chat_prompt(
+    db: &Database,
+    meeting_id: &str,
+    transcript: &[TranscriptSegment],
+) -> String {
+    format!(
+        "You are a helpful assistant that answers questions about a meeting transcript. \
+         Here is the full transcript:\n\n{}\n\n\
+         Answer the user's questions based on this transcript. \
+         Be concise and reference specific parts of the conversation when relevant.{}",
+        llm_transcript(db, meeting_id, transcript),
+        dictionary::glossary(db)
+    )
+}
+
 pub async fn chat_with_transcript(
     db: &Database,
     llm: &LlmRegistry,
@@ -280,19 +297,9 @@ pub async fn chat_with_transcript(
     provider_name: &str,
     model: &str,
 ) -> anyhow::Result<String> {
-    let transcript = db.get_transcript(meeting_id)?;
-    let transcript_text = llm_transcript(db, meeting_id, &transcript);
-    let glossary = dictionary::glossary(db);
-
     let mut messages = vec![ChatMessage {
         role: "system".into(),
-        content: format!(
-            "You are a helpful assistant that answers questions about a meeting transcript. \
-             Here is the full transcript:\n\n{}\n\n\
-             Answer the user's questions based on this transcript. \
-             Be concise and reference specific parts of the conversation when relevant.{}",
-            transcript_text, glossary
-        ),
+        content: transcript_chat_prompt(db, meeting_id, &db.get_transcript(meeting_id)?),
     }];
 
     messages.extend(conversation_history);

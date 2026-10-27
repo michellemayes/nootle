@@ -134,6 +134,20 @@ export interface ModelInfo {
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
+  /** Changes Ask Nootle made to the meeting while replying. */
+  actions?: ChatActionOutcome[];
+}
+
+/** One change Ask Nootle made (or couldn't make), worded for the user. */
+export interface ChatActionOutcome {
+  ok: boolean;
+  summary: string;
+}
+
+/** Ask Nootle's answer in a meeting, with the changes it made. */
+export interface MeetingChatReply {
+  reply: string;
+  actions: ChatActionOutcome[];
 }
 
 /** One spoken line of an Ask the Room recap or answer. */

@@ -8,8 +8,8 @@ use serde_json::{json, Value};
 
 use crate::db::{
     AnnotationKind, ChatConversation, Database, InsightWithActionItem, Label, Meeting,
-    MeetingAnnotation, NewMeetingAnnotation, NewRecipe, Recipe, SentimentSegment,
-    TranscriptSegment,
+    MeetingAnnotation, NewActionItem, NewInsight, NewMeetingAnnotation, NewRecipe, Recipe,
+    SentimentSegment, TranscriptSegment,
 };
 use crate::dictionary::DictionaryEntry;
 use crate::embedding::EmbeddingEngine;
@@ -258,6 +258,41 @@ pub fn update_meeting(db: &Database, id: &str, patch: MeetingPatch) -> Result<Me
     Ok(db.get_meeting(id)?)
 }
 
+/// The notes a meeting's Notes tab shows and edits: the enriched notes once
+/// there are any, else the user's own. The flag says which they are.
+pub fn shown_notes(meeting: &Meeting) -> (&str, bool) {
+    match meeting.enriched_notes.as_deref() {
+        Some(n) if !n.trim().is_empty() => (n, true),
+        _ => (meeting.raw_notes.as_deref().unwrap_or(""), false),
+    }
+}
+
+/// Longest addition to a meeting's notes, in characters.
+pub const MAX_NOTES_ADDITION_CHARS: usize = 20_000;
+
+/// Appends Markdown to the notes the Notes tab shows, after a blank line.
+pub fn append_notes(db: &Database, meeting_id: &str, markdown: &str) -> Result<()> {
+    let markdown = markdown.trim();
+    if markdown.is_empty() {
+        bail!("There was nothing to add to the notes");
+    }
+    max_chars("Notes to add", markdown, MAX_NOTES_ADDITION_CHARS)?;
+    let meeting = db.get_meeting(meeting_id)?;
+    let (current, enriched) = shown_notes(&meeting);
+    let current = current.trim_end();
+    let notes = if current.is_empty() {
+        markdown.to_string()
+    } else {
+        format!("{current}\n\n{markdown}")
+    };
+    if enriched {
+        db.update_meeting_enriched_notes(meeting_id, &notes)?;
+    } else {
+        db.update_meeting_notes(meeting_id, &notes)?;
+    }
+    Ok(())
+}
+
 // --- Labels ---
 
 pub fn create_label(db: &Database, name: &str, color: &str, icon: Option<&str>) -> Result<Label> {
@@ -288,6 +323,26 @@ pub fn find_label<'a>(labels: &'a [Label], key: &str) -> Result<&'a Label> {
         .iter()
         .find(|l| l.id == key || l.name.eq_ignore_ascii_case(key))
         .ok_or_else(|| anyhow!("Label not found: {key}"))
+}
+
+/// Colors for labels made without one, from the label editor's palette.
+const LABEL_COLORS: [&str; 5] = ["#00cf99", "#a36df0", "#e96cad", "#337aef", "#f47600"];
+
+/// The labels `keys` name (by ID or name), creating any that don't exist
+/// yet with a palette color.
+pub fn ensure_labels(db: &Database, keys: &[String]) -> Result<Vec<Label>> {
+    let mut all = db.list_labels()?;
+    keys.iter()
+        .map(|key| {
+            let key = non_empty_name("Label name", key)?;
+            if let Ok(label) = find_label(&all, key) {
+                return Ok(label.clone());
+            }
+            let label = create_label(db, key, LABEL_COLORS[all.len() % LABEL_COLORS.len()], None)?;
+            all.push(label.clone());
+            Ok(label)
+        })
+        .collect()
 }
 
 /// The IDs of the labels `keys` name (by ID or name), in order.
@@ -378,6 +433,47 @@ pub fn validate_recipe(db: &Database, recipe: &NewRecipe, id: Option<&str>) -> R
 }
 
 // --- Action items, snapshots, dictionary, conversations ---
+
+/// Checks a due date is written as dates are stored, like 2026-10-31.
+pub fn validate_due_date(date: &str) -> Result<()> {
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map(drop)
+        .map_err(|_| anyhow!("Due date '{date}' isn't a date like 2026-10-31"))
+}
+
+fn blank_is_none(v: Option<&str>) -> Option<&str> {
+    v.map(str::trim).filter(|v| !v.is_empty())
+}
+
+/// Adds an action item to a meeting by hand; a blank assignee or due date
+/// is left unset. Returns the item.
+pub fn add_action_item(
+    db: &Database,
+    meeting_id: &str,
+    task: &str,
+    assignee: Option<&str>,
+    due_date: Option<&str>,
+) -> Result<InsightWithActionItem> {
+    let task = non_empty_name("Action item", task)?;
+    let due_date = blank_is_none(due_date);
+    if let Some(date) = due_date {
+        validate_due_date(date)?;
+    }
+    let insight = db.create_insight(NewInsight {
+        meeting_id: meeting_id.to_string(),
+        insight_type: "action_item".into(),
+        content: task.to_string(),
+        context: None,
+        transcript_start_ms: None,
+        transcript_end_ms: None,
+    })?;
+    let item = db.create_action_item(NewActionItem {
+        insight_id: insight.id,
+        assignee: blank_is_none(assignee).map(String::from),
+        due_date: due_date.map(String::from),
+    })?;
+    Ok(db.get_insight_by_action_item(&item.id)?)
+}
 
 /// Updates an action item: `None` keeps a field, and an assignee or due date
 /// of "" clears it. Returns the updated item.
@@ -1263,6 +1359,40 @@ pub async fn ask(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notes_are_appended_to_what_the_notes_tab_shows() {
+        let db = Database::new_in_memory().unwrap();
+        let id = db
+            .create_meeting(crate::db::NewMeeting {
+                title: "Sync".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap()
+            .id;
+        append_notes(&db, &id, "- first").unwrap();
+        append_notes(&db, &id, "- second").unwrap();
+        let m = db.get_meeting(&id).unwrap();
+        assert_eq!(m.raw_notes.as_deref(), Some("- first\n\n- second"));
+
+        db.update_meeting_enriched_notes(&id, "Enriched").unwrap();
+        append_notes(&db, &id, "- third").unwrap();
+        let m = db.get_meeting(&id).unwrap();
+        assert_eq!(m.enriched_notes.as_deref(), Some("Enriched\n\n- third"));
+        assert_eq!(m.raw_notes.as_deref(), Some("- first\n\n- second"));
+        assert!(append_notes(&db, &id, "  ").is_err());
+    }
+
+    #[test]
+    fn missing_labels_are_created() {
+        let db = Database::new_in_memory().unwrap();
+        create_label(&db, "Interview", "#00cf99", None).unwrap();
+        let labels = ensure_labels(&db, &["interview".into(), "Hiring".into()]).unwrap();
+        let names: Vec<_> = labels.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, ["Interview", "Hiring"]);
+        assert_eq!(db.list_labels().unwrap().len(), 2);
+    }
     use crate::db::AnnotationKind;
 
     #[test]

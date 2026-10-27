@@ -64,6 +64,7 @@ import { VerdictIcon, commitmentAge } from "@/components/CommitmentRow";
 import { useFollowups } from "@/hooks/useCommitments";
 import type { Commitment, LinearTicket, LinearTeam, LinearProject, InsightWithActionItem, Label, SegmentEditResult, Slide, TranscriptSegment, Workflow, WorkflowRun } from "@/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1209,7 +1210,15 @@ export function MeetingDetail() {
 
   useEffect(() => {
     if (!id) return;
-    getMeetingLabels(id).then(setMeetingLabels).catch(() => {});
+    const load = () => getMeetingLabels(id).then(setMeetingLabels).catch(() => {});
+    load();
+    // Ask Nootle can tag the meeting.
+    const unlisten = listen<string>("labels-updated", (event) => {
+      if (event.payload === id) load();
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [id, getMeetingLabels]);
 
   const handleAddMeetingLabel = useCallback(async (meetingId: string, labelId: string) => {

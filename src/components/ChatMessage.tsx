@@ -1,21 +1,24 @@
 import type { KeyboardEvent, ReactNode, Ref } from "react";
-import { Send } from "lucide-react";
+import { CircleAlert, CircleCheck, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Markdown } from "@/components/Markdown";
 import { ThinkingDots } from "@/components/ThinkingDots";
 import { cn } from "@/lib/utils";
+import type { ChatActionOutcome } from "@/types";
 
 interface ChatMessageProps {
   role: string;
   content: string;
+  /** Changes the assistant made while replying, listed under its answer. */
+  actions?: ChatActionOutcome[];
   /** Rendered under the message body, e.g. source citations. */
   footer?: ReactNode;
 }
 
 /** A single chat bubble, shared by the chat page, meeting chat, and floating chat. */
-export function ChatMessage({ role, content, footer }: ChatMessageProps) {
+export function ChatMessage({ role, content, actions, footer }: ChatMessageProps) {
   const isUser = role === "user";
 
   return (
@@ -28,10 +31,37 @@ export function ChatMessage({ role, content, footer }: ChatMessageProps) {
             : "bg-muted text-foreground",
         )}
       >
-        {isUser ? content : <Markdown content={content} />}
+        {isUser ? content : content && <Markdown content={content} />}
+        {actions && actions.length > 0 && <ChatActions actions={actions} hasContent={!!content} />}
         {footer}
       </div>
     </div>
+  );
+}
+
+/** What the assistant changed, one line per change, failures included. */
+function ChatActions({ actions, hasContent }: { actions: ChatActionOutcome[]; hasContent: boolean }) {
+  return (
+    <ul
+      aria-label="Changes made"
+      className={cn("space-y-1 text-xs", hasContent && "mt-2 border-t border-border/60 pt-2")}
+    >
+      {actions.map((action, i) => {
+        const Icon = action.ok ? CircleCheck : CircleAlert;
+        return (
+          <li
+            key={i}
+            className={cn("flex items-start gap-1.5", action.ok ? "text-muted-foreground" : "text-destructive")}
+          >
+            <Icon className={cn("mt-px h-3.5 w-3.5 shrink-0", action.ok && "text-success")} aria-hidden />
+            <span>
+              <span className="sr-only">{action.ok ? "Done: " : "Failed: "}</span>
+              {action.summary}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

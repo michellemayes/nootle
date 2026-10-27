@@ -1885,8 +1885,12 @@ pub async fn catch_up(
         .map_err(|e| e.to_string())
 }
 
+/// Ask Nootle in a meeting: answers, and makes the changes the user asks
+/// for, telling the open views what to refresh.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn chat_with_meeting(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
     llm: State<'_, LlmState>,
     meeting_id: String,
@@ -1894,19 +1898,20 @@ pub async fn chat_with_meeting(
     history: Vec<ChatMessage>,
     provider: String,
     model: String,
-) -> Result<String, String> {
+) -> Result<crate::meeting_chat::MeetingChatReply, String> {
     let llm = llm.read().await;
-    summarization::chat_with_transcript(
-        &db,
-        &llm,
-        &meeting_id,
-        &message,
-        history,
-        &provider,
-        &model,
-    )
-    .await
-    .map_err(|e| e.to_string())
+    let reply =
+        crate::meeting_chat::chat(&db, &llm, &meeting_id, &message, history, &provider, &model)
+            .await
+            .map_err(|e| e.to_string())?;
+    for event in &reply.events {
+        if *event == crate::meeting_chat::MEETING_UPDATED {
+            emit_meeting_updated(&db, &app, &meeting_id);
+        } else {
+            let _ = app.emit(event, &meeting_id);
+        }
+    }
+    Ok(reply)
 }
 
 /// The meeting's cached audio recap (Ask the Room), if one was made.

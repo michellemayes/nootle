@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ResizeHandle } from "@/components/ResizeHandle";
 import { useChat } from "@/hooks/useChat";
+import type { ChatMessage as ChatMessageData } from "@/types";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useRecipes } from "@/hooks/useRecipes";
 import { useHideChatButton } from "@/hooks/useChatButton";
@@ -26,9 +27,7 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
   const { recipes, runRecipe } = useRecipes();
   const [input, setInput] = useState("");
   const [recipeLoading, setRecipeLoading] = useState(false);
-  const [recipeMessages, setRecipeMessages] = useState<
-    { role: string; content: string }[]
-  >([]);
+  const [recipeMessages, setRecipeMessages] = useState<ChatMessageData[]>([]);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -187,14 +186,14 @@ export function ChatPanel({ meetingId, open, onClose }: ChatPanelProps) {
             <div className="flex flex-col gap-3 p-4">
               {allMessages.length === 0 && (
                 <SuggestedPrompts
-                  intro="Ask anything about this meeting, or type / for a slash command."
+                  intro="Ask anything about this meeting, ask me to change it (add to your notes, tag it, add action items), or type / for a slash command."
                   prompts={MEETING_PROMPTS}
                   onPick={(prompt) => handleSend(prompt)}
                   disabled={!selectedProvider || !selectedModel || isLoading}
                 />
               )}
               {allMessages.map((msg, i) => (
-                <ChatMessage key={i} role={msg.role} content={msg.content} />
+                <ChatMessage key={i} role={msg.role} content={msg.content} actions={msg.actions} />
               ))}
               {isLoading && <ChatThinking />}
               {error && (
