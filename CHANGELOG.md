@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.0] - 2026-10-27
+
+### Features
+
+- **privacy:** Opt-in crash reports and site error monitoring with Sentry (#217) ([dcfaad9](https://github.com/michellemayes/nootle/commit/dcfaad9781b4b5176d2c5357c8f81b7752316dfb))
+
 ## [0.26.0] - 2026-10-27
 
 ### Features
