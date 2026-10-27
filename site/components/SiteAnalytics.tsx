@@ -3,9 +3,7 @@
 import { usePathname } from "next/navigation";
 import Script from "next/script";
 import { Analytics } from "@vercel/analytics/next";
-
-/** Share pages carry a decryption key in their URL, so they're never tracked. */
-const isSharePage = (path: string) => path.startsWith("/s/");
+import { isSharePage } from "@/lib/share-page";
 
 export function SiteAnalytics() {
   const pathname = usePathname();

@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { MeetingBriefView } from "@/components/MeetingBrief";
 import type { MeetingBrief } from "@/types";
+import "@/lib/crashReports";
 import "./index.css";
 
 /** Left alone, the brief goes away a couple of minutes into the meeting. */

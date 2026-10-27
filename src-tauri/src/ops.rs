@@ -65,6 +65,7 @@ pub const TOGGLE_SETTINGS: &[&str] = &[
     "detection_enabled",
     crate::voices::SETTING_KEY,
     crate::llm::LOCAL_ONLY_SETTING,
+    crate::crash_reports::SETTING_KEY,
     CONSENT_REMINDER_SETTING,
     crate::remote::ENABLED_SETTING,
     crate::dictionary::AUTO_LEARN_SETTING,
@@ -83,6 +84,8 @@ pub const AGENT_LOCKED_SETTINGS: &[&str] = &[
     crate::remote::ENABLED_SETTING,
     crate::voices::SETTING_KEY,
     crate::llm::LOCAL_ONLY_SETTING,
+    // Sending crash reports off this Mac is the user's call.
+    crate::crash_reports::SETTING_KEY,
     crate::snapshots::SETTING_KEY,
     // Where "Continue in…" sends a meeting; an agent mustn't redirect it.
     crate::handoff::APP_SETTING,
@@ -198,8 +201,10 @@ pub fn set_setting(db: &Database, key: &str, value: &str) -> Result<String> {
     let value = value.trim();
     validate_setting(key, value)?;
     db.set_setting(key, value)?;
-    if key == crate::llm::LOCAL_ONLY_SETTING {
-        crate::llm::set_local_only(value == "true");
+    match key {
+        crate::llm::LOCAL_ONLY_SETTING => crate::llm::set_local_only(value == "true"),
+        crate::crash_reports::SETTING_KEY => crate::crash_reports::set_enabled(value == "true"),
+        _ => {}
     }
     Ok(value.to_string())
 }

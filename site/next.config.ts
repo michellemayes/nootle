@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 const nextConfig: NextConfig = {
   images: {
@@ -20,4 +21,21 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Source maps upload to Sentry only when SENTRY_AUTH_TOKEN is set (on
+// Vercel), and are deleted afterwards so they're never served.
+export default withSentryConfig(nextConfig, {
+  org: "michelle-mayes",
+  project: "nootle-site",
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  silent: !process.env.CI,
+  telemetry: false,
+  sourcemaps: { deleteSourcemapsAfterUpload: true },
+  // Only errors are reported, so tracing and replay code is left out of the bundle.
+  bundleSizeOptimizations: {
+    excludeDebugStatements: true,
+    excludeTracing: true,
+    excludeReplayIframe: true,
+    excludeReplayShadowDom: true,
+    excludeReplayWorker: true,
+  },
+});

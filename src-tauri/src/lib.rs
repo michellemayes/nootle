@@ -10,6 +10,7 @@ pub mod coach;
 pub mod commands;
 pub mod commitments;
 pub mod connectors;
+pub mod crash_reports;
 pub mod db;
 pub mod detection;
 pub mod diarization;
@@ -170,6 +171,7 @@ pub fn run() {
     std::fs::create_dir_all(&app_dir).unwrap();
     let db_path = app_dir.join("nootle.db");
     let db = std::sync::Arc::new(db::Database::new(db_path.to_str().unwrap()).unwrap());
+    let _crash_reports = crash_reports::init(&db);
 
     let recording_state: RecordingState = Arc::new(TokioMutex::new(None));
 
@@ -526,6 +528,7 @@ pub fn run() {
             commands::request_calendar_permission,
             commands::get_app_setting,
             commands::set_app_setting,
+            crash_reports::report_frontend_error,
             commands::get_remote_control_token,
             commands::catch_up,
             commands::list_meeting_translations,

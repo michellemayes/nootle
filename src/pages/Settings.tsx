@@ -1012,10 +1012,11 @@ function MenuBarSetting() {
   );
 }
 
-/** Privacy: the consent reminder, its message, and local-only mode. */
+/** Privacy: the consent reminder, its message, local-only mode, and crash reports. */
 function PrivacyCard() {
   const [reminder, setReminder] = useBooleanSetting("consent_reminder", true);
   const [localOnly, setLocalOnly] = useBooleanSetting("local_only", false);
+  const [crashReports, setCrashReports] = useBooleanSetting("crash_reports", false);
   const [message, setMessage] = useState("");
   const [defaultMessage, setDefaultMessage] = useState("");
   useEffect(() => {
@@ -1068,6 +1069,22 @@ function PrivacyCard() {
             </p>
           </div>
           <Switch checked={localOnly} onCheckedChange={setLocalOnly} aria-label="Local-only mode" />
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Send crash reports</p>
+            <p className="text-sm text-muted-foreground">
+              {localOnly
+                ? "Off while Local-only mode is on"
+                : "When Nootle crashes or hits an unexpected error, send the error and where it happened to Sentry so it gets fixed. Never recordings, transcripts, notes or names"}
+            </p>
+          </div>
+          <Switch
+            checked={crashReports && !localOnly}
+            disabled={localOnly}
+            onCheckedChange={setCrashReports}
+            aria-label="Send crash reports"
+          />
         </div>
         <ExportAllMeetings />
       </CardContent>

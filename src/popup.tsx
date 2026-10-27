@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/hooks/useTheme";
 import { Button } from "@/components/ui/button";
 import { NootleLogo } from "@/components/NootleLogo";
 import type { DetectedMeeting } from "@/types";
+import "@/lib/crashReports";
 import "./index.css";
 
 /** Left alone, the pop-up goes away so it doesn't sit over the call forever. */
