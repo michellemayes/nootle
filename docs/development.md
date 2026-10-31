@@ -32,7 +32,7 @@ cd src-tauri && cargo test
 # speaker and search models, checking word error rate and speaker labels.
 # Models download (and are hash-checked) into a folder of your choice.
 scripts/fetch-test-models.sh ~/nootle-test-models
-cd src-tauri && XDG_DATA_HOME=~/nootle-test-models cargo test --release --test models_test -- --ignored
+cd src-tauri && XDG_DATA_HOME=~/nootle-test-models cargo test --profile golden --test models_test -- --ignored
 ```
 
 On macOS, point the golden tests at your own downloaded models instead by leaving `XDG_DATA_HOME` unset. CI runs these on every backend change.

@@ -123,7 +123,7 @@ jobs:
       - name: Fetch models
         run: bash scripts/fetch-test-models.sh ~/test-models
       - name: Golden tests
-        run: cd src-tauri && XDG_DATA_HOME=~/test-models cargo test --release --test models_test -- --ignored --nocapture
+        run: cd src-tauri && XDG_DATA_HOME=~/test-models cargo test --profile golden --test models_test -- --ignored --nocapture
 
   # macOS minutes bill at 10x Linux, so this runs on PRs only. Changes reach
   # main through PRs, and Publish's test job still runs the macOS tests there.

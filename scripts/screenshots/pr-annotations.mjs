@@ -1,9 +1,10 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { M1_ANNOTATIONS } from "./demo-data.mjs";
 import { launchBrowser, newDemoContext, openPage, repoRoot, startDevServer } from "./app.mjs";
 
-const outDir = path.join(repoRoot, "docs/pr-screenshots/agent-annotations");
+const outDir = path.join(repoRoot, ".github/pr-assets/agent-annotations");
+await mkdir(outDir, { recursive: true });
 const server = await startDevServer();
 const browser = await launchBrowser();
 try {

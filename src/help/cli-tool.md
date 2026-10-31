@@ -11,14 +11,14 @@ sudo ln -sf /Applications/Nootle.app/Contents/MacOS/nootle-cli /usr/local/bin/no
 If you built from source:
 
 ```bash
-cargo install --path src-tauri --bin nootle-cli
+cargo install --path src-tauri
 ```
 
 Or build without installing:
 
 ```bash
-cargo build --release --bin nootle-cli --manifest-path src-tauri/Cargo.toml
-# Binary at: src-tauri/target/release/nootle-cli
+cargo build --release --manifest-path src-tauri/Cargo.toml
+# Binary at: src-tauri/target/release/nootle-cli (keep nootle-app beside it)
 ```
 
 ## Usage
@@ -181,4 +181,3 @@ Once installed, ask Claude things like:
 | **Automations** | Create, update, run, delete | Create, update, run, delete |
 | **Output** | JSON (or `--pretty`) | MCP protocol |
 | **Requires app** | No | No |
-| **Binary size** | Small (no ML/audio deps) | Full app binary |

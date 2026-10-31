@@ -8,7 +8,7 @@
 
 ```bash
 # Build and install
-cargo install --path src-tauri --bin nootle-cli
+cargo install --path src-tauri
 
 # List meetings
 nootle-cli meetings list
