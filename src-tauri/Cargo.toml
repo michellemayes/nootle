@@ -13,8 +13,10 @@ default-run = "nootle-app"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "nootle_app_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
+# A launcher that runs `nootle-app` as the CLI (see src/cli.rs), so the
+# app's code ships once.
 [[bin]]
 name = "nootle-cli"
 path = "src/bin/nootle-cli.rs"
@@ -83,6 +85,18 @@ cidre = { version = "0.14", features = ["av"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"
+
+[profile.release]
+# One codegen unit with whole-program LTO drops duplicated and unused code
+# across crates. Symbols stay: crash reports name functions from them.
+lto = true
+codegen-units = 1
+
+# Release speed for the golden model tests, without the slow LTO link.
+[profile.golden]
+inherits = "release"
+lto = false
+codegen-units = 16
 
 [features]
 # Without system-audio, capture is a mic-only stub, so a meeting recorder
