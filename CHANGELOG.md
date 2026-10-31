@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.1] - 2026-10-31
+
+### Performance
+
+- **build:** Ship the app's code once and link release builds with LTO (#223) ([41fc669](https://github.com/michellemayes/nootle/commit/41fc6692f40561ea333baa5499168fba03ec6f0a))
+
 ## [0.27.0] - 2026-10-27
 
 ### Features
