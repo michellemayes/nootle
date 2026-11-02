@@ -36,6 +36,7 @@ pub mod model_registry;
 pub mod ops;
 pub mod permissions;
 pub mod pipeline;
+pub mod relaunch;
 pub mod remote;
 pub mod room_recap;
 pub mod sandbox_migration;
@@ -222,7 +223,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .menu(|handle| {
@@ -467,6 +467,7 @@ pub fn run() {
             commands::start_recording,
             commands::stop_recording,
             commands::is_recording,
+            relaunch::relaunch,
             commands::current_recording,
             commands::recording_status,
             commands::set_recording_paused,
