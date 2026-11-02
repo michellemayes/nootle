@@ -2,7 +2,6 @@ import { useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { check, type Update } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
 
 export type UpdateStatus =
   | "idle"
@@ -86,7 +85,7 @@ export async function installUpdate() {
         if (progress !== state.progress) set({ progress });
       }
     });
-    await relaunch();
+    await invoke("relaunch");
   } catch (err) {
     console.warn("Update install failed:", err);
     set({ status: "error" });

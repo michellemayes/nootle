@@ -7,8 +7,6 @@
     "core:default",
     "opener:default",
     "updater:default",
-    "dialog:default",
-    "process:allow-exit",
-    "process:allow-restart"
+    "dialog:default"
   ]
 }
