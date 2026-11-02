@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.2] - 2026-11-02
+
+### Bug Fixes
+
+- **updater:** Relaunch only after the old instance exits (#224) ([1c7819c](https://github.com/michellemayes/nootle/commit/1c7819c97ea676cedc6d5b0c460f9e8ca3d6c038))
+
 ## [0.27.1] - 2026-10-31
 
 ### Performance
