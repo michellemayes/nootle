@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.3] - 2026-11-02
+
+### Bug Fixes
+
+- **speakers:** Name call speakers after who the call shows talking (#225) ([98843c2](https://github.com/michellemayes/nootle/commit/98843c2fa59ef1003eeadead38a4c7da4a4c5393))
+
 ## [0.27.2] - 2026-11-02
 
 ### Bug Fixes
