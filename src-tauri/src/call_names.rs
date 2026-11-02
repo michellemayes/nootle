@@ -3,14 +3,18 @@
 //!
 //! While a call is recorded, the meeting window's text is read on this Mac
 //! every few seconds, and names that stay on screen are kept with the
-//! meeting. The pictures themselves are thrown away at once. After the
-//! meeting, [`fill_in`] names everyone on the far end of a 1:1 outright,
-//! and in a bigger call gives the one voice nobody recognised the one name
-//! nobody claimed. With Remember voices on, each voice named this way is
-//! learned for later calls on any app.
+//! meeting, along with who the app showed as talking at that moment (the
+//! tile it outlined, or the big tile in speaker view). The pictures
+//! themselves are thrown away at once. After the meeting,
+//! [`name_from_sightings`] gives each voice the name that was shown talking
+//! while it spoke, and [`fill_in`] names the rest when it's certain: the
+//! far end of a 1:1, or the one voice left with the one name left. With
+//! Remember voices on, each voice named this way is learned for later calls
+//! on any app.
 
 use crate::db::Database;
 use crate::snapshots::{platform, shows_screen_share, Capture, TextLine};
+use image::RgbImage;
 use std::collections::{HashMap, HashSet};
 
 /// App setting that turns reading names from the call window on. On unless
@@ -185,24 +189,22 @@ pub struct Roster {
 
 impl Roster {
     /// Notes the names in one look at the meeting window. Looks at shared
-    /// content are skipped: slide text is often name-shaped.
-    pub fn observe(&mut self, lines: &[TextLine]) {
+    /// content are skipped (slide text is often name-shaped); returns
+    /// whether this one counted.
+    pub fn observe(&mut self, lines: &[TextLine]) -> bool {
         let text: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
         if shows_screen_share(&text.join("\n")) {
-            return;
+            return false;
         }
         self.looks += 1;
         let mut this_look = HashSet::new();
-        let labels = lines
-            .iter()
-            .filter(|l| l.height <= MAX_LABEL_HEIGHT && l.width <= MAX_LABEL_WIDTH)
-            .filter_map(|l| name_label(&l.text));
-        for name in labels {
+        for (_, name) in labels(lines) {
             let key = name.to_lowercase();
             if this_look.insert(key.clone()) {
                 self.seen.entry(key).or_insert((name, 0)).1 += 1;
             }
         }
+        true
     }
 
     /// Names that stayed on screen, most seen first, leaving out `you`.
@@ -216,6 +218,168 @@ impl Roster {
         names.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         names.into_iter().map(|(name, _)| name.clone()).collect()
     }
+}
+
+/// The name labels in one look at the window, with the line each came from.
+fn labels(lines: &[TextLine]) -> impl Iterator<Item = (&TextLine, String)> {
+    lines
+        .iter()
+        .filter(|l| l.height <= MAX_LABEL_HEIGHT && l.width <= MAX_LABEL_WIDTH)
+        .filter_map(|l| Some((l, name_label(&l.text)?)))
+}
+
+// ---------------------------------------------------------------------------
+// Who's talking
+// ---------------------------------------------------------------------------
+
+/// The call app showing someone as talking, at a point in the recording.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sighting {
+    pub offset_ms: i64,
+    pub name: String,
+    /// Their tile was outlined. Otherwise they were the big tile of speaker
+    /// view, which keeps showing the last person from the far end while
+    /// the user talks.
+    pub outlined: bool,
+}
+
+/// A label in speaker view's filmstrip sits this high up the window or
+/// more (measured from the bottom); the big tile's label sits in the
+/// bottom half.
+const FILMSTRIP_Y: f64 = 0.75;
+const MAIN_TILE_Y: f64 = 0.5;
+
+/// Who the meeting window shows talking: the one name whose tile is
+/// outlined (Zoom draws a green border round whoever is talking, Teams and
+/// Meet a coloured one), else in speaker view the name on the big tile,
+/// the only label below a filmstrip of others. `outlined` says which.
+pub fn active_speaker(lines: &[TextLine], frame: &RgbImage) -> Option<(String, bool)> {
+    let found: Vec<(&TextLine, String)> = labels(lines).collect();
+    let mut outlined = found.iter().filter(|(l, _)| is_outlined(frame, l));
+    if let Some((_, name)) = outlined.next() {
+        return outlined.next().is_none().then(|| (name.clone(), true));
+    }
+    let (low, high): (Vec<_>, Vec<_>) = found.iter().partition(|(l, _)| l.y < MAIN_TILE_Y);
+    match low.as_slice() {
+        [(_, name)] if !high.is_empty() && high.iter().all(|(l, _)| l.y >= FILMSTRIP_Y) => {
+            Some((name.clone(), false))
+        }
+        _ => None,
+    }
+}
+
+/// Whether a label's tile has a highlight border: a vivid line just left of
+/// the label running its full height, and one just below it running its
+/// full width, which is the tile's bottom-left corner where apps put names.
+fn is_outlined(frame: &RgbImage, line: &TextLine) -> bool {
+    let (w, h) = (frame.width() as f64, frame.height() as f64);
+    let left = (line.x * w).max(0.0) as u32;
+    let right = (((line.x + line.width) * w) as u32).min(frame.width());
+    let top = ((1.0 - line.y - line.height) * h).max(0.0) as u32;
+    let bottom = (((1.0 - line.y) * h) as u32).min(frame.height());
+    if right <= left || bottom <= top {
+        return false;
+    }
+    // Far enough to pass the mute icon and the label's padding.
+    let reach = ((bottom - top) * 5).max(10);
+    let mostly_vivid = |pixels: &mut dyn Iterator<Item = (u32, u32)>| {
+        let (vivid, n) = pixels.fold((0, 0), |(vivid, n), (x, y)| {
+            (vivid + u32::from(is_vivid(frame.get_pixel(x, y))), n + 1)
+        });
+        vivid * 5 >= n * 4
+    };
+    let edge_left = || {
+        (left.saturating_sub(reach)..left).any(|x| mostly_vivid(&mut (top..bottom).map(|y| (x, y))))
+    };
+    let edge_below = || {
+        (bottom..(bottom + reach).min(frame.height()))
+            .any(|y| mostly_vivid(&mut (left..right).map(|x| (x, y))))
+    };
+    edge_left() && edge_below()
+}
+
+/// A saturated, bright colour, as highlight borders are. Reds are left
+/// out: they're mute icons and recording dots.
+fn is_vivid(px: &image::Rgb<u8>) -> bool {
+    let [r, g, b] = px.0.map(f32::from);
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    if max < 128.0 || (max - min) < 0.5 * max {
+        return false;
+    }
+    let red = max == r && g.max(b) < 0.6 * r;
+    !red
+}
+
+/// A sighting counts for the speech it falls in, or speech within this
+/// much of it: the picture and the sound of a call aren't quite in step.
+const SIGHTING_SLACK_MS: i64 = 1_000;
+
+/// The sentence `offset_ms` falls in, else the nearest one within the slack.
+pub fn sentence_at(spans: &[(i64, i64)], offset_ms: i64) -> Option<usize> {
+    spans
+        .iter()
+        .enumerate()
+        .map(|(i, &(start, end))| (i, (start - offset_ms).max(offset_ms - end).max(0)))
+        .filter(|&(_, gap)| gap <= SIGHTING_SLACK_MS)
+        .min_by_key(|&(_, gap)| gap)
+        .map(|(i, _)| i)
+}
+
+/// The user's own name as the call shows it: whoever was outlined as talking
+/// while the user was. Catches a Zoom name that isn't the Mac account's.
+/// `you_spoke` says whether the user was talking at a point in the meeting.
+pub fn own_name(sightings: &[Sighting], you_spoke: impl Fn(i64) -> bool) -> Option<String> {
+    let mine = sightings
+        .iter()
+        .filter(|s| s.outlined && you_spoke(s.offset_ms))
+        .map(|s| s.name.as_str());
+    winner(mine, 2)
+}
+
+/// The name most `votes` agree on, when at least `min_votes` and two in
+/// three of them do.
+fn winner<'a>(votes: impl Iterator<Item = &'a str>, min_votes: usize) -> Option<String> {
+    let mut counts: Vec<(&str, usize)> = Vec::new();
+    let mut total = 0;
+    for name in votes {
+        total += 1;
+        match counts.iter_mut().find(|(n, _)| same_person(n, name)) {
+            Some((_, count)) => *count += 1,
+            None => counts.push((name, 1)),
+        }
+    }
+    let (name, n) = counts.into_iter().max_by_key(|&(_, n)| n)?;
+    (n >= min_votes && n * 3 >= total * 2).then(|| name.to_string())
+}
+
+/// Names each unnamed voice after whoever the call showed talking while it
+/// spoke, when at least `min_votes` sightings and two in three of its
+/// sightings agree. `voice_at` gives the voice speaking at a point in the
+/// meeting, or None for the user or silence. Returns the voices it named.
+pub fn name_from_sightings(
+    voices: &mut [Option<String>],
+    sightings: &[Sighting],
+    voice_at: impl Fn(i64) -> Option<usize>,
+    min_votes: usize,
+) -> Vec<usize> {
+    let mut seen: Vec<Vec<&str>> = vec![Vec::new(); voices.len()];
+    for s in sightings {
+        if let Some(v) = voice_at(s.offset_ms).filter(|&v| v < voices.len()) {
+            seen[v].push(&s.name);
+        }
+    }
+    let mut named = Vec::new();
+    for (i, names) in seen.into_iter().enumerate() {
+        if voices[i].is_some() {
+            continue;
+        }
+        if let Some(name) = winner(names.into_iter(), min_votes) {
+            voices[i] = Some(name);
+            named.push(i);
+        }
+    }
+    named
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +458,8 @@ pub struct NameReader {
     /// The Mac account's name, to leave the user's own tile out.
     you: String,
     stored: Vec<String>,
+    /// Looks that showed who was talking, for the log.
+    sightings: u32,
     /// Looks that found no call window to read, for the log.
     no_window: u32,
 }
@@ -304,6 +470,7 @@ impl Default for NameReader {
             roster: Roster::default(),
             you: platform::full_user_name(),
             stored: Vec::new(),
+            sightings: 0,
             no_window: 0,
         }
     }
@@ -319,33 +486,66 @@ impl NameReader {
     /// can be told apart from one whose window was never found.
     pub fn log_summary(&self, meeting_id: &str) {
         tracing::info!(
-            "Call names for meeting {meeting_id}: {} names from {} looks at the call window \
-             ({} looks found no window)",
+            "Call names for meeting {meeting_id}: {} names from {} looks at the call window, \
+             {} showing who was talking ({} looks found no window)",
             self.stored.len(),
             self.roster.looks,
+            self.sightings,
             self.no_window
         );
     }
 
-    pub fn read(&mut self, db: &Database, meeting_id: &str, frame: &Capture) {
+    pub fn read(&mut self, db: &Database, meeting_id: &str, frame: &Capture, offset_ms: i64) {
         // While the user shares their own screen, the frame is that screen,
         // not anyone's tile.
         if frame.own_share {
             return;
         }
-        match platform::recognize_jpeg(&frame.jpeg) {
-            Ok(lines) => self.roster.observe(&lines),
+        let lines = match platform::recognize_jpeg(&frame.jpeg) {
+            Ok(lines) => lines,
             Err(e) => {
                 tracing::debug!("Call name recognition failed: {e:#}");
                 return;
             }
+        };
+        if !self.roster.observe(&lines) {
+            return;
         }
+        self.note_speaker(db, meeting_id, &lines, &frame.jpeg, offset_ms);
         let names = self.roster.names(&self.you);
         if names != self.stored {
             match db.set_call_names(meeting_id, &names) {
                 Ok(()) => self.stored = names,
                 Err(e) => tracing::warn!("Couldn't store call names: {e}"),
             }
+        }
+    }
+
+    fn note_speaker(
+        &mut self,
+        db: &Database,
+        meeting_id: &str,
+        lines: &[TextLine],
+        jpeg: &[u8],
+        offset_ms: i64,
+    ) {
+        if labels(lines).next().is_none() {
+            return;
+        }
+        let Ok(image) = image::load_from_memory(jpeg) else {
+            return;
+        };
+        let Some((name, outlined)) = active_speaker(lines, &image.into_rgb8()) else {
+            return;
+        };
+        let sighting = Sighting {
+            offset_ms,
+            name,
+            outlined,
+        };
+        match db.add_call_speaker(meeting_id, &sighting) {
+            Ok(()) => self.sightings += 1,
+            Err(e) => tracing::warn!("Couldn't store who's talking: {e}"),
         }
     }
 }
@@ -357,9 +557,173 @@ mod tests {
     fn label(text: &str) -> TextLine {
         TextLine {
             text: text.into(),
+            x: 0.1,
+            y: 0.1,
             width: 0.15,
             height: 0.02,
         }
+    }
+
+    fn label_at(text: &str, x: f64, y: f64) -> TextLine {
+        TextLine {
+            x,
+            y,
+            ..label(text)
+        }
+    }
+
+    /// A 2×2 gallery, 1000×600, with a name in each tile's bottom-left
+    /// corner and the tile at `talking` outlined in Zoom's green.
+    fn gallery(talking: Option<usize>) -> (RgbImage, Vec<TextLine>) {
+        let mut frame = RgbImage::from_pixel(1000, 600, image::Rgb([40, 40, 40]));
+        let tiles = [(0, 0), (500, 0), (0, 300), (500, 300)];
+        if let Some((tx, ty)) = talking.map(|t| tiles[t]) {
+            for x in tx..tx + 500 {
+                for y in ty..ty + 300 {
+                    let edge = x < tx + 4 || x >= tx + 496 || y < ty + 4 || y >= ty + 296;
+                    if edge {
+                        frame.put_pixel(x, y, image::Rgb([35, 217, 89]));
+                    }
+                }
+            }
+        }
+        let names = ["Priya Patel", "Sam Lee", "Ana Cruz", "Jo Ray"];
+        let lines = tiles
+            .iter()
+            .zip(names)
+            .map(|(&(tx, ty), name)| {
+                // 16px tall, 30px in from the tile's left and 10px up from
+                // its bottom, in Vision's bottom-left fractions.
+                let bottom = ty + 290;
+                label_at(name, (tx + 30) as f64 / 1000.0, 1.0 - bottom as f64 / 600.0)
+            })
+            .map(|l| TextLine {
+                height: 16.0 / 600.0,
+                width: 0.12,
+                ..l
+            })
+            .collect();
+        (frame, lines)
+    }
+
+    #[test]
+    fn finds_the_outlined_tile() {
+        let (frame, lines) = gallery(Some(3));
+        assert_eq!(
+            active_speaker(&lines, &frame),
+            Some(("Jo Ray".to_string(), true))
+        );
+        let (frame, lines) = gallery(Some(0));
+        assert_eq!(
+            active_speaker(&lines, &frame),
+            Some(("Priya Patel".to_string(), true))
+        );
+        let (frame, lines) = gallery(None);
+        assert_eq!(active_speaker(&lines, &frame), None);
+    }
+
+    #[test]
+    fn a_red_mute_icon_is_not_an_outline() {
+        let (mut frame, lines) = gallery(None);
+        // A red block left of and under Sam's label.
+        for x in 505..530 {
+            for y in 270..300 {
+                frame.put_pixel(x, y, image::Rgb([230, 40, 40]));
+            }
+        }
+        assert_eq!(active_speaker(&lines, &frame), None);
+    }
+
+    #[test]
+    fn finds_the_big_tile_in_speaker_view() {
+        let frame = RgbImage::from_pixel(1000, 600, image::Rgb([40, 40, 40]));
+        let lines = [
+            label_at("Priya Patel", 0.05, 0.85),
+            label_at("Sam Lee", 0.25, 0.85),
+            label_at("Ana Cruz", 0.03, 0.04),
+        ];
+        assert_eq!(
+            active_speaker(&lines, &frame),
+            Some(("Ana Cruz".to_string(), false))
+        );
+        // Gallery rows: no big tile to go by.
+        let rows = [
+            label_at("Priya Patel", 0.05, 0.55),
+            label_at("Ana Cruz", 0.05, 0.04),
+        ];
+        assert_eq!(active_speaker(&rows, &frame), None);
+    }
+
+    fn seen(offset_ms: i64, name: &str) -> Sighting {
+        Sighting {
+            offset_ms,
+            name: name.into(),
+            outlined: true,
+        }
+    }
+
+    #[test]
+    fn matches_a_sighting_to_its_sentence() {
+        let spans = [(0, 2000), (2000, 5000), (9000, 10000)];
+        assert_eq!(sentence_at(&spans, 1000), Some(0));
+        assert_eq!(sentence_at(&spans, 3000), Some(1));
+        assert_eq!(sentence_at(&spans, 5800), Some(1));
+        assert_eq!(sentence_at(&spans, 7000), None);
+        assert_eq!(sentence_at(&spans, 8500), Some(2));
+    }
+
+    #[test]
+    fn names_voices_after_who_was_shown_talking() {
+        // Voice 0 spoke over 0..10s, voice 1 over 10..20s.
+        let voice_at = |t: i64| Some((t / 10_000) as usize);
+        let sightings = [
+            seen(1000, "Priya Patel"),
+            seen(4000, "priya patel"),
+            seen(7000, "Sam Lee"), // a slow switch
+            seen(9000, "Priya Patel"),
+            seen(12_000, "Sam Lee"),
+            seen(15_000, "Ana Cruz"),
+        ];
+        let mut voices = vec![None, None];
+        assert_eq!(
+            name_from_sightings(&mut voices, &sightings, voice_at, 2),
+            [0]
+        );
+        // Voice 1 was split between two people, so it's left.
+        assert_eq!(voices, [Some("Priya Patel".to_string()), None]);
+
+        // A voice already recognised keeps its name.
+        let mut voices = vec![Some("Priya".to_string()), None];
+        assert!(name_from_sightings(&mut voices, &sightings, voice_at, 2).is_empty());
+        assert_eq!(voices[0].as_deref(), Some("Priya"));
+
+        // One sighting is enough when asked.
+        let mut voices = vec![None];
+        name_from_sightings(&mut voices, &[seen(1000, "Sam Lee")], |_| Some(0), 1);
+        assert_eq!(voices, [Some("Sam Lee".to_string())]);
+    }
+
+    #[test]
+    fn spots_the_users_own_name_while_they_talk() {
+        let you_spoke = |t: i64| t < 10_000;
+        let sightings = [
+            seen(1000, "Michelle M"),
+            seen(5000, "Michelle M"),
+            seen(12_000, "Priya Patel"),
+        ];
+        assert_eq!(
+            own_name(&sightings, you_spoke).as_deref(),
+            Some("Michelle M")
+        );
+        // Speaker view's big tile isn't the user while they talk.
+        let main_tile: Vec<Sighting> = sightings
+            .iter()
+            .map(|s| Sighting {
+                outlined: false,
+                ..s.clone()
+            })
+            .collect();
+        assert_eq!(own_name(&main_tile, you_spoke), None);
     }
 
     #[test]
