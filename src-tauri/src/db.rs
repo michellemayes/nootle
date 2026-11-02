@@ -1823,6 +1823,15 @@ impl Database {
              END
              WHERE is_builtin = 1;
              CREATE UNIQUE INDEX idx_templates_slug ON templates(slug) WHERE slug IS NOT NULL;",
+            // 12: who the call window showed talking, and when, which names
+            // the meeting's voices after it ends.
+            "CREATE TABLE meeting_call_speakers (
+                 meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                 offset_ms INTEGER NOT NULL,
+                 name TEXT NOT NULL,
+                 outlined INTEGER NOT NULL
+             );
+             CREATE INDEX idx_call_speakers_meeting ON meeting_call_speakers(meeting_id, offset_ms);",
         ];
 
         let current: usize =
@@ -2223,6 +2232,14 @@ impl Database {
         )?;
         conn.execute(
             "DELETE FROM meeting_translations WHERE meeting_id = ?1",
+            params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM meeting_call_names WHERE meeting_id = ?1",
+            params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM meeting_call_speakers WHERE meeting_id = ?1",
             params![id],
         )?;
 
@@ -3248,6 +3265,45 @@ impl Database {
             .query_map(params![meeting_id], |row| row.get(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(names)
+    }
+
+    /// Notes who the call window showed talking at a point in a meeting.
+    pub fn add_call_speaker(
+        &self,
+        meeting_id: &str,
+        sighting: &crate::call_names::Sighting,
+    ) -> Result<()> {
+        let conn = self.lock_conn()?;
+        conn.prepare_cached(
+            "INSERT INTO meeting_call_speakers (meeting_id, offset_ms, name, outlined)
+             VALUES (?1, ?2, ?3, ?4)",
+        )?
+        .execute(params![
+            meeting_id,
+            sighting.offset_ms,
+            sighting.name,
+            sighting.outlined
+        ])?;
+        Ok(())
+    }
+
+    /// Who the call window showed talking over a meeting, in order.
+    pub fn get_call_speakers(&self, meeting_id: &str) -> Result<Vec<crate::call_names::Sighting>> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn.prepare_cached(
+            "SELECT offset_ms, name, outlined FROM meeting_call_speakers
+             WHERE meeting_id = ?1 ORDER BY offset_ms",
+        )?;
+        let sightings = stmt
+            .query_map(params![meeting_id], |row| {
+                Ok(crate::call_names::Sighting {
+                    offset_ms: row.get(0)?,
+                    name: row.get(1)?,
+                    outlined: row.get(2)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(sightings)
     }
 
     // --- Remembered voices ---
@@ -6032,7 +6088,7 @@ mod tests {
         let db = Database::new_in_memory().unwrap();
         {
             // As an older version left it: no slugs, one built-in renamed,
-            // none of the follow-up templates.
+            // none of the follow-up templates, nor any later tables.
             let conn = db.lock_conn().unwrap();
             conn.execute_batch(
                 "DROP INDEX idx_templates_slug;
@@ -6040,6 +6096,7 @@ mod tests {
                  DELETE FROM templates WHERE name IN ('Follow-up Email', 'Project Update', 'Meeting Minutes', 'Sales Call');
                  UPDATE templates SET name = 'Weekly 1:1' WHERE name = '1-on-1';
                  ALTER TABLE templates DROP COLUMN slug;
+                 DROP TABLE meeting_call_speakers;
                  PRAGMA user_version = 10;",
             )
             .unwrap();

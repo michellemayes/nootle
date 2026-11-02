@@ -337,8 +337,12 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
         return Ok(false);
     }
     let call_names = crate::call_names::for_meeting(db, meeting_id);
+    let sightings = db.get_call_speakers(meeting_id).unwrap_or_default();
     let engine = DiarizationEngine::load().ok();
-    if engine.is_none() && crate::call_names::one_on_one(&call_names).is_none() {
+    if engine.is_none()
+        && crate::call_names::one_on_one(&call_names).is_none()
+        && sightings.is_empty()
+    {
         return Ok(false);
     }
     let mut recording = Recording::open(audio_path)?;
@@ -357,32 +361,64 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
             .filter(|(_, system)| *system > crate::diarization::SPEECH_RMS)
             .count()
             >= CALL_EVIDENCE_SENTENCES;
-    // Names on the call window are only the far end's when this was a call.
-    let call_names = if in_call { call_names } else { Vec::new() };
+    let sources: Vec<Source> = levels
+        .iter()
+        .map(|&(mic, system)| classify(in_call, mic, system))
+        .collect();
+    let spans: Vec<(i64, i64)> = segments.iter().map(|s| (s.start_ms, s.end_ms)).collect();
+    let sentence_from = |t: i64, source: Source| {
+        crate::call_names::sentence_at(&spans, t).filter(|&i| sources[i] == source)
+    };
+
+    // Names on the call window are only the far end's when this was a call,
+    // and leave out the user's own however the call app spells it.
+    let (mut call_names, mut sightings) = if in_call {
+        (call_names, sightings)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    if let Some(you) =
+        crate::call_names::own_name(&sightings, |t| sentence_from(t, Source::Local).is_some())
+    {
+        call_names.retain(|n| !crate::call_names::same_person(n, &you));
+        sightings.retain(|s| !crate::call_names::same_person(&s.name, &you));
+        // Nor offer it when the user renames a speaker.
+        if let Err(e) = db.set_call_names(meeting_id, &call_names) {
+            tracing::warn!("Couldn't store call names: {e}");
+        }
+    }
+    let remote_at = |t: i64| sentence_from(t, Source::Remote);
 
     let Some(mut engine) = engine else {
-        // No voices to tell the far end apart, but in a 1:1 it's all the
-        // other person.
-        let Some(name) = crate::call_names::one_on_one(&call_names) else {
-            return Ok(false);
-        };
+        // No voices to tell the far end apart: in a 1:1 it's all the other
+        // person, otherwise each stretch of far-end speech is whoever the
+        // call showed talking through it.
+        let (turns, count) = remote_turns(&segments, &sources);
+        let mut names = vec![None; count];
+        match crate::call_names::one_on_one(&call_names) {
+            Some(name) => names.fill(Some(name.clone())),
+            None => {
+                crate::call_names::name_from_sightings(
+                    &mut names,
+                    &sightings,
+                    |t| remote_at(t).and_then(|i| turns[i]),
+                    1,
+                );
+            }
+        }
         let labels = segments
             .iter()
-            .zip(&levels)
-            .map(
-                |(seg, &(mic, system))| match classify(in_call, mic, system) {
-                    Source::Remote => name.clone(),
-                    _ => seg.speaker_label.clone(),
-                },
-            )
+            .zip(&turns)
+            .map(|(seg, turn)| {
+                turn.and_then(|t| names[t].clone())
+                    .unwrap_or_else(|| seg.speaker_label.clone())
+            })
             .collect();
         return relabel(db, meeting_id, &segments, labels);
     };
 
-    let mut sources = Vec::with_capacity(segments.len());
     let mut voices: Vec<Option<Vec<f32>>> = Vec::with_capacity(segments.len());
-    for (seg, &(mic, system)) in segments.iter().zip(&levels) {
-        let source = classify(in_call, mic, system);
+    for (seg, source) in segments.iter().zip(&sources) {
         let voice = match source {
             Source::Local => None,
             Source::Remote => {
@@ -392,23 +428,59 @@ pub fn rediarize(db: &Database, meeting_id: &str, audio_path: &Path) -> Result<b
                 engine.voice_embedding(&recording.span(seg.start_ms, seg.end_ms)?.mixed)?
             }
         };
-        sources.push(source);
         voices.push(voice);
     }
 
-    // Remembered voices name who they can; then the names read off the
+    // Remembered voices name who they can; then who the call showed
+    // talking names the voices it agrees on, and the names read off the
     // call window name the rest when it's certain who's who.
-    let mut named_from_call = None;
-    let (labels, speaker_voices) = assign_speakers(&segments, &sources, &voices, |centroids| {
-        let mut names = crate::voices::recognize(db, centroids);
-        named_from_call = crate::call_names::fill_in(&mut names, &call_names);
-        names
-    });
+    let mut named_from_call = Vec::new();
+    let (labels, speaker_voices) =
+        assign_speakers(&segments, &sources, &voices, |centroids, cluster_of| {
+            let mut names = crate::voices::recognize(db, centroids);
+            named_from_call = crate::call_names::name_from_sightings(
+                &mut names,
+                &sightings,
+                |t| remote_at(t).and_then(|i| cluster_of[i]),
+                2,
+            );
+            named_from_call.extend(crate::call_names::fill_in(&mut names, &call_names));
+            names
+        });
     crate::voices::remember_meeting_voices(db, meeting_id, &speaker_voices);
-    if let Some((name, voice)) = named_from_call.and_then(|i| speaker_voices.get(i)) {
+    for (name, voice) in named_from_call
+        .iter()
+        .filter_map(|&i| speaker_voices.get(i))
+    {
         crate::voices::learn_from_call(db, meeting_id, name, voice);
     }
     relabel(db, meeting_id, &segments, labels)
+}
+
+/// Far-end speech this close together is one stretch of talk.
+const TURN_GAP_MS: i64 = 2_000;
+
+/// Numbers each stretch of far-end speech that the user (or a long pause)
+/// doesn't break up; None for the user's own lines. Also returns how many.
+fn remote_turns(segments: &[TranscriptSegment], sources: &[Source]) -> (Vec<Option<usize>>, usize) {
+    let mut turns = Vec::with_capacity(segments.len());
+    let mut current: Option<usize> = None;
+    let mut next = 0;
+    let mut last_end = i64::MIN;
+    for (seg, &source) in segments.iter().zip(sources) {
+        if source != Source::Remote {
+            current = None;
+            turns.push(None);
+            continue;
+        }
+        if current.is_none() || seg.start_ms - last_end > TURN_GAP_MS {
+            current = Some(next);
+            next += 1;
+        }
+        last_end = seg.end_ms;
+        turns.push(current);
+    }
+    (turns, next)
 }
 
 /// Stores each segment's new label. Returns whether any changed.
@@ -431,14 +503,15 @@ fn relabel(
 /// Speaker labels from each sentence's source and voice: the user's own
 /// lines are "You"; everyone else is clustered by voice, with sentences too
 /// short to anchor a cluster joining the closest one (or, with no voice at
-/// all, the previous remote speaker). `recognize` may put a remembered name
-/// on each cluster; the rest are numbered "Speaker 1", "Speaker 2", … in
-/// order of first appearance. Also returns each label's voice.
+/// all, the previous remote speaker). `recognize` gets each cluster's voice
+/// and each sentence's cluster, and may put a name on each cluster; the
+/// rest are numbered "Speaker 1", "Speaker 2", … in order of first
+/// appearance. Also returns each label's voice.
 fn assign_speakers(
     segments: &[TranscriptSegment],
     sources: &[Source],
     voices: &[Option<Vec<f32>>],
-    recognize: impl FnOnce(&[Vec<f32>]) -> Vec<Option<String>>,
+    recognize: impl FnOnce(&[Vec<f32>], &[Option<usize>]) -> Vec<Option<String>>,
 ) -> (Vec<String>, Vec<(String, Vec<f32>)>) {
     let anchors: Vec<(usize, &[f32])> = (0..segments.len())
         .filter(|&i| segments[i].end_ms - segments[i].start_ms >= MIN_ANCHOR_MS)
@@ -455,7 +528,27 @@ fn assign_speakers(
         cluster_of[i] = Some(c);
     }
     let centroids = centroids(&anchor_voices, &clusters);
-    let mut names = recognize(&centroids);
+
+    let closest = |v: &[f32]| -> Option<usize> {
+        centroids
+            .iter()
+            .map(|c| cosine_similarity(c, v))
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(c, _)| c)
+    };
+    let mut previous: Option<usize> = None;
+    for i in 0..segments.len() {
+        if sources[i] == Source::Local {
+            continue;
+        }
+        cluster_of[i] = cluster_of[i]
+            .or_else(|| voices[i].as_deref().and_then(closest))
+            .or(previous);
+        previous = cluster_of[i].or(previous);
+    }
+
+    let mut names = recognize(&centroids, &cluster_of);
     names.resize(centroids.len(), None);
     let mut next_number = 0;
     let cluster_labels: Vec<String> = names
@@ -468,30 +561,15 @@ fn assign_speakers(
         })
         .collect();
 
-    let closest = |v: &[f32]| -> Option<usize> {
-        centroids
-            .iter()
-            .map(|c| cosine_similarity(c, v))
-            .enumerate()
-            .max_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(c, _)| c)
-    };
-    let mut labels = Vec::with_capacity(segments.len());
-    let mut previous: Option<usize> = None;
-    for i in 0..segments.len() {
-        if sources[i] == Source::Local {
-            labels.push(SELF_LABEL.to_string());
-            continue;
-        }
-        let cluster = cluster_of[i]
-            .or_else(|| voices[i].as_deref().and_then(closest))
-            .or(previous);
-        previous = cluster.or(previous);
-        labels.push(match cluster {
-            Some(c) => cluster_labels[c].clone(),
-            None => UNKNOWN_LABEL.to_string(),
-        });
-    }
+    let labels = cluster_of
+        .iter()
+        .zip(sources)
+        .map(|(cluster, &source)| match (source, cluster) {
+            (Source::Local, _) => SELF_LABEL.to_string(),
+            (_, Some(c)) => cluster_labels[*c].clone(),
+            (_, None) => UNKNOWN_LABEL.to_string(),
+        })
+        .collect();
     (labels, cluster_labels.into_iter().zip(centroids).collect())
 }
 
@@ -532,7 +610,7 @@ mod tests {
             Source::Remote,
         ];
         let voices = [a.clone(), None, b.clone(), Some(vec![0.9, 0.1]), None, a];
-        let (labels, speakers) = assign_speakers(&segments, &sources, &voices, |_| vec![]);
+        let (labels, speakers) = assign_speakers(&segments, &sources, &voices, |_, _| vec![]);
         assert_eq!(
             labels,
             [
@@ -553,26 +631,22 @@ mod tests {
         let segments = [seg(0, 3000), seg(3000, 6000)];
         let sources = [Source::Remote, Source::Remote];
         let voices = [Some(vec![1.0, 0.0]), Some(vec![0.0, 1.0])];
-        let (labels, _) = assign_speakers(&segments, &sources, &voices, |centroids| {
+        let (labels, _) = assign_speakers(&segments, &sources, &voices, |centroids, _| {
             assert_eq!(centroids.len(), 2);
             vec![None, Some("Priya".into())]
         });
         assert_eq!(labels, ["Speaker 1", "Priya"]);
     }
 
-    #[test]
-    fn names_the_far_end_of_a_one_on_one_without_a_speaker_model() {
-        if DiarizationEngine::load().is_ok() {
-            return; // This covers the path without the model.
-        }
+    /// A call recorded as one-second sentences: `you[i]` says whether the
+    /// i-th was the user's (mic) or the far end's (system audio).
+    fn recorded_call(dir: &Path, you: &[bool]) -> (Database, String, std::path::PathBuf) {
         use crate::audio::AudioWriter;
-        let dir = tempfile::tempdir().unwrap();
-        let audio_path = dir.path().join("meeting.wav");
-        // You talk for a second, then the call does for three.
+        let audio_path = dir.join("meeting.wav");
         let second = SAMPLE_RATE as usize;
         let tone = |on: bool| vec![if on { 0.3 } else { 0.0 }; second];
-        let mic = [tone(true), tone(false), tone(false), tone(false)].concat();
-        let system = [tone(false), tone(true), tone(true), tone(true)].concat();
+        let mic: Vec<f32> = you.iter().flat_map(|&y| tone(y)).collect();
+        let system: Vec<f32> = you.iter().flat_map(|&y| tone(!y)).collect();
         let mut mixed = AudioWriter::new(&audio_path, SAMPLE_RATE).unwrap();
         mixed.write_samples(&mic).unwrap();
         mixed.finalize().unwrap();
@@ -588,39 +662,139 @@ mod tests {
                 template_id: None,
             })
             .unwrap();
-        let line = |label: &str, start_ms: i64| NewTranscriptSegment {
-            meeting_id: meeting.id.clone(),
-            speaker_label: label.into(),
-            text: "hi".into(),
-            start_ms,
-            end_ms: start_ms + 1000,
-            confidence: 1.0,
-        };
-        db.create_transcript_segments(vec![
-            line("You", 0),
-            line("Speaker", 1000),
-            line("Speaker", 2000),
-            line("Speaker", 3000),
-        ])
-        .unwrap();
-        db.set_call_names(&meeting.id, &["Priya Patel".into()])
-            .unwrap();
+        let lines = you
+            .iter()
+            .enumerate()
+            .map(|(i, &y)| NewTranscriptSegment {
+                meeting_id: meeting.id.clone(),
+                speaker_label: if y { "You" } else { "Speaker" }.into(),
+                text: "hi".into(),
+                start_ms: i as i64 * 1000,
+                end_ms: i as i64 * 1000 + 1000,
+                confidence: 1.0,
+            })
+            .collect();
+        db.create_transcript_segments(lines).unwrap();
+        (db, meeting.id, audio_path)
+    }
 
-        assert!(rediarize(&db, &meeting.id, &audio_path).unwrap());
-        let labels: Vec<String> = db
-            .get_transcript(&meeting.id)
+    fn labels_of(db: &Database, meeting_id: &str) -> Vec<String> {
+        db.get_transcript(meeting_id)
             .unwrap()
             .into_iter()
             .map(|s| s.speaker_label)
-            .collect();
-        assert_eq!(labels, ["You", "Priya Patel", "Priya Patel", "Priya Patel"]);
+            .collect()
+    }
+
+    #[test]
+    fn names_the_far_end_of_a_one_on_one_without_a_speaker_model() {
+        if DiarizationEngine::load().is_ok() {
+            return; // This covers the path without the model.
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let (db, meeting, audio_path) = recorded_call(dir.path(), &[true, false, false, false]);
+        db.set_call_names(&meeting, &["Priya Patel".into()])
+            .unwrap();
+
+        assert!(rediarize(&db, &meeting, &audio_path).unwrap());
+        assert_eq!(
+            labels_of(&db, &meeting),
+            ["You", "Priya Patel", "Priya Patel", "Priya Patel"]
+        );
+    }
+
+    #[test]
+    fn names_a_group_call_after_who_the_call_showed_talking() {
+        if DiarizationEngine::load().is_ok() {
+            return; // This covers the path without the model.
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let (db, meeting, audio_path) =
+            recorded_call(dir.path(), &[true, false, false, true, false, false]);
+        // The user's Zoom name isn't the Mac account's, so it's on the list.
+        db.set_call_names(
+            &meeting,
+            &["Priya Patel".into(), "Sam Lee".into(), "Michelle M".into()],
+        )
+        .unwrap();
+        let seen = |offset_ms: i64, name: &str| crate::call_names::Sighting {
+            offset_ms,
+            name: name.into(),
+            outlined: true,
+        };
+        for s in [
+            seen(500, "Michelle M"),
+            seen(1500, "Priya Patel"),
+            seen(3500, "Michelle M"),
+            seen(4500, "Sam Lee"),
+        ] {
+            db.add_call_speaker(&meeting, &s).unwrap();
+        }
+
+        assert!(rediarize(&db, &meeting, &audio_path).unwrap());
+        assert_eq!(
+            labels_of(&db, &meeting),
+            [
+                "You",
+                "Priya Patel",
+                "Priya Patel",
+                "You",
+                "Sam Lee",
+                "Sam Lee"
+            ]
+        );
+    }
+
+    #[test]
+    fn remote_turns_break_at_the_user_and_long_pauses() {
+        let segments = [
+            seg(0, 1000),
+            seg(1000, 2000),
+            seg(2000, 3000),
+            seg(3000, 4000),
+            seg(9000, 10000),
+        ];
+        let sources = [
+            Source::Remote,
+            Source::Remote,
+            Source::Local,
+            Source::Remote,
+            Source::Remote,
+        ];
+        let (turns, count) = remote_turns(&segments, &sources);
+        assert_eq!(turns, [Some(0), Some(0), None, Some(1), Some(2)]);
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn hands_each_sentences_cluster_to_recognize() {
+        let a = Some(vec![1.0, 0.0]);
+        let b = Some(vec![0.0, 1.0]);
+        let segments = [
+            seg(0, 3000),
+            seg(3000, 5000),
+            seg(5000, 8000),
+            seg(8000, 8200),
+        ];
+        let sources = [
+            Source::Remote,
+            Source::Local,
+            Source::Remote,
+            Source::Remote,
+        ];
+        let voices = [a, None, b, None];
+        let (labels, _) = assign_speakers(&segments, &sources, &voices, |_, cluster_of| {
+            assert_eq!(cluster_of, [Some(0), None, Some(1), Some(1)]);
+            vec![Some("Priya".into())]
+        });
+        assert_eq!(labels, ["Priya", "You", "Speaker 1", "Speaker 1"]);
     }
 
     #[test]
     fn without_voices_everyone_is_speaker() {
         let segments = [seg(0, 1000), seg(1000, 2000)];
         let sources = [Source::Room, Source::Room];
-        let (labels, speakers) = assign_speakers(&segments, &sources, &[None, None], |_| vec![]);
+        let (labels, speakers) = assign_speakers(&segments, &sources, &[None, None], |_, _| vec![]);
         assert_eq!(labels, ["Speaker", "Speaker"]);
         assert!(speakers.is_empty());
     }

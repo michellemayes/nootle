@@ -321,8 +321,9 @@ impl CallWatcher {
     }
 }
 
-/// Names are read every this many polls: who's in a call changes slowly.
-const NAME_POLLS: u32 = 3;
+/// Names are read every this many polls: often enough to catch who's
+/// talking in most turns, without reading every frame.
+const NAME_POLLS: u32 = 2;
 
 struct Run {
     db: Arc<Database>,
@@ -369,7 +370,7 @@ impl Run {
             }
             if let Some(names) = names.as_mut().filter(|_| polls.is_multiple_of(NAME_POLLS)) {
                 match self.capture(&mut capturer, crate::call_names::CAPTURE_EDGE) {
-                    Some(frame) => names.read(&self.db, &self.meeting_id, &frame),
+                    Some(frame) => names.read(&self.db, &self.meeting_id, &frame, self.offset_ms()),
                     None => names.missed(),
                 }
             }
@@ -415,6 +416,11 @@ impl Run {
         }
     }
 
+    /// How far into the recording it is now.
+    fn offset_ms(&self) -> i64 {
+        self.clock.recorded().as_millis() as i64
+    }
+
     /// Sleep until the next poll. False once the recording has stopped.
     fn wait(&self) -> bool {
         matches!(
@@ -440,7 +446,7 @@ impl Run {
 
     /// Read the frame's text and keep it if it's newly shared content.
     fn examine(&self, frame: &Capture, last_words: &mut HashSet<String>) -> anyhow::Result<bool> {
-        let offset_ms = self.clock.recorded().as_millis() as i64;
+        let offset_ms = self.offset_ms();
         let path = self.dir.join(format!("{}.jpg", uuid::Uuid::new_v4()));
         std::fs::write(&path, &frame.jpeg)?;
 
@@ -466,11 +472,13 @@ impl Run {
     }
 }
 
-/// A line of text read off an image, with its size as fractions of the
-/// image's.
+/// A line of text read off an image, with its box as fractions of the
+/// image's size, measured from the bottom-left corner as Vision reports it.
 #[derive(Debug, Clone)]
 pub struct TextLine {
     pub text: String,
+    pub x: f64,
+    pub y: f64,
     pub width: f64,
     pub height: f64,
 }
@@ -649,11 +657,13 @@ pub(crate) mod platform {
             .iter()
             .filter_map(|obs| {
                 let text = obs.top_candidates(1).first()?.string().to_string();
-                let size = obs.bounding_box().size;
+                let bounds = obs.bounding_box();
                 Some(TextLine {
                     text,
-                    width: size.width,
-                    height: size.height,
+                    x: bounds.origin.x,
+                    y: bounds.origin.y,
+                    width: bounds.size.width,
+                    height: bounds.size.height,
                 })
             })
             .collect())
