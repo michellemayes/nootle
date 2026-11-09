@@ -10,6 +10,7 @@ mod core_audio_impl {
     use ringbuf::HeapRb;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     use cidre::core_audio::aggregate_device_keys as agg_keys;
     use cidre::core_audio::hardware::StartedDevice;
@@ -19,7 +20,23 @@ mod core_audio_impl {
     struct AudioContext {
         producer: ringbuf::HeapProd<f32>,
         is_recording: Arc<AtomicBool>,
+        delivered: Arc<AtomicBool>,
     }
+
+    /// How the tap is read. Hanging the aggregate off the output device also
+    /// brings in that device's inputs, so on a headset Nootle held the
+    /// headset mic (forcing Bluetooth into its call profile) before the call
+    /// app opened it, and could read that mic as "system audio". Tap-only is
+    /// clocked by the tap and touches no hardware; the output-device layout
+    /// is the fallback for a system where a tap-only aggregate stays silent.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Layout {
+        TapOnly,
+        WithOutput,
+    }
+
+    /// How long a tap-only aggregate gets to deliver its first buffer.
+    const FIRST_BUFFER_TIMEOUT: Duration = Duration::from_secs(1);
 
     extern "C" fn audio_io_proc(
         _device: ca::Device,
@@ -34,15 +51,16 @@ mod core_audio_impl {
             return os::Status::default();
         };
 
-        if !ctx.is_recording.load(Ordering::Relaxed) {
-            return os::Status::default();
-        }
-
         let buf = &input_data.buffers[0];
         let byte_count = buf.data_bytes_size as usize;
         let sample_count = byte_count / std::mem::size_of::<f32>();
 
         if sample_count == 0 || buf.data.is_null() {
+            return os::Status::default();
+        }
+        ctx.delivered.store(true, Ordering::Relaxed);
+
+        if !ctx.is_recording.load(Ordering::Relaxed) {
             return os::Status::default();
         }
 
@@ -68,6 +86,13 @@ mod core_audio_impl {
 
     impl SystemAudioCapture {
         pub fn new() -> anyhow::Result<Self> {
+            Self::open(Layout::TapOnly).or_else(|e| {
+                tracing::warn!("Tap-only system audio failed ({e:#}); using the output device");
+                Self::open(Layout::WithOutput)
+            })
+        }
+
+        fn open(layout: Layout) -> anyhow::Result<Self> {
             let tap_desc = ca::TapDesc::with_mono_global_tap_excluding_processes(&ns::Array::new());
 
             let tap_guard = tap_desc
@@ -76,43 +101,68 @@ mod core_audio_impl {
 
             let asbd = tap_guard.asbd().context("read tap stream format")?;
             let sample_rate = asbd.sample_rate as u32;
-            tracing::info!(sample_rate, "Core Audio Process Tap created");
+            tracing::info!(sample_rate, ?layout, "Core Audio Process Tap created");
 
-            let output_device =
-                ca::System::default_output_device().context("get default output device")?;
-            let output_uid = output_device.uid().context("read output device UID")?;
             let tap_uid = tap_guard.uid().context("read tap UID")?;
-
-            let sub_device =
-                cf::DictionaryOf::with_keys_values(&[sub_keys::uid()], &[output_uid.as_type_ref()]);
             let sub_tap =
                 cf::DictionaryOf::with_keys_values(&[sub_keys::uid()], &[tap_uid.as_type_ref()]);
-
+            let tap_list = cf::ArrayOf::from_slice(&[sub_tap.as_ref()]);
             let agg_uid = cf::Uuid::new().to_cf_string();
             let agg_name = cf::str!(c"Nootle System Audio");
 
-            let dict = cf::DictionaryOf::with_keys_values(
-                &[
-                    agg_keys::is_private(),
-                    agg_keys::is_stacked(),
-                    agg_keys::tap_auto_start(),
-                    agg_keys::name(),
-                    agg_keys::main_sub_device(),
-                    agg_keys::uid(),
-                    agg_keys::sub_device_list(),
-                    agg_keys::tap_list(),
-                ],
-                &[
-                    cf::Boolean::value_true().as_type_ref(),
-                    cf::Boolean::value_false(),
-                    cf::Boolean::value_true(),
-                    agg_name,
-                    &output_uid,
-                    &agg_uid,
-                    &cf::ArrayOf::from_slice(&[sub_device.as_ref()]),
-                    &cf::ArrayOf::from_slice(&[sub_tap.as_ref()]),
-                ],
-            );
+            let dict = match layout {
+                Layout::TapOnly => cf::DictionaryOf::with_keys_values(
+                    &[
+                        agg_keys::is_private(),
+                        agg_keys::is_stacked(),
+                        agg_keys::tap_auto_start(),
+                        agg_keys::name(),
+                        agg_keys::uid(),
+                        agg_keys::sub_device_list(),
+                        agg_keys::tap_list(),
+                    ],
+                    &[
+                        cf::Boolean::value_true().as_type_ref(),
+                        cf::Boolean::value_false(),
+                        cf::Boolean::value_true(),
+                        agg_name,
+                        &agg_uid,
+                        &cf::Array::new(),
+                        &tap_list,
+                    ],
+                ),
+                Layout::WithOutput => {
+                    let output_device =
+                        ca::System::default_output_device().context("get default output device")?;
+                    let output_uid = output_device.uid().context("read output device UID")?;
+                    let sub_device = cf::DictionaryOf::with_keys_values(
+                        &[sub_keys::uid()],
+                        &[output_uid.as_type_ref()],
+                    );
+                    cf::DictionaryOf::with_keys_values(
+                        &[
+                            agg_keys::is_private(),
+                            agg_keys::is_stacked(),
+                            agg_keys::tap_auto_start(),
+                            agg_keys::name(),
+                            agg_keys::main_sub_device(),
+                            agg_keys::uid(),
+                            agg_keys::sub_device_list(),
+                            agg_keys::tap_list(),
+                        ],
+                        &[
+                            cf::Boolean::value_true().as_type_ref(),
+                            cf::Boolean::value_false(),
+                            cf::Boolean::value_true(),
+                            agg_name,
+                            &output_uid,
+                            &agg_uid,
+                            &cf::ArrayOf::from_slice(&[sub_device.as_ref()]),
+                            &tap_list,
+                        ],
+                    )
+                }
+            };
 
             let agg_device =
                 ca::AggregateDevice::with_desc(&dict).context("create aggregate device")?;
@@ -120,10 +170,12 @@ mod core_audio_impl {
             let rb = HeapRb::<f32>::new(sample_rate as usize * 5);
             let (producer, consumer) = rb.split();
             let is_recording = Arc::new(AtomicBool::new(false));
+            let delivered = Arc::new(AtomicBool::new(false));
 
             let mut ctx = Box::new(AudioContext {
                 producer,
                 is_recording: Arc::clone(&is_recording),
+                delivered: Arc::clone(&delivered),
             });
 
             let proc_id = agg_device
@@ -133,7 +185,15 @@ mod core_audio_impl {
             let started_device =
                 ca::device_start(agg_device, Some(proc_id)).context("start audio device")?;
 
-            tracing::info!("Core Audio aggregate device and IO proc running");
+            if layout == Layout::TapOnly {
+                let deadline = Instant::now() + FIRST_BUFFER_TIMEOUT;
+                while !delivered.load(Ordering::Relaxed) {
+                    anyhow::ensure!(Instant::now() < deadline, "tap delivered no audio");
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+
+            tracing::info!(?layout, "Core Audio aggregate device and IO proc running");
 
             Ok(Self {
                 consumer,
