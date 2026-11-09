@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.4] - 2026-11-09
+
+### Bug Fixes
+
+- **audio:** Read system audio from a tap-only aggregate (#227) ([9266ce9](https://github.com/michellemayes/nootle/commit/9266ce977c340065d7968990c55c3e1036e4eb4a))
+
 ## [0.27.3] - 2026-11-02
 
 ### Bug Fixes
