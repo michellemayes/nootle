@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.5] - 2026-11-12
+
+### Bug Fixes
+
+- **summaries:** Show the post-meeting summary on the page, and stop one that hangs (#228) ([d7038cb](https://github.com/michellemayes/nootle/commit/d7038cb4641d4392f1a5d2aa7e42001f2a69b20d))
+
 ## [0.27.4] - 2026-11-09
 
 ### Bug Fixes
