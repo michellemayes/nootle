@@ -61,39 +61,117 @@ async fn lock_embedding_engine(
 /// show progress for a job started before the user navigated away.
 pub type SentimentJobsState = Arc<std::sync::Mutex<std::collections::HashSet<String>>>;
 
-/// Summaries being generated from a meeting's page, by meeting, so the user
-/// can stop one that is taking too long.
+/// Summaries being generated, by meeting, whether started from the meeting's
+/// page or after recording, so any view can show one, stop it, and say why
+/// the last one failed.
 #[derive(Default)]
-pub struct SummaryJobsState(std::sync::Mutex<HashMap<String, CancellationToken>>);
+pub struct SummaryJobsState(std::sync::Mutex<SummaryJobs>);
+
+#[derive(Default)]
+struct SummaryJobs {
+    running: HashMap<String, CancellationToken>,
+    failed: HashMap<String, String>,
+}
+
+/// Sent with a [`SummaryJob`] whenever a meeting's summary starts or ends.
+pub const SUMMARY_JOB: &str = "summary-job";
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct SummaryJob {
+    pub meeting_id: String,
+    pub running: bool,
+    pub error: Option<String>,
+}
 
 impl SummaryJobsState {
-    fn jobs(&self) -> std::sync::MutexGuard<'_, HashMap<String, CancellationToken>> {
+    fn jobs(&self) -> std::sync::MutexGuard<'_, SummaryJobs> {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Registers a new job for `meeting_id`, cancelling any still running.
     fn start(&self, meeting_id: &str) -> CancellationToken {
         let token = CancellationToken::new();
-        if let Some(previous) = self.jobs().insert(meeting_id.to_string(), token.clone()) {
+        let mut jobs = self.jobs();
+        jobs.failed.remove(meeting_id);
+        if let Some(previous) = jobs.running.insert(meeting_id.to_string(), token.clone()) {
             previous.cancel();
         }
         token
     }
 
     fn cancel(&self, meeting_id: &str) {
-        if let Some(job) = self.jobs().remove(meeting_id) {
+        if let Some(job) = self.jobs().running.remove(meeting_id) {
             job.cancel();
         }
     }
 
-    /// Forgets a job that ran to the end. A cancelled one was already removed
-    /// or replaced by a newer job. Checked under the lock, so a job started
-    /// in between (which cancels this one) isn't the one forgotten.
-    fn finish(&self, meeting_id: &str, token: &CancellationToken) {
+    /// Forgets a job that ran to the end, keeping its error. A cancelled one
+    /// was already removed or replaced by a newer job. Checked under the
+    /// lock, so a job started in between (which cancels this one) isn't the
+    /// one forgotten.
+    fn finish(&self, meeting_id: &str, token: &CancellationToken, error: Option<String>) {
         let mut jobs = self.jobs();
         if !token.is_cancelled() {
-            jobs.remove(meeting_id);
+            jobs.running.remove(meeting_id);
+            if let Some(error) = error {
+                jobs.failed.insert(meeting_id.to_string(), error);
+            }
         }
+    }
+
+    pub fn get(&self, meeting_id: &str) -> SummaryJob {
+        let jobs = self.jobs();
+        SummaryJob {
+            meeting_id: meeting_id.to_string(),
+            running: jobs.running.contains_key(meeting_id),
+            error: jobs.failed.get(meeting_id).cloned(),
+        }
+    }
+}
+
+/// How long a summary may take before it's stopped and reported as failed.
+/// A local model condenses a long meeting part by part, one at a time.
+pub(crate) fn summary_deadline(provider: &str) -> std::time::Duration {
+    let minutes = if crate::llm::runs_locally(provider) {
+        30
+    } else {
+        10
+    };
+    std::time::Duration::from_secs(minutes * 60)
+}
+
+/// Runs `work` as `meeting_id`'s summary job: Stop or a newer job cancels
+/// it, and it fails once `deadline` passes, so nothing waits on it forever.
+/// `notify` hears the job's state as it starts and ends. Resolves to `None`
+/// when stopped.
+pub(crate) async fn run_summary_job<T>(
+    jobs: &SummaryJobsState,
+    meeting_id: &str,
+    deadline: std::time::Duration,
+    notify: impl Fn(SummaryJob),
+    work: impl std::future::Future<Output = anyhow::Result<T>>,
+) -> Result<Option<T>, String> {
+    let cancel = jobs.start(meeting_id);
+    notify(jobs.get(meeting_id));
+    // Dropping `work` stops its requests and kills any CLI it ran.
+    let result = tokio::select! {
+        r = tokio::time::timeout(deadline, work) => match r {
+            Ok(r) => r.map(Some).map_err(|e| format!("{e:#}")),
+            Err(_) => Err(format!(
+                "The summary was still going after {} minutes, so it was stopped. Try again, or pick another model.",
+                deadline.as_secs() / 60
+            )),
+        },
+        _ = cancel.cancelled() => Ok(None),
+    };
+    jobs.finish(meeting_id, &cancel, result.as_ref().err().cloned());
+    notify(jobs.get(meeting_id));
+    result
+}
+
+fn notify_summary_job(app: &tauri::AppHandle) -> impl Fn(SummaryJob) + '_ {
+    move |job| {
+        let _ = app.emit(SUMMARY_JOB, job);
     }
 }
 
@@ -843,23 +921,30 @@ async fn auto_summarize(
     // A meeting with slides gets its slide recap alongside the summaries.
     let recap =
         crate::slides::generate_recaps(db, &llm, meeting_id, &model.provider, &model.id, false);
-    let (summaries, recap) = futures_util::future::join(
+    // A job like one started from the page, so the page shows it, can stop
+    // it, and hears why it failed instead of starting a second one.
+    let jobs = app.state::<SummaryJobsState>();
+    let summaries = run_summary_job(
+        &jobs,
+        meeting_id,
+        summary_deadline(&model.provider),
+        notify_summary_job(app),
         summarization::run_auto_templates(db, &llm, meeting_id, &model.provider, &model.id),
-        recap,
-    )
-    .await;
+    );
+    let (summaries, recap) = futures_util::future::join(summaries, recap).await;
     if let Err(e) = recap {
         tracing::warn!("Slide recap failed: {e}");
     }
     match summaries {
-        Ok(summaries) if !summaries.is_empty() => {
+        Ok(Some(summaries)) if !summaries.is_empty() => {
             tracing::info!(
                 "Auto-run produced {} summaries for {meeting_id}",
                 summaries.len()
             );
             let _ = app.emit("summaries-updated", meeting_id);
         }
-        Ok(_) => tracing::info!("No summary templates available"),
+        Ok(Some(_)) => tracing::info!("No summary templates available"),
+        Ok(None) => tracing::info!("Auto summary for {meeting_id} was stopped"),
         Err(e) => tracing::warn!("Auto-run templates failed: {e}"),
     }
 }
@@ -1737,7 +1822,9 @@ pub fn list_stored_providers(db: State<'_, DbState>) -> Result<Vec<String>, Stri
 /// Generates a summary, or returns `None` if `cancel_summary` stopped it.
 /// Starting one replaces any still running for the same meeting.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn generate_summary(
+    app: tauri::AppHandle,
     db: State<'_, DbState>,
     llm: State<'_, LlmState>,
     jobs: State<'_, SummaryJobsState>,
@@ -1746,22 +1833,42 @@ pub async fn generate_summary(
     provider: String,
     model: String,
 ) -> Result<Option<Summary>, String> {
-    let cancel = jobs.start(&meeting_id);
-    // Dropping the summary future stops its requests and kills any CLI it ran.
-    let result = tokio::select! {
-        r = async {
+    run_summary_job(
+        &jobs,
+        &meeting_id,
+        summary_deadline(&provider),
+        notify_summary_job(&app),
+        async {
             let llm = llm.read().await;
-            summarization::summarize_meeting(&db, &llm, &meeting_id, &template_id, &provider, &model).await
-        } => r.map(Some).map_err(|e| e.to_string()),
-        _ = cancel.cancelled() => Ok(None),
-    };
-    jobs.finish(&meeting_id, &cancel);
-    result
+            summarization::summarize_meeting(
+                &db,
+                &llm,
+                &meeting_id,
+                &template_id,
+                &provider,
+                &model,
+            )
+            .await
+        },
+    )
+    .await
 }
 
 #[tauri::command]
-pub fn cancel_summary(jobs: State<'_, SummaryJobsState>, meeting_id: String) {
+pub fn cancel_summary(
+    app: tauri::AppHandle,
+    jobs: State<'_, SummaryJobsState>,
+    meeting_id: String,
+) {
     jobs.cancel(&meeting_id);
+    let _ = app.emit(SUMMARY_JOB, jobs.get(&meeting_id));
+}
+
+/// Whether `meeting_id`'s summary is being generated, and why the last one
+/// failed, for a page opened after it started.
+#[tauri::command]
+pub fn get_summary_job(jobs: State<'_, SummaryJobsState>, meeting_id: String) -> SummaryJob {
+    jobs.get(&meeting_id)
 }
 
 #[tauri::command(async)]
@@ -3106,12 +3213,15 @@ mod tests {
         let mut held = jobs.jobs();
         let finishing = {
             let (jobs, first) = (jobs.clone(), first.clone());
-            std::thread::spawn(move || jobs.finish("m", &first))
+            std::thread::spawn(move || jobs.finish("m", &first, None))
         };
         std::thread::sleep(std::time::Duration::from_millis(100));
         // Meanwhile a second summary starts, as `start` does under the lock.
         let second = CancellationToken::new();
-        held.insert("m".into(), second.clone()).unwrap().cancel();
+        held.running
+            .insert("m".into(), second.clone())
+            .unwrap()
+            .cancel();
         drop(held);
         finishing.join().unwrap();
 
@@ -3120,6 +3230,97 @@ mod tests {
             second.is_cancelled(),
             "Stop no longer reaches the running summary"
         );
+    }
+
+    fn recorder() -> (Arc<std::sync::Mutex<Vec<SummaryJob>>>, impl Fn(SummaryJob)) {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        (seen, move |job| sink.lock().unwrap().push(job))
+    }
+
+    fn job(running: bool, error: Option<&str>) -> SummaryJob {
+        SummaryJob {
+            meeting_id: "m".into(),
+            running,
+            error: error.map(str::to_string),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_summary_that_never_answers_fails_at_its_deadline() {
+        let jobs = SummaryJobsState::default();
+        let (seen, notify) = recorder();
+        let result: Result<Option<()>, String> = run_summary_job(
+            &jobs,
+            "m",
+            summary_deadline("anthropic"),
+            notify,
+            std::future::pending(),
+        )
+        .await;
+
+        let error = result.unwrap_err();
+        assert!(error.contains("10 minutes"), "{error}");
+        assert_eq!(jobs.get("m"), job(false, Some(&error)));
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![job(true, None), job(false, Some(&error))]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_summary_reports_why_until_the_next_one_starts() {
+        let jobs = SummaryJobsState::default();
+        let failed: Result<Option<()>, String> =
+            run_summary_job(&jobs, "m", summary_deadline("anthropic"), |_| {}, async {
+                anyhow::bail!("rate limited")
+            })
+            .await;
+        assert_eq!(failed, Err("rate limited".into()));
+        assert_eq!(jobs.get("m"), job(false, Some("rate limited")));
+
+        let (seen, notify) = recorder();
+        let retried = run_summary_job(&jobs, "m", summary_deadline("anthropic"), notify, async {
+            Ok(7)
+        })
+        .await;
+        assert_eq!(retried, Ok(Some(7)));
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![job(true, None), job(false, None)]
+        );
+    }
+
+    #[tokio::test]
+    async fn stopping_a_summary_reports_it_stopped_without_an_error() {
+        let jobs = Arc::new(SummaryJobsState::default());
+        let (seen, notify) = recorder();
+        let running = {
+            let jobs = jobs.clone();
+            tokio::spawn(async move {
+                run_summary_job(
+                    &jobs,
+                    "m",
+                    summary_deadline("anthropic"),
+                    notify,
+                    std::future::pending::<anyhow::Result<()>>(),
+                )
+                .await
+            })
+        };
+        while !jobs.get("m").running {
+            tokio::task::yield_now().await;
+        }
+        jobs.cancel("m");
+
+        assert_eq!(running.await.unwrap(), Ok(None));
+        assert_eq!(jobs.get("m"), job(false, None));
+        assert_eq!(seen.lock().unwrap().last(), Some(&job(false, None)));
+    }
+
+    #[test]
+    fn local_models_get_longer_to_summarize() {
+        assert!(summary_deadline("ollama") > summary_deadline("anthropic"));
     }
 }
 
