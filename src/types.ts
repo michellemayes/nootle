@@ -125,6 +125,13 @@ export interface Summary {
   created_at: string;
 }
 
+/** A meeting's summary generation, from `get_summary_job` and `summary-job` events. */
+export interface SummaryJob {
+  meeting_id: string;
+  running: boolean;
+  error: string | null;
+}
+
 export interface ModelInfo {
   id: string;
   name: string;

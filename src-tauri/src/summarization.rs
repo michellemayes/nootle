@@ -262,13 +262,21 @@ pub async fn run_auto_templates(
     .await;
 
     let mut summaries = Vec::new();
+    let mut first_error = None;
     for (template, result) in templates.iter().zip(results) {
         match result {
             Ok(summary) => summaries.push(summary),
-            Err(e) => tracing::error!("Auto-run template '{}' failed: {}", template.name, e),
+            Err(e) => {
+                tracing::error!("Auto-run template '{}' failed: {}", template.name, e);
+                first_error.get_or_insert(e);
+            }
         }
     }
-    Ok(summaries)
+    // With nothing to show, the reason is the result, not an empty list.
+    match first_error {
+        Some(e) if summaries.is_empty() => Err(e),
+        _ => Ok(summaries),
+    }
 }
 
 /// The system prompt for answering questions about one meeting: its full
@@ -376,6 +384,49 @@ pub fn format_ms(ms: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct DownLlm;
+
+    #[async_trait::async_trait]
+    impl crate::llm::LlmProvider for DownLlm {
+        fn provider_name(&self) -> &str {
+            "down"
+        }
+        fn available_models(&self) -> Vec<crate::llm::ModelInfo> {
+            Vec::new()
+        }
+        async fn chat(&self, _: Vec<ChatMessage>, _: &str) -> anyhow::Result<String> {
+            anyhow::bail!("service unavailable")
+        }
+    }
+
+    #[tokio::test]
+    async fn auto_summaries_that_all_fail_say_why() {
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(crate::db::NewMeeting {
+                title: "Sync".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        db.create_transcript_segment(crate::db::NewTranscriptSegment {
+            meeting_id: meeting.id.clone(),
+            speaker_label: "A".into(),
+            text: "Ship it Friday.".into(),
+            start_ms: 0,
+            end_ms: 2_000,
+            confidence: 0.9,
+        })
+        .unwrap();
+        let mut llm = LlmRegistry::new();
+        llm.register(Box::new(DownLlm));
+
+        let err = run_auto_templates(&db, &llm, &meeting.id, "down", "m")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("service unavailable"), "{err}");
+    }
 
     #[test]
     fn long_transcripts_split_at_turns() {

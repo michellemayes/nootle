@@ -488,6 +488,7 @@ pub fn run() {
             commands::list_stored_providers,
             commands::generate_summary,
             commands::cancel_summary,
+            commands::get_summary_job,
             commands::chat_with_meeting,
             commands::get_audio_recap,
             commands::generate_audio_recap,
