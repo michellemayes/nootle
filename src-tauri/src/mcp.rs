@@ -543,7 +543,8 @@ pub struct SetSettingParams {
     /// Setting key, from get_settings
     pub key: String,
     /// New value: "true"/"false" for switches, a provider name (or "" for
-    /// automatic) for summarization_provider
+    /// automatic) for summarization_provider, a model ID for
+    /// summarization_model
     pub value: String,
 }
 
@@ -2056,7 +2057,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Get settings",
-        description = "Get Nootle's settings. detection_enabled offers to record when a call starts; summarization_provider is the LLM automatic work uses (unset: the first available).",
+        description = "Get Nootle's settings. detection_enabled offers to record when a call starts; summarization_provider and summarization_model are the LLM automatic work uses, as picked in the app's sidebar (unset: the first available).",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn get_settings(&self) -> Result<CallToolResult, McpError> {
@@ -2065,7 +2066,7 @@ impl NootleMcpServer {
 
     #[tool(
         title = "Set setting",
-        description = "Change one of the settings get_settings lists, except remote_control_enabled and snapshots_enabled, which only the user changes. Switches take \"true\" or \"false\"; summarization_provider takes a provider from list_llm_models, or \"\" for automatic.",
+        description = "Change one of the settings get_settings lists, except remote_control_enabled and snapshots_enabled, which only the user changes. Switches take \"true\" or \"false\"; summarization_provider takes a provider from list_llm_models, or \"\" for automatic; summarization_model one of its model IDs.",
         annotations(
             destructive_hint = false,
             idempotent_hint = true,

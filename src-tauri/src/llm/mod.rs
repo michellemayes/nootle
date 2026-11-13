@@ -129,14 +129,8 @@ impl LlmRegistry {
         let mut registry = Self::new();
         sync_local_only(db);
 
-        // Register Ollama only if it's reachable locally
-        if std::net::TcpStream::connect_timeout(
-            &"127.0.0.1:11434".parse().unwrap(),
-            std::time::Duration::from_millis(500),
-        )
-        .is_ok()
-        {
-            registry.register(Box::new(OllamaProvider::new()));
+        if let Some(ollama) = OllamaProvider::detect() {
+            registry.register(Box::new(ollama));
         }
 
         // Register Codex CLI (ChatGPT subscription) only if the `codex` binary is installed

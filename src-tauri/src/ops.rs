@@ -60,6 +60,9 @@ pub const API_KEY_PROVIDERS: &[&str] = &[
 /// The provider automatic work (titles, summaries, insights) uses; empty or
 /// unset means the first available.
 pub const SUMMARIZATION_PROVIDER_SETTING: &str = "summarization_provider";
+/// The model automatic work uses from `summarization_provider`; unset or no
+/// longer offered means that provider's first.
+pub const SUMMARIZATION_MODEL_SETTING: &str = "summarization_model";
 /// On/off settings the app's settings screen changes.
 pub const TOGGLE_SETTINGS: &[&str] = &[
     "detection_enabled",
@@ -106,6 +109,7 @@ const MAX_CONSENT_MESSAGE_CHARS: usize = 600;
 pub fn editable_settings() -> impl Iterator<Item = &'static str> {
     TOGGLE_SETTINGS.iter().copied().chain([
         SUMMARIZATION_PROVIDER_SETTING,
+        SUMMARIZATION_MODEL_SETTING,
         CONSENT_MESSAGE_SETTING,
         crate::brief::LEAD_SETTING,
         crate::handoff::APP_SETTING,
@@ -170,7 +174,7 @@ pub fn validate_setting(key: &str, value: &str) -> Result<()> {
     use crate::handoff;
     validate_setting_key(key)?;
     match key {
-        SUMMARIZATION_PROVIDER_SETTING => Ok(()),
+        SUMMARIZATION_PROVIDER_SETTING | SUMMARIZATION_MODEL_SETTING => Ok(()),
         CONSENT_MESSAGE_SETTING => max_chars("consent message", value, MAX_CONSENT_MESSAGE_CHARS),
         crate::brief::LEAD_SETTING => {
             validate_one_of("lead time", value, crate::brief::LEAD_CHOICES)
@@ -800,19 +804,26 @@ pub fn rename_speaker(
 }
 
 /// The model for automatic post-recording LLM work (title, summaries,
-/// insights). Honours an explicit choice before falling back to registration
-/// order. Order is a fragile default: which provider summarises your meetings
-/// then depends on which ones happen to be installed, and standing up a new
-/// one silently moves your transcripts to a different vendor. Set
-/// `summarization_provider` to pin it.
+/// insights): the provider and model picked in the app's sidebar, or with
+/// none picked, the first registered. A picked provider that isn't available
+/// gives `None` rather than another vendor, so meetings never quietly go
+/// somewhere the user didn't choose.
 pub fn pick_auto_model(db: &Database, llm: &LlmRegistry) -> Option<ModelInfo> {
-    let preferred = db
-        .get_setting(SUMMARIZATION_PROVIDER_SETTING)
-        .unwrap_or(None);
     let models = llm.all_models();
-    preferred
-        .and_then(|p| models.iter().find(|m| m.provider == p).cloned())
-        .or_else(|| models.into_iter().next())
+    let Some(provider) = chosen(db, SUMMARIZATION_PROVIDER_SETTING) else {
+        return models.into_iter().next();
+    };
+    let model = chosen(db, SUMMARIZATION_MODEL_SETTING);
+    let offered = || models.iter().filter(|m| m.provider == provider);
+    offered()
+        .find(|m| Some(&m.id) == model.as_ref())
+        .or_else(|| offered().next())
+        .cloned()
+}
+
+/// A setting's value, or `None` when it's unset or empty.
+fn chosen(db: &Database, key: &str) -> Option<String> {
+    db.get_setting(key).ok().flatten().filter(|v| !v.is_empty())
 }
 
 /// The provider and model to use when a CLI or MCP caller may name either,
@@ -837,10 +848,16 @@ pub fn resolve_model(
             .find(|m| m.provider == p)
             .ok_or_else(|| anyhow!("Provider '{p}' isn't available. Available: {}", available()))?,
         None => pick_auto_model(db, llm).ok_or_else(|| {
-            anyhow!(
-                "No LLM provider available. Add an API key in Nootle's settings, install the \
-                 Claude or Codex CLI, or run Ollama."
-            )
+            match chosen(db, SUMMARIZATION_PROVIDER_SETTING) {
+                Some(p) => anyhow!(
+                    "The chosen provider '{p}' isn't available. Available: {}",
+                    available()
+                ),
+                _ => anyhow!(
+                    "No LLM provider available. Add an API key in Nootle's settings, install \
+                     the Claude or Codex CLI, or run Ollama."
+                ),
+            }
         })?,
     };
     Ok((info.provider, model.map(str::to_string).unwrap_or(info.id)))
@@ -1794,6 +1811,37 @@ mod tests {
             truncate_at_word_boundary("hello brave new world", 12, "..."),
             "hello brave..."
         );
+    }
+
+    #[test]
+    fn automatic_work_uses_the_provider_and_model_picked_in_the_app() {
+        let db = Database::new_in_memory().unwrap();
+        let mut llm = LlmRegistry::new();
+        llm.register(crate::llm::provider_for_key("openai", "sk".into()).unwrap());
+        llm.register(crate::llm::provider_for_key("anthropic", "sk".into()).unwrap());
+        let pick = |db: &Database| pick_auto_model(db, &llm).map(|m| (m.provider, m.id));
+
+        assert_eq!(pick(&db).unwrap().0, "openai", "nothing picked: the first");
+
+        set_setting(&db, SUMMARIZATION_PROVIDER_SETTING, "anthropic").unwrap();
+        let (provider, first) = pick(&db).unwrap();
+        assert_eq!(provider, "anthropic");
+
+        let other = llm.get_provider("anthropic").unwrap().available_models()[1]
+            .id
+            .clone();
+        assert_ne!(other, first);
+        set_setting(&db, SUMMARIZATION_MODEL_SETTING, &other).unwrap();
+        assert_eq!(pick(&db).unwrap(), ("anthropic".into(), other));
+
+        set_setting(&db, SUMMARIZATION_PROVIDER_SETTING, "claude-agent").unwrap();
+        assert_eq!(
+            pick(&db),
+            None,
+            "a picked provider that's gone isn't swapped"
+        );
+        let err = resolve_model(&db, &llm, None, None).unwrap_err();
+        assert!(err.to_string().contains("'claude-agent' isn't available"));
     }
 
     #[test]

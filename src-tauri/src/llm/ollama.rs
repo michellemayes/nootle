@@ -3,6 +3,8 @@ use super::types::{ChatMessage, LlmProvider, ModelInfo};
 pub struct OllamaProvider {
     base_url: String,
     client: reqwest::Client,
+    /// The models pulled into this Ollama, so only those are offered.
+    models: Vec<String>,
     /// The largest context window asked for so far. Ollama reloads the model
     /// whenever num_ctx changes, so it only ever grows.
     context: std::sync::atomic::AtomicUsize,
@@ -29,8 +31,20 @@ impl OllamaProvider {
         Self {
             base_url: "http://localhost:11434".to_string(),
             client: Self::build_client(),
+            models: Vec::new(),
             context: Default::default(),
         }
+    }
+
+    /// The local Ollama, when it's running and has at least one model
+    /// pulled. A running Ollama with no models can't summarize anything, so
+    /// it isn't offered.
+    pub fn detect() -> Option<Self> {
+        let models = installed_models("127.0.0.1:11434")?;
+        (!models.is_empty()).then(|| Self {
+            models,
+            ..Self::new()
+        })
     }
 
     pub fn with_base_url(base_url: String) -> Result<Self, String> {
@@ -44,8 +58,7 @@ impl OllamaProvider {
         }
         Ok(Self {
             base_url,
-            client: Self::build_client(),
-            context: Default::default(),
+            ..Self::new()
         })
     }
 }
@@ -57,24 +70,14 @@ impl LlmProvider for OllamaProvider {
     }
 
     fn available_models(&self) -> Vec<ModelInfo> {
-        // Ollama models are dynamic -- these are common defaults
-        vec![
-            ModelInfo {
-                id: "llama3.2".into(),
-                name: "Llama 3.2".into(),
+        self.models
+            .iter()
+            .map(|id| ModelInfo {
+                id: id.clone(),
+                name: id.strip_suffix(":latest").unwrap_or(id).to_string(),
                 provider: "ollama".into(),
-            },
-            ModelInfo {
-                id: "mistral".into(),
-                name: "Mistral".into(),
-                provider: "ollama".into(),
-            },
-            ModelInfo {
-                id: "gemma2".into(),
-                name: "Gemma 2".into(),
-                provider: "ollama".into(),
-            },
-        ]
+            })
+            .collect()
     }
 
     async fn chat(&self, messages: Vec<ChatMessage>, model: &str) -> anyhow::Result<String> {
@@ -115,6 +118,43 @@ impl LlmProvider for OllamaProvider {
             .unwrap_or("")
             .to_string())
     }
+}
+
+#[derive(serde::Deserialize)]
+struct Tags {
+    models: Vec<Tag>,
+}
+
+#[derive(serde::Deserialize)]
+struct Tag {
+    name: String,
+}
+
+/// The models Ollama at `addr` has pulled, from `/api/tags`, or `None` when
+/// nothing answers there. Blocking and bounded to about a second, like the
+/// rest of provider detection.
+fn installed_models(addr: &str) -> Option<Vec<String>> {
+    use std::io::{Read, Write};
+    use std::time::Duration;
+    let addr = addr.parse().ok()?;
+    let mut stream =
+        std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
+    stream
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .ok()?;
+    // HTTP/1.0, so the reply is unchunked and ends when Ollama closes.
+    stream
+        .write_all(b"GET /api/tags HTTP/1.0\r\nHost: localhost\r\n\r\n")
+        .ok()?;
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).ok()?;
+    let response = String::from_utf8_lossy(&response);
+    let (head, body) = response.split_once("\r\n\r\n")?;
+    if head.split_whitespace().nth(1) != Some("200") {
+        return None;
+    }
+    let tags: Tags = serde_json::from_str(body).ok()?;
+    Some(tags.models.into_iter().map(|m| m.name).collect())
 }
 
 /// Context window to ask for: room for the prompt (about 3.5 characters a
@@ -190,6 +230,48 @@ mod tests {
             16384,
             "later, shorter prompts keep this window"
         );
+    }
+
+    async fn tags_from(body: &'static str) -> Option<Vec<String>> {
+        let (url, _server) = one_shot_server(body).await;
+        let addr = url.trim_start_matches("http://").to_string();
+        tokio::task::spawn_blocking(move || installed_models(&addr))
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn offers_only_the_models_ollama_has_pulled() {
+        let models = tags_from(r#"{"models":[{"name":"qwen3:latest"},{"name":"gemma3:4b"}]}"#)
+            .await
+            .unwrap();
+        assert_eq!(models, ["qwen3:latest", "gemma3:4b"]);
+        let provider = OllamaProvider {
+            models,
+            ..OllamaProvider::new()
+        };
+        let names: Vec<_> = provider
+            .available_models()
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
+        assert_eq!(names, ["qwen3", "gemma3:4b"]);
+    }
+
+    #[tokio::test]
+    async fn an_ollama_with_no_models_offers_none() {
+        assert_eq!(tags_from(r#"{"models":[]}"#).await, Some(vec![]));
+        assert!(OllamaProvider::new().available_models().is_empty());
+    }
+
+    #[test]
+    fn nothing_listening_means_no_ollama() {
+        let addr = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .to_string();
+        assert_eq!(installed_models(&addr), None);
     }
 
     #[test]
