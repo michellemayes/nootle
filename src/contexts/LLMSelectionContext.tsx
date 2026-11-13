@@ -1,5 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
+import { createContext, useContext, useEffect, useCallback, useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useLLM } from "@/hooks/useLLM";
+import { useSetting } from "@/hooks/useBooleanSetting";
 import type { ModelInfo } from "@/types";
 
 interface LLMSelectionContextValue {
@@ -15,49 +17,58 @@ interface LLMSelectionContextValue {
 
 const LLMSelectionContext = createContext<LLMSelectionContextValue | null>(null);
 
+// The backend's automatic work (titles, summaries after a recording) reads
+// these, so the sidebar's choice is the one every summary uses. Unset, both
+// sides use the first provider and its first model.
+const PROVIDER_SETTING = "summarization_provider";
+const MODEL_SETTING = "summarization_model";
+const LEGACY_KEYS = ["llm_provider", "llm_model"] as const;
+
 export function LLMSelectionProvider({ children }: { children: React.ReactNode }) {
   const { models, providers, loading } = useLLM();
-  const [selectedProvider, setSelectedProvider] = useState(
-    () => localStorage.getItem("llm_provider") ?? ""
-  );
-  const [selectedModel, setSelectedModelState] = useState(
-    () => localStorage.getItem("llm_model") ?? ""
-  );
+  const [savedProvider, saveProvider] = useSetting(PROVIDER_SETTING, "");
+  const [savedModel, saveModel] = useSetting(MODEL_SETTING, "");
 
+  // Earlier versions kept the choice in this window only; move it over once.
   useEffect(() => {
-    if (providers.length > 0 && !selectedProvider) {
-      const p = providers[0];
-      setSelectedProvider(p);
-      localStorage.setItem("llm_provider", p);
-    }
-  }, [providers, selectedProvider]);
+    const [provider, model] = LEGACY_KEYS.map((k) => localStorage.getItem(k));
+    if (!provider) return;
+    invoke<string | null>("get_app_setting", { key: PROVIDER_SETTING })
+      .then((saved) => {
+        if (!saved) {
+          saveProvider(provider);
+          saveModel(model ?? "");
+        }
+        LEGACY_KEYS.forEach((k) => localStorage.removeItem(k));
+      })
+      .catch(() => {});
+  }, [saveProvider, saveModel]);
 
-  useEffect(() => {
-    if (!selectedProvider || models.length === 0) return;
-    const providerModels = models.filter((m) => m.provider === selectedProvider);
-    if (providerModels.length > 0 && !providerModels.some((m) => m.id === selectedModel)) {
-      const m = providerModels[0].id;
-      setSelectedModelState(m);
-      localStorage.setItem("llm_model", m);
-    }
-  }, [selectedProvider, models, selectedModel]);
-
-  const changeProvider = useCallback((provider: string) => {
-    setSelectedProvider(provider);
-    localStorage.setItem("llm_provider", provider);
-    setSelectedModelState("");
-    localStorage.removeItem("llm_model");
-  }, []);
-
-  const setSelectedModel = useCallback((model: string) => {
-    setSelectedModelState(model);
-    localStorage.setItem("llm_model", model);
-  }, []);
-
-  const filteredModels = useMemo(
+  const selectedProvider = savedProvider || providers[0] || "";
+  const offered = useMemo(
     () => models.filter((m) => m.provider === selectedProvider),
     [models, selectedProvider],
   );
+  const selectedModel = offered.some((m) => m.id === savedModel)
+    ? savedModel
+    : (offered[0]?.id ?? savedModel);
+
+  const changeProvider = useCallback(
+    (provider: string) => {
+      saveProvider(provider);
+      saveModel("");
+    },
+    [saveProvider, saveModel],
+  );
+
+  const setSelectedModel = useCallback(
+    (model: string) => {
+      if (!savedProvider) saveProvider(selectedProvider);
+      saveModel(model);
+    },
+    [savedProvider, selectedProvider, saveProvider, saveModel],
+  );
+
 
   const value = useMemo(
     () => ({
@@ -65,12 +76,12 @@ export function LLMSelectionProvider({ children }: { children: React.ReactNode }
       models,
       selectedProvider,
       selectedModel,
-      filteredModels,
+      filteredModels: offered,
       changeProvider,
       setSelectedModel,
       loading,
     }),
-    [providers, models, selectedProvider, selectedModel, filteredModels, changeProvider, setSelectedModel, loading],
+    [providers, models, selectedProvider, selectedModel, offered, changeProvider, setSelectedModel, loading],
   );
 
   return (
