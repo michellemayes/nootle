@@ -999,6 +999,87 @@ async fn run_transcription_pipeline(
     .await;
 }
 
+/// The post-meeting speaker pass, then analytics. Blocking.
+fn relabel_and_analyze(
+    db: &DbState,
+    app: &tauri::AppHandle,
+    meeting_id: &str,
+    audio_path: &std::path::Path,
+) {
+    match crate::pipeline::rediarize(db, meeting_id, audio_path) {
+        Ok(true) => {
+            let _ = app.emit("transcript-replaced", meeting_id);
+        }
+        Ok(false) => {}
+        Err(e) => tracing::warn!("Post-meeting speaker pass failed: {e:#}"),
+    }
+    // The stems only exist for this pass; the mixed recording stays for
+    // playback.
+    let _ = std::fs::remove_file(crate::audio::writer::stems_path(audio_path));
+    // Analytics only need the transcript, so they are ready before any LLM work.
+    compute_analytics(db, app, meeting_id);
+}
+
+/// Indexes a meeting's transcript for search, when the search model is
+/// downloaded. Blocking.
+fn index_meeting(db: &DbState, embedding_state: &EmbeddingState, meeting_id: &str) {
+    let mut engine_lock = embedding_state.blocking_lock();
+    if let Ok(engine) = crate::ops::loaded_embedding_engine(&mut engine_lock) {
+        match crate::chunking::embed_meeting(db, engine, meeting_id) {
+            Ok(count) => tracing::info!("Embedded {count} chunks for meeting {meeting_id}"),
+            Err(e) => tracing::warn!("Failed to embed meeting {meeting_id}: {e}"),
+        }
+    }
+}
+
+/// Replaces the live transcript with one from the user's transcription
+/// endpoint, when one is set up. Returns the new segment count, or `None`
+/// when the live transcript stays.
+async fn cloud_transcribe(
+    db: &DbState,
+    app: &tauri::AppHandle,
+    meeting_id: &str,
+    audio_path: &std::path::Path,
+) -> Option<u64> {
+    let endpoint = crate::endpoints::load(db, crate::endpoints::Kind::Transcription)?;
+    if crate::llm::local_only_enabled(db) || !audio_path.exists() {
+        return None;
+    }
+    match transcribe_with_endpoint(db, &endpoint, meeting_id, audio_path).await {
+        Ok(count) => {
+            let _ = app.emit("transcript-replaced", meeting_id);
+            Some(count)
+        }
+        Err(e) => {
+            tracing::warn!("Cloud transcription failed for {meeting_id}: {e:#}");
+            let _ = app.emit(
+                "cloud-transcription-failed",
+                serde_json::json!({ "meeting_id": meeting_id, "error": format!("{e:#}") }),
+            );
+            None
+        }
+    }
+}
+
+async fn transcribe_with_endpoint(
+    db: &DbState,
+    endpoint: &crate::endpoints::Endpoint,
+    meeting_id: &str,
+    audio_path: &std::path::Path,
+) -> anyhow::Result<u64> {
+    let segments = crate::cloud_transcription::transcribe(endpoint, audio_path).await?;
+    if segments.is_empty() {
+        anyhow::bail!("The transcription endpoint heard no speech");
+    }
+    let db = db.clone();
+    let meeting_id = meeting_id.to_string();
+    tokio::task::spawn_blocking(move || {
+        crate::cloud_transcription::replace_transcript(&db, &meeting_id, segments)
+            .map(|stored| stored.len() as u64)
+    })
+    .await?
+}
+
 /// Everything after the transcript: the post-meeting speaker pass,
 /// analytics, search indexing, title, summaries and insights.
 async fn finish_meeting(
@@ -1011,6 +1092,9 @@ async fn finish_meeting(
     let db = app.state::<DbState>().inner().clone();
     let llm_state = app.state::<LlmState>().inner().clone();
     let embedding_state = app.state::<EmbeddingState>().inner().clone();
+    let segment_count = cloud_transcribe(&db, &app, &meeting_id, &audio_path)
+        .await
+        .unwrap_or(segment_count);
     if segment_count == 0 {
         tracing::info!(
             "No transcript segments produced for {meeting_id}, not marking as summarized"
@@ -1020,18 +1104,7 @@ async fn finish_meeting(
         let meeting_id = meeting_id.clone();
         let app = app.clone();
         let _ = tokio::task::spawn_blocking(move || {
-            match crate::pipeline::rediarize(&db, &meeting_id, &audio_path) {
-                Ok(true) => {
-                    let _ = app.emit("transcript-replaced", &meeting_id);
-                }
-                Ok(false) => {}
-                Err(e) => tracing::warn!("Post-meeting speaker pass failed: {e:#}"),
-            }
-            // The stems only exist for this pass; the mixed recording stays
-            // for playback.
-            let _ = std::fs::remove_file(crate::audio::writer::stems_path(&audio_path));
-            // Analytics only need the transcript, so they are ready before any LLM work.
-            compute_analytics(&db, &app, &meeting_id);
+            relabel_and_analyze(&db, &app, &meeting_id, &audio_path)
         })
         .await;
     }
@@ -1041,15 +1114,7 @@ async fn finish_meeting(
         let db = db.clone();
         let meeting_id = meeting_id.clone();
         let embedding_state = embedding_state.clone();
-        tokio::task::spawn_blocking(move || {
-            let mut engine_lock = embedding_state.blocking_lock();
-            if let Ok(engine) = crate::ops::loaded_embedding_engine(&mut engine_lock) {
-                match crate::chunking::embed_meeting(&db, engine, &meeting_id) {
-                    Ok(count) => tracing::info!("Embedded {count} chunks for meeting {meeting_id}"),
-                    Err(e) => tracing::warn!("Failed to embed meeting {meeting_id}: {e}"),
-                }
-            }
-        })
+        tokio::task::spawn_blocking(move || index_meeting(&db, &embedding_state, &meeting_id))
     };
 
     // Title, summaries and insights are independent LLM calls, so they run
@@ -1812,6 +1877,108 @@ pub async fn delete_api_key(
     registry.unregister(&provider);
 
     Ok(())
+}
+
+#[tauri::command(async)]
+pub fn get_custom_endpoint(
+    db: State<'_, DbState>,
+    kind: crate::endpoints::Kind,
+) -> Result<Option<crate::endpoints::EndpointView>, String> {
+    Ok(crate::endpoints::load(&db, kind).as_ref().map(Into::into))
+}
+
+/// Saves an OpenAI-compatible endpoint; a chat one is offered in the model
+/// picker straight away. `api_key`: omitted keeps the stored key, "" removes it.
+#[tauri::command]
+pub async fn save_custom_endpoint(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    kind: crate::endpoints::Kind,
+    base_url: String,
+    models: Vec<String>,
+    api_key: Option<String>,
+) -> Result<crate::endpoints::EndpointView, String> {
+    let endpoint = crate::endpoints::save(&db, kind, &base_url, &models, api_key.as_deref())
+        .map_err(|e| e.to_string())?;
+    if kind == crate::endpoints::Kind::Chat {
+        let mut registry = llm.write().await;
+        registry.unregister(kind.key_name());
+        registry.register(Box::new(crate::llm::CustomProvider::new(endpoint.clone())));
+    }
+    Ok((&endpoint).into())
+}
+
+#[tauri::command]
+pub async fn delete_custom_endpoint(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    kind: crate::endpoints::Kind,
+) -> Result<(), String> {
+    crate::endpoints::delete(&db, kind).map_err(|e| e.to_string())?;
+    if kind == crate::endpoints::Kind::Chat {
+        llm.write().await.unregister(kind.key_name());
+    }
+    Ok(())
+}
+
+/// Sends the saved endpoint a tiny request: a one-word chat, or a second of
+/// silence to transcribe.
+#[tauri::command]
+pub async fn test_custom_endpoint(
+    db: State<'_, DbState>,
+    kind: crate::endpoints::Kind,
+) -> Result<(), String> {
+    use crate::llm::LlmProvider;
+    let endpoint = crate::endpoints::load(&db, kind).ok_or("Save the endpoint first")?;
+    let result = match kind {
+        crate::endpoints::Kind::Chat => {
+            let model = endpoint.model().map_err(|e| e.to_string())?.to_string();
+            crate::llm::CustomProvider::new(endpoint)
+                .chat(
+                    vec![ChatMessage {
+                        role: "user".into(),
+                        content: "Reply with the word OK.".into(),
+                    }],
+                    &model,
+                )
+                .await
+                .map(drop)
+        }
+        crate::endpoints::Kind::Transcription => crate::cloud_transcription::test(&endpoint).await,
+    };
+    result.map_err(|e| format!("{e:#}"))
+}
+
+/// Transcribes a meeting's recording again with the transcription endpoint,
+/// then labels speakers and re-indexes it.
+#[tauri::command]
+pub async fn retranscribe_meeting(
+    app: tauri::AppHandle,
+    db: State<'_, DbState>,
+    meeting_id: String,
+) -> Result<(), String> {
+    let db = db.inner().clone();
+    let endpoint = crate::endpoints::load(&db, crate::endpoints::Kind::Transcription)
+        .ok_or("Set up a transcription endpoint in Settings → Models first")?;
+    crate::llm::ensure_may_send(&db, "a transcription endpoint")?;
+    let audio_path = db
+        .get_meeting(&meeting_id)
+        .map_err(|e| e.to_string())?
+        .audio_path
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+        .ok_or("This meeting has no recording to transcribe")?;
+    transcribe_with_endpoint(&db, &endpoint, &meeting_id, &audio_path)
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    let _ = app.emit("transcript-replaced", &meeting_id);
+    let embedding_state = app.state::<EmbeddingState>().inner().clone();
+    tokio::task::spawn_blocking(move || {
+        relabel_and_analyze(&db, &app, &meeting_id, &audio_path);
+        index_meeting(&db, &embedding_state, &meeting_id);
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]

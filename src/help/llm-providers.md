@@ -12,6 +12,7 @@ Nootle uses large language models to generate meeting summaries and power the ch
 | **Ollama** | No | Run models locally. Install from [ollama.com](https://ollama.com) |
 | **Claude (subscription)** | No | Uses your existing Claude subscription via the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview). Requires the `claude` CLI to be installed and logged in. |
 | **Codex (API key)** | Yes | GPT-5 Codex via the OpenAI Responses API. Uses an OpenAI key with Codex access. |
+| **Custom endpoint** | Depends | Any OpenAI-compatible API (OpenRouter, Azure, Together, LM Studio, vLLM…) with the models you list. Set it up under Settings → API keys → **Custom endpoint** |
 | **Codex CLI (subscription)** | No | Uses your existing ChatGPT Plus/Pro subscription via the [Codex CLI](https://github.com/openai/codex). Requires the `codex` CLI to be installed and logged in. |
 
 ## Setting Up a Provider
@@ -22,6 +23,27 @@ Nootle uses large language models to generate meeting summaries and power the ch
 4. The key is stored securely and never leaves your machine.
 
 Once at least one provider is configured, Nootle will use it for summaries and chat.
+
+## Using a Custom Endpoint
+
+Point Nootle at any server that speaks the OpenAI chat API to use models the built-in list doesn't offer.
+
+1. Open **Settings → API keys → Custom endpoint**.
+2. Enter the **Base URL**, e.g. `https://openrouter.ai/api/v1` or `http://localhost:1234/v1` for LM Studio. Pasting a full `…/chat/completions` URL works too.
+3. Add the API key, if the server needs one.
+4. Type each model ID and press Enter, e.g. `anthropic/claude-sonnet-4.6` or `qwen/qwen3-235b-a22b`.
+5. Click **Save**. Nootle sends a one-word test message and shows whether it worked.
+
+The models appear under the **custom** provider in the model picker. A custom endpoint counts as cloud AI, so it's off in Local-only mode.
+
+## Cloud Transcription
+
+Recordings are transcribed on your Mac. If your audio is noisy and a hosted model does better, **Settings → Models → Cloud transcription** sends each finished recording to an OpenAI-compatible `/audio/transcriptions` endpoint (OpenAI `whisper-1` or `gpt-4o-transcribe`, Groq `whisper-large-v3`, a self-hosted Whisper server, and so on).
+
+- The live transcript during a call is still made on your Mac. When the meeting ends, the recording is uploaded in pieces of up to 20 MB, split at pauses, and the endpoint's transcript replaces the live one. Speakers are then labelled on your Mac as usual.
+- If the endpoint fails, the transcript from your Mac stays.
+- The transcript header's **Transcribe again** button re-sends an earlier meeting's recording.
+- Cloud transcription is paused in Local-only mode.
 
 ## Using Ollama (Local, No API Key)
 

@@ -59,30 +59,10 @@ impl LlmProvider for OpenAiProvider {
     }
 
     async fn chat(&self, messages: Vec<ChatMessage>, model: &str) -> anyhow::Result<String> {
-        let resp = self
+        let request = self
             .client
             .post("https://api.openai.com/v1/chat/completions")
-            .bearer_auth(&self.api_key)
-            .json(&serde_json::json!({
-                "model": model,
-                "messages": messages,
-            }))
-            .send()
-            .await?;
-
-        let status = resp.status();
-        let body: serde_json::Value = resp.json().await?;
-
-        if !status.is_success() {
-            let error_msg = body["error"]["message"]
-                .as_str()
-                .unwrap_or("Unknown API error");
-            anyhow::bail!("OpenAI API error ({}): {}", status, error_msg);
-        }
-
-        Ok(body["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("")
-            .to_string())
+            .bearer_auth(&self.api_key);
+        super::openai_compat::complete(request, "OpenAI", model, messages).await
     }
 }
