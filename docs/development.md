@@ -22,6 +22,8 @@ GitHub can reuse a signed-in GitHub CLI (`gh auth token`). Slack and Asana conne
 
 Every push to `main` publishes a release. The version comes from the [conventional commits](https://www.conventionalcommits.org/) since the last tag. Any `feat:` bumps the minor version, and anything else bumps the patch. A breaking change (`feat!:` or a `BREAKING CHANGE:` footer) bumps the minor version while Nootle is on 0.x, and the major version from 1.0 on. The rules live in the `[bump]` section of `cliff.toml`.
 
+The build job first checks that Apple notarization works. If Apple has a new agreement waiting, it fails in seconds with a link to accept it at [developer.apple.com/account](https://developer.apple.com/account). Re-run the workflow after accepting.
+
 ## Testing
 
 ```bash

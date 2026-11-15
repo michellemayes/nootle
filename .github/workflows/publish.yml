@@ -46,6 +46,24 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
+      # Fails in seconds, not after the ~10 minute build, when notarization would.
+      - name: Check Apple notarization access
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if ! OUT=$(xcrun notarytool history --apple-id "$APPLE_ID" \
+              --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" 2>&1); then
+            echo "$OUT"
+            if echo "$OUT" | grep -qi "agreement"; then
+              echo "::error title=Apple agreement needs accepting::Sign in at https://developer.apple.com/account as the Account Holder, accept the updated agreement, then re-run this workflow."
+            else
+              echo "::error title=Apple notarization unavailable::notarytool could not authenticate. Check the APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID secrets."
+            fi
+            exit 1
+          fi
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
