@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **site:** Restore pnpm overrides in lockfile and pin pnpm version (#233) ([952dee9](https://github.com/michellemayes/nootle/commit/952dee9bf0afa2b9ff1d39bda06b15713b8c0130))
+
+## [0.28.0] - 2026-11-15
+
+### Bug Fixes
+
+- **summaries:** Summarize with the sidebar's model, never a missing Ollama one (#230) ([20a231e](https://github.com/michellemayes/nootle/commit/20a231e9a16bc2fb5236860022b55f8ea572aec4))
+
+### Build
+
+- **deps:** Bump glob (#229) ([d17b7c6](https://github.com/michellemayes/nootle/commit/d17b7c66ac6ea068ae6b9f7df794aa3c3e94bf66))
+
+### Features
+
+- Custom OpenAI-compatible endpoints for summaries and transcription (#232) ([245e5f6](https://github.com/michellemayes/nootle/commit/245e5f6fd7166397514fed824e7180a9c2949f94))
+
 ## [0.27.5] - 2026-11-12
 
 ### Bug Fixes
