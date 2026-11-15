@@ -6,6 +6,7 @@ pub mod brief_popup;
 pub mod calendar;
 pub mod call_names;
 pub mod chunking;
+pub mod cloud_transcription;
 pub mod coach;
 pub mod commands;
 pub mod commitments;
@@ -16,6 +17,7 @@ pub mod detection;
 pub mod diarization;
 pub mod dictionary;
 pub mod embedding;
+pub mod endpoints;
 pub mod error;
 pub mod export;
 pub mod extraction;
@@ -46,6 +48,8 @@ pub mod slides;
 pub mod snapshots;
 pub mod storage;
 pub mod summarization;
+#[cfg(test)]
+mod test_http;
 pub mod transcript_import;
 pub mod transcription;
 pub mod translation;
@@ -495,6 +499,11 @@ pub fn run() {
             commands::ask_the_room,
             commands::list_llm_models,
             commands::list_llm_providers,
+            commands::get_custom_endpoint,
+            commands::save_custom_endpoint,
+            commands::delete_custom_endpoint,
+            commands::test_custom_endpoint,
+            commands::retranscribe_meeting,
             commands::seed_default_prompts,
             commands::list_linear_teams,
             commands::list_linear_projects,

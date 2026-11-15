@@ -52,6 +52,8 @@ import { SlideCitation, SlideDialog, SlideRecapSection } from "@/components/Slid
 import { citedSlide, linkSlideCitations } from "@/lib/slides";
 import { RoomRecap } from "@/components/RoomRecap";
 import { toast } from "@/components/Toaster";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useCloudTranscriptionFailures, useCustomEndpoint } from "@/hooks/useCustomEndpoint";
 import {
   AudioPlayerControls,
   SKIP_SECONDS,
@@ -73,6 +75,8 @@ import {
   AlertTriangle,
   AlignJustify,
   ArrowLeft,
+  AudioLines,
+  Loader2,
   BarChart3,
   BookA,
   Check,
@@ -1107,6 +1111,23 @@ export function MeetingDetail() {
       setDictionaryNotice(`Couldn't apply dictionary: ${err}`);
     }
   };
+  const { endpoint: transcriptionEndpoint } = useCustomEndpoint("transcription");
+  const [confirmingRetranscribe, setConfirmingRetranscribe] = useState(false);
+  const [retranscribing, setRetranscribing] = useState(false);
+  const retranscribe = async () => {
+    setRetranscribing(true);
+    try {
+      await invoke("retranscribe_meeting", { meetingId: id });
+      toast(`Transcribed again with ${transcriptionEndpoint?.models[0]}`);
+    } catch (err) {
+      toast(`Couldn't transcribe again: ${err}`);
+    } finally {
+      setRetranscribing(false);
+    }
+  };
+  useCloudTranscriptionFailures((meetingId, error) => {
+    if (meetingId === id) toast(`Cloud transcription failed, so this Mac's transcript is kept: ${error}`);
+  });
   const {
     summaries,
     loading: summariesLoading,
@@ -1687,6 +1708,19 @@ export function MeetingDetail() {
                     <CopyButton
                       text={shownSegments.map((s) => `${s.speaker_label}: ${s.text}`).join("\n")}
                     />
+                    {transcriptionEndpoint && meeting.audio_path && meeting.status !== "recording" && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="@max-sm/main:hidden"
+                        onClick={() => setConfirmingRetranscribe(true)}
+                        disabled={retranscribing}
+                        title={`Transcribe again with ${transcriptionEndpoint.models[0]}`}
+                        aria-label="Transcribe again"
+                      >
+                        {retranscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <AudioLines className="h-4 w-4" />}
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -2252,6 +2286,14 @@ export function MeetingDetail() {
         meetingId={id!}
         open={chatOpen}
         onClose={() => setChatOpen(false)}
+      />
+      <ConfirmDialog
+        open={confirmingRetranscribe}
+        onOpenChange={setConfirmingRetranscribe}
+        title="Transcribe again?"
+        description={`The recording goes to ${transcriptionEndpoint?.base_url} and its transcript replaces this one, including any edits. Speaker names carry over.`}
+        confirmLabel="Transcribe again"
+        onConfirm={retranscribe}
       />
     </div>
   );

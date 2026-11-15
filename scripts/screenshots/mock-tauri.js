@@ -97,6 +97,9 @@
         (card) => !(args?.reminded || []).includes(card.commitment_id),
       );
     }
+    if (cmd === "get_custom_endpoint") {
+      return (fixtures.get_custom_endpoint || {})[args?.kind] ?? null;
+    }
     // Settings by key, when the demo sets any.
     if (cmd === "get_app_setting" && fixtures.app_settings) {
       return fixtures.app_settings[args?.key] ?? null;

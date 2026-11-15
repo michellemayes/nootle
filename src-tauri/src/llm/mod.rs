@@ -3,10 +3,12 @@ pub mod bedrock;
 pub mod claude_agent;
 pub mod codex;
 pub mod codex_cli;
+pub mod custom;
 pub mod google;
 pub mod groq;
 pub mod ollama;
 pub mod openai;
+mod openai_compat;
 pub mod openrouter;
 pub mod types;
 
@@ -15,6 +17,7 @@ pub use bedrock::BedrockProvider;
 pub use claude_agent::ClaudeAgentProvider;
 pub use codex::CodexProvider;
 pub use codex_cli::CodexCliProvider;
+pub use custom::CustomProvider;
 pub use google::GoogleProvider;
 pub use groq::GroqProvider;
 pub use ollama::OllamaProvider;
@@ -149,6 +152,10 @@ impl LlmRegistry {
             if let Ok(Some(key)) = db.get_api_key(name) {
                 registry.register(provider_for_key(name, key).expect("keyed provider"));
             }
+        }
+
+        if let Some(endpoint) = crate::endpoints::load(db, crate::endpoints::Kind::Chat) {
+            registry.register(Box::new(CustomProvider::new(endpoint)));
         }
 
         registry

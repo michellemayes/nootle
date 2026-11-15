@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { announceProvidersChanged } from "@/hooks/useLLM";
 
 export function useApiKeys() {
   const [storedProviders, setStoredProviders] = useState<string[]>([]);
@@ -26,6 +27,7 @@ export function useApiKeys() {
     async (provider: string, key: string) => {
       await invoke("store_api_key", { provider, key });
       await refresh();
+      announceProvidersChanged();
     },
     [refresh],
   );
@@ -34,6 +36,7 @@ export function useApiKeys() {
     async (provider: string) => {
       await invoke("delete_api_key", { provider });
       await refresh();
+      announceProvidersChanged();
     },
     [refresh],
   );

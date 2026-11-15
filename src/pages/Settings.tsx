@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { McpSetup } from "@/components/McpSetup";
 import { ContinueInSettings } from "@/components/ContinueInSettings";
 import { AiConnectorCard } from "@/components/AiConnectorCard";
+import { CustomEndpointCard } from "@/components/CustomEndpointCard";
 import { CopyButton } from "@/components/CopyButton";
 import { DictionaryManager } from "@/components/DictionaryManager";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -47,6 +48,9 @@ const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter", "bedro
 const CLI_PROVIDERS = ["claude-agent", "codex-cli"] as const;
 
 const AUTO_DETECTED_PROVIDERS = ["ollama", ...CLI_PROVIDERS] as const;
+
+/** Providers set up in their own card rather than with a single key. */
+const PROVIDERS_WITH_OWN_CARD = new Set<string>([...AUTO_DETECTED_PROVIDERS, "custom"]);
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   openai: "OpenAI",
@@ -413,20 +417,20 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
   };
 
   return (
-    <div className="flex items-center gap-3 py-3">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
       <div className="flex items-center gap-2 w-32 shrink-0">
         <span className="text-sm font-medium">{displayName}</span>
         {isStored && <Badge variant="success" size="sm">Saved</Badge>}
       </div>
 
       {editing ? (
-        <div className="flex flex-1 items-center gap-2">
+        <div className="flex min-w-0 flex-1 basis-56 items-center gap-2">
           <Input
             type={showKey ? "text" : "password"}
             placeholder={PROVIDER_KEY_PLACEHOLDERS[provider] ?? `${displayName} API key`}
             value={keyValue}
             onChange={(e) => setKeyValue(e.target.value)}
-            className="flex-1"
+            className="min-w-0 flex-1"
           />
           <Button
             variant="ghost"
@@ -452,10 +456,10 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
           </Button>
         </div>
       ) : (
-        <div className="flex flex-1 items-center gap-2">
+        <div className="flex min-w-0 flex-1 basis-56 items-center gap-2">
           {isStored ? (
             <>
-              <span className="flex-1 text-sm text-muted-foreground font-mono">
+              <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground font-mono">
                 {"*".repeat(24)}
               </span>
               <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
@@ -496,12 +500,12 @@ function ApiKeyRow({ provider, isStored, onSave, onDelete }: {
 function AutoDetectedProviderRow({ provider, detected }: { provider: string; detected: boolean }) {
   const hint = AUTO_DETECTED_HINTS[provider];
   return (
-    <div className="flex items-center gap-3 py-3">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
       <div className="flex items-center gap-2 w-48 shrink-0">
         <span className="text-sm font-medium">{PROVIDER_DISPLAY_NAMES[provider] ?? provider}</span>
         {detected && <Badge variant="success" size="sm">Detected</Badge>}
       </div>
-      <div className="flex-1 text-sm text-muted-foreground">
+      <div className="min-w-0 flex-1 basis-56 text-sm text-muted-foreground">
         {detected ? hint?.detected : hint?.notDetected}
       </div>
     </div>
@@ -1064,8 +1068,8 @@ function PrivacyCard() {
             <p className="text-sm font-medium">Local-only mode</p>
             <p className="text-sm text-muted-foreground">
               Meeting content never leaves this Mac: summaries and chat use only local models
-              (Ollama), and workflows don't send anything to integrations. Recording and
-              transcription are always local
+              (Ollama), recordings are only transcribed here, and workflows don't send anything
+              to integrations
             </p>
           </div>
           <Switch checked={localOnly} onCheckedChange={setLocalOnly} aria-label="Local-only mode" />
@@ -1194,12 +1198,9 @@ export function SettingsPage() {
     });
   };
 
-  // Exclude auto-detected providers — they're rendered in their own card below
-  // since they don't take API keys.
-  const autoDetectedSet = new Set<string>(AUTO_DETECTED_PROVIDERS);
   const allProviders = Array.from(
     new Set([...PROVIDERS, ...llmProviders]),
-  ).filter((p) => !autoDetectedSet.has(p));
+  ).filter((p) => !PROVIDERS_WITH_OWN_CARD.has(p));
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -1326,6 +1327,7 @@ export function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+            <CustomEndpointCard kind="chat" />
             <Card>
               <CardHeader>
                 <CardTitle>Auto-detected providers</CardTitle>
@@ -1679,6 +1681,7 @@ function ModelManagementCard() {
         </div>
       </CardContent>
     </Card>
+    <CustomEndpointCard kind="transcription" />
     <StorageCard refreshKey={diskStatus} onCleaned={refresh} />
     <ConfirmDialog
       open={pendingDelete !== null}

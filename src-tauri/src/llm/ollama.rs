@@ -167,43 +167,7 @@ fn context_window(prompt_chars: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Serves one canned HTTP response and hands back the request it got.
-    async fn one_shot_server(response: &'static str) -> (String, tokio::task::JoinHandle<String>) {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let handle = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut request = Vec::new();
-            let mut buf = [0u8; 8192];
-            loop {
-                let n = socket.read(&mut buf).await.unwrap();
-                request.extend_from_slice(&buf[..n]);
-                let text = String::from_utf8_lossy(&request);
-                if let Some((head, body)) = text.split_once("\r\n\r\n") {
-                    let len = head
-                        .lines()
-                        .find_map(|l| {
-                            l.to_ascii_lowercase()
-                                .strip_prefix("content-length: ")
-                                .map(|v| v.trim().parse::<usize>().unwrap())
-                        })
-                        .unwrap_or(0);
-                    if body.len() >= len {
-                        break;
-                    }
-                }
-            }
-            let reply = format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{response}",
-                response.len()
-            );
-            socket.write_all(reply.as_bytes()).await.unwrap();
-            String::from_utf8_lossy(&request).into_owned()
-        });
-        (url, handle)
-    }
+    use crate::test_http::one_shot_server;
 
     #[tokio::test]
     async fn chats_through_the_native_api_with_a_sized_context() {
