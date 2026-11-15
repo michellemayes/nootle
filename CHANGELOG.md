@@ -2,11 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.28.1] - 2026-11-15
 
 ### Bug Fixes
 
 - **site:** Restore pnpm overrides in lockfile and pin pnpm version (#233) ([952dee9](https://github.com/michellemayes/nootle/commit/952dee9bf0afa2b9ff1d39bda06b15713b8c0130))
+
+### CI
+
+- **publish:** Check Apple notarization access before building (#234) ([36432a3](https://github.com/michellemayes/nootle/commit/36432a3ec90e3b2b1d2375a70022c521d3941e54))
 
 ## [0.28.0] - 2026-11-15
 
