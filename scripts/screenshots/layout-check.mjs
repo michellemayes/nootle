@@ -95,6 +95,8 @@ const PAGES = [
   },
   { route: "/templates", ready: "text=Standard Summary" },
   { route: "/settings", ready: "h1" },
+  { name: "settings-api-keys", route: "/settings?tab=api-keys", ready: "text=Custom endpoint" },
+  { name: "settings-models", route: "/settings?tab=models", ready: "text=Cloud transcription" },
   { route: "/help", ready: "h1" },
 ];
 

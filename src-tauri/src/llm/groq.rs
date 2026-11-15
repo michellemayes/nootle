@@ -49,31 +49,10 @@ impl LlmProvider for GroqProvider {
     }
 
     async fn chat(&self, messages: Vec<ChatMessage>, model: &str) -> anyhow::Result<String> {
-        // Groq uses OpenAI-compatible API
-        let resp = self
+        let request = self
             .client
             .post("https://api.groq.com/openai/v1/chat/completions")
-            .bearer_auth(&self.api_key)
-            .json(&serde_json::json!({
-                "model": model,
-                "messages": messages,
-            }))
-            .send()
-            .await?;
-
-        let status = resp.status();
-        let body: serde_json::Value = resp.json().await?;
-
-        if !status.is_success() {
-            let error_msg = body["error"]["message"]
-                .as_str()
-                .unwrap_or("Unknown API error");
-            anyhow::bail!("Groq API error ({}): {}", status, error_msg);
-        }
-
-        Ok(body["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("")
-            .to_string())
+            .bearer_auth(&self.api_key);
+        super::openai_compat::complete(request, "Groq", model, messages).await
     }
 }

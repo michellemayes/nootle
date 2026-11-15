@@ -59,32 +59,12 @@ impl LlmProvider for OpenRouterProvider {
     }
 
     async fn chat(&self, messages: Vec<ChatMessage>, model: &str) -> anyhow::Result<String> {
-        let resp = self
+        let request = self
             .client
             .post("https://openrouter.ai/api/v1/chat/completions")
             .bearer_auth(&self.api_key)
             .header("HTTP-Referer", "https://nootle.app")
-            .header("X-Title", "Nootle")
-            .json(&serde_json::json!({
-                "model": model,
-                "messages": messages,
-            }))
-            .send()
-            .await?;
-
-        let status = resp.status();
-        let body: serde_json::Value = resp.json().await?;
-
-        if !status.is_success() {
-            let error_msg = body["error"]["message"]
-                .as_str()
-                .unwrap_or("Unknown API error");
-            anyhow::bail!("OpenRouter API error ({}): {}", status, error_msg);
-        }
-
-        Ok(body["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("")
-            .to_string())
+            .header("X-Title", "Nootle");
+        super::openai_compat::complete(request, "OpenRouter", model, messages).await
     }
 }
