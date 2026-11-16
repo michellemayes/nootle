@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.2] - 2026-11-16
+
+### Build
+
+- **deps:** Bump the npm_and_yarn group across 1 directory with 3 updates (#231) ([846fb1c](https://github.com/michellemayes/nootle/commit/846fb1ca11b6cdee94f704f36a06cabb95d428a2))
+
 ## [0.28.1] - 2026-11-15
 
 ### Bug Fixes
