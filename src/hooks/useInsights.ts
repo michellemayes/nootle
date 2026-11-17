@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "@/components/Toaster";
 import type { InsightWithActionItem, InsightType } from "@/types";
 
 function groupInsightsByType(
@@ -192,6 +193,33 @@ export function useAllInsights(
     [refresh],
   );
 
+  /** Clears insights from the feed at once, with an Undo. Their meetings keep them. */
+  const dismiss = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return;
+      const gone = new Set(ids);
+      setInsights((prev) => prev.filter((i) => !gone.has(i.id)));
+      try {
+        await invoke("set_insights_dismissed", { ids, dismissed: true });
+      } catch (err) {
+        toast(`Couldn't dismiss: ${err}`);
+        await refresh();
+        return;
+      }
+      toast(ids.length === 1 ? "Dismissed" : `Dismissed ${ids.length}`, {
+        action: {
+          label: "Undo",
+          onClick: () => {
+            invoke("set_insights_dismissed", { ids, dismissed: false }).then(refresh, (err) =>
+              toast(`Couldn't restore: ${err}`),
+            );
+          },
+        },
+      });
+    },
+    [refresh],
+  );
+
   return {
     insights,
     insightTypes,
@@ -203,5 +231,6 @@ export function useAllInsights(
     error,
     refresh,
     toggleActionItem,
+    dismiss,
   };
 }

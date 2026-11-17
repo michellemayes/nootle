@@ -16,7 +16,8 @@ import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useLinearTeams, useLinearProjects, useLinearSettings } from "@/hooks/useLinear";
 import type { InsightWithActionItem, InsightType, LinearTeam } from "@/types";
 import type { LucideIcon } from "lucide-react";
-import { Handshake, Lightbulb, Search, Ticket } from "lucide-react";
+import { CheckCheck, Handshake, Lightbulb, Search, Ticket, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { ActionItemCheckbox } from "@/components/ActionItemCheckbox";
 import { CommitmentRow, isPending } from "@/components/CommitmentRow";
 import { DueDate } from "@/components/DueDate";
@@ -148,23 +149,57 @@ function ActionItemTicketButton({
   );
 }
 
+/** Shows on hover or focus; always there on touch screens, which can't hover. */
+function DismissButton({ label, onDismiss }: { label: string; onDismiss: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon-xs"
+      onClick={(e) => {
+        e.stopPropagation();
+        onDismiss();
+      }}
+      title="Dismiss"
+      aria-label={`Dismiss "${label.slice(0, 60)}"`}
+      className="-my-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground [@media(hover:none)]:opacity-100"
+    >
+      <X />
+    </Button>
+  );
+}
+
+/** Slides a row out as it's dismissed while the rest close the gap. */
+function DismissibleRow({ children }: { children: React.ReactNode }) {
+  return (
+    <motion.div
+      layout
+      exit={{ opacity: 0, x: 24, transition: { duration: 0.16, ease: "easeIn" } }}
+      transition={{ layout: { type: "spring", stiffness: 500, damping: 40 } }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 function DashboardActionItem({
   item,
   teams,
   onToggle,
   onNavigate,
   onTicketCreated,
+  onDismiss,
 }: {
   item: InsightWithActionItem;
   teams: LinearTeam[];
   onToggle: (actionItemId: string, currentStatus: string) => void;
   onNavigate: (meetingId: string) => void;
   onTicketCreated: () => void;
+  onDismiss: () => void;
 }) {
   const isDone = item.status === "done";
 
   return (
-    <div className="flex items-start gap-3 rounded-md border p-3 transition-colors hover:bg-accent/30">
+    <div className="group flex items-start gap-3 rounded-md border p-3 transition-colors hover:bg-accent/30">
       <ActionItemCheckbox
         done={isDone}
         label={item.content}
@@ -194,6 +229,7 @@ function DashboardActionItem({
         </div>
       </div>
       <ActionItemTicketButton item={item} teams={teams} onTicketCreated={onTicketCreated} />
+      <DismissButton label={item.content} onDismiss={onDismiss} />
     </div>
   );
 }
@@ -207,14 +243,16 @@ function InsightItem({
   item,
   icon: Icon,
   onNavigate,
+  onDismiss,
 }: {
   item: InsightWithActionItem;
   icon: LucideIcon;
   onNavigate: (meetingId: string) => void;
+  onDismiss: () => void;
 }) {
   return (
     <div
-      className="flex items-start gap-3 rounded-md border p-3 cursor-pointer transition-colors hover:bg-accent/30"
+      className="group flex items-start gap-3 rounded-md border p-3 cursor-pointer transition-colors hover:bg-accent/30"
       onClick={() => onNavigate(item.meeting_id)}
     >
       <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -229,6 +267,7 @@ function InsightItem({
           )}
         </div>
       </div>
+      <DismissButton label={item.content} onDismiss={onDismiss} />
     </div>
   );
 }
@@ -237,17 +276,25 @@ function SectionHeader({
   icon: Icon,
   title,
   count,
+  onClear,
 }: {
   icon: LucideIcon;
   title: string;
   count: number;
+  onClear: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 pb-2">
+    <Toolbar className="pb-2">
       <Icon className="h-4 w-4 text-muted-foreground" />
       <h2 className="text-base font-semibold">{title}</h2>
       <Badge variant="secondary" size="sm">{count}</Badge>
-    </div>
+      {count > 1 && (
+        <Button variant="ghost" size="xs" className="ml-auto text-muted-foreground" onClick={onClear}>
+          <CheckCheck />
+          Clear all
+        </Button>
+      )}
+    </Toolbar>
   );
 }
 
@@ -258,6 +305,7 @@ function TypeSection({
   toggleActionItem,
   onNavigate,
   onTicketCreated,
+  onDismiss,
 }: {
   insightType: InsightType;
   items: InsightWithActionItem[];
@@ -265,52 +313,46 @@ function TypeSection({
   toggleActionItem: (actionItemId: string, currentStatus: string) => void;
   onNavigate: (meetingId: string) => void;
   onTicketCreated: () => void;
+  onDismiss: (ids: string[]) => void;
 }) {
   const Icon = insightIcon(insightType.icon);
-
-  if (insightType.has_action_fields) {
-    // Open items first, done ones sink to the bottom.
-    const ordered = [
-      ...items.filter((i) => i.status !== "done"),
-      ...items.filter((i) => i.status === "done"),
-    ];
-    return (
-      <section>
-        <SectionHeader icon={Icon} title={insightType.name + "s"} count={items.length} />
-        <div className="space-y-2">
-          {ordered.length === 0 && (
-            <p className="text-sm text-muted-foreground">No {insightType.name.toLowerCase()}s</p>
-          )}
-          {ordered.map((item) => (
-            <DashboardActionItem
-              key={item.id}
-              item={item}
-              teams={teams}
-              onToggle={toggleActionItem}
-              onNavigate={onNavigate}
-              onTicketCreated={onTicketCreated}
-            />
-          ))}
-        </div>
-      </section>
-    );
-  }
+  // Action items: open first, done ones sink to the bottom.
+  const ordered = insightType.has_action_fields
+    ? [...items.filter((i) => i.status !== "done"), ...items.filter((i) => i.status === "done")]
+    : items;
 
   return (
     <section>
-      <SectionHeader icon={Icon} title={insightType.name + "s"} count={items.length} />
-      <div className="space-y-2">
-        {items.length === 0 && (
-          <p className="text-sm text-muted-foreground">No {insightType.name.toLowerCase()}s</p>
-        )}
-        {items.map((item) => (
-          <InsightItem
-            key={item.id}
-            item={item}
-            icon={Icon}
-            onNavigate={onNavigate}
-          />
-        ))}
+      <SectionHeader
+        icon={Icon}
+        title={insightType.name + "s"}
+        count={items.length}
+        onClear={() => onDismiss(items.map((i) => i.id))}
+      />
+      <div className="flex flex-col gap-2">
+        <AnimatePresence initial={false}>
+          {ordered.map((item) => (
+            <DismissibleRow key={item.id}>
+              {insightType.has_action_fields ? (
+                <DashboardActionItem
+                  item={item}
+                  teams={teams}
+                  onToggle={toggleActionItem}
+                  onNavigate={onNavigate}
+                  onTicketCreated={onTicketCreated}
+                  onDismiss={() => onDismiss([item.id])}
+                />
+              ) : (
+                <InsightItem
+                  item={item}
+                  icon={Icon}
+                  onNavigate={onNavigate}
+                  onDismiss={() => onDismiss([item.id])}
+                />
+              )}
+            </DismissibleRow>
+          ))}
+        </AnimatePresence>
       </div>
     </section>
   );
@@ -391,7 +433,7 @@ export function InsightsDashboard() {
     fetchTeams();
   }, [fetchTeams]);
 
-  const { insightTypes, groupedByType, loading, toggleActionItem, refresh } = useAllInsights(
+  const { insightTypes, groupedByType, loading, toggleActionItem, refresh, dismiss } = useAllInsights(
     typeFilter,
     statusFilter,
     searchDebounced,
@@ -427,12 +469,6 @@ export function InsightsDashboard() {
     return [...names.values()].sort((a, b) => a.localeCompare(b));
   }, [insightTypes, groupedByType]);
 
-  // Filtering by assignee only applies to types that have assignees.
-  const visibleTypes = insightTypes.filter(
-    (t) =>
-      (typeFilter === undefined || typeFilter === t.slug) &&
-      (assigneeFilter === undefined || t.has_action_fields),
-  );
   const itemsByType = useMemo(() => {
     if (assigneeFilter === undefined) return groupedByType;
     const want = assigneeFilter === UNASSIGNED ? "" : assigneeFilter.toLowerCase();
@@ -443,8 +479,25 @@ export function InsightsDashboard() {
       ]),
     );
   }, [groupedByType, assigneeFilter]);
+  // Empty types stay out of the way unless picked in the type filter, and
+  // filtering by assignee only applies to types that have assignees.
+  const visibleTypes = insightTypes.filter(
+    (t) =>
+      (typeFilter === undefined ? (itemsByType[t.slug]?.length ?? 0) > 0 : typeFilter === t.slug) &&
+      (assigneeFilter === undefined || t.has_action_fields),
+  );
   const totalItems = visibleTypes.reduce((sum, t) => sum + (itemsByType[t.slug]?.length ?? 0), 0);
   const hasFilters = !!typeFilter || !!statusFilter || !!searchDebounced || !!assigneeFilter;
+  const [cleared, setCleared] = useState(false);
+  const handleDismiss = (ids: string[]) => {
+    setCleared(true);
+    dismiss(ids);
+  };
+  const emptyState = hasFilters
+    ? { icon: Lightbulb, title: "No matching insights", description: "Try a different search or clear your filters." }
+    : cleared
+      ? { icon: CheckCheck, title: "All clear" }
+      : { icon: Lightbulb, title: "No insights yet", description: "Open a meeting and extract insights from its Insights tab." };
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -500,15 +553,7 @@ export function InsightsDashboard() {
       {loading ? (
         <LoadingState message={LOADING_COPY.insights} />
       ) : totalItems === 0 ? (
-        <EmptyState
-          icon={Lightbulb}
-          title={hasFilters ? "No matching insights" : "No insights yet"}
-          description={
-            hasFilters
-              ? "Try a different search or clear your filters."
-              : "Open a meeting and extract insights from its Insights tab."
-          }
-        />
+        <EmptyState {...emptyState} />
       ) : (
         <ScrollArea className="flex-1">
           <div className="space-y-8 p-6">
@@ -524,6 +569,7 @@ export function InsightsDashboard() {
                 toggleActionItem={toggleActionItem}
                 onNavigate={handleNavigate}
                 onTicketCreated={refresh}
+                onDismiss={handleDismiss}
               />
             ))}
           </div>

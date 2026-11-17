@@ -530,6 +530,7 @@ pub fn run() {
             commands::get_all_insights,
             commands::extract_meeting_insights,
             commands::re_extract_meeting_insights,
+            commands::set_insights_dismissed,
             commands::update_action_item_status,
             commands::update_action_item,
             commands::get_mcp_command,
