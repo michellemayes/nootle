@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Show snapshots live while recording, and let Live Assist answer from them (#239) ([5d2feb2](https://github.com/michellemayes/nootle/commit/5d2feb292eea6aba4071fcd2ecfd68e7f339d39d))
+
+## [0.30.0] - 2026-11-17
+
+### Features
+
 - **live-assist:** Filter Q&A from reminders, resize the panel and pop it out (#240) ([59cb018](https://github.com/michellemayes/nootle/commit/59cb0187463302085aee5eb5f61c573986d69522))
 
 ## [0.29.0] - 2026-11-17
