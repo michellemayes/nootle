@@ -194,6 +194,20 @@ body.popup {
   pointer-events: none;
   height: 0;
 }
+.note-ghost {
+  color: var(--muted-foreground);
+  opacity: 0.7;
+  pointer-events: none;
+  user-select: none;
+  animation: note-ghost-in 160ms ease-out;
+}
+.note-ghost-key {
+  margin-left: 0.4rem;
+  vertical-align: 0.1em;
+}
+@keyframes note-ghost-in {
+  from { opacity: 0; }
+}
 .tiptap .ProseMirror-selectednode {
   outline: 2px solid var(--primary);
   border-radius: 4px;

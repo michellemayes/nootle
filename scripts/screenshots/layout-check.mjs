@@ -77,6 +77,17 @@ const PAGES = [
     },
   },
   {
+    name: "meeting-note-suggestion",
+    route: "/meeting/m1",
+    ready: "role=tab[name='Summaries']",
+    async prepare(page) {
+      await page.getByRole("tab", { name: "Notes" }).click();
+      await page.locator(".tiptap").click();
+      await page.keyboard.type("Calendar access");
+      await page.locator(".note-ghost").waitFor();
+    },
+  },
+  {
     name: "library-chat",
     route: "/",
     ready: "text=Design Review — Onboarding Flow",
@@ -93,6 +104,16 @@ const PAGES = [
     route: "/recording",
     ready: "text=Live transcript",
     prepare: emitLiveTranscript,
+  },
+  {
+    name: "recording-note-suggestion",
+    route: "/recording",
+    ready: "text=Live transcript",
+    async prepare(page) {
+      await emitLiveTranscript(page);
+      await page.getByLabel("Meeting notes").fill("Permissions screen");
+      await page.locator(".note-ghost").waitFor();
+    },
   },
   {
     name: "recording-snapshots",

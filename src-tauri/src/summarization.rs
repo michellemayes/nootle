@@ -24,13 +24,17 @@ pub fn speaker_turns(segments: &[TranscriptSegment]) -> Vec<(&str, i64, String)>
     turns
 }
 
-/// `[mm:ss] Speaker: text`, one line per speaker turn.
-pub fn format_transcript(segments: &[TranscriptSegment]) -> String {
+/// `[mm:ss] Speaker: text` for each speaker turn.
+pub fn transcript_lines(segments: &[TranscriptSegment]) -> Vec<String> {
     speaker_turns(segments)
         .into_iter()
         .map(|(speaker, start_ms, text)| format!("[{}] {speaker}: {text}", format_ms(start_ms)))
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect()
+}
+
+/// `[mm:ss] Speaker: text`, one line per speaker turn.
+pub fn format_transcript(segments: &[TranscriptSegment]) -> String {
+    transcript_lines(segments).join("\n")
 }
 
 /// Moments as prompt lines: `- [00:12:34] "text"`.

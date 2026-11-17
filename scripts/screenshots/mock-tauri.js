@@ -114,6 +114,12 @@
         (card) => !(args?.reminded || []).includes(card.commitment_id),
       );
     }
+    // Note suggestions keyed by the line being written, after a model-ish pause.
+    if (cmd === "suggest_note_continuation") {
+      const line = (args?.before ?? "").split("\n").pop().trim().toLowerCase();
+      const text = (fixtures.note_suggestions || {})[line] ?? null;
+      return new Promise((r) => setTimeout(() => r(text), 350));
+    }
     // Only the popped-out Live Assist page (liveassist.html) sees it open.
     if (cmd === "live_assist_window_meeting") {
       return location.pathname.endsWith("/liveassist.html") ? fixtures.live_assist_window_meeting : null;

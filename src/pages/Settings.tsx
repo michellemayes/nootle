@@ -42,6 +42,7 @@ import { useIntegrations } from "@/hooks/useIntegrations";
 import { INTEGRATION_TYPES } from "@/lib/integrations";
 import { SNAPSHOTS_SETTING } from "@/hooks/useSnapshots";
 import { COACH_SETTING } from "@/hooks/useCoach";
+import { NOTE_SUGGESTIONS_SETTING } from "@/hooks/useNoteSuggestions";
 
 const PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter", "bedrock", "codex"];
 
@@ -846,6 +847,23 @@ function RememberedVoices() {
   );
 }
 
+/** Inline suggestions in a meeting's notes, from the sidebar's model. */
+function NoteSuggestionsSetting() {
+  const [enabled, setEnabled] = useBooleanSetting(NOTE_SUGGESTIONS_SETTING, true);
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium">Note suggestions</p>
+        <p className="text-sm text-muted-foreground">
+          As you write a meeting's notes, your chosen model suggests how each line goes on from
+          what was said. Tab accepts it
+        </p>
+      </div>
+      <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Note suggestions" />
+    </div>
+  );
+}
+
 /** Live Assist answers questions heard while recording from your documents and past meetings. */
 function LiveAssistSetting() {
   const [enabled, setEnabled] = useBooleanSetting("live_assist", false);
@@ -1277,6 +1295,7 @@ export function SettingsPage() {
                     aria-label="Snapshots"
                   />
                 </div>
+                <NoteSuggestionsSetting />
                 <LiveAssistSetting />
                 <PreMeetingBriefSetting />
                 <MeetingCoachSetting />

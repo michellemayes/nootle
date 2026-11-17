@@ -6,11 +6,14 @@ import { Markdown } from "@tiptap/markdown";
 import { markdownToHtml } from "@/lib/markdown";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { useEffect, useRef } from "react";
+import { NoteSuggestion, type FetchSuggestion } from "@/lib/noteSuggestion";
 
 interface NotesEditorProps {
   content: string;
   hasHighlights: boolean;
   onChange: (markdown: string) => void;
+  /** Inline suggestions as you type, accepted with Tab. */
+  onSuggest?: FetchSuggestion | null;
 }
 
 // Set TipTap content from HTML via ProseMirror's DOM parser, so <mark> maps to Highlight
@@ -27,7 +30,9 @@ function fromEditorMarkdown(text: string): string {
   return text.replace(/==(.*?)==/gs, "[[highlight]]$1[[/highlight]]");
 }
 
-export function NotesEditor({ content, hasHighlights, onChange }: NotesEditorProps) {
+export function NotesEditor({ content, hasHighlights, onChange, onSuggest }: NotesEditorProps) {
+  const suggestRef = useRef<FetchSuggestion | null>(onSuggest ?? null);
+  suggestRef.current = onSuggest ?? null;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isExternalUpdate = useRef(false);
   const lastContentRef = useRef(content);
@@ -42,6 +47,7 @@ export function NotesEditor({ content, hasHighlights, onChange }: NotesEditorPro
         placeholder: "Start typing…",
       }),
       Markdown,
+      NoteSuggestion.configure({ fetch: suggestRef }),
     ],
     content: "", // set via onCreate
     editorProps: {

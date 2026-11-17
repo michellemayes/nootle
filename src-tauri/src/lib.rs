@@ -36,6 +36,7 @@ pub mod meeting_popup;
 pub mod menu_bar;
 pub mod model_download;
 pub mod model_registry;
+pub mod note_suggest;
 pub mod ops;
 pub mod permissions;
 pub mod pipeline;
@@ -586,6 +587,7 @@ pub fn run() {
             commands::get_meeting_coach,
             commands::get_coach_trends,
             commands::suggest_coach_tip,
+            commands::suggest_note_continuation,
             commands::create_integration,
             commands::list_integrations,
             commands::update_integration,
