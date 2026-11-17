@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Inline AI note suggestions, Tab to accept (#241) ([5460b5f](https://github.com/michellemayes/nootle/commit/5460b5f18e92aaec6dcb8d3ad1dca8d1f061d5c9))
+
+## [0.31.0] - 2026-11-17
+
+### Features
+
 - Show snapshots live while recording, and let Live Assist answer from them (#239) ([5d2feb2](https://github.com/michellemayes/nootle/commit/5d2feb292eea6aba4071fcd2ecfd68e7f339d39d))
 
 ## [0.30.0] - 2026-11-17
