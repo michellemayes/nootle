@@ -28,6 +28,7 @@ pub mod import;
 pub mod knowledge;
 pub mod linear;
 pub mod live_assist;
+pub mod live_assist_window;
 pub mod llm;
 pub mod mcp;
 pub mod meeting_chat;
@@ -305,6 +306,7 @@ pub fn run() {
         .manage(meeting_popup::PopupState::default())
         .manage(menu_bar::MenuBarState::default())
         .manage(live_assist::LatestCard::default())
+        .manage(live_assist_window::LiveAssistWindowState::default())
         .manage(brief_popup::BriefPopupState::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
@@ -609,6 +611,10 @@ pub fn run() {
             brief_popup::dismiss_brief_popup,
             brief_popup::record_from_brief_popup,
             brief_popup::open_meeting_from_brief,
+            live_assist_window::open_live_assist_window,
+            live_assist_window::live_assist_window_meeting,
+            live_assist_window::close_live_assist_window,
+            live_assist_window::open_in_main_window,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

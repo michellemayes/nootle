@@ -16,8 +16,8 @@ export default defineConfig(async () => ({
     },
   },
 
-  // The meeting pop-up, the menu bar popover and the meeting brief are their
-  // own windows with their own pages.
+  // The meeting pop-up, the menu bar popover, the meeting brief and the
+  // popped-out Live Assist are their own windows with their own pages.
   build: {
     rollupOptions: {
       input: {
@@ -25,6 +25,7 @@ export default defineConfig(async () => ({
         popup: path.resolve(__dirname, "popup.html"),
         menubar: path.resolve(__dirname, "menubar.html"),
         brief: path.resolve(__dirname, "brief.html"),
+        liveassist: path.resolve(__dirname, "liveassist.html"),
       },
     },
   },

@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Meeting, RecordingStatus } from "@/types";
 
-const checkIsRecording = () => invoke<boolean>("is_recording").catch(() => false);
+export const checkIsRecording = () => invoke<boolean>("is_recording").catch(() => false);
 
 export function useRecording() {
   const [isRecording, setIsRecording] = useState(false);
