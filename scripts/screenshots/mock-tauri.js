@@ -71,9 +71,20 @@
     if (cmd === "get_all_insights") {
       return (fixtures.get_all_insights || []).filter(
         (i) =>
+          !i.dismissed_at &&
           (!args?.insightType || i.type === args.insightType) &&
           (!args?.status || i.status === args.status || i.status === null),
       );
+    }
+    if (cmd === "set_insights_dismissed") {
+      const ids = new Set(args.ids);
+      let changed = 0;
+      fixtures.get_all_insights = (fixtures.get_all_insights || []).map((i) => {
+        if (!ids.has(i.id) || !i.dismissed_at === !args.dismissed) return i;
+        changed++;
+        return { ...i, dismissed_at: args.dismissed ? new Date().toISOString() : null };
+      });
+      return changed;
     }
     // Commitments filtered like the backend does: by owner (or first name) and status.
     if (cmd === "list_commitments") {

@@ -425,6 +425,7 @@ export interface InsightWithActionItem {
   action_item_updated_at: string | null;
   meeting_title: string | null;
   meeting_start_time: string | null;
+  dismissed_at: string | null;
 }
 
 /** A moment in a later meeting that showed a commitment done or slipped. */
