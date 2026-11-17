@@ -104,6 +104,20 @@ const PAGES = [
       await page.getByRole("list", { name: "Snapshots so far" }).waitFor();
     },
   },
+  {
+    name: "recording-live-assist-wide",
+    route: "/recording",
+    ready: "text=Live transcript",
+    async prepare(page) {
+      await emitLiveTranscript(page);
+      const handle = page.getByRole("separator", { name: "Resize Live Assist" });
+      if (await handle.isVisible()) {
+        await handle.focus();
+        for (let i = 0; i < 30; i++) await page.keyboard.press("ArrowLeft");
+      }
+    },
+  },
+  { name: "live-assist-window", route: "/liveassist.html", ready: "text=Live Assist" },
   { route: "/templates", ready: "text=Standard Summary" },
   { route: "/settings", ready: "h1" },
   { name: "settings-api-keys", route: "/settings?tab=api-keys", ready: "text=Custom endpoint" },

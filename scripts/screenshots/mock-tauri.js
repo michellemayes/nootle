@@ -11,6 +11,12 @@
   const listeners = new Map(); // event name -> Set of callback ids
   let nextId = 1;
 
+  // Live Assist keeps its cards in localStorage, per recording.
+  for (const [meetingId, cards] of Object.entries(fixtures.live_assist_cards || {})) {
+    const key = `live-assist-cards:${meetingId}`;
+    if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify(cards));
+  }
+
   function resolve(cmd, args) {
     // Conversation messages are keyed by conversation id.
     if (cmd === "list_chat_messages") {
@@ -71,9 +77,20 @@
     if (cmd === "get_all_insights") {
       return (fixtures.get_all_insights || []).filter(
         (i) =>
+          !i.dismissed_at &&
           (!args?.insightType || i.type === args.insightType) &&
           (!args?.status || i.status === args.status || i.status === null),
       );
+    }
+    if (cmd === "set_insights_dismissed") {
+      const ids = new Set(args.ids);
+      let changed = 0;
+      fixtures.get_all_insights = (fixtures.get_all_insights || []).map((i) => {
+        if (!ids.has(i.id) || !i.dismissed_at === !args.dismissed) return i;
+        changed++;
+        return { ...i, dismissed_at: args.dismissed ? new Date().toISOString() : null };
+      });
+      return changed;
     }
     // Commitments filtered like the backend does: by owner (or first name) and status.
     if (cmd === "list_commitments") {
@@ -96,6 +113,14 @@
       return (fixtures.live_commitment_reminders || []).filter(
         (card) => !(args?.reminded || []).includes(card.commitment_id),
       );
+    }
+    // Only the popped-out Live Assist page (liveassist.html) sees it open.
+    if (cmd === "live_assist_window_meeting") {
+      return location.pathname.endsWith("/liveassist.html") ? fixtures.live_assist_window_meeting : null;
+    }
+    if (cmd === "open_live_assist_window" || cmd === "close_live_assist_window") {
+      setTimeout(() => window.__NOOTLE_EMIT__("live-assist-window", cmd === "open_live_assist_window"));
+      return null;
     }
     if (cmd === "get_custom_endpoint") {
       return (fixtures.get_custom_endpoint || {})[args?.kind] ?? null;

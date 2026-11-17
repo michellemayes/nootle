@@ -651,6 +651,35 @@ pub struct InsightWithActionItem {
     pub action_item_updated_at: Option<String>,
     pub meeting_title: Option<String>,
     pub meeting_start_time: Option<String>,
+    /// When it was cleared from the insights feed; `get_insight_feed` leaves these out.
+    pub dismissed_at: Option<String>,
+}
+
+const INSIGHT_COLUMNS: &str =
+    "i.id, i.meeting_id, i.type, i.content, i.context, i.transcript_start_ms, i.transcript_end_ms, i.created_at,
+     a.id, a.assignee, a.due_date, a.status, a.linear_ticket_id, a.updated_at,
+     m.title, m.start_time, i.dismissed_at";
+
+fn insight_from_row(row: &rusqlite::Row) -> rusqlite::Result<InsightWithActionItem> {
+    Ok(InsightWithActionItem {
+        id: row.get(0)?,
+        meeting_id: row.get(1)?,
+        insight_type: row.get(2)?,
+        content: row.get(3)?,
+        context: row.get(4)?,
+        transcript_start_ms: row.get(5)?,
+        transcript_end_ms: row.get(6)?,
+        created_at: row.get(7)?,
+        action_item_id: row.get(8)?,
+        assignee: row.get(9)?,
+        due_date: row.get(10)?,
+        status: row.get(11)?,
+        linear_ticket_id: row.get(12)?,
+        action_item_updated_at: row.get(13)?,
+        meeting_title: row.get(14)?,
+        meeting_start_time: row.get(15)?,
+        dismissed_at: row.get(16)?,
+    })
 }
 
 /// Joins each commitment to the latest moment that showed it done or slipped.
@@ -1832,6 +1861,8 @@ impl Database {
                  outlined INTEGER NOT NULL
              );
              CREATE INDEX idx_call_speakers_meeting ON meeting_call_speakers(meeting_id, offset_ms);",
+            // 13: insights cleared from the insights feed. The meeting keeps them.
+            "ALTER TABLE insights ADD COLUMN dismissed_at TEXT;",
         ];
 
         let current: usize =
@@ -4602,37 +4633,16 @@ impl Database {
 
     pub fn get_insights_for_meeting(&self, meeting_id: &str) -> Result<Vec<InsightWithActionItem>> {
         let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT i.id, i.meeting_id, i.type, i.content, i.context, i.transcript_start_ms, i.transcript_end_ms, i.created_at,
-                    a.id, a.assignee, a.due_date, a.status, a.linear_ticket_id, a.updated_at,
-                    m.title, m.start_time
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {INSIGHT_COLUMNS}
              FROM insights i
              LEFT JOIN action_items a ON a.insight_id = i.id
              LEFT JOIN meetings m ON m.id = i.meeting_id
              WHERE i.meeting_id = ?1
-             ORDER BY i.transcript_start_ms ASC NULLS LAST, i.created_at ASC",
-        )?;
+             ORDER BY i.transcript_start_ms ASC NULLS LAST, i.created_at ASC"
+        ))?;
         let rows = stmt
-            .query_map(params![meeting_id], |row| {
-                Ok(InsightWithActionItem {
-                    id: row.get(0)?,
-                    meeting_id: row.get(1)?,
-                    insight_type: row.get(2)?,
-                    content: row.get(3)?,
-                    context: row.get(4)?,
-                    transcript_start_ms: row.get(5)?,
-                    transcript_end_ms: row.get(6)?,
-                    created_at: row.get(7)?,
-                    action_item_id: row.get(8)?,
-                    assignee: row.get(9)?,
-                    due_date: row.get(10)?,
-                    status: row.get(11)?,
-                    linear_ticket_id: row.get(12)?,
-                    action_item_updated_at: row.get(13)?,
-                    meeting_title: row.get(14)?,
-                    meeting_start_time: row.get(15)?,
-                })
-            })?
+            .query_map(params![meeting_id], insight_from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -4644,16 +4654,39 @@ impl Database {
         status: Option<&str>,
         search: Option<&str>,
     ) -> Result<Vec<InsightWithActionItem>> {
+        self.query_insights(meeting_id, insight_type, status, search, true)
+    }
+
+    /// The insights feed: every meeting's insights except the dismissed ones.
+    pub fn get_insight_feed(
+        &self,
+        meeting_id: Option<&str>,
+        insight_type: Option<&str>,
+        status: Option<&str>,
+        search: Option<&str>,
+    ) -> Result<Vec<InsightWithActionItem>> {
+        self.query_insights(meeting_id, insight_type, status, search, false)
+    }
+
+    fn query_insights(
+        &self,
+        meeting_id: Option<&str>,
+        insight_type: Option<&str>,
+        status: Option<&str>,
+        search: Option<&str>,
+        include_dismissed: bool,
+    ) -> Result<Vec<InsightWithActionItem>> {
         let conn = self.lock_conn()?;
-        let mut sql = String::from(
-            "SELECT i.id, i.meeting_id, i.type, i.content, i.context, i.transcript_start_ms, i.transcript_end_ms, i.created_at,
-                    a.id, a.assignee, a.due_date, a.status, a.linear_ticket_id, a.updated_at,
-                    m.title, m.start_time
+        let mut sql = format!(
+            "SELECT {INSIGHT_COLUMNS}
              FROM insights i
              LEFT JOIN action_items a ON a.insight_id = i.id
-             LEFT JOIN meetings m ON m.id = i.meeting_id",
+             LEFT JOIN meetings m ON m.id = i.meeting_id"
         );
         let mut conditions: Vec<String> = Vec::new();
+        if !include_dismissed {
+            conditions.push("i.dismissed_at IS NULL".into());
+        }
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
         if let Some(m) = meeting_id {
@@ -4690,26 +4723,7 @@ impl Database {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
         let rows = stmt
-            .query_map(param_refs.as_slice(), |row| {
-                Ok(InsightWithActionItem {
-                    id: row.get(0)?,
-                    meeting_id: row.get(1)?,
-                    insight_type: row.get(2)?,
-                    content: row.get(3)?,
-                    context: row.get(4)?,
-                    transcript_start_ms: row.get(5)?,
-                    transcript_end_ms: row.get(6)?,
-                    created_at: row.get(7)?,
-                    action_item_id: row.get(8)?,
-                    assignee: row.get(9)?,
-                    due_date: row.get(10)?,
-                    status: row.get(11)?,
-                    linear_ticket_id: row.get(12)?,
-                    action_item_updated_at: row.get(13)?,
-                    meeting_title: row.get(14)?,
-                    meeting_start_time: row.get(15)?,
-                })
-            })?
+            .query_map(param_refs.as_slice(), insight_from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -4719,36 +4733,15 @@ impl Database {
         action_item_id: &str,
     ) -> Result<InsightWithActionItem> {
         let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT i.id, i.meeting_id, i.type, i.content, i.context, i.transcript_start_ms, i.transcript_end_ms, i.created_at,
-                    a.id, a.assignee, a.due_date, a.status, a.linear_ticket_id, a.updated_at,
-                    m.title, m.start_time
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {INSIGHT_COLUMNS}
              FROM action_items a
              JOIN insights i ON i.id = a.insight_id
              LEFT JOIN meetings m ON m.id = i.meeting_id
-             WHERE a.id = ?1",
-        )?;
+             WHERE a.id = ?1"
+        ))?;
         let row = stmt
-            .query_row(params![action_item_id], |row| {
-                Ok(InsightWithActionItem {
-                    id: row.get(0)?,
-                    meeting_id: row.get(1)?,
-                    insight_type: row.get(2)?,
-                    content: row.get(3)?,
-                    context: row.get(4)?,
-                    transcript_start_ms: row.get(5)?,
-                    transcript_end_ms: row.get(6)?,
-                    created_at: row.get(7)?,
-                    action_item_id: row.get(8)?,
-                    assignee: row.get(9)?,
-                    due_date: row.get(10)?,
-                    status: row.get(11)?,
-                    linear_ticket_id: row.get(12)?,
-                    action_item_updated_at: row.get(13)?,
-                    meeting_title: row.get(14)?,
-                    meeting_start_time: row.get(15)?,
-                })
-            })
+            .query_row(params![action_item_id], insight_from_row)
             .map_err(|e| match e {
                 rusqlite::Error::QueryReturnedNoRows => {
                     NootleError::Other(format!("Action item not found: {}", action_item_id))
@@ -4756,6 +4749,24 @@ impl Database {
                 other => NootleError::Database(other),
             })?;
         Ok(row)
+    }
+
+    /// Clears insights from the insights feed, or brings them back. Returns how many changed.
+    pub fn set_insights_dismissed(&self, ids: &[String], dismissed: bool) -> Result<usize> {
+        let mut conn = self.lock_conn()?;
+        let tx = conn.transaction()?;
+        let mut stmt = tx.prepare(if dismissed {
+            "UPDATE insights SET dismissed_at = datetime('now') WHERE id = ?1 AND dismissed_at IS NULL"
+        } else {
+            "UPDATE insights SET dismissed_at = NULL WHERE id = ?1 AND dismissed_at IS NOT NULL"
+        })?;
+        let mut changed = 0;
+        for id in ids {
+            changed += stmt.execute(params![id])?;
+        }
+        drop(stmt);
+        tx.commit()?;
+        Ok(changed)
     }
 
     /// The action item belonging to an insight, if it has one.
@@ -6103,6 +6114,7 @@ mod tests {
                  UPDATE templates SET name = 'Weekly 1:1' WHERE name = '1-on-1';
                  ALTER TABLE templates DROP COLUMN slug;
                  DROP TABLE meeting_call_speakers;
+                 ALTER TABLE insights DROP COLUMN dismissed_at;
                  PRAGMA user_version = 10;",
             )
             .unwrap();

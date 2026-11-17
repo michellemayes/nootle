@@ -2753,7 +2753,7 @@ pub fn get_all_insights(
     status: Option<String>,
     search: Option<String>,
 ) -> Result<Vec<crate::db::InsightWithActionItem>, String> {
-    db.get_all_insights(
+    db.get_insight_feed(
         None,
         insight_type.as_deref(),
         status.as_deref(),
@@ -2803,6 +2803,16 @@ pub async fn re_extract_meeting_insights(
         .map_err(|e| e.to_string())?;
     let _ = app.emit("insights-updated", &meeting_id);
     Ok(())
+}
+
+#[tauri::command(async)]
+pub fn set_insights_dismissed(
+    db: State<'_, DbState>,
+    ids: Vec<String>,
+    dismissed: bool,
+) -> Result<usize, String> {
+    db.set_insights_dismissed(&ids, dismissed)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]

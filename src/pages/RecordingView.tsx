@@ -19,6 +19,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ScratchPad } from "@/components/ScratchPad";
 import { LiveAssist } from "@/components/LiveAssist";
+import { useLiveAssistWindow } from "@/hooks/useLiveAssistWindow";
 import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { Kbd } from "@/components/Kbd";
@@ -26,7 +27,7 @@ import { AudioLevelMeter } from "@/components/AudioLevelMeter";
 import { cn, formatDuration } from "@/lib/utils";
 import { Markdown } from "@/components/Markdown";
 import { useStickToBottom } from "@/hooks/useStickToBottom";
-import { Square, ArrowLeft, ArrowDown, FileText, Highlighter, MicOff, Pause, Play, ScanLine } from "lucide-react";
+import { Square, ArrowLeft, ArrowDown, FileText, Highlighter, MicOff, Pause, Play, ScanLine, Sparkles } from "lucide-react";
 
 /** One live line, with its highlight button. Memoized so a new line doesn't re-render the rest. */
 const LiveSegment = memo(function LiveSegment({
@@ -228,6 +229,8 @@ export function RecordingView() {
   } = useRecording();
   const { templates } = useTemplates();
   const { isCompact } = useCompactMode();
+  const liveAssistWindow = useLiveAssistWindow();
+  const canPopIn = liveAssistWindow.open && !isCompact;
   // Left blank, the backend names the recording after the calendar event
   // happening now, or the time.
   const [title, setTitle] = useState(intent.title ?? "");
@@ -542,6 +545,18 @@ export function RecordingView() {
           />
         )}
 
+        {currentMeeting && isRecording && (isCompact || liveAssistWindow.open) && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => (canPopIn ? liveAssistWindow.popIn() : liveAssistWindow.popOut(currentMeeting.id))}
+            title={canPopIn ? "Put Live Assist back beside your notes" : "Open Live Assist in its own window"}
+          >
+            <Sparkles />
+            {!isCompact && "Live Assist"}
+          </Button>
+        )}
+
         <Button
           size="sm"
           variant="outline"
@@ -588,11 +603,16 @@ export function RecordingView() {
           onChange={(e) => setNotes(e.target.value)}
           aria-label="Meeting notes"
           placeholder="Jot shorthand as you go (e.g. “pricing → $12, Ana to confirm”). When the meeting ends, Nootle expands it into full notes from the transcript."
-          className="flex-1 w-full bg-transparent p-6 text-sm leading-relaxed resize-none focus:outline-none placeholder:text-muted-foreground/40"
+          className="flex-1 min-w-0 w-full bg-transparent p-6 text-sm leading-relaxed resize-none focus:outline-none placeholder:text-muted-foreground/40"
           autoFocus
         />
-        {currentMeeting && isRecording && !isCompact && (
-          <LiveAssist meetingId={currentMeeting.id} segments={segments} />
+        {currentMeeting && isRecording && !isCompact && !liveAssistWindow.open && (
+          <LiveAssist
+            meetingId={currentMeeting.id}
+            segments={segments}
+            onOpenMeeting={navigate}
+            onPopOut={() => liveAssistWindow.popOut(currentMeeting.id)}
+          />
         )}
       </div>
 

@@ -291,9 +291,21 @@ pub struct ListInsightsParams {
     /// Only insights whose text contains this
     #[serde(default)]
     pub search: Option<String>,
+    /// Also return dismissed insights
+    #[serde(default)]
+    pub include_dismissed: bool,
     /// From next_offset
     #[serde(default)]
     pub offset: usize,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct DismissInsightsParams {
+    /// Insight IDs (`id` in list_insights)
+    pub ids: Vec<String>,
+    /// false brings them back
+    #[serde(default = "default_true")]
+    pub dismissed: bool,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -1428,22 +1440,47 @@ impl NootleMcpServer {
 
     #[tool(
         title = "List insights",
-        description = "List insights extracted from meetings (decisions, action items, custom types), newest first, filtered by meeting, type, action item status, or text. Action items carry action_item_id, assignee, due_date, and status.",
+        description = "List insights extracted from meetings (decisions, action items, custom types), newest first, filtered by meeting, type, action item status, or text. Action items carry action_item_id, assignee, due_date, and status. Dismissed insights are left out unless include_dismissed is true.",
         annotations(read_only_hint = true, open_world_hint = false)
     )]
     fn list_insights(
         &self,
         Parameters(p): Parameters<ListInsightsParams>,
     ) -> Result<CallToolResult, McpError> {
+        let query = if p.include_dismissed {
+            Database::get_all_insights
+        } else {
+            Database::get_insight_feed
+        };
+        respond(
+            query(
+                &self.db,
+                p.meeting_id.as_deref(),
+                p.insight_type.as_deref(),
+                p.status.as_deref(),
+                p.search.as_deref(),
+            )
+            .map(|insights| page(insights, p.offset, PAGE_SIZE)),
+        )
+    }
+
+    #[tool(
+        title = "Dismiss insights",
+        description = "Clear insights from the insights feed so list_insights stops returning them, or bring them back with dismissed false. Their meetings keep them. Returns how many changed.",
+        annotations(
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn dismiss_insights(
+        &self,
+        Parameters(p): Parameters<DismissInsightsParams>,
+    ) -> Result<CallToolResult, McpError> {
         respond(
             self.db
-                .get_all_insights(
-                    p.meeting_id.as_deref(),
-                    p.insight_type.as_deref(),
-                    p.status.as_deref(),
-                    p.search.as_deref(),
-                )
-                .map(|insights| page(insights, p.offset, PAGE_SIZE)),
+                .set_insights_dismissed(&p.ids, p.dismissed)
+                .map(|changed| serde_json::json!({ "changed": changed })),
         )
     }
 
@@ -2606,6 +2643,46 @@ mod tests {
         assert_eq!(updated["assignee"], "Bob");
         assert!(updated["due_date"].is_null());
         assert!(update(Some("finished"), None, None).0);
+    }
+
+    #[test]
+    fn test_dismiss_insights_hides_them_from_the_feed_only() {
+        let db = setup_test_db();
+        let server = NootleMcpServer::new(db.clone());
+        let meeting = meeting_id(&db);
+        let insight = db
+            .create_insight(crate::db::NewInsight {
+                meeting_id: meeting.clone(),
+                insight_type: "decision".into(),
+                content: "Ship on Friday".into(),
+                context: None,
+                transcript_start_ms: None,
+                transcript_end_ms: None,
+            })
+            .unwrap();
+        let dismiss = |dismissed: bool| {
+            output(server.dismiss_insights(Parameters(DismissInsightsParams {
+                ids: vec![insight.id.clone()],
+                dismissed,
+            })))
+            .1["changed"]
+                .clone()
+        };
+        let feed = || db.get_insight_feed(None, None, None, None).unwrap().len();
+
+        assert_eq!(feed(), 1);
+        assert_eq!(dismiss(true), 1);
+        assert_eq!(dismiss(true), 0);
+        assert_eq!(feed(), 0);
+        let kept = db.get_insights_for_meeting(&meeting).unwrap();
+        assert_eq!(kept.len(), 1);
+        assert!(kept[0].dismissed_at.is_some());
+        assert_eq!(
+            db.get_all_insights(None, None, None, None).unwrap().len(),
+            1
+        );
+        assert_eq!(dismiss(false), 1);
+        assert_eq!(feed(), 1);
     }
 
     #[test]

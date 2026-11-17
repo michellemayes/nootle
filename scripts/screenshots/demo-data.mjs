@@ -1051,6 +1051,30 @@ const COMMITMENT_REMINDER = {
   commitment_id: "c1",
 };
 
+/** Live Assist cards already on the demo recording, newest first. */
+const LIVE_ASSIST_CARDS = [
+  LIVE_ASSIST_CARD,
+  COMMITMENT_REMINDER,
+  {
+    id: "la-2",
+    question: "What was the permissions drop-off in v1?",
+    answer: "24% in v1, against 31% now [Onboarding v2 review, Slide 6].",
+    sources: [
+      {
+        type: "document",
+        document_id: "kd-deck",
+        document_title: "Onboarding v2 review",
+        document_kind: "pptx",
+        locator: "Slide 6",
+        location: KNOWLEDGE_DOCUMENTS[1].location,
+        snippet: KNOWLEDGE_HITS[1].text,
+      },
+    ],
+    automatic: false,
+    commitment_id: null,
+  },
+];
+
 /** The pre-meeting brief for the next event on the Meetings page. */
 const UPCOMING_EVENTS = [
   {
@@ -1238,6 +1262,8 @@ export const FIXTURES = {
   search_knowledge: KNOWLEDGE_HITS,
   live_assist: LIVE_ASSIST_CARD,
   live_commitment_reminders: [COMMITMENT_REMINDER],
+  live_assist_cards: { "m-live": LIVE_ASSIST_CARDS },
+  live_assist_window_meeting: "m-live",
 
   list_commitments: COMMITMENTS,
   get_meeting_followups: {
