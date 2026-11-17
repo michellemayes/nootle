@@ -3201,6 +3201,30 @@ pub async fn suggest_coach_tip(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn suggest_note_continuation(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    before: String,
+    after: String,
+    provider: String,
+    model: String,
+) -> Result<Option<String>, String> {
+    let registry = llm.read().await;
+    crate::note_suggest::suggest(
+        &db,
+        &registry,
+        &meeting_id,
+        &before,
+        &after,
+        &provider,
+        &model,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command(async)]
 pub fn create_integration(
     db: State<'_, DbState>,

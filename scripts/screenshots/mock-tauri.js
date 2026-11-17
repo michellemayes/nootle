@@ -97,6 +97,12 @@
         (card) => !(args?.reminded || []).includes(card.commitment_id),
       );
     }
+    // Note suggestions keyed by the line being written, after a model-ish pause.
+    if (cmd === "suggest_note_continuation") {
+      const line = (args?.before ?? "").split("\n").pop().trim().toLowerCase();
+      const text = (fixtures.note_suggestions || {})[line] ?? null;
+      return new Promise((r) => setTimeout(() => r(text), 350));
+    }
     if (cmd === "get_custom_endpoint") {
       return (fixtures.get_custom_endpoint || {})[args?.kind] ?? null;
     }

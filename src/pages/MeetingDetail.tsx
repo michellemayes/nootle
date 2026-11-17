@@ -41,6 +41,7 @@ import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useLabels } from "@/hooks/useLabels";
 import { useScratchPad } from "@/hooks/useScratchPad";
+import { useNoteSuggestions } from "@/hooks/useNoteSuggestions";
 import { useAnnotations } from "@/hooks/useAnnotations";
 import { useTranslations } from "@/hooks/useTranslations";
 import { TranslateMenu } from "@/components/TranslateMenu";
@@ -784,6 +785,7 @@ function NotesPanel({
   const [enriching, setEnriching] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"original" | "enriched">("enriched");
+  const suggest = useNoteSuggestions(meetingId);
   const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { snapshots, removeSnapshot } = useSnapshots(meetingId);
   const snapshotsSection = (
@@ -862,60 +864,37 @@ function NotesPanel({
     </>
   );
 
-  if (!rawNotes && !enrichedNotes) {
-    if (scratchNotes.length > 0 || snapshots.length > 0) {
-      return (
-        <div className="flex flex-1 flex-col min-h-0">
-          {/* Quick notes alone can be expanded into full notes. */}
-          {scratchNotes.length > 0 && (
-            <div className="flex items-center gap-2 border-b px-5 py-2">{enrichButton}</div>
-          )}
-          <ScrollArea className="flex-1">
-            <div className="p-5 space-y-4">
-              {renderQuickNotes()}
-              {snapshotsSection}
-            </div>
-          </ScrollArea>
-        </div>
-      );
-    }
-    return (
-      <EmptyState
-        icon={StickyNote}
-        size="panel"
-        description="No notes for this meeting. Take notes during recording to see them here."
-      />
-    );
-  }
-
   const displayContent = enrichedNotes ?? rawNotes ?? "";
   const hasEnriched = !!enrichedNotes;
+  const hasNotes = !!displayContent;
+  const canCompare = hasEnriched && !!rawNotes;
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 border-b px-5 py-2">
-        {!hasEnriched && enrichButton}
-        {hasEnriched && rawNotes && (
-          <div className="flex rounded-md border text-xs overflow-hidden">
-            <button
-              onClick={() => setViewMode("original")}
-              aria-pressed={viewMode === "original"}
-              className={`px-3 py-1 transition-colors ${viewMode === "original" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              Original
-            </button>
-            <button
-              onClick={() => setViewMode("enriched")}
-              aria-pressed={viewMode === "enriched"}
-              className={`px-3 py-1 transition-colors ${viewMode === "enriched" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              Enriched
-            </button>
-          </div>
-        )}
-        <CopyButton text={displayContent} className="ml-auto" />
-      </div>
+      {(hasNotes || scratchNotes.length > 0) && (
+        <div className="flex items-center gap-2 border-b px-5 py-2">
+          {!hasEnriched && enrichButton}
+          {canCompare && (
+            <div className="flex rounded-md border text-xs overflow-hidden">
+              <button
+                onClick={() => setViewMode("original")}
+                aria-pressed={viewMode === "original"}
+                className={`px-3 py-1 transition-colors ${viewMode === "original" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Original
+              </button>
+              <button
+                onClick={() => setViewMode("enriched")}
+                aria-pressed={viewMode === "enriched"}
+                className={`px-3 py-1 transition-colors ${viewMode === "enriched" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Enriched
+              </button>
+            </div>
+          )}
+          {hasNotes && <CopyButton text={displayContent} className="ml-auto" />}
+        </div>
+      )}
 
       <ScrollArea className="flex-1">
         <div className="p-5 space-y-4">
@@ -932,11 +911,12 @@ function NotesPanel({
                 content={displayContent}
                 hasHighlights={hasEnriched}
                 onChange={handleNotesChange}
+                onSuggest={suggest}
               />
             </div>
 
             {/* Original — overlaid on top when active */}
-            {hasEnriched && rawNotes && (
+            {canCompare && (
               <div
                 className={cn(
                   "absolute inset-0 transition-opacity duration-200",

@@ -16,6 +16,8 @@ import { useAnnotations } from "@/hooks/useAnnotations";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ScratchPad } from "@/components/ScratchPad";
+import { GhostTextarea } from "@/components/GhostTextarea";
+import { useNoteSuggestions } from "@/hooks/useNoteSuggestions";
 import { LiveAssist } from "@/components/LiveAssist";
 import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
@@ -242,6 +244,7 @@ export function RecordingView() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
+  const suggestNotes = useNoteSuggestions(currentMeeting?.id ?? null);
   // Live transcript (loads what's already there when resuming), plus whether
   // transcription runs at all. Imports transcribing in the background send
   // these events too, so both are matched to this recording's meeting.
@@ -592,10 +595,11 @@ export function RecordingView() {
 
       {/* Notes take the remaining space, beside Live Assist */}
       <div className="flex-1 flex min-h-0">
-        <textarea
+        <GhostTextarea
           ref={notesRef}
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          onValueChange={setNotes}
+          suggest={suggestNotes}
           aria-label="Meeting notes"
           placeholder="Jot shorthand as you go (e.g. “pricing → $12, Ana to confirm”). When the meeting ends, Nootle expands it into full notes from the transcript."
           className="flex-1 w-full bg-transparent p-6 text-sm leading-relaxed resize-none focus:outline-none placeholder:text-muted-foreground/40"
