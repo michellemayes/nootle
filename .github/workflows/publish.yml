@@ -53,16 +53,23 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if ! OUT=$(xcrun notarytool history --apple-id "$APPLE_ID" \
-              --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" 2>&1); then
+          for delay in 15 30 60 120 0; do
+            if OUT=$(xcrun notarytool history --apple-id "$APPLE_ID" \
+                --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" 2>&1); then
+              exit 0
+            fi
             echo "$OUT"
             if echo "$OUT" | grep -qi "agreement"; then
               echo "::error title=Apple agreement needs accepting::Sign in at https://developer.apple.com/account as the Account Holder, accept the updated agreement, then re-run this workflow."
-            else
-              echo "::error title=Apple notarization unavailable::notarytool could not authenticate. Check the APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID secrets."
+              exit 1
             fi
-            exit 1
-          fi
+            if ! echo "$OUT" | grep -qiE "status code: 5[0-9]{2}|try again|timed out|network"; then
+              echo "::error title=Apple notarization unavailable::notarytool could not authenticate. Check the APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID secrets."
+              exit 1
+            fi
+            if [ "$delay" -gt 0 ]; then sleep "$delay"; fi
+          done
+          echo "::warning title=Apple notary service unstable::notarytool kept returning server errors; building anyway, since notarization runs about 10 minutes from now."
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
