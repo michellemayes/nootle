@@ -39,14 +39,14 @@ Nootle records your meetings (microphone and system audio), transcribes them on 
 - **Commitment tracker.** Follows what people promised across meetings: what's still owed, what slipped, and the moment a later meeting showed it done.
 - **Pre-meeting brief.** A few minutes before a calendar meeting: who's coming, open action items, last time's decisions, and related docs (opt-in).
 - **Menu bar mode.** Record, pause, jot a note and see what's next from the menu bar, with or without a Dock icon.
-- **Live Assist.** During a call, answers questions from your documents and past meetings, including ones it hears asked aloud. Filter to just Q&A or just commitment reminders, drag the panel wider, or pop it out into its own always-on-top window.
+- **Live Assist.** During a call, answers questions from your documents and past meetings, including ones it hears asked aloud. Filter to just Q&A or just commitment reminders, drag the panel wider, or pop it out into its own always-on-top window. Questions you type can also be about the slides shared so far.
 - **Ask the Room.** Listen to a meeting as a short spoken recap, each point in the voice of whoever raised it, made on your Mac. Then type a question and hear the answer in their voice.
 - **Translate any meeting.** Read the transcript and summaries in another language, line by line and still synced to playback, with the AI you choose.
 - **Ask your meetings and docs.** Chat across every meeting and your knowledge base (PDF, Word, PowerPoint, Excel, web pages and more), with citations.
 - **Ask Nootle, in the meeting.** Ask about the meeting you're looking at, or have it make changes: "put those in my notes", tag it, add or close action items, write a summary from a template, name a speaker, pin a comment to a moment. Each reply lists what it changed.
 - **Meeting Coach (opt-in).** A private card after each call on how you showed up (talk share, interruptions, questions, filler words, pace), with trends over time.
 - **Your notes, expanded.** Jot shorthand while recording, and highlight the moments that matter in one click (⌘⇧H). Nootle fills your notes out from the transcript afterwards, and summaries give your highlights extra attention.
-- **Snapshots.** Captures shared slides and screens into your notes, and reads the text on them. Summaries cite slides as clickable thumbnails, and a slide recap says what was said while each was up.
+- **Snapshots.** Captures shared slides and screens into your notes, and reads the text on them. They line up in a filmstrip as the meeting records, so you can look back at a slide without waiting for it to end. Summaries cite slides as clickable thumbnails, and a slide recap says what was said while each was up.
 - **Workflows.** Send recaps and action items to Slack, Notion, Linear, GitHub, Asana, Confluence, Obsidian, or email.
 - **Share links.** End-to-end encrypted `nootle.ai` links to a meeting's notes.
 - **AI connector.** Claude, ChatGPT and other cloud AI apps connect to `nootle.ai/mcp` and read the shared meetings you pick. Each person signs in with their own key, so it works for Claude Team workspaces too.

@@ -174,27 +174,21 @@ pub async fn answer(
     let Some((llm, provider, model)) = llm else {
         return Ok(Some(card(None, sources)));
     };
-    if sources.is_empty() {
+    let transcript = db.get_transcript(meeting_id)?;
+    // A typed question can be about what's been shared on screen so far.
+    let slides = if automatic {
+        Vec::new()
+    } else {
+        crate::slides::aligned(db, meeting_id, &transcript)?
+    };
+    if sources.is_empty() && slides.is_empty() {
         return Ok(Some(card(
             Some("Nothing in your documents or past meetings covers this yet."),
             sources,
         )));
     }
 
-    let recent = crate::ops::recent_transcript(&db.get_transcript(meeting_id)?, RECENT_MINUTES);
-    let system = format!(
-        "You are Live Assist in Nootle, helping the user (\"You\" in the transcript) during a \
-         live meeting. Answer the question using ONLY the excerpts from the user's documents \
-         and past meetings below. Reply in one to three short sentences the user could say \
-         aloud, with the specifics (numbers, names, dates). Cite each fact as [Document title, \
-         page] or [Meeting Title, timestamp]. If the excerpts don't answer the question, reply \
-         with exactly {NO_ANSWER}.\n\n\
-         EXCERPTS:\n{excerpts}\n\n\
-         THE LAST FEW MINUTES OF THE MEETING:\n{}{}{}",
-        crate::summarization::format_transcript(&recent),
-        crate::calendar::context_section(db, meeting_id),
-        crate::dictionary::glossary(db),
-    );
+    let system = system_prompt(db, meeting_id, &transcript, &slides, &excerpts);
     let messages = vec![
         ChatMessage {
             role: "system".into(),
@@ -212,11 +206,53 @@ pub async fn answer(
             return Ok(None);
         }
         return Ok(Some(card(
-            Some("Nothing in your documents or past meetings answers this."),
+            Some(if slides.is_empty() {
+                "Nothing in your documents or past meetings answers this."
+            } else {
+                "Nothing in your documents, past meetings or the slides so far answers this."
+            }),
             sources,
         )));
     }
     Ok(Some(card(Some(reply), sources)))
+}
+
+/// What Live Assist answers from: the excerpts found for the question, the
+/// slides shared in this meeting so far (typed questions only), and the last
+/// few minutes of the conversation.
+fn system_prompt(
+    db: &Database,
+    meeting_id: &str,
+    transcript: &[crate::db::TranscriptSegment],
+    slides: &[crate::slides::Slide],
+    excerpts: &str,
+) -> String {
+    let (from, cite) = if slides.is_empty() {
+        (
+            "the excerpts from the user's documents and past meetings below",
+            "",
+        )
+    } else {
+        (
+            "the excerpts from the user's documents and past meetings, and the slides shared \
+             on screen in this meeting so far, below",
+            " or [slide N]",
+        )
+    };
+    let recent = crate::ops::recent_transcript(transcript, RECENT_MINUTES);
+    format!(
+        "You are Live Assist in Nootle, helping the user (\"You\" in the transcript) during a \
+         live meeting. Answer the question using ONLY {from}. Reply in one to three short \
+         sentences the user could say aloud, with the specifics (numbers, names, dates). Cite \
+         each fact as [Document title, page] or [Meeting Title, timestamp]{cite}. If none of \
+         it answers the question, reply with exactly {NO_ANSWER}.\n\n\
+         EXCERPTS:\n{excerpts}{}\n\n\
+         THE LAST FEW MINUTES OF THE MEETING:\n{}{}{}",
+        crate::slides::prompt_section(slides),
+        crate::summarization::format_transcript(&recent),
+        crate::calendar::context_section(db, meeting_id),
+        crate::dictionary::glossary(db),
+    )
 }
 
 /// A question reduced to its words, to spot one asked again.
@@ -317,5 +353,33 @@ mod tests {
             .unwrap();
         assert!(card.sources.is_empty());
         assert!(!card.automatic);
+    }
+
+    #[test]
+    fn typed_questions_see_the_slides_shared_so_far() {
+        let db = Database::new_in_memory().unwrap();
+        let meeting = db
+            .create_meeting(crate::db::NewMeeting {
+                title: "Live".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap();
+        db.create_snapshot(
+            &meeting.id,
+            "/s/1.jpg",
+            "Step 3: permissions\n31% drop-off",
+            28_000,
+        )
+        .unwrap();
+        let slides = crate::slides::for_meeting(&db, &meeting.id).unwrap();
+
+        let prompt = system_prompt(&db, &meeting.id, &[], &slides, "(none)");
+        assert!(prompt.contains("Slide 1 (00:28–00:28): Step 3: permissions 31% drop-off"));
+        assert!(prompt.contains("[slide N]"));
+
+        let prompt = system_prompt(&db, &meeting.id, &[], &[], "(none)");
+        assert!(!prompt.contains("Slides shared on screen"));
+        assert!(!prompt.contains("[slide N]"));
     }
 }
