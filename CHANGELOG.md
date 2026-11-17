@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.3] - 2026-11-17
+
+### CI
+
+- **publish:** Retry Apple notary server errors in the preflight (#238) ([a62c119](https://github.com/michellemayes/nootle/commit/a62c1197adb6cd57d78d67608ea460267002c204))
+- Pin pnpm 9.15.9 in packageManager and run Node 22 (#235) ([264f22e](https://github.com/michellemayes/nootle/commit/264f22ea04fed41b1b2a7737858f54e4a64be3cc))
+
 ## [0.28.2] - 2026-11-16
 
 ### Build
