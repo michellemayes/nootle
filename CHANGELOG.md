@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- **live-assist:** Filter Q&A from reminders, resize the panel and pop it out (#240) ([59cb018](https://github.com/michellemayes/nootle/commit/59cb0187463302085aee5eb5f61c573986d69522))
+
+## [0.29.0] - 2026-11-17
+
+### Features
+
+- **insights:** Dismiss insights and decisions from the feed (#236) ([e1f1070](https://github.com/michellemayes/nootle/commit/e1f107069b8d581766ac042604cbfa7991c3580d))
+
 ## [0.28.3] - 2026-11-17
 
 ### CI

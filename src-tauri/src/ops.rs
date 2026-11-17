@@ -930,10 +930,25 @@ pub async fn catch_up(
         },
         ChatMessage {
             role: "user".into(),
-            content: crate::summarization::format_transcript(&recent),
+            content: catch_up_context(db, meeting_id, &recent)?,
         },
     ];
     chat(llm, &model.provider, &model.id, messages).await
+}
+
+/// The stretch of the meeting to catch up on, with the slides that were on
+/// screen during it.
+fn catch_up_context(
+    db: &Database,
+    meeting_id: &str,
+    recent: &[TranscriptSegment],
+) -> Result<String> {
+    let since = recent.first().map_or(0, |s| s.start_ms);
+    let slides: Vec<_> = crate::slides::for_meeting(db, meeting_id)?
+        .into_iter()
+        .filter(|s| s.end_ms >= since)
+        .collect();
+    Ok(crate::summarization::format_transcript(recent) + &crate::slides::prompt_section(&slides))
 }
 
 /// A meeting's notes as one text: what was typed, then the timestamped
@@ -1764,6 +1779,45 @@ mod tests {
         let recent = recent_transcript(&segments, 5);
         assert_eq!(recent.len(), 2);
         assert!(recent_transcript(&[], 5).is_empty());
+    }
+
+    #[test]
+    fn catching_up_includes_the_slides_shown_meanwhile() {
+        let db = Database::new_in_memory().unwrap();
+        let id = db
+            .create_meeting(crate::db::NewMeeting {
+                title: "Live".into(),
+                calendar_event_id: None,
+                template_id: None,
+            })
+            .unwrap()
+            .id;
+        for start_ms in [0, 400_000, 590_000] {
+            db.create_transcript_segment(crate::db::NewTranscriptSegment {
+                meeting_id: id.clone(),
+                speaker_label: "A".into(),
+                text: "x".into(),
+                start_ms,
+                end_ms: start_ms + 1_000,
+                confidence: 1.0,
+            })
+            .unwrap();
+        }
+        for (text, offset_ms) in [
+            ("Agenda", 10_000),
+            ("Pricing", 100_000),
+            ("Roadmap", 450_000),
+        ] {
+            db.create_snapshot(&id, "/s.jpg", text, offset_ms).unwrap();
+        }
+        let recent = recent_transcript(&db.get_transcript(&id).unwrap(), 5);
+        let context = catch_up_context(&db, &id, &recent).unwrap();
+        assert!(!context.contains("Agenda"), "taken down before the window");
+        assert!(
+            context.contains("Pricing"),
+            "still up when the window began"
+        );
+        assert!(context.contains("Roadmap"));
     }
 
     #[test]

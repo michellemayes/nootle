@@ -7,7 +7,13 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { AUDIO_DURATION_SECONDS, DEMO_NOW, FIXTURES, LIVE_TRANSCRIPT } from "./demo-data.mjs";
+import {
+  AUDIO_DURATION_SECONDS,
+  DEMO_NOW,
+  FIXTURES,
+  LIVE_SNAPSHOTS,
+  LIVE_TRANSCRIPT,
+} from "./demo-data.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, "../..");
@@ -122,4 +128,11 @@ export async function emitLiveTranscript(page) {
     window.__NOOTLE_EMIT__("transcription-status", { meeting_id: "m-live", available: true });
     window.__NOOTLE_EMIT__("transcript-update", segments);
   }, LIVE_TRANSCRIPT);
+}
+
+/** Fires a snapshot-taken event for each slide shared so far in the live recording. */
+export async function emitLiveSnapshots(page, count = LIVE_SNAPSHOTS.length) {
+  await page.evaluate((snapshots) => {
+    for (const snapshot of snapshots) window.__NOOTLE_EMIT__("snapshot-taken", snapshot);
+  }, LIVE_SNAPSHOTS.slice(0, count));
 }
