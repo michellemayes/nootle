@@ -644,6 +644,7 @@ mod tests {
             action_item_updated_at: None,
             meeting_title: None,
             meeting_start_time: None,
+            dismissed_at: None,
         };
         let meeting = Meeting {
             id: "m".into(),

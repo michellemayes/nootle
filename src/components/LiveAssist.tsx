@@ -1,33 +1,76 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useNavigate } from "react-router-dom";
-import { Handshake, Loader2, Send, Sparkles, X } from "lucide-react";
+import { Handshake, Loader2, Send, Sparkles, SquareArrowDownLeft, SquareArrowOutUpRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from "@/components/Markdown";
 import { SourceCitation } from "@/components/SourceCitation";
-import { useBooleanSetting } from "@/hooks/useBooleanSetting";
+import { ResizeHandle } from "@/components/ResizeHandle";
+import { useBooleanSetting, useSetting } from "@/hooks/useBooleanSetting";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
+import { cn } from "@/lib/utils";
 import type { LiveAssistCard, TranscriptSegment } from "@/types";
 
+type Filter = "all" | "answers" | "reminders";
 
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "answers", label: "Q&A" },
+  { value: "reminders", label: "Reminders" },
+];
+
+const shows = (filter: string, card: LiveAssistCard) =>
+  filter === "all" || (filter === "reminders") === Boolean(card.commitment_id);
+
+const DEFAULT_WIDTH = 320;
+const MIN_WIDTH = 260;
+const MAX_WIDTH = 720;
+/** Room the notes keep beside the panel however wide it's dragged. */
+const NOTES_MIN_WIDTH = 280;
+
+// Cards are kept per recording, so they survive the panel moving between
+// the recording view and its own window.
+const STORE_PREFIX = "live-assist-cards:";
+
+function loadCards(meetingId: string): LiveAssistCard[] {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(STORE_PREFIX) && key !== STORE_PREFIX + meetingId) localStorage.removeItem(key);
+    }
+    return JSON.parse(localStorage.getItem(STORE_PREFIX + meetingId) ?? "[]");
+  } catch {
+    return [];
+  }
+}
 
 /** Answers questions during a recording from the knowledge base and past
  * meetings: automatically for questions heard in the meeting (when turned
- * on), and for anything typed in. */
+ * on), and for anything typed in. Beside the notes it can be dragged wider
+ * or popped out; `windowed` is the popped-out window, which pops back in. */
 export function LiveAssist({
   meetingId,
   segments,
+  onOpenMeeting,
+  onPopOut,
+  windowed = false,
 }: {
   meetingId: string;
   segments: TranscriptSegment[];
+  onOpenMeeting: (path: string) => void;
+  onPopOut: () => void;
+  windowed?: boolean;
 }) {
-  const navigate = useNavigate();
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
   const [auto, setAuto] = useBooleanSetting("live_assist", false);
-  const [cards, setCards] = useState<LiveAssistCard[]>([]);
+  const [filter, setFilter] = useSetting("live_assist_filter", "all");
+  const [savedWidth, saveWidth] = useSetting("live_assist_width", String(DEFAULT_WIDTH));
+  const [width, setWidth] = useState<number | null>(null);
+  const [room, setRoom] = useState(MAX_WIDTH);
+  const asideRef = useRef<HTMLElement>(null);
+  const [cards, setCards] = useState<LiveAssistCard[]>(() => loadCards(meetingId));
   const [busy, setBusy] = useState(false);
   const [question, setQuestion] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -38,10 +81,10 @@ export function LiveAssist({
   const queueRef = useRef<string | null>(null);
   const inFlightRef = useRef(false);
   // Questions already on cards; the backend skips them.
-  const askedRef = useRef<string[]>([]);
+  const askedRef = useRef<string[]>(cards.filter((c) => !c.commitment_id).map((c) => c.question));
   // Commitments already brought up, and the latest line waiting to be
   // checked for one.
-  const remindedRef = useRef<string[]>([]);
+  const remindedRef = useRef<string[]>(cards.flatMap((c) => c.commitment_id ?? []));
   const reminderQueueRef = useRef<TranscriptSegment | null>(null);
   const reminderInFlightRef = useRef(false);
 
@@ -125,6 +168,36 @@ export function LiveAssist({
     }
   }, [segments, auto]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORE_PREFIX + meetingId, JSON.stringify(cards));
+    } catch {
+      // Without storage, cards just don't follow the panel to a new window.
+    }
+  }, [meetingId, cards]);
+
+  const dismiss = (id: string) => setCards((list) => list.filter((c) => c.id !== id));
+
+  // The panel never squeezes the notes below NOTES_MIN_WIDTH.
+  useEffect(() => {
+    const parent = asideRef.current?.parentElement;
+    if (windowed || !parent) return;
+    const observer = new ResizeObserver(([entry]) => setRoom(entry.contentRect.width - NOTES_MIN_WIDTH));
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, [windowed]);
+  const maxWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, room));
+  const panelWidth = Math.min(width ?? (Number(savedWidth) || DEFAULT_WIDTH), maxWidth);
+
+  useEffect(() => {
+    if (width === null) return;
+    const timer = setTimeout(() => saveWidth(String(width)), 400);
+    return () => clearTimeout(timer);
+  }, [width, saveWidth]);
+
+  const shown = cards.filter((card) => shows(filter, card));
+  const count = (f: Filter) => cards.filter((card) => shows(f, card)).length;
+
   const ask = async (e: FormEvent) => {
     e.preventDefault();
     const text = question.trim();
@@ -148,20 +221,69 @@ export function LiveAssist({
   };
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l" aria-label="Live Assist">
+    <aside
+      ref={asideRef}
+      className={cn("relative flex min-w-0 shrink-0 flex-col", windowed ? "h-full w-full" : "border-l")}
+      style={windowed ? undefined : { width: panelWidth }}
+      aria-label="Live Assist"
+    >
+      {!windowed && (
+        <ResizeHandle
+          width={panelWidth}
+          onWidthChange={setWidth}
+          min={MIN_WIDTH}
+          max={maxWidth}
+          side="left"
+          label="Resize Live Assist"
+        />
+      )}
       <div className="flex items-center gap-2 border-b px-4 py-2.5">
-        <Sparkles className="h-3.5 w-3.5 text-primary" />
-        <span className="text-xs font-medium">Live Assist</span>
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
+        <span className="truncate text-xs font-medium">Live Assist</span>
         <label
-          className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground"
+          className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
           title="Answer questions heard in the meeting from your documents and past meetings"
         >
           Auto
           <Switch checked={auto} onCheckedChange={setAuto} aria-label="Answer questions automatically" />
         </label>
+        <Button
+          size="icon-xs"
+          variant="ghost"
+          onClick={onPopOut}
+          aria-label={windowed ? "Put back beside notes" : "Pop out"}
+          title={windowed ? "Put back beside notes" : "Pop out into its own window"}
+          className="-mr-1.5 text-muted-foreground"
+        >
+          {windowed ? <SquareArrowDownLeft /> : <SquareArrowOutUpRight />}
+        </Button>
+      </div>
+      <div role="radiogroup" aria-label="Show" className="flex gap-1 border-b px-3 py-1.5">
+        {FILTERS.map((f) => (
+          <button
+            key={f.value}
+            role="radio"
+            aria-checked={filter === f.value}
+            onClick={() => setFilter(f.value)}
+            className={cn(
+              "inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+              filter === f.value
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            )}
+          >
+            <span className="truncate">{f.label}</span>
+            {count(f.value) > 0 && <span className="tabular-nums text-muted-foreground">{count(f.value)}</span>}
+          </button>
+        ))}
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 p-4" role="log" aria-live="polite">
+          {cards.length > 0 && shown.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              {filter === "reminders" ? "No reminders yet." : "No answers yet."}
+            </p>
+          )}
           {cards.length === 0 && (
             <p className="text-xs leading-relaxed text-muted-foreground">
               {auto
@@ -171,17 +293,17 @@ export function LiveAssist({
                 " Pick an AI model in the sidebar for written answers; without one, Nootle shows the passages it found."}
             </p>
           )}
-          {cards.map((card) => card.commitment_id ? (
+          {shown.map((card) => card.commitment_id ? (
             <div key={card.id} className="flex items-start gap-2 rounded-lg border border-dashed bg-muted/40 p-3 text-xs">
               <Handshake className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1 space-y-1.5">
                 <p className="leading-relaxed text-foreground">{card.question}</p>
                 {card.sources.map((s, i) => (
-                  <SourceCitation key={i} source={s} onOpenMeeting={navigate} />
+                  <SourceCitation key={i} source={s} onOpenMeeting={onOpenMeeting} />
                 ))}
               </div>
               <button
-                onClick={() => setCards((list) => list.filter((c) => c.id !== card.id))}
+                onClick={() => dismiss(card.id)}
                 aria-label="Dismiss"
                 className="text-muted-foreground hover:text-foreground"
               >
@@ -196,7 +318,7 @@ export function LiveAssist({
                   <span className="text-foreground">{card.question}</span>
                 </p>
                 <button
-                  onClick={() => setCards((list) => list.filter((c) => c.id !== card.id))}
+                  onClick={() => dismiss(card.id)}
                   aria-label="Dismiss"
                   className="text-muted-foreground hover:text-foreground"
                 >
@@ -210,7 +332,7 @@ export function LiveAssist({
                     <SourceCitation
                       key={i}
                       source={s}
-                      onOpenMeeting={navigate}
+                      onOpenMeeting={onOpenMeeting}
                     />
                   ))}
                 </div>
