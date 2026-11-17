@@ -823,6 +823,16 @@ export const DEMO_NOW = new Date("2026-07-28T19:30:00Z");
 export const AUDIO_DURATION_SECONDS =
   (new Date(MEETINGS[0].end_time) - new Date(MEETINGS[0].start_time)) / 1000;
 
+/** The deck as it's snapped during the live recording. */
+export const LIVE_SNAPSHOTS = SLIDES.map(({ id, image_path, text, offset_ms, created_at }) => ({
+  id,
+  meeting_id: "m-live",
+  image_path,
+  text,
+  offset_ms,
+  created_at,
+}));
+
 /** Transcript pushed into the live recording view via `transcript-update`. */
 export const LIVE_TRANSCRIPT = TRANSCRIPT.map((s) => ({
   ...s,

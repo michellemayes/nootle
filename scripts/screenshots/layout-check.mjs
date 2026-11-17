@@ -21,6 +21,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  emitLiveSnapshots,
   emitLiveTranscript,
   launchBrowser,
   newDemoContext,
@@ -92,6 +93,16 @@ const PAGES = [
     route: "/recording",
     ready: "text=Live transcript",
     prepare: emitLiveTranscript,
+  },
+  {
+    name: "recording-snapshots",
+    route: "/recording",
+    ready: "text=Live transcript",
+    async prepare(page) {
+      await emitLiveTranscript(page);
+      await emitLiveSnapshots(page);
+      await page.getByRole("list", { name: "Snapshots so far" }).waitFor();
+    },
   },
   { route: "/templates", ready: "text=Standard Summary" },
   { route: "/settings", ready: "h1" },

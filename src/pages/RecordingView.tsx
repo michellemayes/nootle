@@ -3,12 +3,14 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRecording } from "@/hooks/useRecording";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useTranscript } from "@/hooks/useTranscripts";
 import { useSnapshots, useSnapshotsEnabled } from "@/hooks/useSnapshots";
+import { LiveSnapshots } from "@/components/LiveSnapshots";
+import { PanelToggle } from "@/components/PanelToggle";
+import { usePersistedToggle } from "@/hooks/usePersistedToggle";
 import type { MeetingAnnotation, TranscriptSegment } from "@/types";
 import { HighlightLineButton, highlightsByStart } from "@/components/Annotations";
 import { toast } from "@/components/Toaster";
@@ -24,9 +26,7 @@ import { AudioLevelMeter } from "@/components/AudioLevelMeter";
 import { cn, formatDuration } from "@/lib/utils";
 import { Markdown } from "@/components/Markdown";
 import { useStickToBottom } from "@/hooks/useStickToBottom";
-import { Square, ArrowLeft, ArrowDown, ChevronDown, ChevronRight, FileText, Highlighter, MicOff, Pause, Play, ScanLine } from "lucide-react";
-
-const TRANSCRIPT_OPEN_KEY = "recordingTranscriptOpen";
+import { Square, ArrowLeft, ArrowDown, FileText, Highlighter, MicOff, Pause, Play, ScanLine } from "lucide-react";
 
 /** One live line, with its highlight button. Memoized so a new line doesn't re-render the rest. */
 const LiveSegment = memo(function LiveSegment({
@@ -235,9 +235,7 @@ export function RecordingView() {
   const [hasStarted, setHasStarted] = useState(false);
   const [notes, setNotes] = useState("");
   const [stopping, setStopping] = useState(false);
-  const [transcriptOpen, setTranscriptOpen] = useState(
-    () => localStorage.getItem(TRANSCRIPT_OPEN_KEY) === "true",
-  );
+  const [transcriptOpen, setTranscriptOpen] = usePersistedToggle("recordingTranscriptOpen", false);
   const [silent, setSilent] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -254,7 +252,7 @@ export function RecordingView() {
   const highlights = useMemo(() => highlightsByStart(myHighlights), [myHighlights]);
   const latestSegment = segments[segments.length - 1] as TranscriptSegment | undefined;
   const snapshotsEnabled = useSnapshotsEnabled();
-  const { snapshots } = useSnapshots(currentMeeting?.id ?? null);
+  const { snapshots, removeSnapshot } = useSnapshots(currentMeeting?.id ?? null);
   // Listening from mount: the status can arrive before start_recording returns.
   const [latestStatus, setLatestStatus] = useState<TranscriptionStatus | null>(null);
   useEffect(() => {
@@ -385,9 +383,6 @@ export function RecordingView() {
     return () => clearTimeout(timer);
   }, [notes, currentMeeting, saveNotes]);
 
-  useEffect(() => {
-    localStorage.setItem(TRANSCRIPT_OPEN_KEY, String(transcriptOpen));
-  }, [transcriptOpen]);
 
   // Follow new lines while the reader is at the bottom; scrolling up to
   // re-read pauses it and offers a way back.
@@ -526,18 +521,13 @@ export function RecordingView() {
           onSilenceChange={setSilent}
         />
 
-        {snapshotsEnabled && (
+        {snapshotsEnabled && snapshots.length === 0 && (
           <span
             className="flex items-center gap-1 text-xs text-muted-foreground"
             title="Snapshots: when someone shares their screen, slides, designs and charts are snapped from the meeting window into your notes"
           >
             <ScanLine className="h-3.5 w-3.5 text-primary" />
             {!isCompact && "Snapshots"}
-            {snapshots.length > 0 && (
-              <Badge variant="secondary" size="sm">
-                {snapshots.length}
-              </Badge>
-            )}
           </span>
         )}
 
@@ -608,25 +598,18 @@ export function RecordingView() {
 
       <ScratchPad meetingId={currentMeeting?.id ?? null} elapsedMs={elapsed * 1000} />
 
+      {snapshots.length > 0 && (
+        <LiveSnapshots
+          snapshots={snapshots}
+          onRemove={removeSnapshot}
+        />
+      )}
+
       {/* Collapsible live transcript */}
       <div className="border-t">
-        <button
-          onClick={() => setTranscriptOpen((open) => !open)}
-          aria-expanded={transcriptOpen}
-          className="flex w-full items-center gap-2 px-6 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {transcriptOpen ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
-          )}
+        <PanelToggle open={transcriptOpen} onOpenChange={setTranscriptOpen} count={segments.length}>
           Live transcript
-          {segments.length > 0 && (
-            <Badge variant="secondary" size="sm">
-              {segments.length}
-            </Badge>
-          )}
-        </button>
+        </PanelToggle>
         <Collapsible open={transcriptOpen}>
           {transcriptOpen && (
             <div className="relative">
