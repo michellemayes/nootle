@@ -11,6 +11,12 @@
   const listeners = new Map(); // event name -> Set of callback ids
   let nextId = 1;
 
+  // Live Assist keeps its cards in localStorage, per recording.
+  for (const [meetingId, cards] of Object.entries(fixtures.live_assist_cards || {})) {
+    const key = `live-assist-cards:${meetingId}`;
+    if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify(cards));
+  }
+
   function resolve(cmd, args) {
     // Conversation messages are keyed by conversation id.
     if (cmd === "list_chat_messages") {
@@ -96,6 +102,14 @@
       return (fixtures.live_commitment_reminders || []).filter(
         (card) => !(args?.reminded || []).includes(card.commitment_id),
       );
+    }
+    // Only the popped-out Live Assist page (liveassist.html) sees it open.
+    if (cmd === "live_assist_window_meeting") {
+      return location.pathname.endsWith("/liveassist.html") ? fixtures.live_assist_window_meeting : null;
+    }
+    if (cmd === "open_live_assist_window" || cmd === "close_live_assist_window") {
+      setTimeout(() => window.__NOOTLE_EMIT__("live-assist-window", cmd === "open_live_assist_window"));
+      return null;
     }
     if (cmd === "get_custom_endpoint") {
       return (fixtures.get_custom_endpoint || {})[args?.kind] ?? null;

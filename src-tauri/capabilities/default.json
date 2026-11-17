@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window, the meeting pop-up, the menu bar popover and the meeting brief",
-  "windows": ["main", "meeting-popup", "menu-bar", "meeting-brief"],
+  "description": "Capability for the main window, the meeting pop-up, the menu bar popover, the meeting brief and the popped-out Live Assist",
+  "windows": ["main", "meeting-popup", "menu-bar", "meeting-brief", "live-assist"],
   "permissions": [
     "core:default",
     "opener:default",
