@@ -37,7 +37,9 @@ pub fn open_live_assist_window(app: AppHandle, meeting_id: String) -> Result<(),
 }
 
 #[tauri::command]
-pub fn live_assist_window_meeting(state: tauri::State<'_, LiveAssistWindowState>) -> Option<String> {
+pub fn live_assist_window_meeting(
+    state: tauri::State<'_, LiveAssistWindowState>,
+) -> Option<String> {
     state.0.lock().unwrap().clone()
 }
 
