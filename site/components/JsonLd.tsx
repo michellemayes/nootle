@@ -27,6 +27,7 @@ const softwareApplication = JSON.stringify({
     "Live Assist answers during calls",
     "Snapshots of shared screens",
     "Shorthand notes expanded into full notes",
+    "AI note suggestions as you type, Tab to accept",
     "Local-only mode and no telemetry",
     "End-to-end encrypted share links",
     "Crash-safe recording",

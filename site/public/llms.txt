@@ -20,8 +20,10 @@ Facts on this page are as of October 2026.
 - AI summaries and chat (supports OpenAI, Anthropic, Google, Groq, OpenRouter, AWS Bedrock, local Ollama, and Claude / ChatGPT subscriptions via the Claude Code and Codex CLIs)
 - Local-only mode, and no telemetry
 - Knowledge base: index project folders, documents (PDF, Word, PowerPoint, Excel, Markdown, CSV, HTML), and web pages on your Mac
-- Live Assist: answers questions from your documents and past meetings during a call
-- Snapshots of shared slides, designs, and charts, with on-device text recognition
+- Live Assist: answers questions from your documents and past meetings during a call, and typed questions about the slides shared so far. Filter Q&A from reminders, resize the panel, or pop it out into an always-on-top window
+- Snapshots of shared slides, designs, and charts, with on-device text recognition, shown in a filmstrip while recording
+- AI note suggestions as you type, from the model you picked; Tab to accept
+- Dismiss handled decisions and action items from the insights feed, or clear a section at once
 - Shorthand notes expanded into full notes after the meeting
 - "What did I miss?" recap of the last five minutes
 - Meeting detection for Zoom, Teams, Webex, Slack, FaceTime, Discord, and browser calls like Google Meet

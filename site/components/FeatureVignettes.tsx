@@ -12,6 +12,7 @@ import {
   Lock,
   Presentation,
   Sparkles,
+  SquareArrowOutUpRight,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { NameSwap, SourceChip, WaveBars } from "@/components/DemoParts";
@@ -44,6 +45,36 @@ function Stage({
   );
 }
 
+/* Labels with a background that slides to the active one. */
+function SegmentedPills({
+  labels,
+  active,
+  layoutId,
+  pillClassName,
+}: {
+  labels: readonly string[];
+  active: string;
+  layoutId: string;
+  pillClassName: string;
+}) {
+  return labels.map((label) => (
+    <span key={label} className={`relative ${pillClassName}`}>
+      {label === active && (
+        <motion.span
+          layoutId={layoutId}
+          className="absolute inset-0 rounded-md bg-[var(--color-surface-elevated)]"
+          transition={spring}
+        />
+      )}
+      <span className={`relative ${label === active ? "text-[var(--color-text)]" : "text-[var(--color-text-secondary)]"}`}>
+        {label}
+      </span>
+    </span>
+  ));
+}
+
+const ASSIST_FILTERS = ["All", "Q&A", "Reminders"];
+
 export function LiveAssistVignette() {
   const { ref, step, running } = useLoopStep(5, 1500);
   return (
@@ -61,7 +92,16 @@ export function LiveAssistVignette() {
           <p className="text-[var(--color-text-secondary)] leading-snug">Can everyone see my screen?</p>
           <p className="text-[11px] text-[var(--color-text-secondary)]/80 italic">Small talk ignored</p>
         </div>
-        <div className="absolute inset-x-4 bottom-4 flex items-end sm:static">
+        <div className="absolute inset-x-4 bottom-4 flex flex-col justify-end sm:static sm:justify-between">
+          <div className="hidden sm:flex items-center gap-1 text-[11px]">
+            <SegmentedPills
+              labels={ASSIST_FILTERS}
+              active={step >= 3 ? "Q&A" : "All"}
+              layoutId="assist-filter"
+              pillClassName="px-2 py-0.5"
+            />
+            <SquareArrowOutUpRight className="ml-auto w-3.5 h-3.5 text-[var(--color-text-secondary)]" />
+          </div>
           <AnimatePresence mode="popLayout">
             {step === 2 && (
               <motion.p
@@ -272,7 +312,10 @@ export function SnapshotsVignette() {
             />
           )}
         </AnimatePresence>
-        <Camera className="absolute top-2 right-2 w-3.5 h-3.5 text-[var(--color-text-secondary)]" />
+        <span className="absolute top-2 right-2 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444] rec-dot" />
+          <Camera className="w-3.5 h-3.5 text-[var(--color-text-secondary)]" />
+        </span>
       </div>
       <div className="mt-3 flex gap-2">
         {SLIDES.map((slide, i) => (
@@ -320,6 +363,49 @@ function SlideBody({ kind }: { kind: "chart" | "design" | "text" }) {
   );
 }
 
+const NOTES_SO_FAR = "• Pilot starts Monday, 40 seats";
+const SUGGESTED_LINES = [
+  { typed: "• Acme needs SSO before", ghost: " rollout, through Okta SAML" },
+  { typed: "• Jordan to confirm", ghost: " the annual discount by Wed" },
+];
+
+export function NoteSuggestionVignette() {
+  // Each line: typed, then its suggestion appears, then Tab takes it.
+  const { ref, step, running } = useLoopStep(SUGGESTED_LINES.length * 2, 1500);
+  return (
+    <Stage stageRef={ref} running={running}>
+      <p className="text-[11px] text-[var(--color-text-secondary)] mb-3">Acme pilot sync · Notes</p>
+      <ul className="space-y-2 text-sm leading-snug">
+        <li className="text-[var(--color-text)]">{NOTES_SO_FAR}</li>
+        {SUGGESTED_LINES.map((line, i) => {
+          const at = step - i * 2;
+          if (at < 0) return null;
+          const accepted = at >= 2;
+          return (
+            <li key={line.typed} className="text-[var(--color-text)]">
+              {line.typed}
+              {accepted && <span>{line.ghost}</span>}
+              {at === 0 && <Caret />}
+              {at === 1 && (
+                <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+                  <span className="text-[var(--color-text-secondary)]/70">{line.ghost}</span>
+                  <kbd className="ml-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-1 py-px font-sans text-[10px] text-[var(--color-text-secondary)]">
+                    Tab
+                  </kbd>
+                </motion.span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Stage>
+  );
+}
+
+function Caret() {
+  return <span className="ml-px inline-block w-px h-3.5 align-middle bg-[var(--color-accent)] caret" />;
+}
+
 const ORIGINAL_NOTES = ["acme sso??", "pricing → ask jordan", "ship fri?"];
 const ENRICHED_NOTES = [
   "• Acme needs SAML SSO (Okta) before rollout.",
@@ -333,23 +419,12 @@ export function EnrichVignette() {
   return (
     <Stage stageRef={ref} running={running}>
       <div className="inline-flex rounded-lg bg-[var(--color-bg)] p-0.5 text-[11px] font-medium mb-3">
-        {["Original", "Enriched"].map((label, i) => {
-          const active = (i === 1) === enriched;
-          return (
-            <span key={label} className="relative px-2.5 py-1">
-              {active && (
-                <motion.span
-                  layoutId="enrich-pill"
-                  className="absolute inset-0 rounded-md bg-[var(--color-surface-elevated)]"
-                  transition={spring}
-                />
-              )}
-              <span className={`relative ${active ? "text-[var(--color-text)]" : "text-[var(--color-text-secondary)]"}`}>
-                {label}
-              </span>
-            </span>
-          );
-        })}
+        <SegmentedPills
+          labels={["Original", "Enriched"]}
+          active={enriched ? "Enriched" : "Original"}
+          layoutId="enrich-pill"
+          pillClassName="px-2.5 py-1"
+        />
       </div>
       <AnimatePresence mode="wait" initial={false}>
         <motion.ul
