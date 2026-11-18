@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.33.0] - 2026-11-18
+
+### Bug Fixes
+
+- **site:** Upgrade Next.js to 16.4.6 for GHSA-mfr8-8qww-v76h (#243) ([7a31e80](https://github.com/michellemayes/nootle/commit/7a31e80df7fdd7bb9594bc390ab5e5614f171b53))
+
+### CI
+
+- Move checkout, setup-node and pnpm setup to their Node 24 releases (#244) ([2be2371](https://github.com/michellemayes/nootle/commit/2be2371e0ff8a428d3145f539baf61740996dd38))
+
+### Features
+
+- **site:** Show today's features on the landing page (#242) ([eef947d](https://github.com/michellemayes/nootle/commit/eef947d9dae4bb45190c39ec01c4eb1c45f6a68b))
+
 ## [0.32.0] - 2026-11-17
 
 ### Features
