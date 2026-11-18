@@ -5,6 +5,7 @@ import {
   EnrichVignette,
   KnowledgeVignette,
   LiveAssistVignette,
+  NoteSuggestionVignette,
   PrivacyVignette,
   ProvidersVignette,
   SnapshotsVignette,
@@ -24,7 +25,7 @@ const spotlights: {
     id: "live-assist",
     title: "Live Assist answers mid-call",
     description:
-      "While you record, a side panel listens for questions your documents or past meetings can answer and shows a short reply you could say aloud, with its sources. Type your own question any time. Small talk is ignored, and it stays quiet when nothing relevant turns up.",
+      "While you record, a side panel listens for questions your documents or past meetings can answer and shows a short reply you could say aloud, with its sources. Type your own any time, even about the slides shared so far. Filter to Q&A or reminders, drag it wider, or pop it out into its own always-on-top window.",
     vignette: LiveAssistVignette,
     span: "md:col-span-4",
     isNew: true,
@@ -42,7 +43,6 @@ const spotlights: {
       "Add project folders, files, and web pages: PDF, Word, PowerPoint, Excel, Markdown, and more. Nootle indexes them on your Mac and answers from them alongside your meetings, citing the page or slide.",
     vignette: KnowledgeVignette,
     span: "md:col-span-2",
-    isNew: true,
   },
   {
     title: "Speakers it remembers",
@@ -54,24 +54,32 @@ const spotlights: {
   {
     title: "Snapshots of shared screens",
     description:
-      "When someone shares slides, designs, or charts, Nootle snaps one picture per slide into your notes and reads the text on your Mac, so you can ask what the revenue chart said.",
+      "When someone shares slides, designs, or charts, Nootle snaps one picture per slide and reads the text on your Mac. They fill a filmstrip as you record, and Live Assist can answer from them.",
     vignette: SnapshotsVignette,
     span: "md:col-span-2",
+    isNew: true,
+  },
+  {
+    title: "Notes that finish your thought",
+    description:
+      "As you write, during the call or after, the model you picked suggests how the line goes on from what was said. Tab takes it, Esc waves it off.",
+    vignette: NoteSuggestionVignette,
+    span: "md:col-span-2",
+    isNew: true,
   },
   {
     title: "Shorthand in, full notes out",
     description:
       "Jot terse notes while you talk. When the call ends, Nootle expands them from the transcript, the calendar agenda, and your knowledge base. Your originals stay one click away.",
     vignette: EnrichVignette,
-    span: "md:col-span-3",
-    isNew: true,
+    span: "md:col-span-2",
   },
   {
     title: "Any AI, including the one you pay for",
     description:
       "Use OpenAI, Anthropic, Google, Groq, OpenRouter, or AWS Bedrock with your own key, local models through Ollama, or your existing Claude or ChatGPT subscription through the Claude Code and Codex CLIs.",
     vignette: ProvidersVignette,
-    span: "md:col-span-3",
+    span: "md:col-span-2",
   },
 ];
 
@@ -90,7 +98,7 @@ const groups: { heading: string; items: { title: string; body: string }[] }[] = 
   {
     heading: "Understand",
     items: [
-      { title: "Summaries and insights", body: "Decisions, action items with owners, and key moments from every meeting." },
+      { title: "Summaries and insights", body: "Decisions, action items with owners, and key moments from every meeting. Dismiss what's handled, or clear a whole section, with Undo." },
       { title: "Ask across everything", body: "Chat with every meeting and document at once, with citations you can click." },
       { title: "What did I miss?", body: "One click recaps the last five minutes and anything asked of you." },
       { title: "People", body: "Everyone you meet, how often, and the action items they own." },
