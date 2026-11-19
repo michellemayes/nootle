@@ -6,6 +6,7 @@ use crate::db::{Database, TranscriptSegment};
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::summarization::transcript_lines;
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 /// Turns note suggestions on. On unless turned off.
@@ -14,8 +15,9 @@ pub const SETTING_KEY: &str = "note_suggestions";
 const NOTES_BEFORE_CHARS: usize = 3_000;
 const NOTES_AFTER_CHARS: usize = 800;
 const TRANSCRIPT_CHARS: usize = 6_000;
-const MAX_SUGGESTION_CHARS: usize = 200;
-const NOTHING: &str = "NONE";
+const MAX_TEXT_CHARS: usize = 200;
+const MAX_BULLET_CHARS: usize = 140;
+const MAX_BULLETS: usize = 3;
 
 pub fn enabled(db: &Database) -> bool {
     db.get_bool_setting(SETTING_KEY, true)
@@ -73,6 +75,17 @@ pub fn relevant_transcript(segments: &[TranscriptSegment], focus: &str, budget: 
         .join("\n")
 }
 
+/// What to show at the cursor: `text` finishes the line being written and
+/// `bullets` are sub-points that go under it. The editor adds the list
+/// markers and indentation, so neither carries any.
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct NoteSuggestion {
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub bullets: Vec<String>,
+}
+
 /// The line the cursor is on: the text after the last newline in `before`.
 fn current_line(before: &str) -> &str {
     before.rsplit_once('\n').map_or(before, |(_, line)| line)
@@ -85,27 +98,29 @@ pub fn prompt(title: &str, before: &str, after: &str, transcript: &str) -> Strin
         transcript
     };
     format!(
-        "You help someone write their notes for the meeting \"{title}\" as they type. \
-         ⟨CURSOR⟩ marks where they are.\n\n\
+        "You help someone write their Markdown notes for the meeting \"{title}\" as they \
+         type. ⟨CURSOR⟩ marks where they are.\n\n\
          <transcript>\n{transcript}\n</transcript>\n\n\
          <notes>\n{}⟨CURSOR⟩{}\n</notes>\n\n\
-         Finish the line the cursor is on, or if that line is empty, write the next note. \
-         Use what the transcript says: names, numbers, dates, decisions, owners. \
-         Never invent anything, and don't repeat a point the notes already make. \
-         Match how they write: fragments if they write fragments.\n\n\
-         Reply with only the whole line as it should read: start with exactly the text \
-         already on that line before the cursor, then your addition of at most 20 words. \
-         One line, keeping any list marker the line has but adding none; no quotes, \
-         no explanation. \
-         If there's nothing worth adding, reply {NOTHING}.",
+         Suggest what goes at the cursor, as JSON: {{\"text\": \"…\", \"bullets\": [\"…\"]}}\n\
+         - text: the words that go right at the cursor to finish the line they're on. On an \
+         empty line, the next note in the same style as the lines around it. Begin with a \
+         space if it starts a new word. Under 20 words, no list marker.\n\
+         - bullets: up to {MAX_BULLETS} short sub-points that belong under that line, such as \
+         the details, numbers, owners or dates the transcript gives for it. No list markers. \
+         Leave it empty when the line doesn't need any.\n\n\
+         Use only what the transcript and notes say; never invent anything, and don't repeat \
+         a point the notes already make. Write like they do: fragments if they write \
+         fragments. When there's something useful to add, suggest it. Reply with the JSON \
+         only. If there's truly nothing to add, reply {{\"text\": \"\", \"bullets\": []}}.",
         tail(before, NOTES_BEFORE_CHARS),
         head(after, NOTES_AFTER_CHARS),
     )
 }
 
-/// Strips a leading list or heading marker the model added.
-fn strip_marker(s: &str) -> &str {
-    let t = s.trim_start();
+/// `line` without its indentation and leading list, task or heading marker.
+fn strip_marker(line: &str) -> &str {
+    let t = line.trim_start();
     for marker in ["- [ ] ", "- [x] ", "- ", "* ", "• ", "> "] {
         if let Some(rest) = t.strip_prefix(marker) {
             return rest;
@@ -122,57 +137,91 @@ fn strip_marker(s: &str) -> &str {
     t
 }
 
-/// The text to insert at the cursor, from the model's reply: the reply's
-/// first line minus what's already on the cursor's line. None when the reply
-/// adds nothing or rewrites the line instead of continuing it.
-pub fn continuation(reply: &str, before: &str) -> Option<String> {
-    let line = reply
-        .lines()
-        .map(str::trim_end)
-        .find(|l| !l.trim().is_empty() && !l.trim_start().starts_with("```"))?;
-    let line = line.trim_matches(|c| c == '"' || c == '“' || c == '”' || c == '`');
-    if line.trim() == NOTHING {
-        return None;
-    }
-    let typed = current_line(before);
-    let reply = if strip_marker(typed) == typed.trim_start() {
-        strip_marker(line)
-    } else {
-        line.trim_start()
-    };
-    let typed = typed.trim_start();
-    let rest = match reply.strip_prefix(typed) {
-        Some(rest) => rest,
-        None => {
-            let prefix = head(reply, typed.chars().count());
-            if prefix.to_lowercase() != typed.to_lowercase() {
-                return None;
-            }
-            &reply[prefix.len()..]
-        }
-    };
-    let rest = if typed.is_empty() || typed.ends_with(char::is_whitespace) {
-        rest.trim_start()
-    } else {
-        rest
-    };
-    let rest = rest.trim_end();
-    if rest.trim().is_empty() {
-        return None;
-    }
-    if rest.chars().count() <= MAX_SUGGESTION_CHARS {
-        return Some(rest.to_string());
-    }
-    Some(crate::ops::truncate_at_word_boundary(
-        rest,
-        MAX_SUGGESTION_CHARS,
-        "",
-    ))
+fn unquote(s: &str) -> &str {
+    s.trim()
+        .trim_matches(|c| c == '"' || c == '“' || c == '”' || c == '`')
 }
 
-/// A suggestion for what comes next at the cursor in a meeting's notes, or
-/// None when the model has nothing to add. `before` and `after` are the
-/// notes' text either side of the cursor, one line per block.
+// truncate_at_word_boundary trims short input, which would drop a leading space.
+fn cap(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        crate::ops::truncate_at_word_boundary(s, max, "")
+    }
+}
+
+/// The JSON object in a reply, wherever the model put it.
+fn parse_reply(reply: &str) -> NoteSuggestion {
+    let json = match (reply.find('{'), reply.rfind('}')) {
+        (Some(start), Some(end)) if start < end => serde_json::from_str(&reply[start..=end]).ok(),
+        _ => None,
+    };
+    json.unwrap_or_else(|| NoteSuggestion {
+        text: reply
+            .lines()
+            .find(|l| !l.trim().is_empty() && !l.trim_start().starts_with("```"))
+            .map(|l| unquote(l).to_string())
+            .unwrap_or_default(),
+        bullets: Vec::new(),
+    })
+}
+
+/// The text to insert right after `typed`, the cursor's line so far.
+fn clean_text(text: &str, typed: &str) -> String {
+    let typed_words = strip_marker(typed).trim();
+    let mut text = text.trim_end();
+    // A reply that repeats the line's start despite being asked not to.
+    let start = text.trim_start();
+    let echo = head(start, typed_words.chars().count());
+    if typed_words.chars().count() >= 3 && echo.to_lowercase() == typed_words.to_lowercase() {
+        text = &start[echo.len()..];
+    }
+    if typed_words.is_empty() {
+        text = strip_marker(text);
+    }
+    let text = if typed_words.is_empty() || typed.ends_with(char::is_whitespace) {
+        text.trim_start().to_string()
+    } else if typed.ends_with([',', ';', ':', '.', '!', '?', ')'])
+        && text.starts_with(char::is_alphanumeric)
+    {
+        format!(" {text}")
+    } else {
+        text.to_string()
+    };
+    if text.trim().is_empty() {
+        return String::new();
+    }
+    cap(&text, MAX_TEXT_CHARS)
+}
+
+/// A model reply as a suggestion for the cursor's line, or None when it adds
+/// nothing. Sub-points the notes already hold are dropped.
+pub fn suggestion(reply: &str, before: &str, after: &str) -> Option<NoteSuggestion> {
+    let parsed = parse_reply(reply);
+    let text = clean_text(&parsed.text, current_line(before));
+    let notes = format!("{before}\n{after}").to_lowercase();
+    let mut bullets: Vec<String> = Vec::new();
+    for bullet in &parsed.bullets {
+        let bullet = cap(unquote(strip_marker(bullet)), MAX_BULLET_CHARS);
+        let key = bullet.to_lowercase();
+        if bullet.is_empty()
+            || notes.contains(&key)
+            || bullets.iter().any(|b| b.to_lowercase() == key)
+        {
+            continue;
+        }
+        bullets.push(bullet);
+        if bullets.len() == MAX_BULLETS {
+            break;
+        }
+    }
+    (!text.is_empty() || !bullets.is_empty()).then_some(NoteSuggestion { text, bullets })
+}
+
+/// A suggestion for the cursor in a meeting's notes, or None when the model
+/// has nothing to add. `before` and `after` are the notes either side of the
+/// cursor, as Markdown lines.
 pub async fn suggest(
     db: &Database,
     llm: &LlmRegistry,
@@ -181,7 +230,7 @@ pub async fn suggest(
     after: &str,
     provider: &str,
     model: &str,
-) -> Result<Option<String>> {
+) -> Result<Option<NoteSuggestion>> {
     if !enabled(db) || crate::llm::local_only_enabled(db) && !crate::llm::runs_locally(provider) {
         return Ok(None);
     }
@@ -197,7 +246,7 @@ pub async fn suggest(
         content: prompt(&meeting.title, before, after, &transcript),
     }];
     let reply = crate::ops::chat(llm, provider, model, messages).await?;
-    Ok(continuation(&reply, before))
+    Ok(suggestion(&reply, before, after))
 }
 
 #[cfg(test)]
@@ -216,19 +265,26 @@ mod tests {
         }
     }
 
+    fn text(reply: &str, before: &str) -> Option<String> {
+        suggestion(reply, before, "").map(|s| s.text)
+    }
+
     #[test]
     fn continues_the_typed_line() {
-        let before = "Launch\nShip date";
         assert_eq!(
-            continuation("Ship date moves to March 14 (Priya)", before).as_deref(),
-            Some(" moves to March 14 (Priya)")
+            text(
+                r#"{"text": " moves to March 14", "bullets": []}"#,
+                "Launch\n- Ship date"
+            )
+            .as_deref(),
+            Some(" moves to March 14")
         );
     }
 
     #[test]
-    fn finishes_a_word_in_progress() {
+    fn keeps_a_word_in_progress_joined() {
         assert_eq!(
-            continuation("Budget approved at $40k", "Budget approv").as_deref(),
+            text(r#"{"text": "ed at $40k"}"#, "Budget approv").as_deref(),
             Some("ed at $40k")
         );
     }
@@ -236,61 +292,93 @@ mod tests {
     #[test]
     fn drops_the_space_already_typed() {
         assert_eq!(
-            continuation("Owner: Sam", "Owner: ").as_deref(),
+            text(r#"{"text": " Sam"}"#, "Owner: ").as_deref(),
             Some("Sam")
         );
     }
 
     #[test]
-    fn writes_a_new_note_on_an_empty_line() {
+    fn spaces_after_punctuation() {
         assert_eq!(
-            continuation("- Follow up with legal by Friday", "Notes\n").as_deref(),
-            Some("Follow up with legal by Friday")
+            text(r#"{"text": "Sam"}"#, "Owner:").as_deref(),
+            Some(" Sam")
         );
     }
 
     #[test]
-    fn ignores_case_differences_in_the_echo() {
+    fn strips_an_echo_of_the_line() {
         assert_eq!(
-            continuation("pricing: tiered, three plans", "Pricing:").as_deref(),
+            text(r#"{"text": "Pricing: tiered, three plans"}"#, "- Pricing:").as_deref(),
             Some(" tiered, three plans")
         );
     }
 
     #[test]
-    fn rejects_a_rewrite() {
-        assert_eq!(continuation("Ship date is Friday", "Launch date"), None);
+    fn new_note_on_an_empty_line_has_no_marker() {
+        assert_eq!(
+            text(
+                r#"{"text": "- Follow up with legal by Friday"}"#,
+                "- Notes\n- "
+            )
+            .as_deref(),
+            Some("Follow up with legal by Friday")
+        );
+    }
+
+    #[test]
+    fn bullets_lose_markers_and_repeats() {
+        let s = suggestion(
+            r#"{"text": "", "bullets": ["- Priya owns it", "• due Friday", "due friday", "", "Already noted"]}"#,
+            "Launch\n- Already noted\n- Ship date",
+            "",
+        )
+        .unwrap();
+        assert_eq!(s.text, "");
+        assert_eq!(s.bullets, vec!["Priya owns it", "due Friday"]);
+    }
+
+    #[test]
+    fn at_most_three_bullets() {
+        let s = suggestion(r#"{"bullets": ["a1", "b2", "c3", "d4"]}"#, "Plan", "").unwrap();
+        assert_eq!(s.bullets.len(), MAX_BULLETS);
+    }
+
+    #[test]
+    fn json_inside_fences_and_prose() {
+        let s = suggestion(
+            "Here you go:\n```json\n{\"text\": \" vendor delay\", \"bullets\": [\"Acme slips two weeks\"]}\n```",
+            "Risks:",
+            "",
+        )
+        .unwrap();
+        assert_eq!(s.text, " vendor delay");
+        assert_eq!(s.bullets, vec!["Acme slips two weeks"]);
+    }
+
+    #[test]
+    fn plain_text_reply_still_works() {
+        assert_eq!(
+            text("\"ready Thursday\"", "Copy ").as_deref(),
+            Some("ready Thursday")
+        );
     }
 
     #[test]
     fn nothing_to_add() {
-        assert_eq!(continuation("NONE", "Ship date"), None);
-        assert_eq!(continuation("Ship date", "Ship date"), None);
-        assert_eq!(continuation("", "Ship date"), None);
-    }
-
-    #[test]
-    fn unwraps_fences_and_quotes() {
         assert_eq!(
-            continuation("```\n\"Risks: vendor delay\"\n```", "Risks:").as_deref(),
-            Some(" vendor delay")
+            suggestion(r#"{"text": "", "bullets": []}"#, "Ship date", ""),
+            None
         );
+        assert_eq!(suggestion("", "Ship date", ""), None);
+        assert_eq!(suggestion(r#"{"text": "   "}"#, "Ship date", ""), None);
     }
 
     #[test]
-    fn caps_long_suggestions_at_a_word() {
-        let reply = format!("Notes {}", "word ".repeat(100));
-        let rest = continuation(&reply, "Notes").unwrap();
-        assert!(rest.chars().count() <= MAX_SUGGESTION_CHARS);
-        assert!(rest.ends_with("word"));
-    }
-
-    #[test]
-    fn keeps_the_marker_the_user_typed() {
-        assert_eq!(
-            continuation("1. Hire two engineers", "1. Hire").as_deref(),
-            Some(" two engineers")
-        );
+    fn caps_long_text_at_a_word() {
+        let reply = format!(r#"{{"text": " {}"}}"#, "word ".repeat(100));
+        let t = text(&reply, "Notes").unwrap();
+        assert!(t.chars().count() <= MAX_TEXT_CHARS);
+        assert!(t.ends_with("word"));
     }
 
     #[test]
@@ -331,11 +419,11 @@ mod tests {
     fn prompt_marks_the_cursor() {
         let p = prompt(
             "Launch sync",
-            "Ship date",
+            "- Ship date",
             "\nRisks",
             "[00:00] Priya: Friday.",
         );
-        assert!(p.contains("Ship date⟨CURSOR⟩\nRisks"));
+        assert!(p.contains("- Ship date⟨CURSOR⟩\nRisks"));
         assert!(p.contains("Launch sync"));
     }
 }

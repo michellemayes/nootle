@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useBooleanSetting } from "@/hooks/useBooleanSetting";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
-import type { FetchSuggestion } from "@/lib/noteSuggestion";
+import type { FetchSuggestion, Suggestion } from "@/lib/noteSuggestion";
 
 /** Turns inline note suggestions on. On unless turned off. */
 export const NOTE_SUGGESTIONS_SETTING = "note_suggestions";
@@ -19,7 +19,7 @@ export function useNoteSuggestions(meetingId: string | null): FetchSuggestion | 
   return useMemo(() => {
     if (!enabled || !meetingId || !selectedProvider || !selectedModel) return null;
     return (before, after) =>
-      invoke<string | null>("suggest_note_continuation", {
+      invoke<Suggestion | null>("suggest_note_continuation", {
         meetingId,
         before: before.slice(-NOTES_BEFORE_CHARS),
         after: after.slice(0, NOTES_AFTER_CHARS),

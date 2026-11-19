@@ -46,7 +46,7 @@ Nootle records your meetings (microphone and system audio), transcribes them on 
 - **Ask Nootle, in the meeting.** Ask about the meeting you're looking at, or have it make changes: "put those in my notes", tag it, add or close action items, write a summary from a template, name a speaker, pin a comment to a moment. Each reply lists what it changed.
 - **Meeting Coach (opt-in).** A private card after each call on how you showed up (talk share, interruptions, questions, filler words, pace), with trends over time.
 - **Your notes, expanded.** Jot shorthand while recording, and highlight the moments that matter in one click (⌘⇧H). Nootle fills your notes out from the transcript afterwards, and summaries give your highlights extra attention.
-- **Note suggestions.** As you write notes, during the call or after, the model you picked suggests how each line goes on from what was said. Press Tab to take it.
+- **Note suggestions.** As you write notes, during the call or after, the model you picked suggests how each line goes on from what was said, with sub-points nested under it. Press Tab to take it.
 - **Snapshots.** Captures shared slides and screens into your notes, and reads the text on them. They line up in a filmstrip as the meeting records, so you can look back at a slide without waiting for it to end. Summaries cite slides as clickable thumbnails, and a slide recap says what was said while each was up.
 - **Workflows.** Send recaps and action items to Slack, Notion, Linear, GitHub, Asana, Confluence, Obsidian, or email.
 - **Share links.** End-to-end encrypted `nootle.ai` links to a meeting's notes.

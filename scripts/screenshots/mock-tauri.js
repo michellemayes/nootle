@@ -116,9 +116,11 @@
     }
     // Note suggestions keyed by the line being written, after a model-ish pause.
     if (cmd === "suggest_note_continuation") {
-      const line = (args?.before ?? "").split("\n").pop().trim().toLowerCase();
-      const text = (fixtures.note_suggestions || {})[line] ?? null;
-      return new Promise((r) => setTimeout(() => r(text), 350));
+      const line = (args?.before ?? "").split("\n").pop();
+      const words = line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "").trim().toLowerCase();
+      const found = (fixtures.note_suggestions || {})[words];
+      const reply = found ? { text: found.text ?? "", bullets: found.bullets ?? [] } : null;
+      return new Promise((r) => setTimeout(() => r(reply), 900));
     }
     // Only the popped-out Live Assist page (liveassist.html) sees it open.
     if (cmd === "live_assist_window_meeting") {
