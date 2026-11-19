@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.33.1] - 2026-11-19
+
+### Bug Fixes
+
+- Make note suggestions reliable and nest sub-points under the current line (#245) ([ce11618](https://github.com/michellemayes/nootle/commit/ce116182de8ba10f6da4cfe9ba4b32da62931b63))
+
 ## [0.33.0] - 2026-11-18
 
 ### Bug Fixes
