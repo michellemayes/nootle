@@ -1211,11 +1211,20 @@ export const FIXTURES = {
   get_meeting: MEETINGS[0],
   get_transcript: { [MEETINGS[0].id]: TRANSCRIPT },
   note_suggestions: {
-    "permissions screen": " loses 31% of people, the biggest leak in the flow",
-    "inline explainer": " ships this sprint; re-measure after a week of data",
-    "copy": " ready by Thursday, two variants behind the existing flag",
-    "calendar access": " moves out of onboarding and becomes contextual",
-    "": "Re-measure the funnel after a week of data",
+    "permissions screen": {
+      text: " is the biggest leak in the flow",
+      bullets: ["31% drop off at this step", "Support hears people don't get why we need screen recording"],
+    },
+    "inline explainer": { text: " ships this sprint; re-measure after a week of data" },
+    copy: {
+      text: " ready by Thursday",
+      bullets: ["Two variants, split behind the existing flag"],
+    },
+    "calendar access": {
+      text: " moves out of onboarding and becomes contextual",
+      bullets: ["Ask the first time someone opens an empty meetings list"],
+    },
+    "": { text: "Re-measure the funnel after a week of data" },
   },
   get_summaries: SUMMARIES,
   // What a one-click "Turn this meeting into" follow-up produces.

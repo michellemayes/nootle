@@ -3220,7 +3220,7 @@ pub async fn suggest_note_continuation(
     after: String,
     provider: String,
     model: String,
-) -> Result<Option<String>, String> {
+) -> Result<Option<crate::note_suggest::NoteSuggestion>, String> {
     let registry = llm.read().await;
     crate::note_suggest::suggest(
         &db,

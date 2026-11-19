@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Ref } from "react";
-import { consumeGhost, SUGGEST_DEBOUNCE_MS, type FetchSuggestion } from "@/lib/noteSuggestion";
+import {
+  consumeGhost,
+  ghostText,
+  lineShape,
+  nextMarker,
+  SuggestionRunner,
+  type FetchSuggestion,
+} from "@/lib/noteSuggestion";
 import { cn } from "@/lib/utils";
 import { Kbd } from "@/components/Kbd";
 
@@ -26,7 +33,8 @@ function typedOver(ghost: Ghost, prev: string, next: string): Ghost | null {
 }
 
 /** A textarea that shows an AI suggestion as ghost text after the caret:
- * Tab accepts it, Escape dismisses it, and typing what it says keeps the rest. */
+ * Tab accepts it, Escape dismisses it, and typing what it says keeps the rest.
+ * Enter on a list line starts the next item, or ends the list on an empty one. */
 export function GhostTextarea({
   value,
   onValueChange,
@@ -43,13 +51,42 @@ export function GhostTextarea({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [ghost, setGhostState] = useState<Ghost | null>(null);
+  const [pending, setPending] = useState<{ at: number; value: string } | null>(null);
   const ghostRef = useRef<Ghost | null>(null);
   const setGhost = (next: Ghost | null) => {
     ghostRef.current = next;
     setGhostState(next);
   };
+  const suggestRef = useRef(suggest);
+  suggestRef.current = suggest;
   const pendingCaret = useRef<number | null>(null);
-  const request = useRef(0);
+
+  const [runner] = useState(
+    () =>
+      new SuggestionRunner({
+        fetch: () => suggestRef.current,
+        read: () => {
+          const el = textareaRef.current;
+          const at = el && document.activeElement === el ? lineEndCaret(el) : null;
+          return el && at !== null ? { before: el.value.slice(0, at), after: el.value.slice(at) } : null;
+        },
+        show: (suggestion, before, typed) => {
+          const el = textareaRef.current;
+          if (!el || ghostRef.current) return false;
+          const full = ghostText(before, suggestion);
+          const text = typed ? consumeGhost(full, typed) : full;
+          if (!text) return false;
+          setGhost({ text, at: before.length + typed.length });
+          return true;
+        },
+        pending: (on) => {
+          const el = textareaRef.current;
+          const at = on && el ? lineEndCaret(el) : null;
+          setPending(el && at !== null ? { at, value: el.value } : null);
+        },
+      }),
+  );
+  useEffect(() => () => runner.cancel(), [runner]);
 
   const setRefs = useCallback(
     (el: HTMLTextAreaElement | null) => {
@@ -59,26 +96,6 @@ export function GhostTextarea({
     },
     [ref],
   );
-
-  // Ask once typing pauses, unless a suggestion is still showing.
-  useEffect(() => {
-    const id = ++request.current;
-    if (!suggest || ghostRef.current) return;
-    const timer = setTimeout(() => {
-      const el = textareaRef.current;
-      if (!el || document.activeElement !== el || !value.trim()) return;
-      const at = lineEndCaret(el);
-      if (at === null) return;
-      suggest(value.slice(0, at), value.slice(at))
-        .then((text) => {
-          if (id !== request.current || !text) return;
-          if (el.value !== value || lineEndCaret(el) !== at) return;
-          setGhost({ text, at });
-        })
-        .catch(() => {});
-    }, SUGGEST_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [value, suggest]);
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -90,9 +107,11 @@ export function GhostTextarea({
   });
 
   const dismiss = () => {
-    request.current++;
+    runner.cancel();
     setGhost(null);
   };
+
+  const overlayAt = ghost?.at ?? (pending?.value === value ? pending.at : null);
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
@@ -102,8 +121,10 @@ export function GhostTextarea({
         value={value}
         onChange={(e) => {
           const next = e.target.value;
-          setGhost(ghost && typedOver(ghost, value, next));
+          const kept = ghost && typedOver(ghost, value, next);
+          setGhost(kept);
           onValueChange(next);
+          if (!kept) runner.schedule();
         }}
         onKeyDown={(e) => {
           if (ghost && e.key === "Tab" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -111,7 +132,26 @@ export function GhostTextarea({
             pendingCaret.current = ghost.at + ghost.text.length;
             setGhost(null);
             onValueChange(value.slice(0, ghost.at) + ghost.text + value.slice(ghost.at));
+            runner.schedule();
             return;
+          }
+          if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && !e.nativeEvent.isComposing) {
+            const at = lineEndCaret(e.currentTarget);
+            if (at !== null) {
+              const start = value.lastIndexOf("\n", at - 1) + 1;
+              const line = lineShape(value.slice(start, at));
+              if (line.marker) {
+                e.preventDefault();
+                setGhost(null);
+                const next = line.content.trim()
+                  ? value.slice(0, at) + "\n" + line.indent + nextMarker(line.marker) + value.slice(at)
+                  : value.slice(0, start) + value.slice(at);
+                pendingCaret.current = next.length - (value.length - at);
+                onValueChange(next);
+                runner.schedule();
+                return;
+              }
+            }
           }
           if (ghost && e.key === "Escape") {
             e.preventDefault();
@@ -135,7 +175,7 @@ export function GhostTextarea({
         }}
         className={cn("[scrollbar-gutter:stable]", className)}
       />
-      {ghost && (
+      {overlayAt !== null && overlayAt <= value.length && (
         <div
           ref={overlayRef}
           aria-hidden="true"
@@ -144,11 +184,15 @@ export function GhostTextarea({
             "pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-transparent [scrollbar-gutter:stable]",
           )}
         >
-          {value.slice(0, ghost.at)}
-          <span className="note-ghost">
-            {ghost.text}
-            <Kbd className="note-ghost-key">Tab</Kbd>
-          </span>
+          {value.slice(0, overlayAt)}
+          {ghost ? (
+            <span className="note-ghost">
+              {ghost.text}
+              <Kbd className="note-ghost-key">Tab</Kbd>
+            </span>
+          ) : (
+            <span className="note-ghost-pending" />
+          )}
         </div>
       )}
     </div>

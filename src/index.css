@@ -205,8 +205,34 @@ body.popup {
   margin-left: 0.4rem;
   vertical-align: 0.1em;
 }
+.note-ghost-bullet {
+  position: relative;
+  display: block;
+  margin-left: 1.25rem;
+  padding-left: 1rem;
+}
+.note-ghost-bullet::before {
+  content: "•";
+  position: absolute;
+  left: 0.15rem;
+}
+.note-ghost-pending {
+  display: inline-block;
+  width: 0.35rem;
+  height: 0.35rem;
+  margin-left: 0.3rem;
+  border-radius: 9999px;
+  background: var(--muted-foreground);
+  vertical-align: 0.15em;
+  opacity: 0;
+  animation: note-ghost-pulse 1.2s ease-in-out 200ms infinite;
+}
 @keyframes note-ghost-in {
   from { opacity: 0; }
+}
+@keyframes note-ghost-pulse {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.6; }
 }
 .tiptap .ProseMirror-selectednode {
   outline: 2px solid var(--primary);
