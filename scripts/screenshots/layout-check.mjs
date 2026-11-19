@@ -52,6 +52,15 @@ const VIEWPORTS = [
 const PAGES = [
   { route: "/", ready: "text=Design Review — Onboarding Flow" },
   {
+    name: "library-digest-yesterday",
+    route: "/",
+    ready: "role=tab[name='Yesterday']",
+    async prepare(page) {
+      await page.getByRole("tab", { name: "Yesterday" }).click();
+      await page.getByText("Split the transcription worker refactor into two tickets").waitFor();
+    },
+  },
+  {
     route: "/meeting/m1",
     ready: "role=tab[name='Summaries']",
     async prepare(page) {

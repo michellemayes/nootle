@@ -6,6 +6,7 @@ import { statusLabel, statusVariant, labelTextColor, isTypingTarget } from "@/li
 import { formatMinutes, groupByDay, relativeWhen } from "@/lib/momentum";
 import { MomentumStrip } from "@/components/MomentumStrip";
 import { UpcomingMeetings } from "@/components/UpcomingMeetings";
+import { DailyDigest } from "@/components/DailyDigest";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Kbd } from "@/components/Kbd";
@@ -283,6 +284,9 @@ export function MeetingLibrary() {
       {!hasFilters && !showArchived && <UpcomingMeetings />}
       {!loading && !hasFilters && !showArchived && (
         <MomentumStrip meetings={meetings} />
+      )}
+      {!loading && !hasFilters && !showArchived && meetings.length > 0 && (
+        <DailyDigest meetings={meetings} />
       )}
 
       {/* Search and filters */}

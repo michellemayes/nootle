@@ -16,6 +16,7 @@ pub mod db;
 pub mod detection;
 pub mod diarization;
 pub mod dictionary;
+pub mod digest;
 pub mod embedding;
 pub mod endpoints;
 pub mod error;
@@ -586,6 +587,8 @@ pub fn run() {
             commands::get_meeting_analytics,
             commands::get_meeting_coach,
             commands::get_coach_trends,
+            commands::get_daily_digest,
+            commands::synthesize_daily_digest,
             commands::suggest_coach_tip,
             commands::suggest_note_continuation,
             commands::create_integration,

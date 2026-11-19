@@ -7,8 +7,8 @@
 use std::collections::HashSet;
 
 use crate::calendar::CalendarEvent;
-use crate::db::{Database, KnowledgeHit, Person};
-use crate::llm::{ChatMessage, LlmRegistry};
+use crate::db::{Database, InsightWithActionItem, KnowledgeHit, Person};
+use crate::llm::LlmRegistry;
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
@@ -171,20 +171,7 @@ pub fn assemble(
 
     let last_meeting = match series.first() {
         Some(last) => {
-            let decisions: Vec<String> = db
-                .get_insights_for_meeting(&last.id)?
-                .into_iter()
-                .filter(|i| i.insight_type == "decision")
-                .map(|i| i.content)
-                .collect();
-            let summary = if decisions.is_empty() {
-                db.get_summaries_for_meeting(&last.id)?
-                    .first()
-                    .map(|s| summary_excerpt(&s.content))
-                    .filter(|s| !s.is_empty())
-            } else {
-                None
-            };
+            let (decisions, summary) = decisions_or_excerpt(db, &last.id, usize::MAX)?;
             Some(LastMeeting {
                 id: last.id.clone(),
                 title: last.title.clone(),
@@ -246,15 +233,46 @@ fn open_items(
                     .is_some_and(|a| owners.contains(&a.to_lowercase()))
         })
         .take(MAX_OPEN_ITEMS)
-        .map(|i| BriefItem {
+        .map(BriefItem::from)
+        .collect())
+}
+
+impl From<InsightWithActionItem> for BriefItem {
+    fn from(i: InsightWithActionItem) -> Self {
+        BriefItem {
             id: i.action_item_id.unwrap_or(i.id),
             content: i.content,
             assignee: i.assignee,
             due_date: i.due_date,
             meeting_id: i.meeting_id,
             meeting_title: i.meeting_title,
-        })
-        .collect())
+        }
+    }
+}
+
+/// Up to `limit` of a meeting's decisions or, when it has none, the start
+/// of its latest summary.
+pub(crate) fn decisions_or_excerpt(
+    db: &Database,
+    meeting_id: &str,
+    limit: usize,
+) -> Result<(Vec<String>, Option<String>)> {
+    let decisions: Vec<String> = db
+        .get_insights_for_meeting(meeting_id)?
+        .into_iter()
+        .filter(|i| i.insight_type == "decision")
+        .take(limit)
+        .map(|i| i.content)
+        .collect();
+    let summary = if decisions.is_empty() {
+        db.get_summaries_for_meeting(meeting_id)?
+            .first()
+            .map(|s| summary_excerpt(&s.content))
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+    Ok((decisions, summary))
 }
 
 /// The first prose of a Markdown summary, without headings or bullets.
@@ -372,26 +390,16 @@ pub async fn synthesize(
     llm: &LlmRegistry,
     brief: &MeetingBrief,
 ) -> Result<Option<String>> {
-    crate::llm::sync_local_only(db);
-    let Some(model) = crate::ops::pick_auto_model(db, llm) else {
-        return Ok(None);
-    };
-    let messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: "You prepare someone for a meeting that starts in a few minutes. From the \
-                      brief below, say in two or three short sentences what they should make \
-                      sure to cover: open items to follow up on, decisions to build on, and \
-                      anything the agenda needs. Be specific; no preamble, no bullets."
-                .into(),
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: prompt_context(brief),
-        },
-    ];
-    let reply = crate::ops::chat(llm, &model.provider, &model.id, messages).await?;
-    Ok(Some(reply.trim().to_string()).filter(|r| !r.is_empty()))
+    crate::ops::auto_reply(
+        db,
+        llm,
+        "You prepare someone for a meeting that starts in a few minutes. From the brief below, \
+         say in two or three short sentences what they should make sure to cover: open items to \
+         follow up on, decisions to build on, and anything the agenda needs. Be specific; no \
+         preamble, no bullets.",
+        prompt_context(brief),
+    )
+    .await
 }
 
 #[cfg(test)]

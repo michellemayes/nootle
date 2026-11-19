@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Circle, FileText, History, ListTodo, Sparkles, Users, Video } from "lucide-react";
+import { Circle, FileText, History, ListTodo, Users, Video } from "lucide-react";
+import { AiNote, BriefSection } from "@/components/BriefParts";
 import { Button } from "@/components/ui/button";
 import { relativeWhen } from "@/lib/momentum";
 import { formatClockTime } from "@/lib/utils";
@@ -15,47 +15,6 @@ function startsIn(iso: string, now: number): string {
   if (minutes === 0) return "Starting now";
   if (minutes <= 60) return `Starts in ${minutes} min`;
   return `Today at ${formatClockTime(iso)}`;
-}
-
-function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
-  return (
-    <section className="space-y-1.5">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {icon}
-        {title}
-      </h3>
-      {children}
-    </section>
-  );
-}
-
-/** The AI's few sentences on what to cover; nothing at all without a model. */
-function WhatToCover({ brief }: { brief: MeetingBrief }) {
-  const [text, setText] = useState<string | null | undefined>(undefined);
-  useEffect(() => {
-    let current = true;
-    setText(undefined);
-    invoke<string | null>("synthesize_meeting_brief", { brief })
-      .then((t) => current && setText(t))
-      .catch(() => current && setText(null));
-    return () => {
-      current = false;
-    };
-  }, [brief]);
-  if (text === null) return null;
-  return (
-    <div className="rounded-lg bg-primary/5 px-3 py-2.5 text-sm">
-      <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-primary">
-        <Sparkles className="h-3.5 w-3.5" />
-        What to cover
-      </p>
-      {text === undefined ? (
-        <p className="animate-pulse text-muted-foreground">Thinking it over…</p>
-      ) : (
-        <p className="leading-relaxed">{text}</p>
-      )}
-    </div>
-  );
 }
 
 interface MeetingBriefViewProps {
@@ -90,10 +49,10 @@ export function MeetingBriefView({ brief, onRecord, onOpenMeeting, recording }: 
       </div>
 
       <div className="-mx-1 min-h-0 flex-1 space-y-4 overflow-y-auto px-1">
-        <WhatToCover brief={brief} />
+        <AiNote command="synthesize_meeting_brief" args={{ brief }} title="What to cover" pending="Thinking it over…" />
 
         {attendees.length > 0 && (
-          <Section icon={<Users className="h-3.5 w-3.5" />} title="Who's coming">
+          <BriefSection icon={<Users className="h-3.5 w-3.5" />} title="Who's coming">
             <ul className="space-y-1">
               {attendees.map((a) => (
                 <li key={a.name} className="flex items-baseline justify-between gap-3 text-sm">
@@ -106,11 +65,11 @@ export function MeetingBriefView({ brief, onRecord, onOpenMeeting, recording }: 
                 </li>
               ))}
             </ul>
-          </Section>
+          </BriefSection>
         )}
 
         {open_items.length > 0 && (
-          <Section icon={<ListTodo className="h-3.5 w-3.5" />} title={`Open action items (${open_items.length})`}>
+          <BriefSection icon={<ListTodo className="h-3.5 w-3.5" />} title={`Open action items (${open_items.length})`}>
             <ul className="space-y-1 pl-4">
               {open_items.map((item) => (
                 <li key={item.id} className="list-disc text-sm">
@@ -124,11 +83,11 @@ export function MeetingBriefView({ brief, onRecord, onOpenMeeting, recording }: 
                 </li>
               ))}
             </ul>
-          </Section>
+          </BriefSection>
         )}
 
         {last_meeting && (
-          <Section icon={<History className="h-3.5 w-3.5" />} title="Last time">
+          <BriefSection icon={<History className="h-3.5 w-3.5" />} title="Last time">
             <button
               type="button"
               onClick={() => onOpenMeeting(last_meeting.id)}
@@ -148,11 +107,11 @@ export function MeetingBriefView({ brief, onRecord, onOpenMeeting, recording }: 
             ) : (
               last_meeting.summary && <p className="text-sm text-foreground/80">{last_meeting.summary}</p>
             )}
-          </Section>
+          </BriefSection>
         )}
 
         {documents.length > 0 && (
-          <Section icon={<FileText className="h-3.5 w-3.5" />} title="Related documents">
+          <BriefSection icon={<FileText className="h-3.5 w-3.5" />} title="Related documents">
             <ul className="space-y-1.5">
               {documents.map((doc) => (
                 <li key={doc.document_id}>
@@ -170,7 +129,7 @@ export function MeetingBriefView({ brief, onRecord, onOpenMeeting, recording }: 
                 </li>
               ))}
             </ul>
-          </Section>
+          </BriefSection>
         )}
 
         {empty && (

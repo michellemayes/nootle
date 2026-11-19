@@ -3197,6 +3197,33 @@ pub fn get_coach_trends(
     crate::coach::trends(&db, limit.unwrap_or(10)).map_err(|e| e.to_string())
 }
 
+fn digest_date(date: &str) -> Result<chrono::NaiveDate, String> {
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|e| e.to_string())
+}
+
+/// The digest of `date` (`YYYY-MM-DD`), a day in local time.
+#[tauri::command(async)]
+pub fn get_daily_digest(
+    db: State<'_, DbState>,
+    date: String,
+) -> Result<crate::digest::DailyDigest, String> {
+    crate::digest::build(&db, digest_date(&date)?).map_err(|e| e.to_string())
+}
+
+/// A few sentences on `date`; `None` without meetings or an AI model.
+#[tauri::command]
+pub async fn synthesize_daily_digest(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    date: String,
+) -> Result<Option<String>, String> {
+    let date = digest_date(&date)?;
+    let registry = llm.read().await;
+    crate::digest::synthesize(&db, &registry, date)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn suggest_coach_tip(
     db: State<'_, DbState>,
