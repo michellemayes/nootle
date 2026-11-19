@@ -6,13 +6,13 @@ const weekdayFmt = new Intl.DateTimeFormat("en-US", { weekday: "short" });
 const timeFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
 const monthDayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
-function startOfDay(d: Date): Date {
+export function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 /** Local midnight `n` calendar days from `d`. Days aren't always 24h long
  * (DST), so stepping by a fixed millisecond count can skip or repeat one. */
-function addDays(d: Date, n: number): Date {
+export function addDays(d: Date, n: number): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 }
 

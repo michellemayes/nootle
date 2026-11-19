@@ -888,6 +888,33 @@ pub(crate) async fn chat(
         .await
 }
 
+/// A short system-and-user exchange with the model automatic work uses,
+/// trimmed. `None` without a model (in Local-only mode, a local one) or when
+/// the reply is empty.
+pub(crate) async fn auto_reply(
+    db: &Database,
+    llm: &LlmRegistry,
+    system: &str,
+    user: String,
+) -> Result<Option<String>> {
+    crate::llm::sync_local_only(db);
+    let Some(model) = pick_auto_model(db, llm) else {
+        return Ok(None);
+    };
+    let messages = vec![
+        ChatMessage {
+            role: "system".into(),
+            content: system.into(),
+        },
+        ChatMessage {
+            role: "user".into(),
+            content: user,
+        },
+    ];
+    let reply = chat(llm, &model.provider, &model.id, messages).await?;
+    Ok(Some(reply.trim().to_string()).filter(|r| !r.is_empty()))
+}
+
 /// The last `minutes` of a meeting's transcript, for catching up.
 pub fn recent_transcript(segments: &[TranscriptSegment], minutes: i64) -> Vec<TranscriptSegment> {
     let Some(latest) = segments.iter().map(|s| s.end_ms).max() else {

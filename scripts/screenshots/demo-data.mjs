@@ -817,6 +817,16 @@ function latestRelease() {
 }
 
 /** 12:30pm PDT on the day of the most recent demo meeting. */
+/** Overdue in the daily digest, whichever day it shows. */
+const NORTHWIND_QUESTIONNAIRE = {
+  id: "a5",
+  content: "Send Northwind the security questionnaire and SOC 2 summary",
+  assignee: "Alex",
+  due_date: "2026-07-27",
+  meeting_id: "m4",
+  meeting_title: "Customer Discovery — Northwind",
+};
+
 export const DEMO_NOW = new Date("2026-07-28T19:30:00Z");
 
 /** Length of the demo meeting, in seconds — see silentWav(). */
@@ -1373,6 +1383,67 @@ export const FIXTURES = {
   synthesize_meeting_brief:
     "Start with the onboarding drop-off: check whether Priya's two copy variants are ready to test. " +
     "Then confirm the calendar-permission move from last week and ask Alex for the pricing results before the launch checklist.",
+  get_daily_digest: {
+    today: {
+      meetings: [
+        {
+          id: "m1",
+          title: "Design Review — Onboarding Flow",
+          start_time: day(28, 17, 0),
+          minutes: 38,
+          decisions: [
+            "Ship an inline explainer for the screen-recording permission this sprint",
+            "Move calendar access out of onboarding and make it contextual",
+          ],
+          summary: null,
+        },
+      ],
+      new_items: [
+        { id: "a1", content: "Draft two copy variants for the permissions explainer", assignee: "Priya", due_date: "2026-07-30", meeting_id: "m1", meeting_title: "Design Review — Onboarding Flow" },
+        { id: "a2", content: "Wire the variant split behind the existing feature flag", assignee: "Jordan", due_date: "2026-07-31", meeting_id: "m1", meeting_title: "Design Review — Onboarding Flow" },
+        { id: "a3", content: "Re-measure step-three drop-off after a week of data", assignee: "Alex", due_date: null, meeting_id: "m1", meeting_title: "Design Review — Onboarding Flow" },
+      ],
+      due_items: [
+        NORTHWIND_QUESTIONNAIRE,
+      ],
+    },
+    yesterday: {
+      meetings: [
+        {
+          id: "m2",
+          title: "Sprint Planning",
+          start_time: day(27, 16, 30),
+          minutes: 47,
+          decisions: ["Pull the transcription worker refactor into this sprint"],
+          summary: null,
+        },
+        {
+          id: "m3",
+          title: "1:1 — Alex Chen",
+          start_time: day(27, 20, 0),
+          minutes: 28,
+          decisions: [],
+          summary: "Alex wants to own the pricing experiment end to end and asked for a second reviewer on the launch checklist.",
+        },
+      ],
+      new_items: [
+        { id: "a4", content: "Split the transcription worker refactor into two tickets", assignee: "Jordan", due_date: "2026-07-29", meeting_id: "m2", meeting_title: "Sprint Planning" },
+      ],
+      due_items: [
+        NORTHWIND_QUESTIONNAIRE,
+      ],
+    },
+  },
+  synthesize_daily_digest: {
+    yesterday:
+      "Sprint planning pulled the transcription worker refactor into this sprint, and Jordan is splitting it into two tickets by tomorrow. " +
+      "In your 1:1, Alex asked to own the pricing experiment end to end and wants a second reviewer on the launch checklist. " +
+      "The Northwind security questionnaire was due yesterday and is still open.",
+    today:
+      "The design review settled the two biggest onboarding fixes: an inline explainer for screen recording ships this sprint, and calendar access moves out of onboarding. " +
+      "Priya owes two copy variants by Thursday and Jordan is wiring the split behind the feature flag. " +
+      "Chase Alex on the Northwind security questionnaire, which was due yesterday.",
+  },
   import_extensions: ["mp3", "m4a", "wav", "mp4", "mov"],
 
   is_recording: false,

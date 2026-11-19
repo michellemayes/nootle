@@ -73,6 +73,12 @@
       const q = args.search.toLowerCase();
       return (fixtures.list_meetings || []).filter((m) => m.title.toLowerCase().includes(q));
     }
+    // Today's or yesterday's digest and recap, by the date the page asks for.
+    if (cmd === "get_daily_digest" || cmd === "synthesize_daily_digest") {
+      const d = new Date();
+      const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      return fixtures[cmd]?.[args.date === today ? "today" : "yesterday"] ?? null;
+    }
     // Honour the Insights filters so counts (e.g. open action items) are real.
     if (cmd === "get_all_insights") {
       return (fixtures.get_all_insights || []).filter(
