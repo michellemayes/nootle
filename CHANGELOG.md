@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.33.2] - 2026-11-19
+
+### CI
+
+- Move the remaining Node 20 actions to their Node 24 releases (#246) ([835a463](https://github.com/michellemayes/nootle/commit/835a4635b48d47f84c13f57cc576b3db0416ac95))
+
 ## [0.33.1] - 2026-11-19
 
 ### Bug Fixes
