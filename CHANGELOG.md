@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.34.0] - 2026-11-19
+
+### Features
+
+- Add a daily digest of today's or yesterday's meetings (#247) ([94ccf62](https://github.com/michellemayes/nootle/commit/94ccf62a7318c488a138e509a24d7dbcd7563ab6))
+
 ## [0.33.2] - 2026-11-19
 
 ### CI
