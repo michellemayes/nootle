@@ -33,7 +33,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
-      - uses: swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: "./src-tauri -> target"
 
@@ -82,7 +82,7 @@ jobs:
       # Restore before the version is written into Cargo.toml: the cache key
       # hashes it, so a per-release version would miss the cache every time
       # and re-upload ~1.4 GB on every publish.
-      - uses: swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: "./src-tauri -> target"
 
