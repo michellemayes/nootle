@@ -176,6 +176,13 @@ enum Commands {
         #[arg(long)]
         event: Option<String>,
     },
+    /// A day of meetings: decisions, the action items they produced, and
+    /// what's due or overdue
+    Digest {
+        /// The day as YYYY-MM-DD, in local time; defaults to today
+        #[arg(long)]
+        date: Option<String>,
+    },
 }
 
 /// Provider and model for commands that call an LLM.
@@ -1677,6 +1684,10 @@ fn run_command(db: &Database, command: &Commands, pretty: bool) -> CliResult {
                 ops::try_load_embedding_engine()?.embed(query).ok()
             })?;
             print_json(&brief, pretty);
+        }
+        Commands::Digest { date } => {
+            let date = nootle_app_lib::digest::parse_date(date.as_deref())?;
+            print_json(&nootle_app_lib::digest::build(db, date)?, pretty);
         }
     }
     Ok(())

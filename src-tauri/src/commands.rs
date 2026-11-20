@@ -3198,7 +3198,7 @@ pub fn get_coach_trends(
 }
 
 fn digest_date(date: &str) -> Result<chrono::NaiveDate, String> {
-    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|e| e.to_string())
+    crate::digest::parse_date(Some(date)).map_err(|e| e.to_string())
 }
 
 /// The digest of `date` (`YYYY-MM-DD`), a day in local time.

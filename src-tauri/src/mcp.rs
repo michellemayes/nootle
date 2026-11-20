@@ -520,6 +520,13 @@ pub struct MeetingBriefParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct DailyDigestParams {
+    /// The day as YYYY-MM-DD, in the user's local time. Omit for today.
+    #[serde(default)]
+    pub date: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct EmbedMeetingsParams {
     /// Meeting to index. Omit to index every meeting not yet indexed.
     #[serde(default)]
@@ -1782,6 +1789,25 @@ impl NootleMcpServer {
                             .ok()
                     },
                 )?)
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        title = "Get daily digest",
+        description = "One day of meetings in the user's local time: each meeting (oldest first) with its decisions or, without any, the start of its summary; the open action items those meetings produced; and other open action items due by the end of that day, overdue included.",
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn get_daily_digest(
+        &self,
+        Parameters(p): Parameters<DailyDigestParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let db = self.db.clone();
+        respond(
+            blocking(move || {
+                let date = crate::digest::parse_date(p.date.as_deref())?;
+                Ok(crate::digest::build(&db, date)?)
             })
             .await,
         )
