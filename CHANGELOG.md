@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.35.0] - 2026-11-20
+
+### Features
+
+- Give agents the daily digest via the CLI and MCP server (#248) ([79a9716](https://github.com/michellemayes/nootle/commit/79a971695505e3e306b803652d250e372c4c0d21))
+
 ## [0.34.0] - 2026-11-19
 
 ### Features
