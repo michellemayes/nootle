@@ -57,6 +57,15 @@ fn top(items: Vec<InsightWithActionItem>) -> Vec<BriefItem> {
         .collect()
 }
 
+/// `YYYY-MM-DD` as a date, or today in local time when `date` is `None`.
+pub fn parse_date(date: Option<&str>) -> Result<NaiveDate> {
+    match date {
+        Some(d) => NaiveDate::parse_from_str(d, "%Y-%m-%d")
+            .map_err(|e| anyhow!("Expected a date like 2026-11-20: {e}")),
+        None => Ok(Local::now().date_naive()),
+    }
+}
+
 /// The digest of the meetings started on `date`, a day in local time.
 pub fn build(db: &Database, date: NaiveDate) -> Result<DailyDigest> {
     let (since, until) = local_day(date)?;
@@ -273,6 +282,16 @@ mod tests {
                 && digest.new_items.is_empty()
                 && digest.due_items.is_empty()
         );
+    }
+
+    #[test]
+    fn parses_dates_and_defaults_to_today() {
+        assert_eq!(
+            parse_date(Some("2026-11-20")).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 11, 20).unwrap()
+        );
+        assert_eq!(parse_date(None).unwrap(), today());
+        assert!(parse_date(Some("yesterday")).is_err());
     }
 
     #[test]
