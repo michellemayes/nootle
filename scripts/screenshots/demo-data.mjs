@@ -84,6 +84,9 @@ const TRANSCRIPT = [
   line("t12", "Speaker 1", "Then that's decided — calendar access moves out of onboarding and becomes contextual.", 118_000, 126_000),
 ];
 
+/** The design review's own Live Assist playbook; the live transcript covers the first three. */
+const PLAYBOOK = ["Funnel numbers", "Permissions drop-off", "Calendar permission", "Owner for each change", "Next review date"];
+
 /** Ask the Room: the spoken recap of m1, with when each line is spoken. */
 const recapLine = (speaker, voice, text, startMs, endMs) => ({
   speaker,
@@ -1369,7 +1372,11 @@ export const FIXTURES = {
     old_log_bytes: 0,
   },
   get_available_models: [],
-  get_app_setting: {},
+  get_app_setting: {
+    live_assist_playbook: "custom",
+    live_assist_playbook_custom: PLAYBOOK.join("\n"),
+  },
+  playbook_covered: PLAYBOOK.slice(0, 3),
   check_permissions: { microphone: "granted", screen_recording: true, calendar: "granted" },
 
   get_linear_tickets: [],

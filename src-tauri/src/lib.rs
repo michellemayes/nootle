@@ -41,6 +41,7 @@ pub mod note_suggest;
 pub mod ops;
 pub mod permissions;
 pub mod pipeline;
+pub mod playbook;
 pub mod relaunch;
 pub mod remote;
 pub mod room_recap;
@@ -578,6 +579,7 @@ pub fn run() {
             commands::open_knowledge_document,
             commands::live_assist,
             commands::live_commitment_reminders,
+            commands::playbook_coverage,
             commands::list_commitments,
             commands::update_commitment,
             commands::get_meeting_followups,

@@ -120,6 +120,11 @@
         (card) => !(args?.reminded || []).includes(card.commitment_id),
       );
     }
+    // Playbook topics the demo transcript covers, as indexes into the asked items.
+    if (cmd === "playbook_coverage") {
+      const covered = fixtures.playbook_covered || [];
+      return (args?.items || []).flatMap((item, i) => (covered.includes(item) ? [i] : []));
+    }
     // Note suggestions keyed by the line being written, after a model-ish pause.
     if (cmd === "suggest_note_continuation") {
       const line = (args?.before ?? "").split("\n").pop();

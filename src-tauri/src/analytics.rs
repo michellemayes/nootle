@@ -318,7 +318,7 @@ fn parse_sentiment_batch(response: &str) -> Option<Vec<(usize, String, f64)>> {
 }
 
 /// Extract the outermost JSON array from a string (ignores markdown fences/prose).
-fn extract_json_array(s: &str) -> &str {
+pub(crate) fn extract_json_array(s: &str) -> &str {
     let trimmed = s.trim();
     match (trimmed.find('['), trimmed.rfind(']')) {
         (Some(start), Some(end)) if start < end => &trimmed[start..=end],

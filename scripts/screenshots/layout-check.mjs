@@ -147,6 +147,18 @@ const PAGES = [
       }
     },
   },
+  {
+    name: "recording-live-assist-playbook",
+    route: "/recording",
+    ready: "text=Live transcript",
+    async prepare(page) {
+      await emitLiveTranscript(page);
+      const tab = page.getByRole("radio", { name: /Playbook/ });
+      if (!(await tab.isVisible())) return;
+      await tab.click();
+      await page.getByText("3 of 5 covered").waitFor();
+    },
+  },
   { name: "live-assist-window", route: "/liveassist.html", ready: "text=Live Assist" },
   { route: "/templates", ready: "text=Standard Summary" },
   { route: "/settings", ready: "h1" },
