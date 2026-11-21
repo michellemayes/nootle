@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.36.0] - 2026-11-21
+
+### Features
+
+- Live playbook checklist in Live Assist (#249) ([658cd8c](https://github.com/michellemayes/nootle/commit/658cd8c1ed93dbe694d6fabbf418070b5bfcff59))
+
 ## [0.35.0] - 2026-11-20
 
 ### Features
