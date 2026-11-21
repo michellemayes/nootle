@@ -92,7 +92,7 @@ const STOP_WORDS: &[&str] = &[
 ];
 
 /// The words that carry a sentence's topic, roughly singular.
-fn topic_words(text: &str) -> HashSet<String> {
+pub(crate) fn topic_words(text: &str) -> HashSet<String> {
     text.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| w.chars().count() >= 4 && !STOP_WORDS.contains(w))

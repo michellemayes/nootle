@@ -8,17 +8,20 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from "@/components/Markdown";
 import { SourceCitation } from "@/components/SourceCitation";
 import { ResizeHandle } from "@/components/ResizeHandle";
+import { PlaybookPanel, ProgressRing, usePlaybook } from "@/components/Playbook";
 import { useBooleanSetting, useSetting } from "@/hooks/useBooleanSetting";
+import { useRecordingStore } from "@/hooks/useRecordingStore";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { cn } from "@/lib/utils";
 import type { LiveAssistCard, TranscriptSegment } from "@/types";
 
-type Filter = "all" | "answers" | "reminders";
+type Filter = "all" | "answers" | "reminders" | "playbook";
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "answers", label: "Q&A" },
   { value: "reminders", label: "Reminders" },
+  { value: "playbook", label: "Playbook" },
 ];
 
 const shows = (filter: string, card: LiveAssistCard) =>
@@ -29,22 +32,6 @@ const MIN_WIDTH = 260;
 const MAX_WIDTH = 720;
 /** Room the notes keep beside the panel however wide it's dragged. */
 const NOTES_MIN_WIDTH = 280;
-
-// Cards are kept per recording, so they survive the panel moving between
-// the recording view and its own window.
-const STORE_PREFIX = "live-assist-cards:";
-
-function loadCards(meetingId: string): LiveAssistCard[] {
-  try {
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(STORE_PREFIX) && key !== STORE_PREFIX + meetingId) localStorage.removeItem(key);
-    }
-    return JSON.parse(localStorage.getItem(STORE_PREFIX + meetingId) ?? "[]");
-  } catch {
-    return [];
-  }
-}
 
 /** Answers questions during a recording from the knowledge base and past
  * meetings: automatically for questions heard in the meeting (when turned
@@ -70,7 +57,7 @@ export function LiveAssist({
   const [width, setWidth] = useState<number | null>(null);
   const [room, setRoom] = useState(MAX_WIDTH);
   const asideRef = useRef<HTMLElement>(null);
-  const [cards, setCards] = useState<LiveAssistCard[]>(() => loadCards(meetingId));
+  const [cards, setCards] = useRecordingStore<LiveAssistCard[]>("live-assist-cards:", meetingId, []);
   const [busy, setBusy] = useState(false);
   const [question, setQuestion] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +78,7 @@ export function LiveAssist({
   const llm = { provider: selectedProvider || null, model: selectedModel || null };
   const llmRef = useRef(llm);
   llmRef.current = llm;
+  const playbook = usePlaybook(meetingId, segments, llmRef);
 
   const addCard = (card: LiveAssistCard) => {
     if (card.commitment_id) remindedRef.current.push(card.commitment_id);
@@ -167,14 +155,6 @@ export function LiveAssist({
       drain();
     }
   }, [segments, auto]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORE_PREFIX + meetingId, JSON.stringify(cards));
-    } catch {
-      // Without storage, cards just don't follow the panel to a new window.
-    }
-  }, [meetingId, cards]);
 
   const dismiss = (id: string) => setCards((list) => list.filter((c) => c.id !== id));
 
@@ -273,50 +253,44 @@ export function LiveAssist({
             )}
           >
             <span className="truncate">{f.label}</span>
-            {count(f.value) > 0 && <span className="tabular-nums text-muted-foreground">{count(f.value)}</span>}
+            {f.value === "playbook"
+              ? playbook.items.length > 0 && (
+                  <ProgressRing done={playbook.covered.length} total={playbook.items.length} />
+                )
+              : count(f.value) > 0 && <span className="tabular-nums text-muted-foreground">{count(f.value)}</span>}
           </button>
         ))}
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-3 p-4" role="log" aria-live="polite">
-          {cards.length > 0 && shown.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              {filter === "reminders" ? "No reminders yet." : "No answers yet."}
-            </p>
-          )}
-          {cards.length === 0 && (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {auto
-                ? "Listening for questions. When someone asks something your documents or past meetings can answer, the answer shows up here with its sources. Open commitments from earlier meetings are brought up when their owner speaks or their topic comes up."
-                : "Ask your documents and past meetings anything below. Turn on Auto to have questions heard in the meeting answered as they come up."}
-              {!selectedProvider &&
-                " Pick an AI model in the sidebar for written answers; without one, Nootle shows the passages it found."}
-            </p>
-          )}
-          {shown.map((card) => card.commitment_id ? (
-            <div key={card.id} className="flex items-start gap-2 rounded-lg border border-dashed bg-muted/40 p-3 text-xs">
-              <Handshake className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <p className="leading-relaxed text-foreground">{card.question}</p>
-                {card.sources.map((s, i) => (
-                  <SourceCitation key={i} source={s} onOpenMeeting={onOpenMeeting} />
-                ))}
-              </div>
-              <button
-                onClick={() => dismiss(card.id)}
-                aria-label="Dismiss"
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ) : (
-            <div key={card.id} className="rounded-lg border bg-card p-3 text-sm shadow-xs">
-              <div className="mb-1.5 flex items-start gap-2">
-                <p className="flex-1 text-xs text-muted-foreground">
-                  {card.automatic ? "Heard: " : "You asked: "}
-                  <span className="text-foreground">{card.question}</span>
-                </p>
+        {filter === "playbook" ? (
+          <div className="p-4">
+            <PlaybookPanel playbook={playbook} />
+          </div>
+        ) : (
+          <div className="space-y-3 p-4" role="log" aria-live="polite">
+            {cards.length > 0 && shown.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                {filter === "reminders" ? "No reminders yet." : "No answers yet."}
+              </p>
+            )}
+            {cards.length === 0 && (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {auto
+                  ? "Listening for questions. When someone asks something your documents or past meetings can answer, the answer shows up here with its sources. Open commitments from earlier meetings are brought up when their owner speaks or their topic comes up."
+                  : "Ask your documents and past meetings anything below. Turn on Auto to have questions heard in the meeting answered as they come up."}
+                {!selectedProvider &&
+                  " Pick an AI model in the sidebar for written answers; without one, Nootle shows the passages it found."}
+              </p>
+            )}
+            {shown.map((card) => card.commitment_id ? (
+              <div key={card.id} className="flex items-start gap-2 rounded-lg border border-dashed bg-muted/40 p-3 text-xs">
+                <Handshake className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <p className="leading-relaxed text-foreground">{card.question}</p>
+                  {card.sources.map((s, i) => (
+                    <SourceCitation key={i} source={s} onOpenMeeting={onOpenMeeting} />
+                  ))}
+                </div>
                 <button
                   onClick={() => dismiss(card.id)}
                   aria-label="Dismiss"
@@ -325,21 +299,37 @@ export function LiveAssist({
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-              {card.answer && <Markdown content={card.answer} />}
-              {card.sources.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {card.sources.map((s, i) => (
-                    <SourceCitation
-                      key={i}
-                      source={s}
-                      onOpenMeeting={onOpenMeeting}
-                    />
-                  ))}
+            ) : (
+              <div key={card.id} className="rounded-lg border bg-card p-3 text-sm shadow-xs">
+                <div className="mb-1.5 flex items-start gap-2">
+                  <p className="flex-1 text-xs text-muted-foreground">
+                    {card.automatic ? "Heard: " : "You asked: "}
+                    <span className="text-foreground">{card.question}</span>
+                  </p>
+                  <button
+                    onClick={() => dismiss(card.id)}
+                    aria-label="Dismiss"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+                {card.answer && <Markdown content={card.answer} />}
+                {card.sources.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {card.sources.map((s, i) => (
+                      <SourceCitation
+                        key={i}
+                        source={s}
+                        onOpenMeeting={onOpenMeeting}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </ScrollArea>
       <form onSubmit={ask} className="border-t p-3">
         {error && <p className="mb-2 text-xs text-destructive">{error}</p>}

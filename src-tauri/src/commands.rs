@@ -3774,12 +3774,7 @@ pub async fn live_assist(
         crate::ops::embed_question(&mut engine, &question).map_err(|e| e.to_string())?
     };
     let llm = llm.read().await;
-    let chosen = match (&provider, &model) {
-        (Some(p), Some(m)) if !p.is_empty() && !m.is_empty() => {
-            Some((&*llm, p.as_str(), m.as_str()))
-        }
-        _ => None,
-    };
+    let chosen = chosen_llm(&llm, &provider, &model);
     let card =
         crate::live_assist::answer(&db, chosen, &meeting_id, &question, &embedding, automatic)
             .await
@@ -3788,6 +3783,37 @@ pub async fn live_assist(
         latest.remember(&meeting_id, card);
     }
     Ok(card)
+}
+
+/// Which of a Live Assist playbook's `items` the meeting being recorded has
+/// covered so far, as indexes into `items`. Without a provider, only items
+/// whose key words were said count.
+#[tauri::command]
+pub async fn playbook_coverage(
+    db: State<'_, DbState>,
+    llm: State<'_, LlmState>,
+    meeting_id: String,
+    items: Vec<String>,
+    provider: Option<String>,
+    model: Option<String>,
+) -> Result<Vec<usize>, String> {
+    let llm = llm.read().await;
+    let chosen = chosen_llm(&llm, &provider, &model);
+    crate::playbook::coverage(&db, chosen, &meeting_id, &items)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// The model picked in the sidebar, when one is.
+fn chosen_llm<'a>(
+    llm: &'a LlmRegistry,
+    provider: &'a Option<String>,
+    model: &'a Option<String>,
+) -> Option<(&'a LlmRegistry, &'a str, &'a str)> {
+    match (provider.as_deref(), model.as_deref()) {
+        (Some(p), Some(m)) if !p.is_empty() && !m.is_empty() => Some((llm, p, m)),
+        _ => None,
+    }
 }
 
 /// Live Assist reminders while recording: open commitments from earlier
