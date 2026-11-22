@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.37.0] - 2026-11-22
+
+### Features
+
+- Let Ask Nootle file Linear issues from a meeting (#250) ([ac2b63e](https://github.com/michellemayes/nootle/commit/ac2b63ebcf75a947d4b13a611ca25853c7d7f44e))
+
 ## [0.36.0] - 2026-11-21
 
 ### Features
