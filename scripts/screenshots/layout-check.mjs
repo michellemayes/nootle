@@ -105,6 +105,20 @@ const PAGES = [
       if (await open.isVisible()) await open.click();
     },
   },
+  {
+    name: "meeting-chat-linear",
+    route: "/meeting/m1",
+    ready: "role=tab[name='Summaries']",
+    async prepare(page) {
+      const open = page.getByRole("button", { name: "Ask Nootle" });
+      if (!(await open.isVisible())) return;
+      await open.click();
+      const input = page.getByPlaceholder("Ask about this meeting…");
+      await input.fill("File a Linear issue for Karen to write the explainer copy");
+      await input.press("Enter");
+      await page.getByText("Filed PRD-142").waitFor();
+    },
+  },
   { route: "/insights", ready: "text=Draft two copy variants for the permissions explainer" },
   { route: "/people", ready: "h1" },
   { route: "/chat", ready: "text=Onboarding drop-off" },

@@ -240,22 +240,6 @@ pub fn update_meeting_template(
 
 /// Linear access from the legacy API key setting, or else the Linear
 /// integration (pasted key or MCP sign-in).
-async fn linear_client(db: &Database) -> Result<crate::linear::Linear, String> {
-    // Check legacy linear_settings table first
-    if let Some(key) = db
-        .get_linear_setting("api_key")
-        .map_err(|e| e.to_string())?
-        .filter(|k| !k.is_empty())
-    {
-        return Ok(crate::linear::Linear::Api(key));
-    }
-    let integration = db
-        .get_integration_by_type("linear")
-        .map_err(|e| e.to_string())?
-        .ok_or("Linear isn't connected. Connect it in Settings > Integrations.")?;
-    crate::linear::Linear::for_integration(db, &integration).await
-}
-
 #[tauri::command(async)]
 pub fn create_label(
     db: State<'_, DbState>,
@@ -2315,7 +2299,10 @@ pub fn seed_default_prompts(db: State<'_, DbState>) -> Result<(), String> {
 pub async fn list_linear_teams(
     db: State<'_, DbState>,
 ) -> Result<Vec<crate::linear::LinearTeam>, String> {
-    linear_client(&db).await?.list_teams().await
+    crate::linear::Linear::connected(&db)
+        .await?
+        .list_teams()
+        .await
 }
 
 #[tauri::command]
@@ -2323,7 +2310,10 @@ pub async fn list_linear_projects(
     db: State<'_, DbState>,
     team_id: String,
 ) -> Result<Vec<crate::linear::LinearProject>, String> {
-    linear_client(&db).await?.list_projects(&team_id).await
+    crate::linear::Linear::connected(&db)
+        .await?
+        .list_projects(&team_id)
+        .await
 }
 
 #[tauri::command]
@@ -2384,7 +2374,7 @@ pub async fn create_linear_ticket(
     };
 
     crate::llm::ensure_may_send_to_integrations(&db)?;
-    let issue = linear_client(&db)
+    let issue = crate::linear::Linear::connected(&db)
         .await?
         .create_issue(&team_id, project_id.as_deref(), &title, &description)
         .await?;
@@ -2473,7 +2463,7 @@ pub async fn create_ticket_from_action_item(
     };
 
     crate::llm::ensure_may_send_to_integrations(&db)?;
-    let issue = linear_client(&db)
+    let issue = crate::linear::Linear::connected(&db)
         .await?
         .create_issue(&team_id, project_id.as_deref(), &title, &description)
         .await?;

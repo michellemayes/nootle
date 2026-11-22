@@ -1,6 +1,7 @@
 //! Ask Nootle inside a meeting: answers questions about the meeting and, when
 //! the user asks, changes it the way the CLI and MCP server can (notes, title,
-//! labels, action items, summaries, speakers, timeline comments).
+//! labels, action items, summaries, speakers, timeline comments), or files a
+//! Linear issue when Linear is connected.
 //!
 //! Every provider here is text in, text out, so instead of native tool calls
 //! the model asks for changes in a fenced `nootle-actions` block of JSON.
@@ -70,6 +71,10 @@ pub enum ChatAction {
         at: String,
         text: String,
     },
+    CreateLinearIssue {
+        title: String,
+        description: Option<String>,
+    },
 }
 
 /// One change's result, worded for the user: "Added to your notes", or why
@@ -78,7 +83,33 @@ pub enum ChatAction {
 pub struct ActionOutcome {
     pub ok: bool,
     pub summary: String,
+    /// Where the change can be seen outside Nootle, such as a new issue.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
+
+/// A change made: what to tell the user, a link to it outside Nootle, and the
+/// events that refresh what it touched.
+#[derive(Debug)]
+struct Done {
+    summary: String,
+    url: Option<String>,
+    events: &'static [&'static str],
+}
+
+impl From<Done> for ActionOutcome {
+    fn from(done: Done) -> Self {
+        ActionOutcome {
+            ok: true,
+            summary: done.summary,
+            url: done.url,
+        }
+    }
+}
+
+/// Linear, opened on the first issue a reply files and reused for the rest,
+/// with the team and project issues go to.
+type LinearTarget = (crate::linear::Linear, String, Option<String>);
 
 #[derive(Debug, Default, Serialize)]
 pub struct MeetingChatReply {
@@ -108,7 +139,7 @@ pub async fn chat(
         "{}\n\n{}\n\n{}",
         crate::summarization::transcript_chat_prompt(db, meeting_id, &transcript),
         meeting_state(db, meeting_id, &transcript)?,
-        ACTIONS_GUIDE
+        actions_guide(db)
     );
     let mut messages = vec![ChatMessage {
         role: "system".into(),
@@ -126,19 +157,32 @@ pub async fn chat(
         reply,
         ..Default::default()
     };
+    let mut linear = None;
     for action in requested {
         let result = match action {
-            Ok(action) => run(db, llm, meeting_id, action, provider_name, model).await,
+            Ok(action) => {
+                run(
+                    db,
+                    llm,
+                    &mut linear,
+                    meeting_id,
+                    action,
+                    provider_name,
+                    model,
+                )
+                .await
+            }
             Err(e) => Err(e),
         };
         out.actions.push(match result {
-            Ok((summary, events)) => {
-                out.events.extend(events);
-                ActionOutcome { ok: true, summary }
+            Ok(done) => {
+                out.events.extend(done.events);
+                done.into()
             }
             Err(e) => ActionOutcome {
                 ok: false,
                 summary: e.to_string(),
+                url: None,
             },
         });
     }
@@ -168,7 +212,27 @@ Rules:
 - add_to_notes appends to the end of the user's notes; it never replaces them. Write the full content to add as Markdown. When the user points at something earlier in the conversation ("those", "that list"), copy it in full, not a reference to it.
 - Labels not yet created are created. In update_action_item, omit fields you aren't changing.
 - Above the block, say briefly what you did, as done. Nootle runs each change and shows the user whether it worked, so don't repeat the content you added.
-- You can't delete meetings, send anything outside Nootle, or run workflows. If asked, say so and point the user to the meeting's menus."###;
+- You can't delete meetings or run workflows. If asked, say so and point the user to the meeting's menus."###;
+
+const NO_SENDING: &str = "- You can't send anything outside Nootle. If asked, say so.";
+
+const LINEAR_GUIDE: &str = r###"## Filing in Linear
+
+Linear is connected. When the user asks for an issue or ticket ("file that in Linear", "make a ticket for the explainer copy"), add this to the block, one per issue:
+
+  {"action": "create_linear_issue", "title": "under 80 characters, what needs doing", "description": "Markdown: what needs doing, why, and who owns it, from this meeting"}
+
+Nootle files it in their default Linear team and links it under your reply. Only file issues the user asked for. Nothing else can be sent outside Nootle."###;
+
+/// The changes the model may ask for: always the meeting's own, plus Linear
+/// issues when Linear is connected and meetings may leave this Mac.
+fn actions_guide(db: &Database) -> String {
+    if crate::linear::is_connected(db) && crate::llm::ensure_may_send_to_integrations(db).is_ok() {
+        format!("{ACTIONS_GUIDE}\n\n{LINEAR_GUIDE}")
+    } else {
+        format!("{ACTIONS_GUIDE}\n{NO_SENDING}")
+    }
+}
 
 /// The meeting as it stands, for the model to act on: title, labels, notes,
 /// action items, speakers, and the templates and labels it can use.
@@ -286,17 +350,17 @@ fn parse_actions(body: &str) -> Vec<Result<ChatAction>> {
         .collect()
 }
 
-/// Runs one change on the meeting, returning what to tell the user and the
-/// events that refresh what it touched.
+/// Runs one change on the meeting.
 async fn run(
     db: &Database,
     llm: &LlmRegistry,
+    linear: &mut Option<LinearTarget>,
     meeting_id: &str,
     action: ChatAction,
     provider: &str,
     model: &str,
-) -> Result<(String, &'static [&'static str])> {
-    Ok(match action {
+) -> Result<Done> {
+    let (summary, events): (String, &'static [&'static str]) = match action {
         ChatAction::AddToNotes { markdown } => {
             ops::append_notes(db, meeting_id, &markdown)?;
             ("Added to your notes".into(), &[MEETING_UPDATED])
@@ -407,6 +471,64 @@ async fn run(
             let at = crate::summarization::format_ms(start_ms);
             (format!("Pinned a comment at {at}"), &[])
         }
+        ChatAction::CreateLinearIssue { title, description } => {
+            return create_linear_issue(db, linear, meeting_id, &title, description.as_deref())
+                .await;
+        }
+    };
+    Ok(Done {
+        summary,
+        url: None,
+        events,
+    })
+}
+
+/// Files an issue in the default Linear team, noting the meeting it came
+/// from.
+async fn create_linear_issue(
+    db: &Database,
+    linear: &mut Option<LinearTarget>,
+    meeting_id: &str,
+    title: &str,
+    description: Option<&str>,
+) -> Result<Done> {
+    let title = title.trim();
+    if title.is_empty() {
+        bail!("Skipped a Linear issue with no title");
+    }
+    crate::llm::ensure_may_send_to_integrations(db).map_err(|e| anyhow!(e))?;
+    let footer = format!(
+        "---\nFrom the meeting “{}” in Nootle.",
+        db.get_meeting(meeting_id)?.title
+    );
+    let description = match description.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(d) => format!("{d}\n\n{footer}"),
+        None => footer,
+    };
+    let (client, team, project) = match linear.take() {
+        Some(target) => target,
+        None => {
+            let client = crate::linear::Linear::connected(db)
+                .await
+                .map_err(|e| anyhow!(e))?;
+            let (team, project) = client.defaults(db).await.map_err(|e| anyhow!(e))?;
+            (client, team, project)
+        }
+    };
+    let issue = client
+        .create_issue(&team, project.as_deref(), title, &description)
+        .await;
+    *linear = Some((client, team, project));
+    let issue = issue.map_err(|e| anyhow!(e))?;
+    let name = if issue.identifier.is_empty() {
+        "a Linear issue".to_string()
+    } else {
+        issue.identifier
+    };
+    Ok(Done {
+        summary: format!("Filed {name} “{title}”"),
+        url: Some(issue.url).filter(|u| !u.is_empty()),
+        events: &[],
     })
 }
 
@@ -478,24 +600,27 @@ mod tests {
         let db = Database::new_in_memory().unwrap();
         let llm = LlmRegistry::new();
         let id = meeting(&db);
-        let act = |action| run(&db, &llm, &id, action, "none", "none");
+        let act = |action| async { run(&db, &llm, &mut None, &id, action, "none", "none").await };
 
-        let (said, events) = act(ChatAction::AddLabels {
+        let done = act(ChatAction::AddLabels {
             labels: vec!["Hiring".into()],
         })
         .await
         .unwrap();
-        assert_eq!((said.as_str(), events), ("Added label Hiring", LABELS));
+        assert_eq!(
+            (done.summary.as_str(), done.events, done.url),
+            ("Added label Hiring", LABELS, None)
+        );
         assert_eq!(db.get_meeting_labels(&id).unwrap()[0].name, "Hiring");
 
-        let (_, events) = act(ChatAction::AddActionItem {
+        let done = act(ChatAction::AddActionItem {
             task: "Email Dena".into(),
             assignee: Some("".into()),
             due_date: None,
         })
         .await
         .unwrap();
-        assert_eq!(events, INSIGHTS);
+        assert_eq!(done.events, INSIGHTS);
         let item = &db.get_insights_for_meeting(&id).unwrap()[0];
         assert_eq!(
             (item.content.as_str(), item.assignee.as_deref()),
@@ -513,5 +638,45 @@ mod tests {
             text: "x".into(),
         });
         assert!(bad_time.await.is_err());
+    }
+
+    #[test]
+    fn linear_is_offered_only_when_connected_and_allowed() {
+        let db = Database::new_in_memory().unwrap();
+        let offers = |db: &Database| actions_guide(db).contains("create_linear_issue");
+        assert!(!offers(&db));
+        assert!(actions_guide(&db).contains(NO_SENDING));
+
+        db.set_linear_setting("api_key", "lin_api_x").unwrap();
+        assert!(offers(&db));
+        assert!(!actions_guide(&db).contains(NO_SENDING));
+
+        db.set_setting(crate::llm::LOCAL_ONLY_SETTING, "true")
+            .unwrap();
+        assert!(!offers(&db));
+    }
+
+    #[tokio::test]
+    async fn linear_issues_parse_and_respect_local_only() {
+        let (_, actions) = split_actions(
+            "```nootle-actions\n[{\"action\": \"create_linear_issue\", \"title\": \"Write the explainer copy\", \"description\": \"Two variants\"}]\n```",
+        );
+        assert_eq!(
+            actions[0].as_ref().unwrap(),
+            &ChatAction::CreateLinearIssue {
+                title: "Write the explainer copy".into(),
+                description: Some("Two variants".into()),
+            }
+        );
+
+        let db = Database::new_in_memory().unwrap();
+        let id = meeting(&db);
+        let empty = create_linear_issue(&db, &mut None, &id, "  ", None).await;
+        assert!(empty.unwrap_err().to_string().contains("no title"));
+        db.set_setting(crate::llm::LOCAL_ONLY_SETTING, "true")
+            .unwrap();
+        let blocked =
+            create_linear_issue(&db, &mut None, &id, "Write the explainer copy", None).await;
+        assert!(blocked.unwrap_err().to_string().contains("Local-only"));
     }
 }

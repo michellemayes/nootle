@@ -1,6 +1,20 @@
 use crate::http::CLIENT;
 use serde::{Deserialize, Serialize};
 
+/// A Linear key pasted in Settings, if there is one.
+fn pasted_key(db: &crate::db::Database) -> Result<Option<String>, String> {
+    Ok(db
+        .get_linear_setting("api_key")
+        .map_err(|e| e.to_string())?
+        .filter(|k| !k.is_empty()))
+}
+
+/// Whether Linear is connected, by a pasted key or the integration.
+pub fn is_connected(db: &crate::db::Database) -> bool {
+    matches!(pasted_key(db), Ok(Some(_)))
+        || matches!(db.get_integration_by_type("linear"), Ok(Some(_)))
+}
+
 const LINEAR_API_URL: &str = "https://api.linear.app/graphql";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +107,40 @@ pub enum Linear {
 }
 
 impl Linear {
+    /// Linear as the user connected it: a key pasted in Settings, or the
+    /// Linear integration.
+    pub async fn connected(db: &crate::db::Database) -> Result<Self, String> {
+        if let Some(key) = pasted_key(db)? {
+            return Ok(Self::Api(key));
+        }
+        let integration = db
+            .get_integration_by_type("linear")
+            .map_err(|e| e.to_string())?
+            .ok_or("Linear isn't connected. Connect it in Settings > Integrations.")?;
+        Self::for_integration(db, &integration).await
+    }
+
+    /// Where new issues go: the default team and project from Settings, or
+    /// the only team there is.
+    pub async fn defaults(
+        &self,
+        db: &crate::db::Database,
+    ) -> Result<(String, Option<String>), String> {
+        let setting = |key| {
+            db.get_linear_setting(key)
+                .map(|v| v.filter(|v| !v.is_empty()))
+                .map_err(|e| e.to_string())
+        };
+        let project = setting("default_project_id")?;
+        if let Some(team) = setting("default_team_id")? {
+            return Ok((team, project));
+        }
+        match self.list_teams().await?.as_slice() {
+            [team] => Ok((team.id.clone(), project)),
+            _ => Err("Pick a default Linear team in Settings > Integrations first".into()),
+        }
+    }
+
     pub async fn for_integration(
         db: &crate::db::Database,
         integration: &crate::db::Integration,
