@@ -165,6 +165,8 @@ export interface ChatMessage {
 export interface ChatActionOutcome {
   ok: boolean;
   summary: string;
+  /** Where the change can be seen outside Nootle, such as a new Linear issue. */
+  url?: string;
 }
 
 /** Ask Nootle's answer in a meeting, with the changes it made. */

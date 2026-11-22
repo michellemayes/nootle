@@ -1,5 +1,6 @@
 import type { KeyboardEvent, ReactNode, Ref } from "react";
-import { CircleAlert, CircleCheck, Send } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { ArrowUpRight, CircleAlert, CircleCheck, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,7 +57,18 @@ function ChatActions({ actions, hasContent }: { actions: ChatActionOutcome[]; ha
             <Icon className={cn("mt-px h-3.5 w-3.5 shrink-0", action.ok && "text-success")} aria-hidden />
             <span>
               <span className="sr-only">{action.ok ? "Done: " : "Failed: "}</span>
-              {action.summary}
+              {action.url ? (
+                <button
+                  type="button"
+                  onClick={() => openUrl(action.url!)}
+                  className="text-left underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  {action.summary}
+                  <ArrowUpRight className="ml-0.5 inline h-3 w-3 align-[-2px]" aria-hidden />
+                </button>
+              ) : (
+                action.summary
+              )}
             </span>
           </li>
         );

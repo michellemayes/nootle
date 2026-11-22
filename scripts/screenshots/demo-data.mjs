@@ -1380,6 +1380,16 @@ export const FIXTURES = {
   check_permissions: { microphone: "granted", screen_recording: true, calendar: "granted" },
 
   get_linear_tickets: [],
+  chat_with_meeting: {
+    reply: "Filed it in Linear for Karen, with both copy variants and the Thursday deadline.",
+    actions: [
+      {
+        ok: true,
+        summary: "Filed PRD-142 “Write the inline permissions explainer copy”",
+        url: "https://linear.app/example/issue/PRD-142",
+      },
+    ],
+  },
   list_linear_teams: [],
   list_linear_projects: [],
   get_linear_setting: null,
