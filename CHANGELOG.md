@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.37.1] - 2026-11-23
+
+### Bug Fixes
+
+- Keep Live Assist tabs readable in a narrow panel (#251) ([fa8fe37](https://github.com/michellemayes/nootle/commit/fa8fe37436dc7cd2cc5a97bfd49358a7714167cf))
+
 ## [0.37.0] - 2026-11-22
 
 ### Features
