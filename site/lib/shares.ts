@@ -10,6 +10,7 @@
 
 import { createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { del, get, put } from "@vercel/blob";
+import { REFERRAL_CODE } from "@/lib/account/types";
 
 /** Well under Vercel's 4.5 MB request body limit. */
 const MAX_CIPHERTEXT_CHARS = 3_000_000;
@@ -24,7 +25,13 @@ export interface Sealed {
   ciphertext: string;
 }
 
-interface Stored extends Sealed {
+/** Plain-text extras a share may carry for its page: who shared it, and whether to show "Made with Nootle". */
+export interface ShareMeta {
+  ref?: string;
+  branding?: boolean;
+}
+
+interface Stored extends Sealed, ShareMeta {
   tokenHash: string;
   updatedAt: string;
 }
@@ -49,6 +56,14 @@ export function parseSealed(body: unknown): Sealed | null {
   return { iv, ciphertext };
 }
 
+/** The optional `ref` and `branding` from a share's request body, or null when either is malformed. */
+export function parseShareMeta(body: unknown): ShareMeta | null {
+  const { ref, branding } = (body ?? {}) as Record<string, unknown>;
+  if (ref !== undefined && (typeof ref !== "string" || !REFERRAL_CODE.test(ref))) return null;
+  if (branding !== undefined && typeof branding !== "boolean") return null;
+  return { ...(ref !== undefined && { ref }), ...(branding !== undefined && { branding }) };
+}
+
 /**
  * Decrypts what was sealed with `key` (base64url, or raw bytes) and `aad`, or
  * null if either doesn't fit.
@@ -70,8 +85,8 @@ export function openSealed({ iv, ciphertext }: Sealed, key: string | Buffer, aad
 function sealedStore(prefix: string) {
   const pathFor = (id: string) => `${prefix}/${id}.json`;
 
-  async function write(id: string, sealed: Sealed, tokenHash: string) {
-    const stored: Stored = { ...sealed, tokenHash, updatedAt: new Date().toISOString() };
+  async function write(id: string, sealed: Sealed, tokenHash: string, meta: ShareMeta = {}) {
+    const stored: Stored = { ...sealed, ...meta, tokenHash, updatedAt: new Date().toISOString() };
     await put(pathFor(id), JSON.stringify(stored), {
       access: "private",
       addRandomSuffix: false,
@@ -88,10 +103,10 @@ function sealedStore(prefix: string) {
       return JSON.parse(await new Response(result.stream).text()) as Stored;
     },
     /** Stores a new blob and returns its id and the token that can change it. */
-    async create(sealed: Sealed): Promise<{ id: string; token: string }> {
+    async create(sealed: Sealed, meta?: ShareMeta): Promise<{ id: string; token: string }> {
       const id = randomBytes(16).toString("base64url");
       const token = randomBytes(32).toString("base64url");
-      await write(id, sealed, hashToken(token));
+      await write(id, sealed, hashToken(token), meta);
       return { id, token };
     },
     write,
