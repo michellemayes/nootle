@@ -2,12 +2,16 @@
 
 > Nootle is a free, open-source AI meeting recorder for Mac users who spend their day on calls. It records and transcribes meetings on your Mac without a bot joining, then writes summaries, pulls out action items, and answers questions from your meetings and documents. Recording and transcription are always local — AI summaries and chat are only fully local when paired with a local model via Ollama.
 
-Facts on this page are as of October 2026.
+Facts on this page are as of November 2026.
 
 ## Product
 
 - Platform: macOS 14+ on Apple Silicon (M1–M5)
-- Price: Free (open source, MIT license)
+- Price: Free forever for recording, transcription, summaries, Ask, share links, export, CLI and MCP server (open source, MIT license)
+- Nootle Pro: $5/month, $40/year (about $3.33/month) or $99 once. Adds Live Assist and playbooks, workflows, Ask Nootle filing in Linear and Notion, the commitment tracker, pre-meeting briefs and daily digest, Meeting Coach, Ask the Room, Translate, the AI connector (nootle.ai/mcp), and share links without Nootle branding
+- Trial: every install gets 14 days of Pro, no card. After it, free features keep working and nothing is deleted
+- Payments: handled by Polar (merchant of record); cancel anytime from the billing portal
+- Pricing: https://nootle.ai/pricing
 - Download: https://github.com/michellemayes/nootle/releases
 - Website: https://nootle.ai
 - GitHub: https://github.com/michellemayes/nootle
@@ -52,6 +56,7 @@ Audio recording and transcription always happen locally on your Mac using ONNX R
 
 ## Pages
 
+- Pricing: https://nootle.ai/pricing
 - Privacy policy: https://nootle.ai/privacy
 
 - Granola alternative: https://nootle.ai/granola-alternative

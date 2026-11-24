@@ -10,6 +10,7 @@ const rows: { label: string; links: FooterLink[] }[] = [
     links: [
       { label: "Michelle Mayes", href: "https://michellemayes.me" },
       { label: "GitHub", href: "https://github.com/michellemayes/nootle" },
+      { label: "Pricing", href: "/pricing" },
       { label: "Privacy", href: "/privacy" },
     ],
   },
