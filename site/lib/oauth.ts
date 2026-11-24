@@ -3,7 +3,7 @@
 // connector key. In a Claude Team or Enterprise workspace, an owner adds the
 // connector once and every member connects to their own meetings.
 //
-// nootle.ai has no accounts and keeps no OAuth state: client ids, codes and
+// The connector doesn't use nootle.ai accounts and keeps no OAuth state: client ids, codes and
 // tokens are sealed (AES-256-GCM) with a server secret, and each code and
 // token carries the person's connector key inside. So, as with a connector
 // link, the AI client holds the key and nootle.ai never stores it; it opens
