@@ -1,3 +1,4 @@
+import { NOOTLE_PRICE, PRO_FROM } from "@/components/pricing";
 import { LandingPage, landingMetadata, type LandingContent } from "@/components/LandingPage";
 
 export const metadata = landingMetadata({
@@ -14,10 +15,10 @@ const content: LandingContent = {
     "Like Granola, Nootle records meetings from your Mac with no bot in the call. Unlike Granola, it transcribes on your Mac, keeps recordings and transcripts there, and is free and open source.",
   answer: {
     question: "Which is better, Nootle or Granola?",
-    body: "It depends on where you want your meetings to live. If you want transcription on your Mac, speaker labels beyond “Me” and “Them”, and notes you can export as Markdown for free, Nootle is the better choice: it’s open source and meeting audio never leaves your Mac. Granola fits better if you need it on Windows, an iPhone or an Intel Mac, or want a shared team workspace out of the box. As of October 2026, Granola’s Business plan costs $14 a month; Nootle is free.",
+    body: `It depends on where you want your meetings to live. If you want transcription on your Mac, speaker labels beyond “Me” and “Them”, and notes you can export as Markdown for free, Nootle is the better choice: it’s open source and meeting audio never leaves your Mac. Granola fits better if you need it on Windows, an iPhone or an Intel Mac, or want a shared team workspace out of the box. As of October 2026, Granola’s Business plan costs $14 a month; Nootle is free, with an optional Pro plan from ${PRO_FROM} a month.`,
   },
   published: "2026-10-11",
-  updated: "2026-10-19",
+  updated: "2026-11-24",
   why: {
     heading: "Why people switch from Granola",
     points: [
@@ -59,7 +60,7 @@ const content: LandingContent = {
         "Markdown export, CLI, MCP server",
         "Encrypted its local note cache in 2026, which broke third-party scripts",
       ],
-      ["Price", "Free, open source (MIT)", "Free plan with limited history; Business $14/month"],
+      ["Price", `${NOOTLE_PRICE}, open source (MIT)`, "Free plan with limited history; Business $14/month"],
     ],
     note: "Granola details as of October 2026.",
   },
@@ -77,7 +78,7 @@ const content: LandingContent = {
     {
       question: "Is Nootle really free?",
       answer:
-        "Yes. Nootle is free and open source under the MIT license. If you choose a cloud AI provider for summaries with your own key, that provider bills you for your usage. Local Ollama models or your existing Claude or ChatGPT subscription avoid that.",
+        `Yes. Recording, transcription, summaries, Ask and export are free forever, and the app is open source under the MIT license. An optional Pro plan, from ${PRO_FROM} a month, adds Live Assist, workflows and briefs. If you choose a cloud AI provider for summaries with your own key, that provider bills you for your usage. Local Ollama models or your existing Claude or ChatGPT subscription avoid that.`,
     },
     {
       question: "Which Macs does it run on?",

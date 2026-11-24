@@ -2,6 +2,7 @@
 
 import { motion, type Variants } from "framer-motion";
 import { Check, X } from "lucide-react";
+import { NOOTLE_PRICE } from "@/components/pricing";
 
 type Cell = { ok?: boolean; text?: string };
 
@@ -31,7 +32,7 @@ const rows: { label: string; cells: Cell[] }[] = [
   { label: "Open source", cells: [yes("MIT"), no, no, note("Open core")] },
   {
     label: "Price",
-    cells: [note("Free"), note("Free / $14 a month"), note("Free / from $8.33 a month"), note("Free / about $10 a month")],
+    cells: [note(NOOTLE_PRICE), note("Free / $14 a month"), note("Free / from $8.33 a month"), note("Free / about $10 a month")],
   },
 ];
 
@@ -89,7 +90,7 @@ export function Comparison() {
         <div data-reveal>
           <p className="text-center text-[var(--color-text-secondary)] text-base mb-12 max-w-2xl mx-auto">
             Cloud recorders like Otter.ai and Fireflies.ai upload your audio to their servers. Nootle records and
-            transcribes on your Mac, works offline for capture, and costs nothing.
+            transcribes on your Mac, works offline for capture, and is free to use.
           </p>
         </div>
 

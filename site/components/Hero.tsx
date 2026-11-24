@@ -64,7 +64,7 @@ export function Hero() {
         <div data-hero className="mt-6 max-w-xl mx-auto">
           <CopyCommand />
           <p className="mt-3 text-xs text-[var(--color-text-secondary)]">
-            macOS 14+ on Apple Silicon · MIT licensed · No account, no telemetry
+            macOS 14+ on Apple Silicon · MIT licensed · No account needed, no telemetry
           </p>
         </div>
 
