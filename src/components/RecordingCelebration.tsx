@@ -2,11 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
-import { Flame, PartyPopper, X } from "lucide-react";
+import { Flame, Gift, PartyPopper, X } from "lucide-react";
+import { CopyButton } from "@/components/CopyButton";
+import { usePlan } from "@/hooks/usePlan";
+import { REFERRAL_REWARD_DAYS } from "@/lib/plan";
 import { computeMomentum, type Momentum } from "@/lib/momentum";
 import type { Meeting } from "@/types";
 
 const MILESTONES = [1, 5, 10, 25, 50, 100, 250, 500, 1000];
+const INVITE_AFTER = 3;
+const INVITE_SHOWN_KEY = "invite_nudge_shown";
 const CONFETTI_COLORS = ["var(--primary)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
 
 /** This recording was the first today and pushed the streak past a day. */
@@ -68,21 +73,33 @@ export function RecordingCelebration() {
   const location = useLocation();
   const navigate = useNavigate();
   const [momentum, setMomentum] = useState<Momentum | null>(null);
+  const [invite, setInvite] = useState<string | null>(null);
+  const { status } = usePlan();
+  const referralUrl = status?.referral?.url ?? null;
 
   useEffect(() => {
     if (!(location.state as { justRecorded?: boolean } | null)?.justRecorded) return;
     // Clear the flag so a reload or back-navigation doesn't celebrate twice.
     navigate(location.pathname, { replace: true, state: null });
     invoke<Meeting[]>("list_meetings", { search: null, includeArchived: true })
-      .then((meetings) => setMomentum(computeMomentum(meetings)))
+      .then((meetings) => {
+        const m = computeMomentum(meetings);
+        if (referralUrl && m.total >= INVITE_AFTER && localStorage.getItem(INVITE_SHOWN_KEY) !== "true") {
+          localStorage.setItem(INVITE_SHOWN_KEY, "true");
+          setInvite(referralUrl);
+        } else {
+          setInvite(null);
+        }
+        setMomentum(m);
+      })
       .catch(() => {});
-  }, [location.state, location.pathname, navigate]);
+  }, [location.state, location.pathname, navigate, referralUrl]);
 
   useEffect(() => {
     if (!momentum) return;
-    const t = setTimeout(() => setMomentum(null), 5000);
+    const t = setTimeout(() => setMomentum(null), invite ? 15000 : 5000);
     return () => clearTimeout(t);
-  }, [momentum]);
+  }, [momentum, invite]);
 
   return (
     <AnimatePresence>
@@ -96,29 +113,38 @@ export function RecordingCelebration() {
         >
           <div
             role="status"
-            className="pointer-events-auto relative flex max-w-md items-center gap-3 rounded-xl border bg-popover px-4 py-3 text-popover-foreground shadow-xl"
+            className="pointer-events-auto relative max-w-md rounded-xl border bg-popover text-popover-foreground shadow-xl"
           >
-            {isBigMoment(momentum) && <Confetti />}
-            <motion.span
-              className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
-              initial={{ rotate: -20, scale: 0.6 }}
-              animate={{ rotate: 0, scale: 1 }}
-              transition={{ type: "spring", stiffness: 300, damping: 12, delay: 0.1 }}
-            >
-              {momentum.streak > 1 ? <Flame className="h-4.5 w-4.5" /> : <PartyPopper className="h-4.5 w-4.5" />}
-            </motion.span>
-            <div className="relative min-w-0">
-              <p className="text-sm font-semibold">{headline(momentum)}</p>
-              <p className="text-xs text-muted-foreground">{subline(momentum)}</p>
+            <div className="relative flex items-center gap-3 px-4 py-3">
+              {isBigMoment(momentum) && <Confetti />}
+              <motion.span
+                className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+                initial={{ rotate: -20, scale: 0.6 }}
+                animate={{ rotate: 0, scale: 1 }}
+                transition={{ type: "spring", stiffness: 300, damping: 12, delay: 0.1 }}
+              >
+                {momentum.streak > 1 ? <Flame className="h-4.5 w-4.5" /> : <PartyPopper className="h-4.5 w-4.5" />}
+              </motion.span>
+              <div className="relative min-w-0">
+                <p className="text-sm font-semibold">{headline(momentum)}</p>
+                <p className="text-xs text-muted-foreground">{subline(momentum)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMomentum(null)}
+                className="relative ml-1 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                aria-label="Dismiss"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setMomentum(null)}
-              className="relative ml-1 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-              aria-label="Dismiss"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            {invite && (
+              <div className="flex items-center gap-3 border-t px-4 py-2.5">
+                <Gift className="h-4 w-4 shrink-0 text-primary" />
+                <p className="min-w-0 flex-1 text-xs">Invite a friend, get {REFERRAL_REWARD_DAYS} days of Pro</p>
+                <CopyButton text={invite} variant="button" label="Copy link" />
+              </div>
+            )}
           </div>
         </motion.div>
       )}

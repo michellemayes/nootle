@@ -25,6 +25,8 @@ import { useCommitments } from "@/hooks/useCommitments";
 import { useBooleanSetting } from "@/hooks/useBooleanSetting";
 import { formatDate } from "@/lib/utils";
 import { insightIcon } from "@/lib/insightIcons";
+import { ProUpsell } from "@/components/ProGate";
+import { usePlan } from "@/hooks/usePlan";
 
 function ActionItemTicketButton({
   item,
@@ -361,19 +363,32 @@ function TypeSection({
 /** Action items someone owns, and whether later meetings show them done:
  * the ones still owed first (slipped ones on top), done and dropped ones a
  * click away. Follows the page's owner, status and search filters. */
-function CommitmentsSection({
-  owner,
-  status,
-  search,
-}: {
+function CommitmentsSection(props: CommitmentFilters) {
+  const { pro } = usePlan();
+  if (props.owner === UNASSIGNED) return null;
+  if (pro) return <CommitmentsList {...props} />;
+  return (
+    <section>
+      <Toolbar className="pb-2">
+        <Handshake className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-base font-semibold">Commitments</h2>
+      </Toolbar>
+      <ProUpsell feature="commitments" compact />
+    </section>
+  );
+}
+
+interface CommitmentFilters {
   owner: string | undefined;
   status: string | undefined;
   search: string | undefined;
-}) {
+}
+
+function CommitmentsList({ owner, status, search }: CommitmentFilters) {
   const { commitments, setStatus } = useCommitments();
   const [checksOn] = useBooleanSetting("commitment_checks", false);
   const [showClosed, setShowClosed] = useState(false);
-  if (!commitments || commitments.length === 0 || owner === UNASSIGNED) return null;
+  if (!commitments || commitments.length === 0) return null;
 
   const query = search?.toLowerCase();
   const matching = commitments.filter(

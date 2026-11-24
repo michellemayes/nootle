@@ -16,6 +16,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { McpSetup } from "@/components/McpSetup";
 import { ContinueInSettings } from "@/components/ContinueInSettings";
 import { AiConnectorCard } from "@/components/AiConnectorCard";
+import { PlanSettings } from "@/components/PlanSettings";
+import { ProSwitch } from "@/components/ProGate";
+import { useProSetting } from "@/hooks/usePlan";
 import { CustomEndpointCard } from "@/components/CustomEndpointCard";
 import { CopyButton } from "@/components/CopyButton";
 import { DictionaryManager } from "@/components/DictionaryManager";
@@ -866,26 +869,18 @@ function NoteSuggestionsSetting() {
 
 /** Live Assist answers questions heard while recording from your documents and past meetings. */
 function LiveAssistSetting() {
-  const [enabled, setEnabled] = useBooleanSetting("live_assist", false);
   return (
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm font-medium">Live Assist</p>
-        <p className="text-sm text-muted-foreground">
-          While recording, answer questions people ask using your{" "}
-          <RouterLink to="/knowledge" className="underline">knowledge base</RouterLink> and past meetings,
-          with sources. You can always ask Live Assist yourself from the recording screen
-        </p>
-      </div>
-      <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Live Assist" />
-    </div>
+    <ProSwitch label="Live Assist" setting={useProSetting("live_assist", "live-assist")}>
+      While recording, answer questions people ask using your{" "}
+      <RouterLink to="/knowledge" className="underline">knowledge base</RouterLink> and past meetings,
+      with sources. You can always ask Live Assist yourself from the recording screen
+    </ProSwitch>
   );
 }
 
 /** Follow-through checks: each new meeting is checked against the open
  * commitments from earlier ones. Off unless turned on. */
 function FollowThroughCard() {
-  const [enabled, setEnabled] = useBooleanSetting("commitment_checks", false);
   return (
     <Card>
       <CardHeader>
@@ -897,19 +892,16 @@ function FollowThroughCard() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium">Check follow-through after each meeting</p>
-            <p className="text-sm text-muted-foreground">
-              When a meeting ends, open commitments whose owner was there, or whose topic came up,
-              are checked against what was said, using your summary model. Each is marked done or
-              slipped, with the moment that shows it. Only those commitments and the passages about
-              them are sent. You can always check a meeting from its Insights tab, or mark
-              commitments yourself
-            </p>
-          </div>
-          <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Check follow-through after each meeting" />
-        </div>
+        <ProSwitch
+          label="Check follow-through after each meeting"
+          setting={useProSetting("commitment_checks", "commitments")}
+        >
+          When a meeting ends, open commitments whose owner was there, or whose topic came up,
+          are checked against what was said, using your summary model. Each is marked done or
+          slipped, with the moment that shows it. Only those commitments and the passages about
+          them are sent. You can always check a meeting from its Insights tab, or mark
+          commitments yourself
+        </ProSwitch>
       </CardContent>
     </Card>
   );
@@ -918,10 +910,10 @@ function FollowThroughCard() {
 /** Pre-meeting brief: a one-screen brief a few minutes before each calendar
  * meeting. Off by default; needs calendar access. */
 function PreMeetingBriefSetting() {
-  const [enabled, setEnabled] = useBooleanSetting("pre_meeting_brief", false);
   // Choices match the backend's brief::LEAD_CHOICES.
   const [lead, setLead] = useSetting("pre_meeting_brief_lead_minutes", "5");
   const [calendar, setCalendar] = useState<string | null>(null);
+  const brief = useProSetting("pre_meeting_brief", "brief");
 
   useEffect(() => {
     invoke<{ calendar: string }>("check_permissions")
@@ -932,34 +924,29 @@ function PreMeetingBriefSetting() {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium">Pre-meeting brief</p>
-          <p className="text-sm text-muted-foreground">
-            Shortly before each calendar meeting, show who's coming and when you last met, open action
-            items, what was decided last time, and related documents, put together on this Mac. Every
-            upcoming meeting on the Meetings page has its brief too
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {enabled && (
-            <Select
-              size="sm"
-              containerClassName="w-32"
-              value={lead}
-              onChange={(e) => setLead(e.target.value)}
-              aria-label="How long before the meeting"
-            >
-              {["2", "5", "10"].map((m) => (
-                <option key={m} value={m}>
-                  {m} min before
-                </option>
-              ))}
-            </Select>
-          )}
-          <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Pre-meeting brief" />
-        </div>
-      </div>
+      <ProSwitch
+        label="Pre-meeting brief"
+        setting={brief}
+        extra={
+          <Select
+            size="sm"
+            containerClassName="w-32"
+            value={lead}
+            onChange={(e) => setLead(e.target.value)}
+            aria-label="How long before the meeting"
+          >
+            {["2", "5", "10"].map((m) => (
+              <option key={m} value={m}>
+                {m} min before
+              </option>
+            ))}
+          </Select>
+        }
+      >
+        Shortly before each calendar meeting, show who's coming and when you last met, open action
+        items, what was decided last time, and related documents, put together on this Mac. Every
+        upcoming meeting on the Meetings page has its brief too
+      </ProSwitch>
       {calendarMissing && (
         <p className="text-xs text-muted-foreground">
           Needs calendar access to know when your meetings are.{" "}
@@ -987,19 +974,12 @@ function PreMeetingBriefSetting() {
 
 /** Meeting Coach: a private card on how you showed up in each call. */
 function MeetingCoachSetting() {
-  const [enabled, setEnabled] = useBooleanSetting(COACH_SETTING, false);
   return (
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm font-medium">Meeting Coach</p>
-        <p className="text-sm text-muted-foreground">
-          After a call, show a private card on how you showed up: talk share, interruptions,
-          questions, filler words, pace and monologues, with trends on the People page. Worked out
-          on this Mac and never shared or exported
-        </p>
-      </div>
-      <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Meeting Coach" />
-    </div>
+    <ProSwitch label="Meeting Coach" setting={useProSetting(COACH_SETTING, "coach")}>
+      After a call, show a private card on how you showed up: talk share, interruptions,
+      questions, filler words, pace and monologues, with trends on the People page. Worked out
+      on this Mac and never shared or exported
+    </ProSwitch>
   );
 }
 
@@ -1175,7 +1155,7 @@ export function SettingsPage() {
   const { providers: llmProviders } = useLLM();
   const { theme, toggleTheme } = useTheme();
   const version = useAppVersion();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [detectionEnabled, setDetectionEnabled] = useState(true);
   const [remoteControlEnabled, setRemoteControlEnabled] = useState(false);
   const [snapshotsEnabled, setSnapshotsEnabled] = useState(false);
@@ -1222,13 +1202,18 @@ export function SettingsPage() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <Tabs defaultValue={searchParams.get("tab") ?? "general"} className="flex flex-1 flex-col gap-0 overflow-hidden">
+      <Tabs
+        value={searchParams.get("tab") ?? "general"}
+        onValueChange={(tab) => setSearchParams({ tab }, { replace: true })}
+        className="flex flex-1 flex-col gap-0 overflow-hidden"
+      >
         <PageHeader
           title="Settings"
           description="Preferences, AI providers, integrations, and local models"
           tabs={
             <TabsList>
               <TabsTrigger value="general">General</TabsTrigger>
+              <TabsTrigger value="plan">Plan</TabsTrigger>
               <TabsTrigger value="api-keys">API keys</TabsTrigger>
               <TabsTrigger value="integrations">Integrations</TabsTrigger>
               <TabsTrigger value="models">Models</TabsTrigger>
@@ -1319,6 +1304,12 @@ export function SettingsPage() {
             </Card>
             <PrivacyCard />
             <PermissionsCard />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="plan" className="mt-0 flex-1 overflow-auto">
+          <div className="flex flex-col gap-8 p-6 max-w-3xl">
+            <PlanSettings />
           </div>
         </TabsContent>
 

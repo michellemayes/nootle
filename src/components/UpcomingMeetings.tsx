@@ -19,6 +19,8 @@ import type {
   MeetingBrief,
   UpcomingEvents,
 } from "@/types";
+import { ProGate } from "@/components/ProGate";
+import { usePlan } from "@/hooks/usePlan";
 
 const DISMISS_KEY = "calendarPromptDismissed";
 const REFRESH_MS = 5 * 60 * 1000;
@@ -124,15 +126,16 @@ function BriefDialog({
   const navigate = useNavigate();
   const [brief, setBrief] = useState<MeetingBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { pro } = usePlan();
 
   useEffect(() => {
     setBrief(null);
     setError(null);
-    if (!event) return;
+    if (!event || !pro) return;
     invoke<MeetingBrief>("get_meeting_brief", { eventId: event.id })
       .then(setBrief)
       .catch((e) => setError(String(e)));
-  }, [event]);
+  }, [event, pro]);
 
   return (
     <Dialog open={event !== null} onOpenChange={(open) => !open && onClose()}>
@@ -141,17 +144,19 @@ function BriefDialog({
         <DialogDescription className="sr-only">
           Who's coming, open action items, last time's decisions and related documents
         </DialogDescription>
-        {brief ? (
-          <MeetingBriefView
-            brief={brief}
-            onRecord={() => event && onRecord(event)}
-            onOpenMeeting={(id) => navigate(`/meeting/${id}`)}
-          />
-        ) : (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            {error ?? "Putting the brief together…"}
-          </p>
-        )}
+        <ProGate feature="brief" className="mt-6">
+          {brief ? (
+            <MeetingBriefView
+              brief={brief}
+              onRecord={() => event && onRecord(event)}
+              onOpenMeeting={(id) => navigate(`/meeting/${id}`)}
+            />
+          ) : (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {error ?? "Putting the brief together…"}
+            </p>
+          )}
+        </ProGate>
       </DialogContent>
     </Dialog>
   );

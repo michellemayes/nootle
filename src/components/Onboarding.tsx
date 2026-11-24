@@ -9,7 +9,9 @@ import {
   type ModelDefinition,
 } from "@/hooks/useModelDownload";
 import { VariantPicker, DownloadProgressBar } from "@/components/ModelDownload";
-import { Mic, Monitor, Calendar } from "lucide-react";
+import { Mic, Monitor, Calendar, Sparkles } from "lucide-react";
+import { usePlan } from "@/hooks/usePlan";
+import { TRIAL_DAYS } from "@/lib/plan";
 import { formatBytes } from "@/lib/utils";
 
 const STEPS = ["Welcome", "Permissions", "Models", "API Keys", "Done"] as const;
@@ -164,6 +166,7 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
                   test recording now: talk for 30 seconds, press Stop, and see
                   your transcript and summary.
                 </p>
+                <ProTrialNote />
                 <div className="flex justify-center gap-3">
                   <Button
                     size="lg"
@@ -184,6 +187,29 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
           </motion.div>
         </AnimatePresence>
       </div>
+  );
+}
+
+function ProTrialNote() {
+  const {
+    status,
+    actions: { signIn },
+  } = usePlan();
+  const days = status?.trialDaysLeft || TRIAL_DAYS;
+  return (
+    <div className="mx-auto mb-8 flex max-w-md flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-lg border bg-primary/[0.04] px-4 py-2.5 text-sm">
+      <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+      <span>Nootle Pro is on for {days} days, no card needed.</span>
+      {status && !status.signedIn && (
+        <button
+          type="button"
+          className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          onClick={signIn}
+        >
+          Sign in
+        </button>
+      )}
+    </div>
   );
 }
 

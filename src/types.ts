@@ -1,3 +1,5 @@
+import type { PlanInterval } from "@/lib/plan";
+
 export interface Meeting {
   id: string;
   title: string;
@@ -545,4 +547,25 @@ export interface LearnedCorrection {
 export interface SegmentEditResult {
   learned: LearnedCorrection[];
   corrected_segments: number;
+}
+
+export interface AccountStatus {
+  signedIn: boolean;
+  email: string | null;
+  pro: boolean;
+  paidPro: boolean;
+  source: "plan" | "bonus" | "trial" | null;
+  plan: {
+    tier: "free" | "pro";
+    interval?: PlanInterval;
+    status?: "active" | "trialing" | "past_due" | "canceled" | "revoked";
+    renewsAt?: string;
+    endsAt?: string;
+  } | null;
+  trialEndsAt: string;
+  trialDays: number;
+  trialDaysLeft: number;
+  proUntil: string | null;
+  referral: { code: string; url: string; joined: number; paid: number; monthsEarned: number } | null;
+  offline: boolean;
 }

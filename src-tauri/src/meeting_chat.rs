@@ -240,11 +240,16 @@ Nootle adds it to the Notion database their meeting workflow uses and links it u
 const ONLY_WHAT_WAS_ASKED: &str =
     "Only send what the user asked for. Nothing else can be sent outside Nootle.";
 
+fn ensure_may_act(db: &Database) -> Result<(), String> {
+    crate::llm::ensure_may_send_to_integrations(db)?;
+    crate::account::require_pro(db, crate::account::ProFeature::Actions)
+}
+
 /// The changes the model may ask for: always the meeting's own, plus Linear
 /// issues and Notion pages when those are set up and meetings may leave this
 /// Mac.
 fn actions_guide(db: &Database) -> String {
-    if crate::llm::ensure_may_send_to_integrations(db).is_err() {
+    if ensure_may_act(db).is_err() {
         return format!("{ACTIONS_GUIDE}\n{NO_SENDING}");
     }
     let mut tools = Vec::new();
@@ -529,7 +534,7 @@ async fn create_linear_issue(
     if title.is_empty() {
         bail!("Skipped a Linear issue with no title");
     }
-    crate::llm::ensure_may_send_to_integrations(db).map_err(|e| anyhow!(e))?;
+    ensure_may_act(db).map_err(|e| anyhow!(e))?;
     let footer = source_note(db, meeting_id)?;
     let description = match description.map(str::trim).filter(|d| !d.is_empty()) {
         Some(d) => format!("{d}\n\n{footer}"),
@@ -574,7 +579,7 @@ async fn create_notion_page(
     if title.is_empty() {
         bail!("Skipped a Notion page with no title");
     }
-    crate::llm::ensure_may_send_to_integrations(db).map_err(|e| anyhow!(e))?;
+    ensure_may_act(db).map_err(|e| anyhow!(e))?;
     let (integration, database_id) = crate::workflows::notion_target(db).ok_or_else(|| {
         anyhow!("Set up a Notion workflow with a database first, so Nootle knows where pages go")
     })?;

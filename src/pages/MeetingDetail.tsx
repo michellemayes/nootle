@@ -52,6 +52,8 @@ import { useSlides } from "@/hooks/useSlides";
 import { SlideCitation, SlideDialog, SlideRecapSection } from "@/components/SlideRecap";
 import { citedSlide, linkSlideCitations } from "@/lib/slides";
 import { RoomRecap } from "@/components/RoomRecap";
+import { ProBadge, ProGate, ProLockedButton } from "@/components/ProGate";
+import { useProAction } from "@/hooks/usePlan";
 import { toast } from "@/components/Toaster";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useCloudTranscriptionFailures, useCustomEndpoint } from "@/hooks/useCustomEndpoint";
@@ -464,7 +466,7 @@ function InsightsPanel({
   const [followups, setFollowups] = useFollowups(meetingId);
   const [checking, setChecking] = useState(false);
 
-  const handleCheckFollowups = async () => {
+  const [handleCheckFollowups, followupsLocked] = useProAction("commitments", async () => {
     if (!selectedProvider || !selectedModel) return;
     setChecking(true);
     try {
@@ -480,7 +482,7 @@ function InsightsPanel({
     } finally {
       setChecking(false);
     }
-  };
+  });
 
   const hasInsights = insights.length > 0;
 
@@ -539,6 +541,7 @@ function InsightsPanel({
         >
           <Handshake className={`h-3 w-3 mr-1 ${checking ? "animate-pulse" : ""}`} />
           {checking ? "Checking follow-ups…" : "Check follow-ups"}
+          {followupsLocked && <ProBadge className="ml-1" />}
         </Button>
         {(extractError || insightsError) && (
           <span className="text-xs text-destructive">Couldn't extract insights. Try again.</span>
@@ -995,60 +998,62 @@ function RunWorkflowMenu({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-0.5 px-2"
-          title={anyRunning ? "Running a workflow…" : "Run a workflow"}
-          aria-label="Run a workflow"
-        >
-          {anyRunning ? (
-            <RotateCw className="h-4 w-4 animate-spin" />
-          ) : (
-            <Zap className="h-4 w-4" />
-          )}
-          <ChevronDown className="h-3 w-3 opacity-60" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-1.5">
-        <div className="space-y-0.5">
-          {items.map(({ workflow: w, status, isRunning }) => (
-            <button
-              key={w.id}
-              type="button"
-              disabled={isRunning}
-              onClick={() => run(w)}
-              className="w-full text-left rounded-md px-2.5 py-2 text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-start gap-2"
-              title={w.description || w.name}
-            >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">
-                {isRunning ? (
-                  <RotateCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                ) : status === "completed" ? (
-                  <Check className="h-3.5 w-3.5 text-success-foreground" />
-                ) : status === "failed" ? (
-                  <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
-                ) : w.icon ? (
-                  <span>{w.icon}</span>
-                ) : (
-                  <Zap className="h-3.5 w-3.5 text-muted-foreground" />
-                )}
-              </span>
-              <span className="flex-1 min-w-0">
-                <span className="block font-medium leading-tight">{w.name}</span>
-                {w.description && (
-                  <span className="block text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                    {w.description}
-                  </span>
-                )}
-              </span>
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <ProGate feature="workflows" fallback={<ProLockedButton feature="workflows" icon={Zap} />}>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-0.5 px-2"
+            title={anyRunning ? "Running a workflow…" : "Run a workflow"}
+            aria-label="Run a workflow"
+          >
+            {anyRunning ? (
+              <RotateCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <Zap className="h-4 w-4" />
+            )}
+            <ChevronDown className="h-3 w-3 opacity-60" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-72 p-1.5">
+          <div className="space-y-0.5">
+            {items.map(({ workflow: w, status, isRunning }) => (
+              <button
+                key={w.id}
+                type="button"
+                disabled={isRunning}
+                onClick={() => run(w)}
+                className="w-full text-left rounded-md px-2.5 py-2 text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-start gap-2"
+                title={w.description || w.name}
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none">
+                  {isRunning ? (
+                    <RotateCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  ) : status === "completed" ? (
+                    <Check className="h-3.5 w-3.5 text-success-foreground" />
+                  ) : status === "failed" ? (
+                    <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                  ) : w.icon ? (
+                    <span>{w.icon}</span>
+                  ) : (
+                    <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block font-medium leading-tight">{w.name}</span>
+                  {w.description && (
+                    <span className="block text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                      {w.description}
+                    </span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </ProGate>
   );
 }
 
@@ -1632,14 +1637,16 @@ export function MeetingDetail() {
               refreshRuns={refreshRuns}
               onViewRuns={() => setDetailTab("workflows")}
             />
-            <TranslateMenu
-              translations={translations}
-              showing={translation?.language ?? null}
-              translating={translating}
-              canTranslate={!!selectedProvider && !!selectedModel}
-              onShow={showLanguage}
-              onTranslate={translateInto}
-            />
+            <ProGate feature="translate" fallback={<ProLockedButton feature="translate" icon={Languages} />}>
+              <TranslateMenu
+                translations={translations}
+                showing={translation?.language ?? null}
+                translating={translating}
+                canTranslate={!!selectedProvider && !!selectedModel}
+                onShow={showLanguage}
+                onTranslate={translateInto}
+              />
+            </ProGate>
             <ExportMenu meeting={meeting} />
             <ContinueInButton meetingId={meeting.id} />
           </div>
@@ -2143,7 +2150,9 @@ export function MeetingDetail() {
               <InsightsPanel meetingId={id!} onSeek={jumpToMs} />
             </TabsContent>
             <TabsContent value="listen" className="flex flex-1 flex-col mt-0 overflow-hidden">
-              <RoomRecap meetingId={id!} speakerColors={speakerMap} />
+              <ProGate feature="room" className="m-5">
+                <RoomRecap meetingId={id!} speakerColors={speakerMap} />
+              </ProGate>
             </TabsContent>
             <TabsContent value="analytics" className="flex flex-1 flex-col mt-0">
               <AnalyticsPanel meetingId={id!} />

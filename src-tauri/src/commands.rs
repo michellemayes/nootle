@@ -1,3 +1,4 @@
+use crate::account::ProFeature;
 use crate::audio::{run_audio_capture, validate_audio_devices, RecordingSession};
 use crate::db::*;
 use crate::extraction;
@@ -1191,7 +1192,7 @@ async fn auto_check_commitments(
     app: &tauri::AppHandle,
     meeting_id: &str,
 ) {
-    if !db.get_bool_setting(crate::commitments::SETTING_KEY, false) {
+    if !crate::account::feature_enabled(db, crate::commitments::SETTING_KEY) {
         return;
     }
     let registry = llm_state.read().await;
@@ -1774,6 +1775,9 @@ pub fn get_ai_connector(
 pub async fn create_ai_connector(
     db: State<'_, DbState>,
 ) -> Result<crate::share::ConnectorAccess, String> {
+    if crate::share::connector_access(&db)?.is_none() {
+        crate::account::require_pro(&db, ProFeature::AiConnector)?;
+    }
     crate::share::create_connector(&db).await
 }
 
@@ -2092,6 +2096,7 @@ pub async fn check_meeting_followups(
     provider: String,
     model: String,
 ) -> Result<Vec<Commitment>, String> {
+    crate::account::require_pro(&db, ProFeature::Commitments)?;
     if let Some(check) = gather_followup_check(&db, &embedding_state, &meeting_id).await? {
         let llm = llm.read().await;
         crate::commitments::run(&db, &llm, &provider, &model, &check)
@@ -2123,6 +2128,7 @@ pub async fn translate_meeting(
     provider: String,
     model: String,
 ) -> Result<crate::translation::MeetingTranslation, String> {
+    crate::account::require_pro(&db, ProFeature::Translate)?;
     let llm = llm.read().await;
     crate::translation::translate_meeting(&db, &llm, &meeting_id, &language, &provider, &model)
         .await
@@ -2215,6 +2221,7 @@ pub async fn ask_the_room(
     provider: String,
     model: String,
 ) -> Result<crate::room_recap::RoomAnswer, String> {
+    crate::account::require_pro(&db, ProFeature::Room)?;
     let synth = crate::room_recap::system_synth().map_err(|e| e.to_string())?;
     let llm = llm.read().await;
     crate::room_recap::ask(
@@ -3207,6 +3214,7 @@ pub async fn synthesize_daily_digest(
     llm: State<'_, LlmState>,
     date: String,
 ) -> Result<Option<String>, String> {
+    crate::account::require_pro(&db, ProFeature::Digest)?;
     let date = digest_date(&date)?;
     let registry = llm.read().await;
     crate::digest::synthesize(&db, &registry, date)
@@ -3222,6 +3230,7 @@ pub async fn suggest_coach_tip(
     provider: String,
     model: String,
 ) -> Result<String, String> {
+    crate::account::require_pro(&db, ProFeature::Coach)?;
     let registry = llm.read().await;
     crate::coach::suggest_tip(&db, &registry, &meeting_id, &provider, &model)
         .await
@@ -3397,6 +3406,7 @@ pub async fn run_workflow(
     llm_provider: Option<String>,
     llm_model: Option<String>,
 ) -> Result<crate::db::WorkflowRun, String> {
+    crate::account::require_pro(&db, ProFeature::Workflows)?;
     let llm_registry = llm.read().await;
     crate::workflows::run_workflow_for_meeting(
         &db,
@@ -3736,6 +3746,7 @@ pub async fn live_assist(
     model: Option<String>,
     asked: Option<Vec<String>>,
 ) -> Result<Option<crate::live_assist::LiveAssistCard>, String> {
+    crate::account::require_pro(&db, ProFeature::LiveAssist)?;
     let question = if automatic {
         let asked: std::collections::HashSet<String> = asked
             .unwrap_or_default()
@@ -3817,6 +3828,7 @@ pub fn live_commitment_reminders(
     text: String,
     reminded: Option<Vec<String>>,
 ) -> Result<Vec<crate::live_assist::LiveAssistCard>, String> {
+    crate::account::require_pro(&db, ProFeature::LiveAssist)?;
     let reminded = reminded.unwrap_or_default().into_iter().collect();
     let pending = db
         .pending_commitments(&crate::commitments::today())

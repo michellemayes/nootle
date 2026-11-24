@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { addDays, formatMinutes, startOfDay } from "@/lib/momentum";
 import { cn, formatClockTime } from "@/lib/utils";
 import type { BriefItem, DailyDigest as Digest, Meeting } from "@/types";
+import { ProGate } from "@/components/ProGate";
 
 type Day = "today" | "yesterday";
 
@@ -116,13 +117,15 @@ export function DailyDigest({ meetings }: { meetings: Meeting[] }) {
 
       <div className="space-y-4 rounded-xl border bg-card p-4 shadow-sm">
         {digest.meetings.length > 0 && (
-          <AiNote
-            command="synthesize_daily_digest"
-            args={{ date }}
-            cacheKey={`${date}:${JSON.stringify(digest)}`}
-            title="Recap"
-            pending="Reading the day back…"
-          />
+          <ProGate feature="digest" compact>
+            <AiNote
+              command="synthesize_daily_digest"
+              args={{ date }}
+              cacheKey={`${date}:${JSON.stringify(digest)}`}
+              title="Recap"
+              pending="Reading the day back…"
+            />
+          </ProGate>
         )}
 
         <div className="grid gap-5 @3xl/main:grid-cols-2">

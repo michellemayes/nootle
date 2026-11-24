@@ -21,7 +21,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD as BASE64URL;
 use base64::Engine;
 use std::sync::Arc;
 
-const SHARE_SITE: &str = "https://nootle.ai";
+pub(crate) const SITE: &str = "https://nootle.ai";
 /// The connector's id, key and token, as JSON.
 const CONNECTOR_SETTING: &str = "ai_connector";
 
@@ -38,16 +38,30 @@ fn seal(key: &Key<Aes256Gcm>, plaintext: &str) -> serde_json::Value {
     })
 }
 
+/// Adds the sharer's referral code, for the share page's "Made with Nootle"
+/// link, and `branding: false` for paid Pro, which drops that footer. Trial
+/// shares stay branded.
+fn with_growth(db: &Database, mut body: serde_json::Value) -> serde_json::Value {
+    let (code, paid) = crate::account::share_growth(db);
+    if let Some(code) = code {
+        body["ref"] = code.into();
+    }
+    if paid {
+        body["branding"] = false.into();
+    }
+    body
+}
+
 /// A request to nootle.ai's API (`/api/shares…` or `/api/connectors…`),
 /// authorized by the share's or connector's token when given.
-async fn send_api(
+pub(crate) async fn send_api(
     method: reqwest::Method,
     path: &str,
     token: Option<&str>,
     body: Option<serde_json::Value>,
 ) -> Result<reqwest::Response, String> {
     let mut request = crate::http::CLIENT
-        .request(method, format!("{SHARE_SITE}/api{path}"))
+        .request(method, format!("{SITE}/api{path}"))
         .header("User-Agent", "Nootle");
     if let Some(token) = token {
         request = request.bearer_auth(token);
@@ -61,7 +75,7 @@ async fn send_api(
         .map_err(|e| format!("Couldn't reach nootle.ai: {e}"))
 }
 
-fn api_error(resp: &reqwest::Response, what: &str) -> String {
+pub(crate) fn api_error(resp: &reqwest::Response, what: &str) -> String {
     format!("nootle.ai couldn't {what} ({}).", resp.status())
 }
 
@@ -117,7 +131,7 @@ async fn save_share(
         let key = BASE64URL
             .decode(&share.key)
             .map_err(|e| format!("Stored share key is corrupt: {e}"))?;
-        let body = seal(Key::<Aes256Gcm>::from_slice(&key), &content);
+        let body = with_growth(db, seal(Key::<Aes256Gcm>::from_slice(&key), &content));
         let path = format!("/shares/{}", share.share_id);
         let resp = send_api(reqwest::Method::PUT, &path, Some(&share.token), Some(body)).await?;
         if resp.status().is_success() {
@@ -141,7 +155,7 @@ async fn save_share(
         reqwest::Method::POST,
         "/shares",
         None,
-        Some(seal(&key, &content)),
+        Some(with_growth(db, seal(&key, &content))),
     )
     .await?;
     if !resp.status().is_success() {
@@ -152,7 +166,7 @@ async fn save_share(
     let share = db
         .save_meeting_share(MeetingShare {
             meeting_id: meeting_id.to_string(),
-            url: format!("{SHARE_SITE}/s/{}#{key}", created.id),
+            url: format!("{SITE}/s/{}#{key}", created.id),
             share_id: created.id,
             key,
             token: created.token,
@@ -252,7 +266,7 @@ pub struct ConnectorAccess {
 impl Connector {
     fn access(&self) -> ConnectorAccess {
         ConnectorAccess {
-            server_url: format!("{SHARE_SITE}/mcp"),
+            server_url: format!("{SITE}/mcp"),
             key: format!("{}.{}", self.id, self.key),
         }
     }

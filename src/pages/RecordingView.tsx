@@ -21,6 +21,7 @@ import { ScratchPad } from "@/components/ScratchPad";
 import { GhostTextarea } from "@/components/GhostTextarea";
 import { useNoteSuggestions } from "@/hooks/useNoteSuggestions";
 import { LiveAssist } from "@/components/LiveAssist";
+import { ProGate } from "@/components/ProGate";
 import { useLiveAssistWindow } from "@/hooks/useLiveAssistWindow";
 import { Collapsible } from "@/components/Collapsible";
 import { useCompactMode } from "@/contexts/CompactModeContext";
@@ -611,12 +612,17 @@ export function RecordingView() {
           autoFocus
         />
         {currentMeeting && isRecording && !isCompact && !liveAssistWindow.open && (
-          <LiveAssist
-            meetingId={currentMeeting.id}
-            segments={segments}
-            onOpenMeeting={navigate}
-            onPopOut={() => liveAssistWindow.popOut(currentMeeting.id)}
-          />
+          <ProGate
+            feature="live-assist"
+            className="m-3 h-fit w-72 shrink-0"
+          >
+            <LiveAssist
+              meetingId={currentMeeting.id}
+              segments={segments}
+              onOpenMeeting={navigate}
+              onPopOut={() => liveAssistWindow.popOut(currentMeeting.id)}
+            />
+          </ProGate>
         )}
       </div>
 
