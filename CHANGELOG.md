@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.39.0] - 2026-11-24
+
+### Features
+
+- Add Nootle Pro plan, trial and gating to the Mac app (#254) ([9f8fab3](https://github.com/michellemayes/nootle/commit/9f8fab3f3b295e50d30574c46e23e4326d98356e))
+- **site:** Add Nootle Pro accounts, Polar billing and referrals (#253) ([5e5bc6a](https://github.com/michellemayes/nootle/commit/5e5bc6a59ff1581909056c5e176dcf1fa0a269bf))
+
 ## [0.38.0] - 2026-11-24
 
 ### Features
