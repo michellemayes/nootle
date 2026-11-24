@@ -13,6 +13,7 @@ import {
   Clock,
   Copy,
   Download,
+  Gift,
   KeyRound,
   Lock,
   MessageSquareText,
@@ -24,6 +25,8 @@ import {
 import { SiClaude, SiOpenai } from "react-icons/si";
 import { DownloadButton } from "@/components/DownloadButton";
 import { RELEASES_URL } from "@/components/site-config";
+import { REFERRAL_DISCOUNT_PERCENT } from "@/lib/account/plans";
+import { REFERRAL_CODE } from "@/lib/account/types";
 import { chatPrompt, initials, parseNote, type ParsedNote } from "./note";
 import { THEME_ATTR, THEME_KEY } from "./theme";
 import styles from "./shared-note.module.css";
@@ -31,7 +34,7 @@ import styles from "./shared-note.module.css";
 type State =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; markdown: string; note: ParsedNote };
+  | { status: "ready"; markdown: string; note: ParsedNote; ref?: string; branding: boolean };
 
 const LOAD_FAILED = "Couldn't load this note. Try again in a moment.";
 
@@ -75,7 +78,12 @@ async function openNote(id: string, key: string): Promise<State> {
     return { status: "error", message: "This note is no longer shared." };
   }
   if (!resp.ok) return { status: "error", message: LOAD_FAILED };
-  const { iv, ciphertext } = (await resp.json()) as { iv: string; ciphertext: string };
+  const { iv, ciphertext, ref, branding } = (await resp.json()) as {
+    iv: string;
+    ciphertext: string;
+    ref?: unknown;
+    branding?: unknown;
+  };
   try {
     const cryptoKey = await crypto.subtle.importKey("raw", fromBase64Url(key), "AES-GCM", false, ["decrypt"]);
     const plain = await crypto.subtle.decrypt(
@@ -84,7 +92,13 @@ async function openNote(id: string, key: string): Promise<State> {
       fromBase64Url(ciphertext),
     );
     const markdown = new TextDecoder().decode(plain);
-    return { status: "ready", markdown, note: parseNote(markdown) };
+    return {
+      status: "ready",
+      markdown,
+      note: parseNote(markdown),
+      ref: typeof ref === "string" && REFERRAL_CODE.test(ref) ? ref : undefined,
+      branding: branding !== false,
+    };
   } catch {
     return { status: "error", message: "This link's key doesn't match the note. Check that you copied the whole link." };
   }
@@ -173,7 +187,7 @@ function EncryptionInfo() {
   );
 }
 
-function Header() {
+function Header({ branded }: { branded: boolean }) {
   const [theme, toggleTheme] = useTheme();
   const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
   return (
@@ -193,9 +207,11 @@ function Header() {
         >
           {theme === "dark" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
         </button>
-        <a href={RELEASES_URL} className={styles.getButton}>
-          Get Nootle
-        </a>
+        {branded && (
+          <a href={RELEASES_URL} className={styles.getButton}>
+            Get Nootle
+          </a>
+        )}
       </div>
     </header>
   );
@@ -365,13 +381,19 @@ function Transcript({ transcript }: { transcript: NonNullable<ParsedNote["transc
 
 const SHOT_SIZES = "(max-width: 720px) 100vw, 32rem";
 
-function NootleCta() {
+function NootleCta({ referral }: { referral?: string }) {
   const [theme] = useTheme();
   const shot = (w: number) => `/screenshots/meeting-${theme}-${w}.webp`;
   return (
     <section className={styles.cta} aria-labelledby="cta-title">
       <div>
         <p className={styles.eyebrow}>Made with Nootle</p>
+        {referral && (
+          <Link href={`/r/${referral}`} className={styles.ctaOffer}>
+            <Gift aria-hidden="true" />
+            {REFERRAL_DISCOUNT_PERCENT}% off Nootle Pro with this link
+          </Link>
+        )}
         <h2 id="cta-title" className={styles.ctaTitle}>
           Notes like these from every meeting. No bot in the call.
         </h2>
@@ -386,7 +408,7 @@ function NootleCta() {
         </ul>
         <div className={styles.ctaButtons}>
           <DownloadButton />
-          <Link href="/" className={styles.btnLink}>
+          <Link href={referral ? `/r/${referral}` : "/"} className={styles.btnLink}>
             See how it works →
           </Link>
         </div>
@@ -431,13 +453,15 @@ export function SharedNote({ id }: { id: string }) {
       .catch(() => setState({ status: "error", message: LOAD_FAILED }));
   }, [id]);
 
+  const ready = state.status === "ready" ? state : null;
+
   useEffect(() => {
     if (state.status === "ready") document.title = `${state.note.title} - Nootle`;
   }, [state]);
 
   return (
     <div className={styles.page}>
-      <Header />
+      <Header branded={ready?.branding !== false} />
       <main id="main-content" className={styles.main}>
         {state.status === "loading" && <Skeleton />}
         {state.status === "error" && (
@@ -460,7 +484,8 @@ export function SharedNote({ id }: { id: string }) {
             </article>
           </>
         )}
-        {state.status !== "loading" && <NootleCta />}
+        {state.status === "error" && <NootleCta />}
+        {ready?.branding && <NootleCta referral={ready.ref} />}
       </main>
       <footer className={styles.footer}>
         <Lock aria-hidden="true" />
