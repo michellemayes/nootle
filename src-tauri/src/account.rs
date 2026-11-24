@@ -174,6 +174,14 @@ pub fn is_pro(db: &Database) -> bool {
     Stored::load(db).is_pro(Utc::now())
 }
 
+/// Pro that's been paid for, through a plan or invites, as opposed to the
+/// trial.
+pub fn is_paid_pro(db: &Database) -> bool {
+    Stored::load(db)
+        .source(Utc::now())
+        .is_some_and(|s| s != Source::Trial)
+}
+
 /// Refuses a Pro feature the user asked for, naming it.
 pub fn require_pro(db: &Database, feature: &str) -> Result<(), String> {
     if is_pro(db) {
@@ -528,6 +536,21 @@ mod tests {
         s.summary = Some(summary(true, "pro", None));
         s.signed_in = false;
         assert!(!s.is_pro(at("2026-12-10T00:00:00Z")));
+    }
+
+    #[test]
+    fn only_a_plan_or_bonus_counts_as_paid() {
+        let db = Database::new_in_memory().unwrap();
+        assert!(is_pro(&db) && !is_paid_pro(&db), "trial");
+        db.set_setting(TOKEN_SETTING, "tok").unwrap();
+        db.set_setting(
+            SUMMARY_SETTING,
+            &serde_json::to_string(&summary(true, "free", None)).unwrap(),
+        )
+        .unwrap();
+        db.set_setting(FETCHED_AT_SETTING, &Utc::now().to_rfc3339())
+            .unwrap();
+        assert!(is_paid_pro(&db), "referral bonus");
     }
 
     #[test]

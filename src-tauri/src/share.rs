@@ -39,12 +39,13 @@ fn seal(key: &Key<Aes256Gcm>, plaintext: &str) -> serde_json::Value {
 }
 
 /// Adds the sharer's referral code, for the share page's "Made with Nootle"
-/// link, and `branding: false` for Pro, which drops that footer.
+/// link, and `branding: false` for paid Pro, which drops that footer. Trial
+/// shares stay branded.
 fn with_growth(db: &Database, mut body: serde_json::Value) -> serde_json::Value {
     if let Some(code) = crate::account::referral_code(db) {
         body["ref"] = code.into();
     }
-    if crate::account::is_pro(db) {
+    if crate::account::is_paid_pro(db) {
         body["branding"] = false.into();
     }
     body

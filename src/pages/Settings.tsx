@@ -17,7 +17,7 @@ import { McpSetup } from "@/components/McpSetup";
 import { ContinueInSettings } from "@/components/ContinueInSettings";
 import { AiConnectorCard } from "@/components/AiConnectorCard";
 import { PlanSettings } from "@/components/PlanSettings";
-import { ProBadge, ProGate, useProGuard } from "@/components/ProGate";
+import { ProBadge, useProGuard } from "@/components/ProGate";
 import { CustomEndpointCard } from "@/components/CustomEndpointCard";
 import { CopyButton } from "@/components/CopyButton";
 import { DictionaryManager } from "@/components/DictionaryManager";
@@ -1389,9 +1389,7 @@ export function SettingsPage() {
         <TabsContent value="integrations" className="mt-0 flex-1 overflow-auto">
           <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <IntegrationsManager />
-            <ProGate feature="ai-connector">
-              <AiConnectorCard />
-            </ProGate>
+            <AiConnectorCard />
             <ContinueInSettings />
           </div>
         </TabsContent>

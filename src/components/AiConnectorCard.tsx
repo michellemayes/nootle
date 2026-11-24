@@ -6,7 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CopyButton } from "@/components/CopyButton";
+import { ProUpsell } from "@/components/ProGate";
 import { useBusyAction } from "@/hooks/useBusyAction";
+import { usePlan } from "@/hooks/usePlan";
 import type { ConnectorAccess } from "@/types";
 
 /**
@@ -19,6 +21,9 @@ export function AiConnectorCard() {
   const [access, setAccess] = useState<ConnectorAccess | null>(null);
   const { busy, error, run: act } = useBusyAction();
   const [confirming, setConfirming] = useState<keyof typeof dialogs | null>(null);
+  // Without Pro a new connector can't be made, but an existing one can still
+  // be reset or turned off.
+  const { pro } = usePlan();
 
   useEffect(() => {
     invoke<ConnectorAccess | null>("get_ai_connector").then(setAccess).catch(() => setAccess(null));
@@ -55,7 +60,9 @@ export function AiConnectorCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {access ? (
+        {!access && !pro ? (
+          <ProUpsell feature="ai-connector" compact />
+        ) : access ? (
           <>
             <div className="space-y-1">
               <p className="text-xs font-medium">Server URL</p>
@@ -98,12 +105,12 @@ export function AiConnectorCard() {
                 Reset key
               </Button>
             </>
-          ) : (
+          ) : pro ? (
             <Button size="sm" disabled={busy} onClick={create}>
               {busy && <RotateCw className="h-3 w-3 animate-spin" />}
               Create connector key
             </Button>
-          )}
+          ) : null}
         </div>
       </CardContent>
       {confirming && (
