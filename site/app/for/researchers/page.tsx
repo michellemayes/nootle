@@ -1,3 +1,4 @@
+import { PRO_FROM } from "@/components/pricing";
 import { LandingPage, landingMetadata, type LandingContent } from "@/components/LandingPage";
 
 export const metadata = landingMetadata({
@@ -17,7 +18,7 @@ const content: LandingContent = {
     body: "It depends on how your team works. If you run interviews over video calls on a Mac and want transcripts that stay on your machine, Nootle is a good fit: it records without a bot, transcribes on your Mac and answers questions across every session with citations. If you need a shared research repository where a whole team tags clips and builds highlight reels, a dedicated tool like Dovetail fits better. You can still export Nootle transcripts as Markdown and bring them there.",
   },
   published: "2026-10-11",
-  updated: "2026-10-19",
+  updated: "2026-11-24",
   why: {
     heading: "Made for a stack of interviews",
     points: [
@@ -62,7 +63,7 @@ const content: LandingContent = {
     {
       question: "What does it cost?",
       answer:
-        "Nothing. Nootle is free and open source under the MIT license. It runs on Apple Silicon Macs with macOS 14 or later.",
+        `Nothing for recording, transcription, summaries and Ask: they're free and open source under the MIT license. An optional Pro plan, from ${PRO_FROM} a month, adds Live Assist, workflows and briefs. Nootle runs on Apple Silicon Macs with macOS 14 or later.`,
     },
   ],
   disclaimer:

@@ -4,7 +4,7 @@ import { Navbar } from "@/components/Navbar";
 export const metadata: Metadata = {
   title: "Privacy Policy - Nootle",
   description:
-    "Nootle's privacy policy. Learn how Nootle handles your data locally and privately — no cloud recording, no data collection.",
+    "Nootle's privacy policy. How Nootle keeps meetings on your Mac, what an optional nootle.ai account stores, and how payments through Polar work.",
   alternates: {
     canonical: "/privacy",
   },
@@ -20,7 +20,7 @@ export default function PrivacyPage() {
             Privacy Policy
           </h1>
           <p className="text-[var(--color-text-secondary)] text-sm mb-12">
-            Last updated: October 25, 2026
+            Last updated: November 24, 2026
           </p>
 
           <section className="space-y-6 text-[var(--color-text-secondary)] text-base leading-relaxed">
@@ -33,7 +33,9 @@ export default function PrivacyPage() {
                 fundamental to how Nootle is built. All audio recording, transcription,
                 and processing happens entirely on your Mac. No meeting data is sent to
                 external servers by Nootle, except notes you choose to share, which are
-                encrypted first (see Share links below).
+                encrypted first (see Share links below). A nootle.ai account is optional
+                and holds only what billing and invites need (see Accounts and payments
+                below).
               </p>
             </div>
 
@@ -136,10 +138,62 @@ export default function PrivacyPage() {
                 sign-in token the AI app then holds carries it, sealed so only nootle.ai
                 can open it. Your AI app sends that token with each request, so nootle.ai
                 decrypts those notes in memory only to answer it, then forgets them.
-                nootle.ai has no accounts and stores no keys, tokens or decrypted notes.
+                The connector doesn&apos;t use your nootle.ai account, and nootle.ai
+                stores no connector keys, tokens or decrypted notes.
                 Notes you don&apos;t choose for the connector stay unreadable to
                 nootle.ai. Resetting or turning off the connector in the app signs every
                 AI app out.
+              </p>
+            </div>
+
+            <div id="accounts" className="scroll-mt-24">
+              <h2 className="font-[family-name:var(--font-outfit)] text-2xl font-bold mb-4 text-[var(--color-text)]">
+                Accounts and payments
+              </h2>
+              <p>
+                You can use Nootle without an account. If you sign in on nootle.ai, to buy
+                Pro or to invite friends, your account stores your email address, your
+                plan and its renewal dates, and referral details: your invite code, who
+                signed up with it and whether they paid, and the code you signed up with,
+                if any. It never holds meetings, transcripts or notes.
+              </p>
+              <ul className="list-disc pl-6 space-y-2 mt-4">
+                <li>
+                  <strong className="text-[var(--color-text)]">Sign-in emails</strong> are
+                  sent through{" "}
+                  <a
+                    href="https://resend.com/legal/privacy-policy"
+                    className="text-[var(--color-accent)] underline hover:text-[var(--color-accent-hover)]"
+                  >
+                    Resend
+                  </a>
+                  , which receives your email address to deliver the link. There are no
+                  passwords.
+                </li>
+                <li>
+                  <strong className="text-[var(--color-text)]">Payments</strong> are
+                  processed by{" "}
+                  <a
+                    href="https://polar.sh/legal/privacy"
+                    className="text-[var(--color-accent)] underline hover:text-[var(--color-accent-hover)]"
+                  >
+                    Polar
+                  </a>
+                  , the merchant of record, which handles checkout, tax, invoices and
+                  refunds. nootle.ai never sees your card details; it only learns which
+                  plan you bought and when it renews.
+                </li>
+                <li>
+                  <strong className="text-[var(--color-text)]">Cookies:</strong> signing in
+                  sets one cookie that keeps you signed in, and opening a friend&apos;s
+                  invite link sets one that remembers their code for 60 days so you get
+                  the discount. Neither is used for tracking.
+                </li>
+              </ul>
+              <p className="mt-4">
+                A Mac you connect to your account stores a sign-in token in Nootle&apos;s
+                settings. Sign out every Mac on your account page cancels them all. To
+                delete your account, reach out through the contact details below.
               </p>
             </div>
 
@@ -156,8 +210,8 @@ export default function PrivacyPage() {
                   Vercel Analytics
                 </a>{" "}
                 to collect anonymous, aggregated usage data such as page views and visitor
-                counts. No cookies are used, no personal data is collected, and no
-                cross-site tracking occurs. This analytics data is used solely to
+                counts. Analytics uses no cookies, collects no personal data, and does no
+                cross-site tracking. This analytics data is used solely to
                 understand how the website is used.
               </p>
             </div>

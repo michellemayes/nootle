@@ -1,3 +1,4 @@
+import { NOOTLE_PRICE, PRO_FROM } from "@/components/pricing";
 import { LandingPage, landingMetadata, type LandingContent } from "@/components/LandingPage";
 
 export const metadata = landingMetadata({
@@ -14,10 +15,10 @@ const content: LandingContent = {
     "Nootle records meetings directly on your Mac, so no bot joins the call, and transcribes them there, so the audio is never uploaded. It’s free and open source.",
   answer: {
     question: "Which is better, Nootle or Otter?",
-    body: "It depends on whether you want a bot in the call. If you want private notes with nothing joining the meeting, audio that never leaves your Mac and no subscription, Nootle is the better choice. Otter fits better if you work on Windows or your phone, or want a bot to join and record meetings you can’t attend yourself. As of October 2026, Otter’s paid plans start at $8.33 a month billed annually; Nootle is free.",
+    body: `It depends on whether you want a bot in the call. If you want private notes with nothing joining the meeting, audio that never leaves your Mac and no subscription, Nootle is the better choice. Otter fits better if you work on Windows or your phone, or want a bot to join and record meetings you can’t attend yourself. As of October 2026, Otter’s paid plans start at $8.33 a month billed annually; Nootle is free, with an optional Pro plan from ${PRO_FROM} a month.`,
   },
   published: "2026-10-11",
-  updated: "2026-10-19",
+  updated: "2026-11-24",
   why: {
     heading: "Why people switch from Otter",
     points: [
@@ -49,7 +50,7 @@ const content: LandingContent = {
     rows: [
       ["How it records", "On your Mac; no bot joins", "A bot joins the call (a desktop app is also available)"],
       ["Where processing happens", "Transcription on your Mac", "In the cloud"],
-      ["Price", "Free, open source (MIT)", "Free plan; paid plans from $8.33/month billed annually"],
+      ["Price", `${NOOTLE_PRICE}, open source (MIT)`, "Free plan; paid plans from $8.33/month billed annually"],
     ],
     note: "Otter details as of October 2026.",
   },

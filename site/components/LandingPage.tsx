@@ -7,6 +7,7 @@ import { DownloadButton } from "@/components/DownloadButton";
 import { Doodles, Squiggle } from "@/components/Doodles";
 import { PageMotion } from "@/components/PageMotion";
 import { linkClass, outfit } from "@/components/site-config";
+import { formatDate } from "@/components/ui";
 import ogImage from "@/app/opengraph-image.png";
 
 export type LandingContent = {
@@ -71,13 +72,7 @@ export function landingMetadata({
 }
 
 function DateStamp({ date }: { date: string }) {
-  const label = new Date(date).toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-  return <time dateTime={date}>{label}</time>;
+  return <time dateTime={date}>{formatDate(date)}</time>;
 }
 
 export function LandingPage({ content }: { content: LandingContent }) {

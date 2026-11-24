@@ -1,8 +1,11 @@
+import { TRIAL_DAYS } from "@/lib/account/plans";
+import { PRO_PRICE_SUMMARY } from "@/components/pricing";
+
 export const faqs = [
   {
     question: "Is Nootle free?",
     answer:
-      "Yes. Nootle is completely free and open source under the MIT license. You can download it from GitHub, inspect the source code, and contribute to development. If Nootle saves you time, you can optionally support development through GitHub Sponsors.",
+      `Yes. Recording, on-device transcription, speaker names, summaries, Ask across your meetings and docs, share links, export, the CLI and the MCP server are free forever, with no account needed. Nootle Pro (${PRO_PRICE_SUMMARY}) adds Live Assist, workflows, briefs and the daily digest, the commitment tracker, Meeting Coach, Ask the Room, Translate and the AI connector, and every install starts with a ${TRIAL_DAYS}-day Pro trial. The whole app stays open source under the MIT license.`,
   },
   {
     question: "Does Nootle send my meetings to the cloud?",
