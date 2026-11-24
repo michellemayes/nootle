@@ -449,22 +449,59 @@ async fn execute_notion(
     integration: &crate::db::Integration,
     context: &WorkflowContext,
 ) -> std::result::Result<WorkflowResult, String> {
-    let (creds, config) = parse_creds_and_config(integration, workflow)?;
-
-    let database_id = config["database_id"]
-        .as_str()
-        .ok_or("Missing database_id in workflow config")?;
+    let config: serde_json::Value =
+        serde_json::from_str(&workflow.config_json).map_err(|e| format!("Invalid config: {e}"))?;
+    let database_id =
+        notion_database_id(&config).ok_or("Missing database_id in workflow config")?;
     let content = render_default_summary_body(context);
+    create_notion_page(
+        db,
+        integration,
+        database_id,
+        &context.meeting_title,
+        &content,
+    )
+    .await
+}
 
+/// The Notion database a workflow's config names, if any.
+fn notion_database_id(config: &serde_json::Value) -> Option<&str> {
+    config["database_id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+}
+
+/// The Notion connection and database of the newest Notion workflow that
+/// names one: where pages go when something other than a workflow adds one.
+pub fn notion_target(db: &crate::db::Database) -> Option<(crate::db::Integration, String)> {
+    let notion: Vec<_> = db
+        .list_integrations()
+        .ok()?
+        .into_iter()
+        .filter(|i| i.integration_type == "notion")
+        .collect();
+    db.list_workflows().ok()?.into_iter().find_map(|w| {
+        let integration = notion.iter().find(|i| i.id == w.integration_id)?;
+        let config: serde_json::Value = serde_json::from_str(&w.config_json).ok()?;
+        let database_id = notion_database_id(&config)?.to_string();
+        Some((integration.clone(), database_id))
+    })
+}
+
+/// Adds a page to a Notion database through whichever way Notion is
+/// connected, returning its URL as the output.
+pub async fn create_notion_page(
+    db: &crate::db::Database,
+    integration: &crate::db::Integration,
+    database_id: &str,
+    title: &str,
+    content: &str,
+) -> std::result::Result<WorkflowResult, String> {
+    let creds: serde_json::Value = serde_json::from_str(&integration.credentials_json)
+        .map_err(|e| format!("Invalid credentials: {e}"))?;
     if crate::connectors::is_mcp(&creds) {
-        return notion_mcp_create_page(
-            db,
-            integration,
-            database_id,
-            &context.meeting_title,
-            &content,
-        )
-        .await;
+        return notion_mcp_create_page(db, integration, database_id, title, content).await;
     }
 
     let token = creds["api_key"]
@@ -480,10 +517,10 @@ async fn execute_notion(
             "parent": { "database_id": database_id },
             "properties": {
                 "title": {
-                    "title": [{ "text": { "content": context.meeting_title } }]
+                    "title": [{ "text": { "content": title } }]
                 }
             },
-            "children": notion_paragraph_blocks(&content)
+            "children": notion_paragraph_blocks(content)
         }))
         .send()
         .await
