@@ -88,6 +88,12 @@ export default async function AccountPage({
         />
         <div className="mx-auto max-w-3xl">
           {params.welcome === "1" && <Welcome pro={summary.pro} />}
+          {params.billing === "unavailable" && (
+            <p role="status" className={`${cardClass} mb-6 flex items-center gap-2 px-5 py-4 text-sm text-[var(--color-amber)]`}>
+              <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
+              Billing couldn&apos;t open. Try again in a minute.
+            </p>
+          )}
 
           <header className="mb-8 flex flex-wrap items-end justify-between gap-x-6 gap-y-1">
             <h1 className={`${outfit} text-4xl font-extrabold tracking-tight text-[var(--color-text)] md:text-5xl`}>
@@ -144,7 +150,7 @@ export default async function AccountPage({
                   </Link>
                 )}
                 {hasBilling && (
-                  <a href={summary.manageUrl} className={details.warn ? primaryButton : secondaryButton}>
+                  <a href="/api/billing/portal" className={details.warn ? primaryButton : secondaryButton}>
                     <CreditCard aria-hidden="true" className="h-4 w-4" />
                     Manage billing
                   </a>

@@ -50,7 +50,9 @@ export default async function SignInPage({
   return (
     <AuthShell>
       <h1 className={authHeading}>{state ? "Connect Nootle" : "Sign in to Nootle"}</h1>
-      <p className="mt-3 mb-7 text-[var(--color-text-secondary)]">We&apos;ll email you a link. No password.</p>
+      <p className="mt-3 mb-7 text-[var(--color-text-secondary)]">
+        {params.error === "expired" ? "That link expired. We'll email you a new one." : "We'll email you a link. No password."}
+      </p>
       <SignInForm next={next} appState={state} />
     </AuthShell>
   );
