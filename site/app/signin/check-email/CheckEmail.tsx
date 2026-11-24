@@ -7,8 +7,8 @@ import { Check, Loader2, MailCheck, Wrench } from "lucide-react";
 import { SPRING } from "@/components/motion";
 import { quietButton } from "@/components/ui";
 import { authHeading } from "../AuthShell";
-import { RESEND_COOLDOWN_SECONDS, readPending, requestLink, savePending } from "../request-link";
-import type { PendingSignIn } from "../params";
+import { MAGIC_LINK_COOLDOWN_SECONDS } from "@/lib/account/types";
+import { readPending, requestLink, savePending, type PendingSignIn } from "../request-link";
 
 const noop = () => () => {};
 
@@ -31,7 +31,7 @@ export function CheckEmail({ email }: { email: string }) {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const sentAt = pending?.sentAt ?? 0;
-  const wait = Math.max(0, Math.ceil((sentAt + RESEND_COOLDOWN_SECONDS * 1000 - now) / 1000));
+  const wait = Math.max(0, Math.ceil((sentAt + MAGIC_LINK_COOLDOWN_SECONDS * 1000 - now) / 1000));
 
   useEffect(() => {
     if (wait <= 0) return;

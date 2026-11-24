@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { Loader2, PartyPopper } from "lucide-react";
 import { SPRING } from "@/components/motion";
 import { outfit } from "@/components/site-config";
+import type { AccountSummary } from "@/lib/account/types";
 
 const BITS = [
   { x: -150, y: -70, r: -40, c: "var(--color-amber)" },
@@ -25,9 +26,15 @@ export function Welcome({ pro }: { pro: boolean }) {
   useEffect(() => {
     if (pro) return;
     let tries = 0;
-    const t = setInterval(() => {
+    const t = setInterval(async () => {
       if (++tries > 10) clearInterval(t);
-      router.refresh();
+      const summary = await fetch("/api/account", { cache: "no-store" })
+        .then((r) => (r.ok ? (r.json() as Promise<AccountSummary>) : null))
+        .catch(() => null);
+      if (summary?.pro) {
+        clearInterval(t);
+        router.refresh();
+      }
     }, 3000);
     return () => clearInterval(t);
   }, [pro, router]);

@@ -1,7 +1,3 @@
-// Nootle Pro's prices and what Pro adds, used by the pricing page, the
-// checkout route and the comparison table. Product ids come from the env so
-// sandbox and production use the same code.
-
 import type { PlanInterval } from "@/lib/account/types";
 
 export interface PriceOption {
@@ -10,12 +6,13 @@ export interface PriceOption {
   /** Whole US dollars. */
   price: number;
   cadence: string;
+  /** Product ids come from the env so sandbox and production use the same code. */
   productEnv: string;
 }
 
 export const PRICES: PriceOption[] = [
-  { interval: "monthly", label: "Monthly", price: 5, cadence: "/month", productEnv: "POLAR_PRODUCT_MONTHLY" },
-  { interval: "yearly", label: "Yearly", price: 40, cadence: "/year", productEnv: "POLAR_PRODUCT_YEARLY" },
+  { interval: "monthly", label: "Monthly", price: 5, cadence: "/mo", productEnv: "POLAR_PRODUCT_MONTHLY" },
+  { interval: "yearly", label: "Yearly", price: 40, cadence: "/yr", productEnv: "POLAR_PRODUCT_YEARLY" },
   { interval: "lifetime", label: "Lifetime", price: 99, cadence: "once", productEnv: "POLAR_PRODUCT_LIFETIME" },
 ];
 
@@ -47,5 +44,6 @@ export const PRO_FEATURES = [
   "Share links without Nootle branding",
 ];
 
-export const productIdFor = (interval: PlanInterval) =>
-  process.env[PRICES.find((p) => p.interval === interval)!.productEnv];
+export const priceFor = (interval: PlanInterval) => PRICES.find((p) => p.interval === interval)!;
+
+export const productIdFor = (interval: PlanInterval) => process.env[priceFor(interval).productEnv];

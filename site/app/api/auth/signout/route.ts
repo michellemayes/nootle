@@ -1,7 +1,6 @@
-import { clearSessionCookie, isFormPost } from "@/lib/account/session";
+import { clearSessionCookie } from "@/lib/account/session";
 
-/** Signs this browser out. A form post is sent home; a fetch gets 204. */
-export async function POST(request: Request) {
+export async function POST() {
   await clearSessionCookie();
-  return isFormPost(request) ? Response.redirect(new URL("/", request.url), 303) : new Response(null, { status: 204 });
+  return new Response(null, { status: 204 });
 }

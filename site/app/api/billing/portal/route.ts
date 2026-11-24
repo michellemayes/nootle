@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 import { getCurrentAccount } from "@/lib/account/session";
 import { siteOrigin } from "@/lib/account/summary";
-import { createCustomerSession, polarConfigured } from "@/lib/billing/polar";
+import { createCustomerSession, customerRefFor, polarConfigured } from "@/lib/billing/polar";
 
 /** Sends the signed-in account to Polar's customer portal to manage billing. */
 export async function GET(request: Request) {
@@ -11,10 +11,7 @@ export async function GET(request: Request) {
   if (!polarConfigured()) return Response.redirect(new URL("/account?billing=unavailable", url), 303);
 
   try {
-    const session = await createCustomerSession(
-      account.polarCustomerId ? { customerId: account.polarCustomerId } : { externalCustomerId: account.id },
-      `${siteOrigin(request)}/account`,
-    );
+    const session = await createCustomerSession(customerRefFor(account), `${siteOrigin(request)}/account`);
     return Response.redirect(session.url, 303);
   } catch (error) {
     // Most often an account that never bought anything, so Polar has no customer for it.

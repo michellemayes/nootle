@@ -1,5 +1,3 @@
-// The sign-in email, sent with Resend (RESEND_API_KEY, EMAIL_FROM).
-
 const DEFAULT_FROM = "Nootle <signin@nootle.ai>";
 
 export const emailConfigured = () => Boolean(process.env.RESEND_API_KEY);
@@ -41,7 +39,6 @@ If you didn't ask to sign in, you can ignore this email.
   return { subject, text, html };
 }
 
-/** Emails `to` a sign-in link. Throws if Resend refuses it. */
 export async function sendMagicLink(to: string, link: string): Promise<void> {
   const { subject, text, html } = magicLinkEmail(link);
   const response = await fetch("https://api.resend.com/emails", {

@@ -9,8 +9,8 @@
 // link, the AI client holds the key and nootle.ai never stores it; it opens
 // a token only while answering that client's request.
 
-import { createCipheriv, createHash, hkdfSync, randomBytes } from "node:crypto";
-import { openSealed } from "@/lib/shares";
+import { createHash, hkdfSync } from "node:crypto";
+import { sealer } from "@/lib/seal";
 
 /** How long each sealed thing is good for, in seconds. Client ids never expire. */
 const LIFETIME = {
@@ -23,8 +23,6 @@ const LIFETIME = {
 
 /** The MCP server's path; tokens are issued for it. */
 const MCP_PATH = "/mcp";
-/** Characters in a base64url 12-byte IV, which starts every sealed string. */
-const IV_CHARS = 16;
 
 type Kind = "client" | keyof typeof LIFETIME;
 
@@ -42,24 +40,9 @@ function serverKey(): Buffer {
   return secret;
 }
 
-/** Seals `payload` as a `kind`, which it can only be opened as: the IV, then the ciphertext. */
-function seal(kind: Kind, payload: object): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", serverKey(), iv).setAAD(Buffer.from(kind));
-  const body = Buffer.concat([cipher.update(JSON.stringify(payload)), cipher.final(), cipher.getAuthTag()]);
-  return iv.toString("base64url") + body.toString("base64url");
-}
+const { seal, open } = sealer<Kind>(serverKey);
 
-function open<T>(kind: Kind, sealed: unknown): T | null {
-  if (typeof sealed !== "string" || !/^[A-Za-z0-9_-]{40,}$/.test(sealed)) return null;
-  const plain = openSealed({ iv: sealed.slice(0, IV_CHARS), ciphertext: sealed.slice(IV_CHARS) }, serverKey(), kind);
-  if (plain === null) return null;
-  const payload = JSON.parse(plain) as T & { exp?: number };
-  return payload.exp !== undefined && payload.exp < Date.now() / 1000 ? null : payload;
-}
-
-const expiring = (kind: keyof typeof LIFETIME, payload: object) =>
-  seal(kind, { ...payload, exp: Math.floor(Date.now() / 1000) + LIFETIME[kind] });
+const expiring = (kind: keyof typeof LIFETIME, payload: object) => seal(kind, payload, LIFETIME[kind]);
 
 // --- Discovery ---
 

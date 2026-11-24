@@ -1,5 +1,4 @@
-// Lets `node --test` load the site's TypeScript as Next does: `@/` is the
-// site root and imports leave off `.ts`. Registered by `pnpm test`.
+// Resolves `@/` and extensionless imports for `node --test`, as Next does.
 
 import { existsSync } from "node:fs";
 import { register } from "node:module";

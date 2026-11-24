@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { outfit } from "@/components/site-config";
 import { cardClass } from "@/components/ui";
 
 export function AuthShell({ children }: { children: ReactNode }) {
@@ -26,14 +27,14 @@ export function AuthShell({ children }: { children: ReactNode }) {
           priority
           className="transition-transform duration-300 group-hover:-rotate-12 group-hover:scale-110"
         />
-        <span className="font-[family-name:var(--font-outfit)] text-xl font-bold text-[var(--color-text)]">Nootle</span>
+        <span className={`${outfit} text-xl font-bold text-[var(--color-text)]`}>Nootle</span>
       </Link>
       <div className={`${cardClass} w-full max-w-md p-7 shadow-[0_30px_80px_-40px_rgb(0_0_0/0.8)] sm:p-9`}>{children}</div>
     </main>
   );
 }
 
-export const authHeading = "font-[family-name:var(--font-outfit)] text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl";
+export const authHeading = `${outfit} text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-3xl`;
 
 export function ExpiredAppLink() {
   return (

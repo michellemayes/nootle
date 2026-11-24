@@ -9,8 +9,9 @@
 // nootle.ai can open it only while answering one, and never stores the key.
 
 import { createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { del, get, put } from "@vercel/blob";
-import { REFERRAL_CODE } from "@/lib/account/types";
+import { del } from "@vercel/blob";
+import { normalizeReferralCode } from "@/lib/account/types";
+import { blobKV } from "@/lib/kv";
 
 /** Well under Vercel's 4.5 MB request body limit. */
 const MAX_CIPHERTEXT_CHARS = 3_000_000;
@@ -25,16 +26,13 @@ export interface Sealed {
   ciphertext: string;
 }
 
-/** Plain-text extras a share may carry for its page: who shared it, and whether to show "Made with Nootle". */
 export interface ShareMeta {
   ref?: string;
   branding?: boolean;
 }
 
-interface Stored extends Sealed, ShareMeta {
-  tokenHash: string;
-  updatedAt: string;
-}
+type Unsaved<Extras> = Sealed & Extras & { tokenHash: string };
+type Stored<Extras> = Unsaved<Extras> & { updatedAt: string };
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
@@ -56,12 +54,12 @@ export function parseSealed(body: unknown): Sealed | null {
   return { iv, ciphertext };
 }
 
-/** The optional `ref` and `branding` from a share's request body, or null when either is malformed. */
 export function parseShareMeta(body: unknown): ShareMeta | null {
   const { ref, branding } = (body ?? {}) as Record<string, unknown>;
-  if (ref !== undefined && (typeof ref !== "string" || !REFERRAL_CODE.test(ref))) return null;
+  const code = ref === undefined ? undefined : typeof ref === "string" ? normalizeReferralCode(ref) : null;
+  if (code === null) return null;
   if (branding !== undefined && typeof branding !== "boolean") return null;
-  return { ...(ref !== undefined && { ref }), ...(branding !== undefined && { branding }) };
+  return { ...(code && { ref: code }), ...(branding !== undefined && { branding }) };
 }
 
 /**
@@ -82,49 +80,51 @@ export function openSealed({ iv, ciphertext }: Sealed, key: string | Buffer, aad
 }
 
 /** Sealed blobs under `prefix/` in Vercel Blob, each changed only with its token. */
-function sealedStore(prefix: string) {
+function sealedStore<Extras extends object = Record<never, never>>(
+  prefix: string,
+  parseExtras?: (body: unknown) => Extras | null,
+) {
   const pathFor = (id: string) => `${prefix}/${id}.json`;
-
-  async function write(id: string, sealed: Sealed, tokenHash: string, meta: ShareMeta = {}) {
-    const stored: Stored = { ...sealed, ...meta, tokenHash, updatedAt: new Date().toISOString() };
-    await put(pathFor(id), JSON.stringify(stored), {
-      access: "private",
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType: "application/json",
-    });
-  }
+  const save = (id: string, record: Unsaved<Extras>) =>
+    blobKV.put(pathFor(id), { ...record, updatedAt: new Date().toISOString() });
 
   return {
-    async read(id: string): Promise<Stored | null> {
-      if (!isId(id)) return null;
-      const result = await get(pathFor(id), { access: "private", useCache: false });
-      if (!result) return null;
-      return JSON.parse(await new Response(result.stream).text()) as Stored;
+    parseExtras: (body: unknown): Extras | null => (parseExtras ? parseExtras(body) : ({} as Extras)),
+    async read(id: string): Promise<Stored<Extras> | null> {
+      return isId(id) ? blobKV.get<Stored<Extras>>(pathFor(id)) : null;
     },
     /** Stores a new blob and returns its id and the token that can change it. */
-    async create(sealed: Sealed, meta?: ShareMeta): Promise<{ id: string; token: string }> {
+    async create(sealed: Sealed, extras = {} as Extras): Promise<{ id: string; token: string }> {
       const id = randomBytes(16).toString("base64url");
       const token = randomBytes(32).toString("base64url");
-      await write(id, sealed, hashToken(token), meta);
+      await save(id, { ...extras, ...sealed, tokenHash: hashToken(token) });
       return { id, token };
     },
-    write,
+    /** Replaces the blob, keeping its token and any extras `extras` doesn't set. */
+    write: (id: string, stored: Stored<Extras>, sealed: Sealed, extras = {} as Extras) =>
+      save(id, { ...stored, ...extras, ...sealed }),
     delete: (id: string) => del(pathFor(id)),
   };
 }
 
-export type SealedStore = ReturnType<typeof sealedStore>;
+export type SealedStore<Extras extends object> = ReturnType<typeof sealedStore<Extras>>;
 
-export const shares = sealedStore("shares");
+export const shares = sealedStore("shares", parseShareMeta);
 export const connectors = sealedStore("connectors");
 
-/** The token from a request's `Authorization: Bearer <token>`. */
-export const bearer = (request: Request) => request.headers.get("authorization")?.match(/^Bearer (\S+)$/)?.[1];
+export function publicShare(stored: Stored<ShareMeta>): Sealed & ShareMeta {
+  const view: Partial<Stored<ShareMeta>> = { ...stored };
+  delete view.tokenHash;
+  delete view.updatedAt;
+  return view as Sealed & ShareMeta;
+}
+
+/** The token from `Authorization: Bearer <token>`. */
+export const bearer = (headers: Headers) => headers.get("authorization")?.match(/^Bearer (\S+)$/)?.[1];
 
 /** Whether the request's bearer token may change `stored`. */
-export function mayChange(stored: Stored, request: Request): boolean {
-  const token = bearer(request);
+export function mayChange(stored: { tokenHash: string }, request: Request): boolean {
+  const token = bearer(request.headers);
   if (!token) return false;
   const given = Buffer.from(hashToken(token), "hex");
   const expected = Buffer.from(stored.tokenHash, "hex");

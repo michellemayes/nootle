@@ -1,6 +1,12 @@
-import { SIGNIN_STORAGE_KEY, type PendingSignIn } from "./params";
+const SIGNIN_STORAGE_KEY = "nootle-signin";
 
-export const RESEND_COOLDOWN_SECONDS = 30;
+export interface PendingSignIn {
+  email: string;
+  next?: string;
+  appState?: string;
+  devLink?: string;
+  sentAt: number;
+}
 
 type Result = { ok: true; devLink?: string } | { ok: false; error: string };
 

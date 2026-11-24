@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Check, ChevronDown, Clock, Gift, Minus } from "lucide-react";
+import { Check, ChevronDown, Minus } from "lucide-react";
 import { AppleLogo } from "@/components/AppleLogo";
 import { landingMetadata } from "@/components/LandingPage";
 import { Navbar } from "@/components/Navbar";
@@ -8,9 +8,8 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { PRO_FROM, PRO_PRICE_SUMMARY } from "@/components/pricing";
 import { RELEASES_URL, outfit } from "@/components/site-config";
 import { cardClass, secondaryButton } from "@/components/ui";
-import { getCurrentAccount } from "@/lib/account/session";
-import { FREE_FEATURES, PRICES, PRO_FEATURES, REFERRAL_DISCOUNT_PERCENT, TRIAL_DAYS } from "@/lib/account/plans";
-import { referralFromCookie } from "@/lib/referral-offer";
+import { FREE_FEATURES, PRICES, PRO_FEATURES, TRIAL_DAYS } from "@/lib/account/plans";
+import { Notices } from "./Notices";
 import { ProPicker } from "./ProPicker";
 
 export const metadata: Metadata = landingMetadata({
@@ -108,21 +107,14 @@ function Mark({ on, pro }: { on: boolean; pro?: boolean }) {
   );
 }
 
-export default async function PricingPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const [{ unavailable }, account, ref] = await Promise.all([searchParams, getCurrentAccount(), referralFromCookie()]);
-  const discount = Boolean(ref && ref !== account?.referralCode);
-
+export default function PricingPage() {
   return (
     <>
       <noscript>
         <style>{"[data-hero]{opacity:1}"}</style>
       </noscript>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: productJsonLd }} />
-      <Navbar signedIn={Boolean(account)} />
+      <Navbar />
       <PageMotion id="main-content" className="relative overflow-hidden">
         <section aria-labelledby="pricing-heading" className="relative px-6 pt-36 pb-10">
           <div
@@ -150,37 +142,7 @@ export default async function PricingPage({
 
         <section aria-label="Plans" className="px-6 pb-24">
           <div className="mx-auto max-w-5xl">
-            {unavailable === "1" && (
-              <p
-                role="status"
-                className="mx-auto mb-8 flex max-w-2xl items-start gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4 text-sm text-[var(--color-text-secondary)]"
-              >
-                <Clock aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-amber)]" />
-                <span>
-                  <strong className="font-semibold text-[var(--color-text)]">Checkout opens soon.</strong> Your Pro
-                  trial and everything in Free work today.
-                </span>
-              </p>
-            )}
-
-            {discount && (
-              <div
-                data-reveal
-                className="relative mx-auto mb-8 flex max-w-2xl items-center gap-4 overflow-hidden rounded-2xl border border-[var(--color-accent)]/50 bg-[var(--color-accent)]/10 px-5 py-4"
-              >
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--color-accent)] text-white">
-                  <Gift aria-hidden="true" className="h-5 w-5" />
-                </span>
-                <p className="min-w-0">
-                  <span className={`${outfit} block text-lg font-bold text-[var(--color-text)]`}>
-                    {REFERRAL_DISCOUNT_PERCENT}% off your first payment
-                  </span>
-                  <span className="text-sm text-[var(--color-text-secondary)]">
-                    A friend&apos;s invite. Applied at checkout.
-                  </span>
-                </p>
-              </div>
-            )}
+            <Notices />
 
             <div className="grid items-start gap-6 md:grid-cols-[1fr_1.2fr]">
               <article data-reveal className={`${cardClass} flex h-full flex-col p-7 md:p-8`} aria-labelledby="free-plan">
@@ -222,7 +184,7 @@ export default async function PricingPage({
                     </Feature>
                   ))}
                 </ul>
-                <ProPicker discount={discount} />
+                <ProPicker />
               </article>
             </div>
           </div>

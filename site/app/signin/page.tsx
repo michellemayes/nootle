@@ -7,7 +7,7 @@ import { primaryButton } from "@/components/ui";
 import { getCurrentAccount } from "@/lib/account/session";
 import { AuthShell, ExpiredAppLink, authHeading } from "./AuthShell";
 import { SignInForm } from "./SignInForm";
-import { appState as parseAppState, safeNext } from "./params";
+import { appState as parseAppState, nextPath } from "./params";
 
 export const metadata: Metadata = {
   title: "Sign in - Nootle",
@@ -23,14 +23,13 @@ export default async function SignInPage({
   const params = await searchParams;
   const appMode = params.app === "1";
   const state = parseAppState(params.state);
-  const next = safeNext(params.next);
-  const account = await getCurrentAccount();
-
-  if (account && !appMode) redirect(next ?? "/account");
-
   if (appMode && !state) {
     return <ExpiredAppLink />;
   }
+
+  const next = nextPath(params.next);
+  const account = await getCurrentAccount();
+  if (account && !appMode) redirect(next ?? "/account");
 
   if (account && state) {
     return (

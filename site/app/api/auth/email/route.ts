@@ -1,20 +1,18 @@
 import * as Sentry from "@sentry/nextjs";
 import { emailConfigured, sendMagicLink } from "@/lib/account/email";
-import { MAGIC_LINK_INTERVAL_MS, parseMagicRequest, sealMagicLink } from "@/lib/account/magic";
+import { parseMagicRequest, sealMagicLink } from "@/lib/account/magic";
 import { defaultStore } from "@/lib/account/store";
 import { siteOrigin } from "@/lib/account/summary";
+import { MAGIC_LINK_COOLDOWN_SECONDS } from "@/lib/account/types";
 
-/**
- * Emails a sign-in link for `{ email, next?, appState? }`. Without Resend in
- * `next dev`, answers `{ devLink }` instead.
- */
+/** Emails a sign-in link for `{ email, next?, appState? }`, or answers `{ devLink }` in dev without Resend. */
 export async function POST(request: Request) {
   const magic = parseMagicRequest(await request.json().catch(() => null));
   if (!magic) return Response.json({ error: "Enter a valid email address" }, { status: 400 });
 
   const store = defaultStore();
   const sentAt = await store.magicLinkSentAt(magic.email);
-  const wait = sentAt === null ? 0 : sentAt + MAGIC_LINK_INTERVAL_MS - Date.now();
+  const wait = sentAt === null ? 0 : sentAt + MAGIC_LINK_COOLDOWN_SECONDS * 1000 - Date.now();
   if (wait > 0) {
     return Response.json(
       { error: "We just sent you a link. Try again in a few seconds." },

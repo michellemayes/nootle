@@ -1,15 +1,10 @@
-// Applies Polar's webhook events to nootle.ai accounts: what plan each
-// account has, and the referral reward when a referred friend first pays.
-// It takes the store, Polar calls and clock as arguments so tests can run it
-// against the in-memory store.
-
-import { REFERRAL_REWARD_DAYS } from "@/lib/account/plans";
+import { PRICES, REFERRAL_REWARD_DAYS } from "@/lib/account/plans";
 import type { AccountStore } from "@/lib/account/store";
-import { planGivesPro } from "@/lib/account/summary";
-import { REFERRAL_CODE, type Account, type Plan, type PlanInterval } from "@/lib/account/types";
+import { isLifetime, planGivesPro } from "@/lib/account/summary";
+import { normalizeReferralCode, type Account, type Plan, type PlanInterval } from "@/lib/account/types";
 
 const DAY_MS = 86_400_000;
-/** How many order ids an account remembers; far more than any retry window needs. */
+/** Far more than any retry window needs. */
 const MAX_PROCESSED_ORDERS = 200;
 
 interface PolarCustomer {
@@ -61,9 +56,8 @@ export type PolarEvent =
 
 export interface WebhookDeps {
   store: AccountStore;
-  /** Polar product id → what it sells. */
   products: Record<string, PlanInterval>;
-  /** Moves a subscription's renewal later; absent when Polar isn't configured. */
+  /** Absent when Polar isn't configured. */
   extendSubscription?: (id: string, days: number) => Promise<{ renewsAt: string }>;
   now?: Date;
 }
@@ -72,21 +66,14 @@ export type WebhookResult =
   | { handled: false }
   | { handled: true; accountId: string; duplicate?: boolean; rewarded?: { referrerId: string; via: "subscription" | "bonus" } };
 
-/** The products configured in the env, by id. */
 export function productsFromEnv(env: Record<string, string | undefined> = process.env): Record<string, PlanInterval> {
-  const products: Record<string, PlanInterval> = {};
-  if (env.POLAR_PRODUCT_MONTHLY) products[env.POLAR_PRODUCT_MONTHLY] = "monthly";
-  if (env.POLAR_PRODUCT_YEARLY) products[env.POLAR_PRODUCT_YEARLY] = "yearly";
-  if (env.POLAR_PRODUCT_LIFETIME) products[env.POLAR_PRODUCT_LIFETIME] = "lifetime";
-  return products;
+  return Object.fromEntries(PRICES.flatMap(({ productEnv, interval }) => (env[productEnv] ? [[env[productEnv], interval]] : [])));
 }
 
 const metaString = (meta: Record<string, unknown> | undefined, key: string) =>
   typeof meta?.[key] === "string" ? (meta[key] as string) : undefined;
 
-const isLifetime = (plan: Plan) => plan.tier === "pro" && plan.interval === "lifetime" && plan.status === "active";
-
-/** Finds whose purchase this is, creating an account for a guest checkout. */
+/** Creates an account for a guest checkout. */
 async function accountFor(
   store: AccountStore,
   customer: PolarCustomer | undefined,
@@ -108,7 +95,7 @@ async function accountFor(
   return account;
 }
 
-const validRef = (ref: string | undefined) => (ref && REFERRAL_CODE.test(ref) ? ref : undefined);
+const validRef = (ref: string | undefined) => normalizeReferralCode(ref) ?? undefined;
 
 function intervalOf(sub: PolarSubscription, products: Record<string, PlanInterval>): PlanInterval {
   const known = sub.product_id ? products[sub.product_id] : undefined;
@@ -116,7 +103,7 @@ function intervalOf(sub: PolarSubscription, products: Record<string, PlanInterva
   return sub.recurring_interval === "year" ? "yearly" : "monthly";
 }
 
-/** A Polar subscription as a Plan, or null for one that never started (incomplete). */
+/** Null for a subscription that never started (incomplete). */
 export function planFromSubscription(sub: PolarSubscription, products: Record<string, PlanInterval>): Plan | null {
   const base = { tier: "pro" as const, interval: intervalOf(sub, products), subscriptionId: sub.id };
   const periodEnd = sub.current_period_end ?? undefined;
@@ -151,11 +138,10 @@ function applySubscription(account: Account, sub: PolarSubscription, revoked: bo
   account.plan = plan;
 }
 
-/** The latest of some ISO dates as ms, ignoring missing ones. */
 const latest = (...dates: (string | undefined | null)[]) =>
   Math.max(...dates.map((d) => (d ? Date.parse(d) : 0)).filter((t) => !Number.isNaN(t)));
 
-/** Gives `referrer` REFERRAL_REWARD_DAYS of Pro: a later renewal if they subscribe, else bonus days. */
+/** A later renewal if the referrer subscribes, else bonus days. */
 async function reward(referrer: Account, deps: WebhookDeps, now: Date): Promise<"subscription" | "bonus"> {
   const plan = referrer.plan;
   if (
@@ -194,8 +180,11 @@ async function applyOrder(order: PolarOrder, deps: WebhookDeps, now: Date): Prom
   if (!account.referredBy && ref && ref !== account.referralCode) account.referredBy = ref;
 
   let rewarded: { referrerId: string; via: "subscription" | "bonus" } | undefined;
-  const referrer = account.referredBy ? await store.findByReferralCode(account.referredBy) : null;
-  if (referrer && referrer.id !== account.id && (order.total_amount ?? 0) > 0) {
+  const referrer =
+    (order.total_amount ?? 0) > 0 && account.referredBy && !account.referrerRewarded
+      ? await store.findByReferralCode(account.referredBy)
+      : null;
+  if (referrer && referrer.id !== account.id) {
     let entry = referrer.referrals.find((r) => r.accountId === account.id);
     if (!entry) {
       entry = { accountId: account.id, joinedAt: now.toISOString() };
@@ -204,16 +193,16 @@ async function applyOrder(order: PolarOrder, deps: WebhookDeps, now: Date): Prom
     if (!entry.paidAt) {
       entry.paidAt = now.toISOString();
       rewarded = { referrerId: referrer.id, via: await reward(referrer, deps, now) };
-      await store.saveAccount(referrer);
     }
+    account.referrerRewarded = true;
   }
 
   account.processedOrders = [...account.processedOrders, order.id].slice(-MAX_PROCESSED_ORDERS);
-  await store.saveAccount(account);
+  await Promise.all([store.saveAccount(account), rewarded && referrer ? store.saveAccount(referrer) : null]);
   return { handled: true, accountId: account.id, rewarded };
 }
 
-/** Applies one verified Polar webhook event. Unknown events are ignored. */
+/** Unknown events are ignored. */
 export async function applyEvent(event: PolarEvent, deps: WebhookDeps): Promise<WebhookResult> {
   const now = deps.now ?? new Date();
   if (event.type === "order.paid") return applyOrder(event.data as PolarOrder, deps, now);

@@ -1,9 +1,7 @@
-import { PRICES, REFERRAL_DISCOUNT_PERCENT, type PriceOption } from "@/lib/account/plans";
+import { PRICES, REFERRAL_DISCOUNT_PERCENT, priceFor, type PriceOption } from "@/lib/account/plans";
 
 export const usd = (amount: number) =>
   `$${Number.isInteger(amount) ? amount : amount.toFixed(2)}`;
-
-export const priceFor = (interval: PriceOption["interval"]) => PRICES.find((p) => p.interval === interval)!;
 
 export const withReferralDiscount = (price: number) => Math.round(price * (100 - REFERRAL_DISCOUNT_PERCENT)) / 100;
 

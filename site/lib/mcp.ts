@@ -159,7 +159,7 @@ const rpcError = (id: unknown, code: number, message: string, status = 200) =>
  * (an old-style connector link). Without either, the client is pointed at sign-in.
  */
 export async function handleMcp(request: Request, pathCredential?: string): Promise<Response> {
-  const token = bearer(request);
+  const token = bearer(request.headers);
   const credential = token ? credentialFromBearer(token) : pathCredential;
   const [message, meetings] = await Promise.all([
     request.json().catch(() => null) as Promise<Json | null>,

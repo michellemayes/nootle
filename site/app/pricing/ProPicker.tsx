@@ -3,21 +3,22 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
-import { PRICES } from "@/lib/account/plans";
+import { PRICES, priceFor } from "@/lib/account/plans";
 import type { PlanInterval } from "@/lib/account/types";
 import { monthlyEquivalent, usd, withReferralDiscount } from "@/components/pricing";
 import { SPRING } from "@/components/motion";
 import { outfit } from "@/components/site-config";
 import { primaryButton } from "@/components/ui";
+import { useReferralDiscount } from "./client-state";
 
 const TAG: Partial<Record<PlanInterval, string>> = { yearly: "Best value", lifetime: "Pay once" };
-const CADENCE: Record<PlanInterval, string> = { monthly: "/mo", yearly: "/yr", lifetime: "once" };
 const CTA: Record<PlanInterval, string> = { monthly: "Get Pro monthly", yearly: "Get Pro yearly", lifetime: "Get Pro for life" };
 const FIRST: Record<PlanInterval, string> = { monthly: "first month", yearly: "first year", lifetime: "" };
 
-export function ProPicker({ discount }: { discount: boolean }) {
+export function ProPicker() {
+  const discount = useReferralDiscount();
   const [selected, setSelected] = useState<PlanInterval>("yearly");
-  const option = PRICES.find((p) => p.interval === selected)!;
+  const option = priceFor(selected);
 
   return (
     <div>
@@ -78,7 +79,7 @@ export function ProPicker({ discount }: { discount: boolean }) {
                     <s className="mr-1.5 text-sm text-[var(--color-text-secondary)]">{usd(p.price)}</s>
                   )}
                   <span className={`${outfit} text-xl font-bold text-[var(--color-text)] tabular-nums`}>{usd(pay)}</span>
-                  <span className="ml-0.5 text-sm text-[var(--color-text-secondary)]">{CADENCE[p.interval]}</span>
+                  <span className="ml-0.5 text-sm text-[var(--color-text-secondary)]">{p.cadence}</span>
                 </span>
                 {(perMonth !== null || (discount && FIRST[p.interval])) && (
                   <span className="block text-xs text-[var(--color-text-secondary)] tabular-nums">

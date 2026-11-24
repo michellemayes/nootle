@@ -1,15 +1,10 @@
-// The shapes nootle.ai's accounts, billing and referrals share between the
-// API routes, the pages and the Nootle app (see docs/plans/2026-11-24-paid-plans.md).
-
 export type PlanInterval = "monthly" | "yearly" | "lifetime";
 export type PlanStatus = "active" | "trialing" | "past_due" | "canceled" | "revoked";
 
-/** What the account has bought. `tier: "free"` with no other fields means nothing. */
 export interface Plan {
   tier: "free" | "pro";
   interval?: PlanInterval;
   status?: PlanStatus;
-  /** When an active subscription next bills. */
   renewsAt?: string;
   /** When a canceled subscription stops giving Pro. */
   endsAt?: string;
@@ -19,7 +14,6 @@ export interface Plan {
 export interface Referral {
   accountId: string;
   joinedAt: string;
-  /** Set on the referred account's first paid order. */
   paidAt?: string;
 }
 
@@ -28,10 +22,10 @@ export interface Account {
   /** Lowercased. */
   email: string;
   createdAt: string;
-  /** 8 characters from REFERRAL_ALPHABET; its link is /r/<code>. */
   referralCode: string;
-  /** The referral code this account signed up or bought with. */
   referredBy?: string;
+  /** Set once the referrer got their reward for this account, so later orders skip looking them up. */
+  referrerRewarded?: boolean;
   polarCustomerId?: string;
   plan: Plan;
   /** Pro earned through referrals, on top of any plan. */
@@ -43,11 +37,10 @@ export interface Account {
   deviceVersion: number;
 }
 
-/** GET /api/account: what the app and the account page show. */
+/** GET /api/account, which the Nootle app reads too. */
 export interface AccountSummary {
   email: string;
   plan: Plan;
-  /** Whether Pro is on right now, from the plan or referral bonus. */
   pro: boolean;
   /** When Pro ends if nothing renews; null for lifetime or an active subscription. */
   proUntil: string | null;
@@ -65,6 +58,12 @@ export interface AccountSummary {
 /** Unambiguous: no 0/O, 1/I/L. */
 export const REFERRAL_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 export const REFERRAL_CODE = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/;
-/** The cookie /r/<code> sets, read at sign-up and checkout. */
 export const REFERRAL_COOKIE = "nootle_ref";
 export const SESSION_COOKIE = "nootle_session";
+
+export const MAGIC_LINK_COOLDOWN_SECONDS = 30;
+
+export function normalizeReferralCode(code: string | undefined): string | null {
+  const upper = (code ?? "").trim().toUpperCase();
+  return REFERRAL_CODE.test(upper) ? upper : null;
+}

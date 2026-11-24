@@ -26,7 +26,6 @@ import { SiClaude, SiOpenai } from "react-icons/si";
 import { DownloadButton } from "@/components/DownloadButton";
 import { RELEASES_URL } from "@/components/site-config";
 import { REFERRAL_DISCOUNT_PERCENT } from "@/lib/account/plans";
-import { REFERRAL_CODE } from "@/lib/account/types";
 import { chatPrompt, initials, parseNote, type ParsedNote } from "./note";
 import { THEME_ATTR, THEME_KEY } from "./theme";
 import styles from "./shared-note.module.css";
@@ -81,8 +80,8 @@ async function openNote(id: string, key: string): Promise<State> {
   const { iv, ciphertext, ref, branding } = (await resp.json()) as {
     iv: string;
     ciphertext: string;
-    ref?: unknown;
-    branding?: unknown;
+    ref?: string;
+    branding?: boolean;
   };
   try {
     const cryptoKey = await crypto.subtle.importKey("raw", fromBase64Url(key), "AES-GCM", false, ["decrypt"]);
@@ -96,7 +95,7 @@ async function openNote(id: string, key: string): Promise<State> {
       status: "ready",
       markdown,
       note: parseNote(markdown),
-      ref: typeof ref === "string" && REFERRAL_CODE.test(ref) ? ref : undefined,
+      ref,
       branding: branding !== false,
     };
   } catch {
@@ -456,8 +455,8 @@ export function SharedNote({ id }: { id: string }) {
   const ready = state.status === "ready" ? state : null;
 
   useEffect(() => {
-    if (state.status === "ready") document.title = `${state.note.title} - Nootle`;
-  }, [state]);
+    if (ready) document.title = `${ready.note.title} - Nootle`;
+  }, [ready]);
 
   return (
     <div className={styles.page}>
@@ -470,22 +469,19 @@ export function SharedNote({ id }: { id: string }) {
             <p>{state.message}</p>
           </div>
         )}
-        {state.status === "ready" && (
-          <>
-            <article className={styles.paper}>
-              <Hero note={state.note} />
-              <AskAi markdown={state.markdown} note={state.note} />
-              {state.note.body && (
-                <div className={styles.note}>
-                  <Markdown>{state.note.body}</Markdown>
-                </div>
-              )}
-              {state.note.transcript && <Transcript transcript={state.note.transcript} />}
-            </article>
-          </>
+        {ready && (
+          <article className={styles.paper}>
+            <Hero note={ready.note} />
+            <AskAi markdown={ready.markdown} note={ready.note} />
+            {ready.note.body && (
+              <div className={styles.note}>
+                <Markdown>{ready.note.body}</Markdown>
+              </div>
+            )}
+            {ready.note.transcript && <Transcript transcript={ready.note.transcript} />}
+          </article>
         )}
-        {state.status === "error" && <NootleCta />}
-        {ready?.branding && <NootleCta referral={ready.ref} />}
+        {(state.status === "error" || ready?.branding) && <NootleCta referral={ready?.ref} />}
       </main>
       <footer className={styles.footer}>
         <Lock aria-hidden="true" />

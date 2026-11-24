@@ -1,17 +1,14 @@
 import * as Sentry from "@sentry/nextjs";
 import { productIdFor } from "@/lib/account/plans";
-import { getCurrentAccount, getReferralCookie } from "@/lib/account/session";
-import { siteOrigin } from "@/lib/account/summary";
+import { getCurrentAccount } from "@/lib/account/session";
+import { isLifetime, siteOrigin } from "@/lib/account/summary";
 import type { PlanInterval } from "@/lib/account/types";
-import { createCheckout, polarConfigured } from "@/lib/billing/polar";
+import { createCheckout, customerRefFor, polarConfigured } from "@/lib/billing/polar";
+import { referralFromCookie } from "@/lib/referral-offer";
 
 const INTERVALS: PlanInterval[] = ["monthly", "yearly", "lifetime"];
 
-/**
- * `?plan=monthly|yearly|lifetime`: sends the visitor to Polar's checkout, as
- * their account when signed in, with the referral discount when a friend's
- * code is in the cookie.
- */
+/** `?plan=monthly|yearly|lifetime`: Polar's checkout, as the signed-in account and with a friend's discount when there is one. */
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const interval = url.searchParams.get("plan") as PlanInterval;
@@ -19,11 +16,8 @@ export async function GET(request: Request) {
   const productId = productIdFor(interval);
   if (!polarConfigured() || !productId) return Response.redirect(new URL("/pricing?unavailable=1", url), 303);
 
-  const account = await getCurrentAccount({ device: false });
-  if (account?.plan.interval === "lifetime" && account.plan.status === "active") {
-    return Response.redirect(new URL("/account", url), 303);
-  }
-  const cookieRef = await getReferralCookie();
+  const [account, cookieRef] = await Promise.all([getCurrentAccount({ device: false }), referralFromCookie()]);
+  if (account && isLifetime(account.plan)) return Response.redirect(new URL("/account", url), 303);
   const ref = cookieRef && cookieRef !== account?.referralCode ? cookieRef : undefined;
   const firstPurchase = !account || account.processedOrders.length === 0;
   const discountId = ref && firstPurchase ? process.env.POLAR_REFERRAL_DISCOUNT_ID : undefined;
@@ -32,11 +26,7 @@ export async function GET(request: Request) {
   try {
     const checkout = await createCheckout({
       productId,
-      customer: account
-        ? account.polarCustomerId
-          ? { customerId: account.polarCustomerId }
-          : { externalCustomerId: account.id }
-        : undefined,
+      customer: account ? customerRefFor(account) : undefined,
       email: account?.email,
       discountId,
       metadata: { ...(ref && { ref }), ...(account && { accountId: account.id }) },

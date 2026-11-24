@@ -11,7 +11,7 @@ import { outfit } from "@/components/site-config";
 import { cardClass, formatDate, primaryButton, quietButton, secondaryButton } from "@/components/ui";
 import { REFERRAL_DISCOUNT_PERCENT, REFERRAL_REWARD_DAYS } from "@/lib/account/plans";
 import { getCurrentAccount } from "@/lib/account/session";
-import { summarize } from "@/lib/account/summary";
+import { isLifetime, siteOrigin, summarize } from "@/lib/account/summary";
 import type { AccountSummary } from "@/lib/account/types";
 import { CopyLink } from "./CopyLink";
 import { Welcome } from "./Welcome";
@@ -33,7 +33,7 @@ interface PlanDetails {
 function planDetails({ plan, pro, bonusProUntil }: AccountSummary): PlanDetails {
   if (plan.tier === "pro" && plan.status !== "revoked") {
     const badge = plan.interval ? INTERVAL_LABEL[plan.interval] : undefined;
-    if (plan.interval === "lifetime") return { title: "Pro", badge, line: "Paid once. Yours for good." };
+    if (isLifetime(plan)) return { title: "Pro", badge, line: "Paid once. Yours for good." };
     if (plan.status === "past_due")
       return { title: "Pro", badge, line: "Your last payment didn't go through. Update your card to keep Pro.", warn: true };
     if (plan.status === "canceled" && plan.endsAt) return { title: "Pro", badge, line: `Ends ${formatDate(plan.endsAt)}` };
@@ -42,13 +42,6 @@ function planDetails({ plan, pro, bonusProUntil }: AccountSummary): PlanDetails 
   }
   if (pro && bonusProUntil) return { title: "Pro", badge: "From friends", line: `Until ${formatDate(bonusProUntil)}` };
   return { title: "Free" };
-}
-
-async function origin() {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "nootle.ai";
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
 }
 
 function Stat({ value, label }: { value: number; label: string }) {
@@ -68,7 +61,7 @@ export default async function AccountPage({
   const [account, params] = await Promise.all([getCurrentAccount(), searchParams]);
   if (!account) redirect("/signin?next=/account");
 
-  const summary = summarize(account, await origin());
+  const summary = summarize(account, siteOrigin(await headers()));
   const details = planDetails(summary);
   const hasBilling = Boolean(account.polarCustomerId) || summary.plan.tier === "pro";
   const bonusOnTop = summary.plan.tier === "pro" && summary.bonusProUntil;

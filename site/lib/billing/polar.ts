@@ -1,12 +1,10 @@
-// A small fetch client for the parts of Polar's API nootle.ai uses, and its
-// webhook signature check. POLAR_SERVER picks sandbox (the default) or
-// production; requests are pinned to one API version so payloads don't shift.
-
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { Account } from "@/lib/account/types";
 
+// Pinned so payloads don't shift under us.
 const API_VERSION = "2026-10";
 const SERVERS = { sandbox: "https://sandbox-api.polar.sh", production: "https://api.polar.sh" } as const;
-/** Webhooks signed longer ago than this are refused, so a captured one can't be replayed. */
+/** So a captured webhook can't be replayed. */
 const WEBHOOK_TOLERANCE_SECONDS = 5 * 60;
 
 export const polarConfigured = () => Boolean(process.env.POLAR_ACCESS_TOKEN);
@@ -29,8 +27,10 @@ async function polar<T>(method: string, path: string, body?: unknown): Promise<T
   return (await response.json()) as T;
 }
 
-/** Who a checkout or portal session is for: Polar's customer id, or ours. */
 export type CustomerRef = { customerId: string } | { externalCustomerId: string };
+
+export const customerRefFor = (account: Account): CustomerRef =>
+  account.polarCustomerId ? { customerId: account.polarCustomerId } : { externalCustomerId: account.id };
 
 const customerFields = (customer?: CustomerRef) =>
   !customer ? {} : "customerId" in customer ? { customer_id: customer.customerId } : { external_customer_id: customer.externalCustomerId };
@@ -45,7 +45,6 @@ export interface CheckoutInput {
   returnUrl?: string;
 }
 
-/** A hosted checkout session (POST /v1/checkouts/); returns its URL. */
 export async function createCheckout(input: CheckoutInput): Promise<{ url: string }> {
   const checkout = await polar<{ url: string }>("POST", "/v1/checkouts/", {
     products: [input.productId],
@@ -59,7 +58,6 @@ export async function createCheckout(input: CheckoutInput): Promise<{ url: strin
   return { url: checkout.url };
 }
 
-/** A customer portal session (POST /v1/customer-sessions/); returns where to send the customer. */
 export async function createCustomerSession(customer: CustomerRef, returnUrl?: string): Promise<{ url: string }> {
   const session = await polar<{ customer_portal_url: string }>("POST", "/v1/customer-sessions/", {
     ...customerFields(customer),
@@ -68,7 +66,6 @@ export async function createCustomerSession(customer: CustomerRef, returnUrl?: s
   return { url: session.customer_portal_url };
 }
 
-/** Moves an active subscription's next renewal `days` later; returns the new renewal date. */
 export async function extendSubscription(id: string, days: number): Promise<{ renewsAt: string }> {
   const path = `/v1/subscriptions/${encodeURIComponent(id)}`;
   const subscription = await polar<{ current_period_end: string | null }>("GET", path);
@@ -92,9 +89,8 @@ function webhookKeys(secret: string): Buffer[] {
 }
 
 /**
- * Whether `body` was signed by Polar with `secret` (Standard Webhooks: an
- * HMAC-SHA256 of `<id>.<timestamp>.<body>` in `webhook-signature` as
- * `v1,<base64>`, possibly several separated by spaces) within the last five minutes.
+ * Standard Webhooks: an HMAC-SHA256 of `<id>.<timestamp>.<body>` in
+ * `webhook-signature` as `v1,<base64>`, possibly several separated by spaces.
  */
 export function verifyWebhook(body: string, headers: Headers, secret: string, now = Date.now()): boolean {
   const id = headers.get("webhook-id");

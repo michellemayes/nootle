@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { describe, it } from "node:test";
-import { accountStore, memoryKV, type AccountStore } from "@/lib/account/store";
+import { accountStore, type AccountStore } from "@/lib/account/store";
 import { summarize } from "@/lib/account/summary";
 import { REFERRAL_CODE } from "@/lib/account/types";
 import { verifyWebhook } from "@/lib/billing/polar";
-import { applyEvent, type PolarOrder, type PolarSubscription, type WebhookDeps } from "@/lib/billing/webhook";
+import { applyEvent, productsFromEnv, type PolarOrder, type PolarSubscription, type WebhookDeps } from "@/lib/billing/webhook";
+import { memoryKV } from "@/lib/kv";
+import { sealer } from "@/lib/seal";
 import { parseShareMeta } from "@/lib/shares";
 
 const DAY = 86_400_000;
@@ -61,6 +63,8 @@ describe("account store", () => {
     await store.saveAccount(a);
     assert.equal((await store.findByPolarCustomer("cust-9"))?.id, a.id);
     assert.equal(await store.getAccount("../etc/passwd"), null);
+    assert.equal(await store.referralCodeExists(a.referralCode), true);
+    assert.equal(await store.referralCodeExists("ABCDEFGH"), false);
   });
 
   it("records referrals and drops unknown codes", async () => {
@@ -218,6 +222,12 @@ describe("webhook", () => {
   });
 });
 
+describe("products", () => {
+  it("maps configured product ids to intervals", () => {
+    assert.deepEqual(productsFromEnv({ POLAR_PRODUCT_MONTHLY: "m", POLAR_PRODUCT_LIFETIME: "l" }), { m: "monthly", l: "lifetime" });
+  });
+});
+
 describe("webhook signatures", () => {
   const body = JSON.stringify({ type: "order.paid", data: {} });
   const sign = (key: Buffer, id: string, ts: number) =>
@@ -254,8 +264,21 @@ describe("share meta", () => {
   it("accepts a referral code and a boolean, nothing else", () => {
     assert.deepEqual(parseShareMeta({ iv: "x" }), {});
     assert.deepEqual(parseShareMeta({ ref: "ABCDEFGH", branding: false }), { ref: "ABCDEFGH", branding: false });
-    assert.equal(parseShareMeta({ ref: "abcdefgh" }), null);
+    assert.deepEqual(parseShareMeta({ ref: "abcdefgh" }), { ref: "ABCDEFGH" });
     assert.equal(parseShareMeta({ ref: "ABCDEFG1" }), null);
     assert.equal(parseShareMeta({ branding: "no" }), null);
+  });
+});
+
+describe("sealer", () => {
+  const key = Buffer.alloc(32, 7);
+  const { seal, open } = sealer<"a" | "b">(() => key, 200);
+
+  it("opens only as the kind it was sealed as, until it expires", () => {
+    const token = seal("a", { x: 1 }, 60);
+    assert.equal(open<{ x: number }>("a", token)?.x, 1);
+    assert.equal(open("b", token), null);
+    assert.equal(open("a", seal("a", { x: 1 }, -1)), null);
+    assert.equal(open("a", seal("a", { pad: "x".repeat(200) })), null);
   });
 });
