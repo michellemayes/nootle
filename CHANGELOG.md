@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.38.0] - 2026-11-24
+
+### Features
+
+- Let Ask Nootle add Notion pages from a meeting (#252) ([8c8c209](https://github.com/michellemayes/nootle/commit/8c8c20996648ea312382c9ad8caa97e0be8cac89))
+
 ## [0.37.1] - 2026-11-23
 
 ### Bug Fixes
