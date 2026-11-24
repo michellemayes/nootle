@@ -5,20 +5,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { Flame, Gift, PartyPopper, X } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
 import { usePlan } from "@/hooks/usePlan";
+import { REFERRAL_REWARD_DAYS } from "@/lib/plan";
 import { computeMomentum, type Momentum } from "@/lib/momentum";
 import type { Meeting } from "@/types";
 
 const MILESTONES = [1, 5, 10, 25, 50, 100, 250, 500, 1000];
 const INVITE_AFTER = 3;
 const INVITE_SHOWN_KEY = "invite_nudge_shown";
-
-function inviteShown() {
-  try {
-    return localStorage.getItem(INVITE_SHOWN_KEY) === "true";
-  } catch {
-    return true;
-  }
-}
 const CONFETTI_COLORS = ["var(--primary)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
 
 /** This recording was the first today and pushed the streak past a day. */
@@ -91,8 +84,7 @@ export function RecordingCelebration() {
     invoke<Meeting[]>("list_meetings", { search: null, includeArchived: true })
       .then((meetings) => {
         const m = computeMomentum(meetings);
-        // Once, from the third recording on, for people signed in to invite with.
-        if (referralUrl && m.total >= INVITE_AFTER && !inviteShown()) {
+        if (referralUrl && m.total >= INVITE_AFTER && localStorage.getItem(INVITE_SHOWN_KEY) !== "true") {
           localStorage.setItem(INVITE_SHOWN_KEY, "true");
           setInvite(referralUrl);
         } else {
@@ -149,7 +141,7 @@ export function RecordingCelebration() {
             {invite && (
               <div className="flex items-center gap-3 border-t px-4 py-2.5">
                 <Gift className="h-4 w-4 shrink-0 text-primary" />
-                <p className="min-w-0 flex-1 text-xs">Invite a friend, get a month of Pro</p>
+                <p className="min-w-0 flex-1 text-xs">Invite a friend, get {REFERRAL_REWARD_DAYS} days of Pro</p>
                 <CopyButton text={invite} variant="button" label="Copy link" />
               </div>
             )}

@@ -16,6 +16,7 @@ import { COACH_SETTING, useCoachTrends } from "@/hooks/useCoach";
 import { formatDate, cn, plural } from "@/lib/utils";
 import type { CommitmentStatus, InsightWithActionItem, Meeting } from "@/types";
 import { ProGate } from "@/components/ProGate";
+import { usePlan } from "@/hooks/usePlan";
 
 interface Person {
   name: string;
@@ -48,7 +49,8 @@ export function PeoplePage() {
   );
   const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [coachEnabled] = useBooleanSetting(COACH_SETTING, false);
-  const trends = useCoachTrends(coachEnabled);
+  const { pro } = usePlan();
+  const trends = useCoachTrends(coachEnabled && pro);
   const person = selected === "you" ? null : selected;
   const showYou = coachEnabled && (selected === "you" || !selected);
 

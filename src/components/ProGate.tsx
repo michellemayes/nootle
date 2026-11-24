@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Sparkles, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { openUpgrade, usePlan } from "@/hooks/usePlan";
 import { PRO_FEATURES, type ProFeatureId } from "@/lib/plan";
 import { cn } from "@/lib/utils";
@@ -18,7 +19,6 @@ export function ProBadge({ className }: { className?: string }) {
   );
 }
 
-/** What a Pro feature does, with Upgrade (and Sign in when signed out), shown in its place. */
 export function ProUpsell({
   feature,
   compact = false,
@@ -28,7 +28,10 @@ export function ProUpsell({
   compact?: boolean;
   className?: string;
 }) {
-  const { status, signIn } = usePlan();
+  const {
+    status,
+    actions: { signIn },
+  } = usePlan();
   const { name, value, icon: Icon } = PRO_FEATURES[feature];
   const actions = (
     <div className="flex flex-wrap items-center gap-2">
@@ -37,7 +40,7 @@ export function ProUpsell({
         Upgrade
       </Button>
       {status && !status.signedIn && (
-        <Button size="sm" variant="ghost" onClick={() => signIn().catch(() => {})}>
+        <Button size="sm" variant="ghost" onClick={signIn}>
           Sign in
         </Button>
       )}
@@ -86,25 +89,27 @@ export function ProUpsell({
   );
 }
 
-/** Shows `children` with Pro, and the feature's upsell in their place without. */
+/** `children` with Pro; without, `fallback` or the feature's upsell. `locked` overrides the plan check. */
 export function ProGate({
   feature,
   children,
+  locked,
+  fallback,
   compact,
   className,
 }: {
   feature: ProFeatureId;
   children: ReactNode;
+  locked?: boolean;
+  fallback?: ReactNode;
   compact?: boolean;
-  /** For the upsell, e.g. to give it the room the feature would have had. */
   className?: string;
 }) {
   const { pro } = usePlan();
-  if (pro) return <>{children}</>;
-  return <ProUpsell feature={feature} compact={compact} className={className} />;
+  if (!(locked ?? !pro)) return <>{children}</>;
+  return fallback ?? <ProUpsell feature={feature} compact={compact} className={className} />;
 }
 
-/** A toolbar button standing in for a locked Pro menu; it opens the upgrade dialog. */
 export function ProLockedButton({ feature, icon: Icon }: { feature: ProFeatureId; icon: LucideIcon }) {
   const { name } = PRO_FEATURES[feature];
   return (
@@ -122,17 +127,31 @@ export function ProLockedButton({ feature, icon: Icon }: { feature: ProFeatureId
   );
 }
 
-/**
- * For a Pro feature's on/off switch: `locked` without Pro, and `guard` wraps
- * the setter so turning it on opens the upgrade dialog instead.
- */
-export function useProGuard(feature: ProFeatureId) {
-  const { pro } = usePlan();
-  const guard =
-    (set: (on: boolean) => void) =>
-    (on: boolean) => {
-      if (on && !pro) openUpgrade(feature);
-      else set(on);
-    };
-  return { locked: !pro, guard };
+/** A settings row for a Pro feature's switch, from `useProSetting`; `extra` shows while it's on. */
+export function ProSwitch({
+  label,
+  setting: [on, setOn, locked],
+  extra,
+  children,
+}: {
+  label: string;
+  setting: readonly [boolean, (on: boolean) => void, boolean];
+  extra?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <p className="flex items-center gap-2 text-sm font-medium">
+          {label}
+          {locked && <ProBadge />}
+        </p>
+        <p className="text-sm text-muted-foreground">{children}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {on && extra}
+        <Switch checked={on} onCheckedChange={setOn} aria-label={label} />
+      </div>
+    </div>
+  );
 }

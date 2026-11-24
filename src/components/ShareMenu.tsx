@@ -26,7 +26,6 @@ export function ShareMenu({ meeting }: { meeting: Meeting }) {
   const [hasConnector, setHasConnector] = useState(false);
   const { busy, error, setError, run: act } = useBusyAction();
   const { status } = usePlan();
-  const paidPro = status?.source === "plan" || status?.source === "bonus";
 
   useEffect(() => {
     invoke<MeetingShare | null>("get_meeting_share", { meetingId: meeting.id })
@@ -118,7 +117,7 @@ export function ShareMenu({ meeting }: { meeting: Meeting }) {
           </p>
         </div>
 
-        {status && !paidPro && (
+        {status && !status.paidPro && (
           <button
             type="button"
             onClick={() => openUpgrade("share-branding")}

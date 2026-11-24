@@ -7,12 +7,15 @@ import { usePlan, useUpgradeRequests } from "@/hooks/usePlan";
 import { PRICES, PRO_FEATURE_IDS, PRO_FEATURES, monthlyEquivalent, type PlanInterval, type ProFeatureId } from "@/lib/plan";
 import { cn } from "@/lib/utils";
 
-/** Nootle Pro's prices and features. Mounted once; `openUpgrade()` opens it. */
+/** Mounted once; `openUpgrade()` opens it. */
 export function UpgradeDialog() {
   const [open, setOpen] = useState(false);
   const [feature, setFeature] = useState<ProFeatureId | undefined>();
   const [interval, setChoice] = useState<PlanInterval>("yearly");
-  const { status, checkout, signIn } = usePlan();
+  const {
+    status,
+    actions: { checkout, signIn },
+  } = usePlan();
 
   useUpgradeRequests(
     useCallback((f?: ProFeatureId) => {
@@ -93,7 +96,7 @@ export function UpgradeDialog() {
             <button
               type="button"
               className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-              onClick={() => signIn().catch(() => {})}
+              onClick={signIn}
             >
               Already have Pro? Sign in
             </button>

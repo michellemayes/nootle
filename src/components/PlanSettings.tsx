@@ -6,7 +6,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { toast } from "@/components/Toaster";
 import { useBusyAction } from "@/hooks/useBusyAction";
 import { openUpgrade, usePlan } from "@/hooks/usePlan";
-import { PRO_FEATURE_IDS, PRO_FEATURES, REFERRAL_DISCOUNT_PERCENT, TRIAL_DAYS } from "@/lib/plan";
+import { PRO_FEATURE_IDS, PRO_FEATURES, REFERRAL_DISCOUNT_PERCENT, REFERRAL_REWARD_DAYS, intervalLabel } from "@/lib/plan";
 import { cn, formatDate } from "@/lib/utils";
 import type { AccountStatus } from "@/types";
 
@@ -37,33 +37,32 @@ function TrialRing({ left, total }: { left: number; total: number }) {
   );
 }
 
-const INTERVAL_LABEL = { monthly: "Monthly", yearly: "Yearly", lifetime: "Lifetime" } as const;
-
-/** The headline, the line under it, and whether a paid plan is behind it. */
-function describe(s: AccountStatus): { title: string; detail: string; paid: boolean } {
+function describe(s: AccountStatus): { title: string; detail: string } {
   const plan = s.plan;
   if (s.source === "plan" && plan) {
-    const interval = plan.interval ? INTERVAL_LABEL[plan.interval] : null;
+    const interval = plan.interval ? intervalLabel(plan.interval) : null;
     const title = interval ? `Nootle Pro · ${interval}` : "Nootle Pro";
-    if (plan.interval === "lifetime") return { title, detail: "Yours for good", paid: true };
-    if (plan.endsAt) return { title, detail: `Canceled · Pro until ${formatDate(plan.endsAt)}`, paid: true };
-    if (plan.renewsAt) return { title, detail: `Renews ${formatDate(plan.renewsAt)}`, paid: true };
-    return { title, detail: "Active", paid: true };
+    if (plan.interval === "lifetime") return { title, detail: "Yours for good" };
+    if (plan.endsAt) return { title, detail: `Canceled · Pro until ${formatDate(plan.endsAt)}` };
+    if (plan.renewsAt) return { title, detail: `Renews ${formatDate(plan.renewsAt)}` };
+    return { title, detail: "Active" };
   }
   if (s.source === "bonus") {
-    return { title: "Nootle Pro · from invites", detail: s.proUntil ? `Until ${formatDate(s.proUntil)}` : "Active", paid: false };
+    return { title: "Nootle Pro · from invites", detail: s.proUntil ? `Until ${formatDate(s.proUntil)}` : "Active" };
   }
   if (s.source === "trial") {
-    return { title: "Pro trial", detail: `Ends ${formatDate(s.trialEndsAt)}`, paid: false };
+    return { title: "Pro trial", detail: `Ends ${formatDate(s.trialEndsAt)}` };
   }
-  return { title: "Free", detail: `Your Pro trial ended ${formatDate(s.trialEndsAt)}`, paid: false };
+  return { title: "Free", detail: `Your Pro trial ended ${formatDate(s.trialEndsAt)}` };
 }
 
 function PlanCard({ status }: { status: AccountStatus }) {
-  const { signIn, refresh, signOut, openBilling } = usePlan();
+  const {
+    actions: { signIn, refresh, signOut, openBilling },
+  } = usePlan();
   const { busy, run } = useBusyAction();
-  const { title, detail, paid } = describe(status);
-  const trialTotal = status.trialDaysLeft > TRIAL_DAYS ? 30 : TRIAL_DAYS;
+  const { title, detail } = describe(status);
+  const subscribed = status.source === "plan";
   const fail = (what: string) => (err: unknown) => {
     toast(`Couldn't ${what}: ${err}`);
   };
@@ -73,7 +72,7 @@ function PlanCard({ status }: { status: AccountStatus }) {
       <CardContent className="space-y-5">
         <div className="flex flex-wrap items-center gap-4">
           {status.source === "trial" ? (
-            <TrialRing left={status.trialDaysLeft} total={trialTotal} />
+            <TrialRing left={status.trialDaysLeft} total={status.trialDays} />
           ) : (
             <span
               className={cn(
@@ -88,7 +87,7 @@ function PlanCard({ status }: { status: AccountStatus }) {
             <p className="text-lg font-semibold leading-tight">{title}</p>
             <p className="text-sm text-muted-foreground">{detail}</p>
           </div>
-          {!paid && (
+          {!subscribed && (
             <Button onClick={() => openUpgrade()}>
               <Sparkles />
               Upgrade
@@ -96,7 +95,7 @@ function PlanCard({ status }: { status: AccountStatus }) {
           )}
         </div>
 
-        {!paid && (
+        {!subscribed && (
           <div className="flex flex-wrap gap-1.5">
             {PRO_FEATURE_IDS.map((id) => {
               const { name, icon: Icon } = PRO_FEATURES[id];
@@ -128,7 +127,7 @@ function PlanCard({ status }: { status: AccountStatus }) {
                   </span>
                 )}
               </p>
-              {paid && (
+              {subscribed && (
                 <Button variant="outline" size="sm" onClick={() => openBilling().catch(fail("open billing"))}>
                   <CreditCard />
                   Manage billing
@@ -151,7 +150,7 @@ function PlanCard({ status }: { status: AccountStatus }) {
           ) : (
             <>
               <p className="min-w-0 flex-1 basis-40 text-sm text-muted-foreground">Bought Pro already?</p>
-              <Button variant="outline" size="sm" onClick={() => signIn().catch(fail("open sign-in"))}>
+              <Button variant="outline" size="sm" onClick={signIn}>
                 <LogIn />
                 Sign in
               </Button>
@@ -173,7 +172,9 @@ function Stat({ value, label }: { value: number; label: string }) {
 }
 
 function InviteCard({ status }: { status: AccountStatus }) {
-  const { signIn } = usePlan();
+  const {
+    actions: { signIn },
+  } = usePlan();
   const referral = status.referral;
   return (
     <Card>
@@ -183,7 +184,7 @@ function InviteCard({ status }: { status: AccountStatus }) {
           Invite friends
         </CardTitle>
         <CardDescription>
-          Give {REFERRAL_DISCOUNT_PERCENT}% off, get a month of Pro
+          Give {REFERRAL_DISCOUNT_PERCENT}% off, get {REFERRAL_REWARD_DAYS} days of Pro
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -206,7 +207,7 @@ function InviteCard({ status }: { status: AccountStatus }) {
             </div>
           </>
         ) : (
-          <Button variant="outline" size="sm" onClick={() => signIn().catch(() => {})}>
+          <Button variant="outline" size="sm" onClick={signIn}>
             <LogIn />
             Sign in for your link
           </Button>
@@ -216,7 +217,6 @@ function InviteCard({ status }: { status: AccountStatus }) {
   );
 }
 
-/** Settings → Plan: the trial or plan, the account, and the invite link. */
 export function PlanSettings() {
   const { status } = usePlan();
   if (!status) return null;

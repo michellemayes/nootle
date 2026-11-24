@@ -6,24 +6,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CopyButton } from "@/components/CopyButton";
-import { ProUpsell } from "@/components/ProGate";
+import { ProGate, ProUpsell } from "@/components/ProGate";
 import { useBusyAction } from "@/hooks/useBusyAction";
 import { usePlan } from "@/hooks/usePlan";
 import type { ConnectorAccess } from "@/types";
 
-/**
- * The AI connector: lets Claude and other cloud AI apps read the shared
- * meetings you tick for it in the Share menu, through nootle.ai's MCP server.
- * You sign in there with the connector's key, so in a team workspace everyone
- * connects to their own meetings.
- */
 export function AiConnectorCard() {
   const [access, setAccess] = useState<ConnectorAccess | null>(null);
   const { busy, error, run: act } = useBusyAction();
   const [confirming, setConfirming] = useState<keyof typeof dialogs | null>(null);
-  // Without Pro a new connector can't be made, but an existing one can still
-  // be reset or turned off.
   const { pro } = usePlan();
+  // An existing connector stays manageable without Pro; only making one is gated.
+  const locked = !access && !pro;
 
   useEffect(() => {
     invoke<ConnectorAccess | null>("get_ai_connector").then(setAccess).catch(() => setAccess(null));
@@ -59,60 +53,68 @@ export function AiConnectorCard() {
           <strong>Let AI connectors read this</strong> on are listed.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {!access && !pro ? (
-          <ProUpsell feature="ai-connector" compact />
-        ) : access ? (
-          <>
-            <div className="space-y-1">
-              <p className="text-xs font-medium">Server URL</p>
-              <div className="flex items-center gap-1">
-                <Input readOnly value={access.server_url} className="h-8 text-xs" onFocus={(e) => e.target.select()} aria-label="Server URL" />
-                <CopyButton text={access.server_url} />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium">Your key</p>
-              <div className="flex items-center gap-2">
-                <Input readOnly type="password" value={access.key} className="h-8 text-xs" aria-label="Connector key" />
-                <CopyButton text={access.key} variant="button" label="Copy key" />
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Add the server URL as a custom connector (in Claude: Settings → Connectors → Add custom connector), then
-              paste your key when it asks you to sign in. On a Claude Team or Enterprise plan, an owner adds the
-              connector once and each member signs in with their own key. Keep the key private: it unlocks the
-              meetings it lists. nootle.ai uses it only while answering your AI, and never stores it.
-            </p>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Nootle makes a private key for nootle.ai's MCP server, which you paste when your AI app asks you to sign in.
-            Notes stay encrypted on nootle.ai, and only the key unlocks them.
-          </p>
-        )}
-
-        {error && <p className="text-xs text-destructive">{error}</p>}
-
-        <div className="flex justify-end gap-2">
+      <ProGate
+        feature="ai-connector"
+        locked={locked}
+        fallback={
+          <CardContent>
+            <ProUpsell feature="ai-connector" compact />
+          </CardContent>
+        }
+      >
+        <CardContent className="space-y-3">
           {access ? (
             <>
-              <Button variant="ghost" size="sm" className="text-destructive" disabled={busy} onClick={() => setConfirming("off")}>
-                Turn off
-              </Button>
-              <Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirming("reset")}>
-                {busy && <RotateCw className="h-3 w-3 animate-spin" />}
-                Reset key
-              </Button>
+              <div className="space-y-1">
+                <p className="text-xs font-medium">Server URL</p>
+                <div className="flex items-center gap-1">
+                  <Input readOnly value={access.server_url} className="h-8 text-xs" onFocus={(e) => e.target.select()} aria-label="Server URL" />
+                  <CopyButton text={access.server_url} />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium">Your key</p>
+                <div className="flex items-center gap-2">
+                  <Input readOnly type="password" value={access.key} className="h-8 text-xs" aria-label="Connector key" />
+                  <CopyButton text={access.key} variant="button" label="Copy key" />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Add the server URL as a custom connector (in Claude: Settings → Connectors → Add custom connector), then
+                paste your key when it asks you to sign in. On a Claude Team or Enterprise plan, an owner adds the
+                connector once and each member signs in with their own key. Keep the key private: it unlocks the
+                meetings it lists. nootle.ai uses it only while answering your AI, and never stores it.
+              </p>
             </>
-          ) : pro ? (
-            <Button size="sm" disabled={busy} onClick={create}>
-              {busy && <RotateCw className="h-3 w-3 animate-spin" />}
-              Create connector key
-            </Button>
-          ) : null}
-        </div>
-      </CardContent>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Nootle makes a private key for nootle.ai's MCP server, which you paste when your AI app asks you to sign in.
+              Notes stay encrypted on nootle.ai, and only the key unlocks them.
+            </p>
+          )}
+
+          {error && <p className="text-xs text-destructive">{error}</p>}
+
+          <div className="flex justify-end gap-2">
+            {access ? (
+              <>
+                <Button variant="ghost" size="sm" className="text-destructive" disabled={busy} onClick={() => setConfirming("off")}>
+                  Turn off
+                </Button>
+                <Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirming("reset")}>
+                  {busy && <RotateCw className="h-3 w-3 animate-spin" />}
+                  Reset key
+                </Button>
+              </>
+            ) : (
+              <Button size="sm" disabled={busy} onClick={create}>
+                {busy && <RotateCw className="h-3 w-3 animate-spin" />}
+                Create connector key
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </ProGate>
       {confirming && (
         <ConfirmDialog open onOpenChange={(open) => !open && setConfirming(null)} {...dialogs[confirming]} />
       )}

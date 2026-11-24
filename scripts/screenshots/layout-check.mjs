@@ -180,7 +180,8 @@ const PAGES = [
   { name: "settings-models", route: "/settings?tab=models", ready: "text=Cloud transcription" },
   { name: "settings-plan", route: "/settings?tab=plan", ready: "text=Invite friends" },
   { name: "settings-plan-ended", route: "/settings?tab=plan&mockPlan=trial-ended", ready: "text=Your Pro trial ended" },
-  { name: "settings-plan-pro", route: "/settings?tab=plan&mockPlan=pro-yearly", ready: "text=Months earned" },  {
+  { name: "settings-plan-pro", route: "/settings?tab=plan&mockPlan=pro-yearly", ready: "text=Months earned" },
+  {
     name: "upgrade-dialog",
     route: "/settings?tab=plan&mockPlan=trial-ended",
     ready: "text=Your Pro trial ended",

@@ -1,3 +1,5 @@
+import type { PlanInterval } from "@/lib/plan";
+
 export interface Meeting {
   id: string;
   title: string;
@@ -547,20 +549,21 @@ export interface SegmentEditResult {
   corrected_segments: number;
 }
 
-/** `account_status`: the nootle.ai account and Nootle Pro. */
 export interface AccountStatus {
   signedIn: boolean;
   email: string | null;
   pro: boolean;
+  paidPro: boolean;
   source: "plan" | "bonus" | "trial" | null;
   plan: {
     tier: "free" | "pro";
-    interval?: "monthly" | "yearly" | "lifetime";
+    interval?: PlanInterval;
     status?: "active" | "trialing" | "past_due" | "canceled" | "revoked";
     renewsAt?: string;
     endsAt?: string;
   } | null;
   trialEndsAt: string;
+  trialDays: number;
   trialDaysLeft: number;
   proUntil: string | null;
   referral: { code: string; url: string; joined: number; paid: number; monthsEarned: number } | null;

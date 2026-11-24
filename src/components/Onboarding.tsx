@@ -190,9 +190,11 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
   );
 }
 
-/** The Pro trial every install starts with, and an optional sign-in. */
 function ProTrialNote() {
-  const { status, signIn } = usePlan();
+  const {
+    status,
+    actions: { signIn },
+  } = usePlan();
   const days = status?.trialDaysLeft || TRIAL_DAYS;
   return (
     <div className="mx-auto mb-8 flex max-w-md flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-lg border bg-primary/[0.04] px-4 py-2.5 text-sm">
@@ -202,7 +204,7 @@ function ProTrialNote() {
         <button
           type="button"
           className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
-          onClick={() => signIn().catch(() => {})}
+          onClick={signIn}
         >
           Sign in
         </button>

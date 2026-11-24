@@ -3,14 +3,10 @@ import { Sparkles } from "lucide-react";
 import { openUpgrade, usePlan } from "@/hooks/usePlan";
 import { cn, plural } from "@/lib/utils";
 
-/**
- * The sidebar's trial countdown, or Upgrade once it's over; nothing with Pro.
- * `compact` is the icon rail's version.
- */
 export function PlanChip({ compact = false }: { compact?: boolean }) {
   const navigate = useNavigate();
   const { status } = usePlan();
-  if (!status || (status.pro && status.source !== "trial")) return null;
+  if (!status || status.paidPro) return null;
 
   const trial = status.source === "trial";
   const label = trial ? `Pro trial · ${plural(status.trialDaysLeft, "day")}` : "Upgrade";

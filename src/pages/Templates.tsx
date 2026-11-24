@@ -31,7 +31,7 @@ import { FileText, Pencil, Plus, Trash2, Sparkles, Star, SquareSlash } from "luc
 import type { Template, Recipe } from "@/types";
 import { WorkflowsManager } from "@/components/WorkflowsManager";
 import { ProBadge, ProGate } from "@/components/ProGate";
-import { openUpgrade, usePlan } from "@/hooks/usePlan";
+import { useProAction } from "@/hooks/usePlan";
 
 export function TemplatesPage() {
   const { templates, loading, createTemplate, updateTemplate, deleteTemplate } = useTemplates();
@@ -67,7 +67,7 @@ export function TemplatesPage() {
   const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<Template | null>(null);
   const [deleteRecipeTarget, setDeleteRecipeTarget] = useState<Recipe | null>(null);
   const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
-  const { pro } = usePlan();
+  const [newWorkflow, workflowsLocked] = useProAction("workflows", () => setWorkflowDialogOpen(true));
 
   const handleSubmit = async () => {
     if (!newName.trim()) return;
@@ -179,7 +179,7 @@ export function TemplatesPage() {
               <TabsList>
                 <TabsTrigger value="templates">Templates</TabsTrigger>
                 <TabsTrigger value="recipes">Slash commands</TabsTrigger>
-                <TabsTrigger value="post-meeting">Workflows{!pro && <ProBadge />}</TabsTrigger>
+                <TabsTrigger value="post-meeting">Workflows{workflowsLocked && <ProBadge />}</TabsTrigger>
               </TabsList>
               {activeTab === "templates" && (
                 <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>
@@ -192,11 +192,7 @@ export function TemplatesPage() {
                 </Button>
               )}
               {activeTab === "post-meeting" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => (pro ? setWorkflowDialogOpen(true) : openUpgrade("workflows"))}
-                >
+                <Button size="sm" variant="outline" onClick={newWorkflow}>
                   <Plus /> New workflow
                 </Button>
               )}

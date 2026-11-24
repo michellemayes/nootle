@@ -20,8 +20,12 @@
   // Which Nootle Pro state account_status reports: ?mockPlan= on the first
   // page load, or localStorage "mock_plan". trial-active (the default, so
   // Pro features show), trial-ended, or pro-yearly (with referrals).
-  const mockPlan =
-    new URLSearchParams(location.search).get("mockPlan") || localStorage.getItem("mock_plan") || "trial-active";
+  // ?mockConnector=1 gives the AI connector an existing key.
+  const params = new URLSearchParams(location.search);
+  const mockPlan = params.get("mockPlan") || localStorage.getItem("mock_plan") || "trial-active";
+  const mockConnector = params.has("mockConnector")
+    ? { server_url: "https://nootle.ai/mcp", key: "nk_demo_connector_key" }
+    : null;
 
   function accountStatus() {
     const day = 86_400_000;
@@ -36,27 +40,30 @@
       offline: false,
     };
     if (mockPlan === "trial-ended") {
-      return { ...signedOut, pro: false, source: null, trialEndsAt: trialEnds(-3), trialDaysLeft: 0 };
+      return { ...signedOut, pro: false, paidPro: false, source: null, trialEndsAt: trialEnds(-3), trialDays: 14, trialDaysLeft: 0 };
     }
     if (mockPlan === "pro-yearly") {
       return {
         signedIn: true,
         email: "sam@example.com",
         pro: true,
+        paidPro: true,
         source: "plan",
         plan: { tier: "pro", interval: "yearly", status: "active", renewsAt: trialEnds(296) },
         trialEndsAt: trialEnds(-55),
+        trialDays: 14,
         trialDaysLeft: 0,
         proUntil: null,
         referral: { code: "K7MPQ4RX", url: "https://nootle.ai/r/K7MPQ4RX", joined: 5, paid: 2, monthsEarned: 2 },
         offline: false,
       };
     }
-    return { ...signedOut, pro: true, source: "trial", trialEndsAt: trialEnds(9), trialDaysLeft: 9 };
+    return { ...signedOut, pro: true, paidPro: false, source: "trial", trialEndsAt: trialEnds(9), trialDays: 14, trialDaysLeft: 9 };
   }
 
   function resolve(cmd, args) {
     if (cmd === "account_status" || cmd === "account_refresh") return accountStatus();
+    if (cmd === "get_ai_connector") return mockConnector;
     // Conversation messages are keyed by conversation id.
     if (cmd === "list_chat_messages") {
       const byId = fixtures.list_chat_messages || {};

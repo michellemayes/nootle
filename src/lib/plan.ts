@@ -20,7 +20,6 @@ export type PlanInterval = "monthly" | "yearly" | "lifetime";
 export interface PriceOption {
   interval: PlanInterval;
   label: string;
-  /** Whole US dollars. */
   price: number;
   cadence: string;
 }
@@ -31,6 +30,10 @@ export const PRICES: PriceOption[] = [
   { interval: "lifetime", label: "Lifetime", price: 99, cadence: "once" },
 ];
 
+export const intervalLabel = (interval: PlanInterval) =>
+  PRICES.find((p) => p.interval === interval)?.label ?? interval;
+
+export const PRICING_URL = "https://nootle.ai/pricing";
 export const TRIAL_DAYS = 14;
 export const REFERRAL_DISCOUNT_PERCENT = 30;
 export const REFERRAL_REWARD_DAYS = 30;
@@ -54,7 +57,6 @@ export interface ProFeature {
   icon: LucideIcon;
 }
 
-/** In the order the upgrade dialog lists them. */
 export const PRO_FEATURES: Record<ProFeatureId, ProFeature> = {
   "live-assist": { name: "Live Assist", value: "Answers and reminders while the call is still going.", icon: Sparkles },
   workflows: { name: "Workflows", value: "Notes sent to Slack, Notion, Linear and more after each call.", icon: Workflow },
@@ -71,5 +73,4 @@ export const PRO_FEATURES: Record<ProFeatureId, ProFeature> = {
 
 export const PRO_FEATURE_IDS = Object.keys(PRO_FEATURES) as ProFeatureId[];
 
-/** "$3.33" a month for yearly, to compare with monthly. */
 export const monthlyEquivalent = (p: PriceOption) => `$${(p.price / 12).toFixed(2)}`;
