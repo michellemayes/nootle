@@ -1,7 +1,8 @@
 //! Ask Nootle inside a meeting: answers questions about the meeting and, when
 //! the user asks, changes it the way the CLI and MCP server can (notes, title,
-//! labels, action items, summaries, speakers, timeline comments), or files a
-//! Linear issue when Linear is connected.
+//! labels, action items, summaries, speakers, timeline comments), files a
+//! Linear issue when Linear is connected, or adds a page to Notion when a
+//! Notion workflow names a database.
 //!
 //! Every provider here is text in, text out, so instead of native tool calls
 //! the model asks for changes in a fenced `nootle-actions` block of JSON.
@@ -74,6 +75,10 @@ pub enum ChatAction {
     CreateLinearIssue {
         title: String,
         description: Option<String>,
+    },
+    CreateNotionPage {
+        title: String,
+        markdown: String,
     },
 }
 
@@ -222,15 +227,40 @@ Linear is connected. When the user asks for an issue or ticket ("file that in Li
 
   {"action": "create_linear_issue", "title": "under 80 characters, what needs doing", "description": "Markdown: what needs doing, why, and who owns it, from this meeting"}
 
-Nootle files it in their default Linear team and links it under your reply. Only file issues the user asked for. Nothing else can be sent outside Nootle."###;
+Nootle files it in their default Linear team and links it under your reply."###;
+
+const NOTION_GUIDE: &str = r###"## Pages in Notion
+
+Notion is connected. When the user asks for a page or doc ("put the decisions in Notion", "write this up as a Notion page"), add this to the block, one per page:
+
+  {"action": "create_notion_page", "title": "the page's title", "markdown": "the full page as Markdown, written from this meeting"}
+
+Nootle adds it to the Notion database their meeting workflow uses and links it under your reply."###;
+
+const ONLY_WHAT_WAS_ASKED: &str =
+    "Only send what the user asked for. Nothing else can be sent outside Nootle.";
 
 /// The changes the model may ask for: always the meeting's own, plus Linear
-/// issues when Linear is connected and meetings may leave this Mac.
+/// issues and Notion pages when those are set up and meetings may leave this
+/// Mac.
 fn actions_guide(db: &Database) -> String {
-    if crate::linear::is_connected(db) && crate::llm::ensure_may_send_to_integrations(db).is_ok() {
-        format!("{ACTIONS_GUIDE}\n\n{LINEAR_GUIDE}")
-    } else {
+    if crate::llm::ensure_may_send_to_integrations(db).is_err() {
+        return format!("{ACTIONS_GUIDE}\n{NO_SENDING}");
+    }
+    let mut tools = Vec::new();
+    if crate::linear::is_connected(db) {
+        tools.push(LINEAR_GUIDE);
+    }
+    if crate::workflows::notion_target(db).is_some() {
+        tools.push(NOTION_GUIDE);
+    }
+    if tools.is_empty() {
         format!("{ACTIONS_GUIDE}\n{NO_SENDING}")
+    } else {
+        format!(
+            "{ACTIONS_GUIDE}\n\n{}\n\n{ONLY_WHAT_WAS_ASKED}",
+            tools.join("\n\n")
+        )
     }
 }
 
@@ -475,6 +505,9 @@ async fn run(
             return create_linear_issue(db, linear, meeting_id, &title, description.as_deref())
                 .await;
         }
+        ChatAction::CreateNotionPage { title, markdown } => {
+            return create_notion_page(db, meeting_id, &title, &markdown).await;
+        }
     };
     Ok(Done {
         summary,
@@ -497,10 +530,7 @@ async fn create_linear_issue(
         bail!("Skipped a Linear issue with no title");
     }
     crate::llm::ensure_may_send_to_integrations(db).map_err(|e| anyhow!(e))?;
-    let footer = format!(
-        "---\nFrom the meeting “{}” in Nootle.",
-        db.get_meeting(meeting_id)?.title
-    );
+    let footer = source_note(db, meeting_id)?;
     let description = match description.map(str::trim).filter(|d| !d.is_empty()) {
         Some(d) => format!("{d}\n\n{footer}"),
         None => footer,
@@ -530,6 +560,42 @@ async fn create_linear_issue(
         url: Some(issue.url).filter(|u| !u.is_empty()),
         events: &[],
     })
+}
+
+/// Adds a page to the Notion database a Notion workflow uses, noting the
+/// meeting it came from.
+async fn create_notion_page(
+    db: &Database,
+    meeting_id: &str,
+    title: &str,
+    markdown: &str,
+) -> Result<Done> {
+    let title = title.trim();
+    if title.is_empty() {
+        bail!("Skipped a Notion page with no title");
+    }
+    crate::llm::ensure_may_send_to_integrations(db).map_err(|e| anyhow!(e))?;
+    let (integration, database_id) = crate::workflows::notion_target(db).ok_or_else(|| {
+        anyhow!("Set up a Notion workflow with a database first, so Nootle knows where pages go")
+    })?;
+    let content = format!("{}\n\n{}", markdown.trim(), source_note(db, meeting_id)?);
+    let page =
+        crate::workflows::create_notion_page(db, &integration, &database_id, title, &content)
+            .await
+            .map_err(|e| anyhow!(e))?;
+    Ok(Done {
+        summary: format!("Added “{title}” to Notion"),
+        url: page.output,
+        events: &[],
+    })
+}
+
+/// The line under anything sent out of Nootle saying which meeting it's from.
+fn source_note(db: &Database, meeting_id: &str) -> Result<String> {
+    Ok(format!(
+        "---\nFrom the meeting “{}” in Nootle.",
+        db.get_meeting(meeting_id)?.title
+    ))
 }
 
 /// "label Interview" or "labels Interview, Hiring".
@@ -654,6 +720,51 @@ mod tests {
         db.set_setting(crate::llm::LOCAL_ONLY_SETTING, "true")
             .unwrap();
         assert!(!offers(&db));
+    }
+
+    fn notion_workflow(db: &Database, config: &str) {
+        let notion = db.create_integration("notion", "Wiki", "{}").unwrap();
+        db.create_workflow("Notes", None, None, &notion.id, "create_page", config)
+            .unwrap();
+    }
+
+    #[test]
+    fn notion_is_offered_only_with_a_database_to_write_to() {
+        let db = Database::new_in_memory().unwrap();
+        let offers = |db: &Database| actions_guide(db).contains("create_notion_page");
+        notion_workflow(&db, "{}");
+        assert!(!offers(&db));
+
+        notion_workflow(&db, r#"{"database_id": " db-1 "}"#);
+        assert!(offers(&db));
+        assert_eq!(crate::workflows::notion_target(&db).unwrap().1, "db-1");
+        assert!(actions_guide(&db).contains(ONLY_WHAT_WAS_ASKED));
+        assert!(!actions_guide(&db).contains("create_linear_issue"));
+
+        db.set_setting(crate::llm::LOCAL_ONLY_SETTING, "true")
+            .unwrap();
+        assert!(!offers(&db));
+    }
+
+    #[tokio::test]
+    async fn notion_pages_parse_and_need_a_title_and_a_database() {
+        let (_, actions) = split_actions(
+            "```nootle-actions\n[{\"action\": \"create_notion_page\", \"title\": \"Onboarding decisions\", \"markdown\": \"- Ship inline permissions\"}]\n```",
+        );
+        assert_eq!(
+            actions[0].as_ref().unwrap(),
+            &ChatAction::CreateNotionPage {
+                title: "Onboarding decisions".into(),
+                markdown: "- Ship inline permissions".into(),
+            }
+        );
+
+        let db = Database::new_in_memory().unwrap();
+        let id = meeting(&db);
+        let untitled = create_notion_page(&db, &id, " ", "x").await;
+        assert!(untitled.unwrap_err().to_string().contains("no title"));
+        let nowhere = create_notion_page(&db, &id, "Decisions", "x").await;
+        assert!(nowhere.unwrap_err().to_string().contains("Notion workflow"));
     }
 
     #[tokio::test]
