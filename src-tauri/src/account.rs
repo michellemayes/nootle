@@ -4,7 +4,8 @@
 //!
 //! Gating is a convenience, not DRM: the app is open source. Pro holds for
 //! [`OFFLINE_GRACE_DAYS`] after the last successful fetch, so a Mac that's
-//! offline for a while keeps working.
+//! offline for a while keeps working. Pro is checked at the app's commands
+//! and schedulers; the CLI and local MCP server stay free.
 
 use aes_gcm::aead::rand_core::RngCore;
 use aes_gcm::aead::OsRng;
@@ -13,12 +14,14 @@ use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{PoisonError, RwLock};
+use subtle::ConstantTimeEq;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::commands::DbState;
 use crate::db::Database;
+use crate::share::{api_error, send_api, SITE};
 
-const SITE: &str = "https://nootle.ai";
 const TOKEN_SETTING: &str = "account_token";
 const SUMMARY_SETTING: &str = "account_summary";
 const FETCHED_AT_SETTING: &str = "account_fetched_at";
@@ -27,7 +30,6 @@ const FIRST_RUN_SETTING: &str = "first_run_at";
 const TRIAL_DAYS_SETTING: &str = "trial_days";
 
 pub const TRIAL_DAYS: i64 = 14;
-/// Installs that already had meetings when Pro arrived.
 pub const EXISTING_USER_TRIAL_DAYS: i64 = 30;
 pub const OFFLINE_GRACE_DAYS: i64 = 14;
 const PENDING_STATE_MINUTES: i64 = 30;
@@ -36,7 +38,41 @@ pub const CHANGED_EVENT: &str = "account-changed";
 
 static LAST_REFRESH_FAILED: AtomicBool = AtomicBool::new(false);
 
-/// What the account has bought, as nootle.ai's `Plan`.
+/// Mirrors `ProFeatureId` in src/lib/plan.ts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProFeature {
+    LiveAssist,
+    Workflows,
+    Actions,
+    Commitments,
+    Brief,
+    Digest,
+    Coach,
+    Room,
+    Translate,
+    AiConnector,
+    ShareBranding,
+}
+
+impl ProFeature {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::LiveAssist => "Live Assist",
+            Self::Workflows => "Workflows",
+            Self::Actions => "Ask Nootle actions",
+            Self::Commitments => "Commitment tracker",
+            Self::Brief => "Pre-meeting brief",
+            Self::Digest => "Daily digest recap",
+            Self::Coach => "Meeting Coach",
+            Self::Room => "Ask the Room",
+            Self::Translate => "Translate",
+            Self::AiConnector => "AI connector",
+            Self::ShareBranding => "Unbranded share links",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Plan {
@@ -88,7 +124,6 @@ pub enum Source {
     Trial,
 }
 
-/// Everything Pro depends on, read from settings in one go.
 #[derive(Debug, Clone, Default)]
 pub struct Stored {
     pub signed_in: bool,
@@ -118,16 +153,18 @@ impl Stored {
         }
     }
 
-    /// When the trial ends. Before the first run is recorded (the CLI, tests)
-    /// the trial counts as starting now.
+    pub fn account(&self) -> Option<&AccountSummary> {
+        self.summary.as_ref().filter(|_| self.signed_in)
+    }
+
+    /// Before the first run is recorded (the CLI, tests) the trial counts as
+    /// starting now.
     pub fn trial_ends_at(&self, now: DateTime<Utc>) -> DateTime<Utc> {
         self.first_run_at.unwrap_or(now) + Duration::days(self.trial_days)
     }
 
-    /// Pro from the account: bought or earned, fetched recently enough, and
-    /// not past its end.
     fn account_source(&self, now: DateTime<Utc>) -> Option<Source> {
-        let summary = self.summary.as_ref().filter(|s| self.signed_in && s.pro)?;
+        let summary = self.account().filter(|s| s.pro)?;
         let fresh = self
             .fetched_at
             .is_some_and(|t| now - t <= Duration::days(OFFLINE_GRACE_DAYS));
@@ -157,7 +194,11 @@ impl Stored {
         self.source(now).is_some()
     }
 
-    /// Whole days left, rounded up, so the last day reads "1 day".
+    pub fn is_paid_pro(&self, now: DateTime<Utc>) -> bool {
+        self.source(now).is_some_and(|s| s != Source::Trial)
+    }
+
+    /// Rounded up, so the last day reads "1 day".
     pub fn trial_days_left(&self, now: DateTime<Utc>) -> i64 {
         let left = self.trial_ends_at(now) - now;
         if left <= Duration::zero() {
@@ -166,60 +207,102 @@ impl Stored {
             (left.num_seconds() + 86_399) / 86_400
         }
     }
+
+    fn referral_code(&self) -> Option<String> {
+        self.account()
+            .map(|s| s.referral.code.clone())
+            .filter(|c| !c.is_empty())
+    }
+
+    /// Wakes at the trial's end too, so the app locks Pro features right
+    /// when a trial runs out mid-session.
+    fn next_refresh(&self, now: DateTime<Utc>) -> std::time::Duration {
+        (self.trial_ends_at(now) - now)
+            .to_std()
+            .ok()
+            .filter(|left| !left.is_zero())
+            .map_or(REFRESH_EVERY, |left| {
+                (left + std::time::Duration::from_secs(1)).min(REFRESH_EVERY)
+            })
+    }
 }
 
-/// Whether Pro features may run: a Pro account (cached for up to
-/// [`OFFLINE_GRACE_DAYS`] offline) or an unexpired trial.
+/// The [`Stored`] account, kept in memory so Pro checks don't read settings.
+/// Everything here that writes those settings reloads it.
+#[derive(Default)]
+pub struct Cache(RwLock<Option<Stored>>);
+
+fn with_stored<R>(db: &Database, f: impl FnOnce(&Stored) -> R) -> R {
+    if let Some(stored) = db
+        .account
+        .0
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+    {
+        return f(stored);
+    }
+    let mut cached = db.account.0.write().unwrap_or_else(PoisonError::into_inner);
+    f(cached.get_or_insert_with(|| Stored::load(db)))
+}
+
+fn reload(db: &Database) {
+    *db.account.0.write().unwrap_or_else(PoisonError::into_inner) = Some(Stored::load(db));
+}
+
 pub fn is_pro(db: &Database) -> bool {
-    Stored::load(db).is_pro(Utc::now())
+    with_stored(db, |s| s.is_pro(Utc::now()))
 }
 
-/// Pro that's been paid for, through a plan or invites, as opposed to the
-/// trial.
-pub fn is_paid_pro(db: &Database) -> bool {
-    Stored::load(db)
-        .source(Utc::now())
-        .is_some_and(|s| s != Source::Trial)
+/// A Pro feature's on/off setting, which only counts with Pro.
+pub fn feature_enabled(db: &Database, setting_key: &str) -> bool {
+    db.get_bool_setting(setting_key, false) && is_pro(db)
 }
 
-/// Refuses a Pro feature the user asked for, naming it.
-pub fn require_pro(db: &Database, feature: &str) -> Result<(), String> {
+pub fn require_pro(db: &Database, feature: ProFeature) -> Result<(), String> {
     if is_pro(db) {
         Ok(())
     } else {
         Err(format!(
-            "{feature} needs Nootle Pro. Upgrade in Settings → Plan."
+            "{} is part of Nootle Pro. Upgrade in Settings → Plan.",
+            feature.name()
         ))
     }
 }
 
-/// Records the trial's start the first time this version runs: 30 days for
-/// installs that already had meetings, 14 for new ones.
+/// The referral code to attach to a share, and whether it's paid Pro, which
+/// drops the share page's branding.
+pub fn share_growth(db: &Database) -> (Option<String>, bool) {
+    with_stored(db, |s| (s.referral_code(), s.is_paid_pro(Utc::now())))
+}
+
+/// Installs that already had meetings when Pro arrived get the longer trial.
 pub fn record_first_run(db: &Database) -> crate::error::Result<()> {
     if db.get_setting(FIRST_RUN_SETTING)?.is_some() {
         return Ok(());
     }
-    let had_meetings = !db.list_meetings(None, true, None)?.is_empty();
-    let days = if had_meetings {
+    let days = if db.has_meetings()? {
         EXISTING_USER_TRIAL_DAYS
     } else {
         TRIAL_DAYS
     };
     db.set_setting(TRIAL_DAYS_SETTING, &days.to_string())?;
     db.set_setting(FIRST_RUN_SETTING, &Utc::now().to_rfc3339())?;
+    reload(db);
     Ok(())
 }
 
-/// What the app shows about the account and plan.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountStatus {
     pub signed_in: bool,
     pub email: Option<String>,
     pub pro: bool,
+    pub paid_pro: bool,
     pub source: Option<Source>,
     pub plan: Option<Plan>,
     pub trial_ends_at: String,
+    pub trial_days: i64,
     pub trial_days_left: i64,
     pub pro_until: Option<String>,
     pub referral: Option<Referral>,
@@ -227,49 +310,38 @@ pub struct AccountStatus {
 }
 
 pub fn status_at(stored: &Stored, now: DateTime<Utc>, offline: bool) -> AccountStatus {
-    let summary = stored.summary.as_ref().filter(|_| stored.signed_in);
+    let account = stored.account();
     AccountStatus {
         signed_in: stored.signed_in,
-        email: summary.map(|s| s.email.clone()),
+        email: account.map(|s| s.email.clone()),
         pro: stored.is_pro(now),
+        paid_pro: stored.is_paid_pro(now),
         source: stored.source(now),
-        plan: summary.map(|s| s.plan.clone()),
+        plan: account.map(|s| s.plan.clone()),
         trial_ends_at: stored.trial_ends_at(now).to_rfc3339(),
+        trial_days: stored.trial_days,
         trial_days_left: stored.trial_days_left(now),
-        pro_until: summary.and_then(|s| s.pro_until.clone()),
-        referral: summary.map(|s| s.referral.clone()),
+        pro_until: account.and_then(|s| s.pro_until.clone()),
+        referral: account.map(|s| s.referral.clone()),
         offline: stored.signed_in && offline,
     }
 }
 
 pub fn status(db: &Database) -> AccountStatus {
-    status_at(
-        &Stored::load(db),
-        Utc::now(),
-        LAST_REFRESH_FAILED.load(Ordering::Relaxed),
-    )
-}
-
-/// The referral code to attach to shares, when signed in.
-pub fn referral_code(db: &Database) -> Option<String> {
-    let stored = Stored::load(db);
-    stored
-        .summary
-        .filter(|_| stored.signed_in)
-        .map(|s| s.referral.code)
-        .filter(|c| !c.is_empty())
+    let offline = LAST_REFRESH_FAILED.load(Ordering::Relaxed);
+    with_stored(db, |s| status_at(s, Utc::now(), offline))
 }
 
 fn clear(db: &Database) -> crate::error::Result<()> {
     for key in [TOKEN_SETTING, SUMMARY_SETTING, FETCHED_AT_SETTING] {
         db.delete_setting(key)?;
     }
+    reload(db);
     LAST_REFRESH_FAILED.store(false, Ordering::Relaxed);
     Ok(())
 }
 
-/// Fetches the account from nootle.ai and caches it. `Ok(None)` when signed
-/// out; a rejected token signs this Mac out.
+/// `Ok(None)` when signed out; a rejected token signs this Mac out.
 pub async fn refresh(db: &Database) -> Result<Option<AccountSummary>, String> {
     let Some(token) = db
         .get_setting(TOKEN_SETTING)
@@ -287,6 +359,7 @@ pub async fn refresh(db: &Database) -> Result<Option<AccountSummary>, String> {
                 .map_err(|e| e.to_string())?;
             db.set_setting(FETCHED_AT_SETTING, &Utc::now().to_rfc3339())
                 .map_err(|e| e.to_string())?;
+            reload(db);
             Ok(Some(summary))
         }
         Ok(None) => {
@@ -300,21 +373,12 @@ pub async fn refresh(db: &Database) -> Result<Option<AccountSummary>, String> {
 /// `Ok(None)` when nootle.ai no longer accepts the token.
 async fn fetch(db: &Database, token: &str) -> Result<Option<AccountSummary>, String> {
     crate::llm::ensure_may_send(db, "nootle.ai")?;
-    let resp = crate::http::CLIENT
-        .get(format!("{SITE}/api/account"))
-        .header("User-Agent", "Nootle")
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|e| format!("Couldn't reach nootle.ai: {e}"))?;
+    let resp = send_api(reqwest::Method::GET, "/account", Some(token), None).await?;
     if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
         return Ok(None);
     }
     if !resp.status().is_success() {
-        return Err(format!(
-            "nootle.ai couldn't load your account ({}).",
-            resp.status()
-        ));
+        return Err(api_error(&resp, "load your account"));
     }
     resp.json()
         .await
@@ -347,13 +411,7 @@ fn take_pending_state(db: &Database, given: &str, now: DateTime<Utc>) -> bool {
     };
     let recent =
         parse_time(started).is_some_and(|t| now - t <= Duration::minutes(PENDING_STATE_MINUTES));
-    recent
-        && state.len() == given.len()
-        && state
-            .bytes()
-            .zip(given.bytes())
-            .fold(0u8, |acc, (a, b)| acc | (a ^ b))
-            == 0
+    recent && bool::from(state.as_bytes().ct_eq(given.as_bytes()))
 }
 
 fn open_url(app: &AppHandle, url: &str) -> Result<(), String> {
@@ -367,9 +425,8 @@ fn changed(app: &AppHandle) {
     let _ = app.emit(CHANGED_EVENT, ());
 }
 
-/// Handles `nootle://account/connected?token=…&state=…`, the end of signing
-/// in on nootle.ai. Works without URL control, but only for the sign-in this
-/// Mac started.
+/// Handles `nootle://account/connected?token=…&state=…`. Works without URL
+/// control, but only for the sign-in this Mac started.
 pub async fn handle_connected(app: AppHandle, url: &url::Url) {
     let db = app.state::<DbState>().inner().clone();
     let token = crate::remote::query_value(url, "token");
@@ -382,6 +439,7 @@ pub async fn handle_connected(app: AppHandle, url: &url::Url) {
         tracing::warn!("account: couldn't save the device token: {e}");
         return;
     }
+    reload(&db);
     if let Err(e) = refresh(&db).await {
         tracing::warn!("account: refresh after sign-in failed: {e}");
     }
@@ -389,18 +447,22 @@ pub async fn handle_connected(app: AppHandle, url: &url::Url) {
     crate::show_main_window(&app);
 }
 
-/// Refreshes the account at launch and every 12 hours while signed in.
 pub fn spawn_refresher(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let db = app.state::<DbState>().inner().clone();
+        let mut last = status(&db);
         loop {
-            let db = app.state::<DbState>().inner().clone();
-            if Stored::load(&db).signed_in {
+            if with_stored(&db, |s| s.signed_in) {
                 if let Err(e) = refresh(&db).await {
                     tracing::info!("account: refresh failed: {e}");
                 }
-                changed(&app);
             }
-            tokio::time::sleep(REFRESH_EVERY).await;
+            let now = status(&db);
+            if now != last {
+                changed(&app);
+                last = now;
+            }
+            tokio::time::sleep(with_stored(&db, |s| s.next_refresh(Utc::now()))).await;
         }
     });
 }
@@ -538,19 +600,79 @@ mod tests {
         assert!(!s.is_pro(at("2026-12-10T00:00:00Z")));
     }
 
+    fn sign_in(db: &Database, summary: &AccountSummary) {
+        db.set_setting(TOKEN_SETTING, "tok").unwrap();
+        db.set_setting(SUMMARY_SETTING, &serde_json::to_string(summary).unwrap())
+            .unwrap();
+        db.set_setting(FETCHED_AT_SETTING, &Utc::now().to_rfc3339())
+            .unwrap();
+        reload(db);
+    }
+
     #[test]
     fn only_a_plan_or_bonus_counts_as_paid() {
         let db = Database::new_in_memory().unwrap();
-        assert!(is_pro(&db) && !is_paid_pro(&db), "trial");
-        db.set_setting(TOKEN_SETTING, "tok").unwrap();
-        db.set_setting(
-            SUMMARY_SETTING,
-            &serde_json::to_string(&summary(true, "free", None)).unwrap(),
-        )
-        .unwrap();
-        db.set_setting(FETCHED_AT_SETTING, &Utc::now().to_rfc3339())
+        assert!(is_pro(&db) && !status(&db).paid_pro, "trial");
+        assert_eq!(share_growth(&db), (None, false));
+        sign_in(&db, &summary(true, "free", None));
+        assert!(status(&db).paid_pro, "referral bonus");
+        assert_eq!(share_growth(&db), (Some("ABCD2345".into()), true));
+    }
+
+    #[test]
+    fn cached_account_follows_writes() {
+        let db = Database::new_in_memory().unwrap();
+        assert!(!status(&db).signed_in);
+        sign_in(&db, &summary(true, "pro", None));
+        assert_eq!(status(&db).source, Some(Source::Plan));
+        clear(&db).unwrap();
+        assert!(!status(&db).signed_in);
+
+        db.set_setting(FIRST_RUN_SETTING, "2020-01-01T00:00:00Z")
             .unwrap();
-        assert!(is_paid_pro(&db), "referral bonus");
+        assert!(is_pro(&db), "unseen until reloaded");
+        reload(&db);
+        assert!(!is_pro(&db));
+        assert!(require_pro(&db, ProFeature::Translate)
+            .unwrap_err()
+            .starts_with("Translate is part of Nootle Pro"));
+    }
+
+    #[test]
+    fn feature_settings_need_pro() {
+        let db = Database::new_in_memory().unwrap();
+        assert!(!feature_enabled(&db, "pre_meeting_brief"));
+        db.set_setting("pre_meeting_brief", "true").unwrap();
+        assert!(feature_enabled(&db, "pre_meeting_brief"));
+        db.set_setting(FIRST_RUN_SETTING, "2020-01-01T00:00:00Z")
+            .unwrap();
+        reload(&db);
+        assert!(!feature_enabled(&db, "pre_meeting_brief"));
+    }
+
+    #[test]
+    fn pro_features_match_the_app_ids() {
+        assert_eq!(
+            serde_json::to_value(ProFeature::LiveAssist).unwrap(),
+            "live-assist"
+        );
+        assert_eq!(
+            serde_json::to_value(ProFeature::AiConnector).unwrap(),
+            "ai-connector"
+        );
+    }
+
+    #[test]
+    fn refresher_wakes_at_the_trial_end() {
+        let s = trial("2026-11-01T00:00:00Z", 14);
+        let hour = std::time::Duration::from_secs(3600);
+        assert_eq!(s.next_refresh(at("2026-11-02T00:00:00Z")), REFRESH_EVERY);
+        assert_eq!(
+            s.next_refresh(at("2026-11-14T23:00:00Z")),
+            hour + std::time::Duration::from_secs(1)
+        );
+        assert_eq!(s.next_refresh(at("2026-11-15T00:00:00Z")), REFRESH_EVERY);
+        assert_eq!(s.next_refresh(at("2026-12-01T00:00:00Z")), REFRESH_EVERY);
     }
 
     #[test]
@@ -572,6 +694,8 @@ mod tests {
         let json = serde_json::to_value(&out).unwrap();
         assert_eq!(json["source"], "plan");
         assert_eq!(json["trialDaysLeft"], 12);
+        assert_eq!(json["trialDays"], 14);
+        assert_eq!(json["paidPro"], true);
     }
 
     #[test]
@@ -630,16 +754,11 @@ mod tests {
     #[test]
     fn sign_out_clears_the_account() {
         let db = Database::new_in_memory().unwrap();
-        db.set_setting(TOKEN_SETTING, "tok").unwrap();
-        db.set_setting(
-            SUMMARY_SETTING,
-            &serde_json::to_string(&summary(true, "pro", None)).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(referral_code(&db).as_deref(), Some("ABCD2345"));
+        sign_in(&db, &summary(true, "pro", None));
+        assert_eq!(share_growth(&db).0.as_deref(), Some("ABCD2345"));
         clear(&db).unwrap();
         let s = Stored::load(&db);
         assert!(!s.signed_in && s.summary.is_none());
-        assert_eq!(referral_code(&db), None);
+        assert_eq!(share_growth(&db).0, None);
     }
 }

@@ -976,6 +976,7 @@ pub struct ConnectorMeeting {
 
 pub struct Database {
     conn: Mutex<Connection>,
+    pub(crate) account: crate::account::Cache,
 }
 
 impl Database {
@@ -1016,6 +1017,7 @@ impl Database {
         )?;
         let db = Self {
             conn: Mutex::new(conn),
+            account: Default::default(),
         };
         db.initialize()?;
         Ok(db)
@@ -1026,6 +1028,7 @@ impl Database {
         let conn = Connection::open_in_memory()?;
         let db = Self {
             conn: Mutex::new(conn),
+            account: Default::default(),
         };
         db.initialize()?;
         Ok(db)
@@ -2067,6 +2070,15 @@ impl Database {
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    pub fn has_meetings(&self) -> Result<bool> {
+        let conn = self.lock_conn()?;
+        Ok(
+            conn.query_row("SELECT EXISTS (SELECT 1 FROM meetings)", [], |row| {
+                row.get(0)
+            })?,
+        )
     }
 
     /// Meetings newest first, optionally only those whose title or transcript

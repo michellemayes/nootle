@@ -3330,6 +3330,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlite-vec",
+ "subtle",
  "symphonia",
  "tauri",
  "tauri-build",
