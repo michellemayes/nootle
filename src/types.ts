@@ -546,3 +546,23 @@ export interface SegmentEditResult {
   learned: LearnedCorrection[];
   corrected_segments: number;
 }
+
+/** `account_status`: the nootle.ai account and Nootle Pro. */
+export interface AccountStatus {
+  signedIn: boolean;
+  email: string | null;
+  pro: boolean;
+  source: "plan" | "bonus" | "trial" | null;
+  plan: {
+    tier: "free" | "pro";
+    interval?: "monthly" | "yearly" | "lifetime";
+    status?: "active" | "trialing" | "past_due" | "canceled" | "revoked";
+    renewsAt?: string;
+    endsAt?: string;
+  } | null;
+  trialEndsAt: string;
+  trialDaysLeft: number;
+  proUntil: string | null;
+  referral: { code: string; url: string; joined: number; paid: number; monthsEarned: number } | null;
+  offline: boolean;
+}

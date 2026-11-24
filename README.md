@@ -33,25 +33,27 @@ Nootle records your meetings (microphone and system audio), transcribes them on 
 
 ## Features
 
+Recording, transcription, summaries, search, sharing, the CLI and the MCP server are free forever. Features marked *(Pro)* are part of Nootle Pro ($5 a month, $40 a year or $99 once), which every install can try free for 14 days, no card needed.
+
 - **No bot in the call.** Records mic and system audio from Zoom, Meet, Teams, or anything else, and can pop up when a call starts.
 - **Live transcript with speakers.** Transcribed on your Mac with Parakeet, or Underdog Bark 3.0 Plus: a 210 MB English model that's as accurate (better on meetings). For noisy audio, you can send finished recordings to any OpenAI-compatible transcription API instead. Speakers are told apart and named after whoever the call shows talking. Nootle can also learn voices and recognize them in later meetings.
 - **Summaries and action items.** Every meeting is summarized when it ends, with templates you choose, and one click turns it into a follow-up email, a project update, minutes, or CRM notes, each in its own tab. Decisions and action items are collected across meetings, and you can dismiss them, one at a time or a section at once, once they're handled.
-- **Commitment tracker.** Follows what people promised across meetings: what's still owed, what slipped, and the moment a later meeting showed it done.
-- **Pre-meeting brief.** A few minutes before a calendar meeting: who's coming, open action items, last time's decisions, and related docs (opt-in).
-- **Daily digest.** Today or yesterday on one card: each meeting's decisions, the action items it produced, what's due or overdue, and a short AI recap of the day.
+- **Commitment tracker.** *(Pro)* Follows what people promised across meetings: what's still owed, what slipped, and the moment a later meeting showed it done.
+- **Pre-meeting brief.** *(Pro)* A few minutes before a calendar meeting: who's coming, open action items, last time's decisions, and related docs (opt-in).
+- **Daily digest.** *(Pro)* Today or yesterday on one card: each meeting's decisions, the action items it produced, what's due or overdue, and a short AI recap of the day.
 - **Menu bar mode.** Record, pause, jot a note and see what's next from the menu bar, with or without a Dock icon.
-- **Live Assist.** During a call, answers questions from your documents and past meetings, including ones it hears asked aloud. Filter to just Q&A or just commitment reminders, drag the panel wider, or pop it out into its own always-on-top window. Questions you type can also be about the slides shared so far. Pick a playbook (discovery call, 1:1, interview, or your own topics) and its checklist ticks off as the conversation covers each one.
-- **Ask the Room.** Listen to a meeting as a short spoken recap, each point in the voice of whoever raised it, made on your Mac. Then type a question and hear the answer in their voice.
-- **Translate any meeting.** Read the transcript and summaries in another language, line by line and still synced to playback, with the AI you choose.
+- **Live Assist.** *(Pro)* During a call, answers questions from your documents and past meetings, including ones it hears asked aloud. Filter to just Q&A or just commitment reminders, drag the panel wider, or pop it out into its own always-on-top window. Questions you type can also be about the slides shared so far. Pick a playbook (discovery call, 1:1, interview, or your own topics) and its checklist ticks off as the conversation covers each one.
+- **Ask the Room.** *(Pro)* Listen to a meeting as a short spoken recap, each point in the voice of whoever raised it, made on your Mac. Then type a question and hear the answer in their voice.
+- **Translate any meeting.** *(Pro)* Read the transcript and summaries in another language, line by line and still synced to playback, with the AI you choose.
 - **Ask your meetings and docs.** Chat across every meeting and your knowledge base (PDF, Word, PowerPoint, Excel, web pages and more), with citations.
 - **Ask Nootle, in the meeting.** Ask about the meeting you're looking at, or have it make changes: "put those in my notes", tag it, add or close action items, write a summary from a template, name a speaker, pin a comment to a moment. With Linear connected, "file that in Linear" creates the issue in your default team. With a Notion workflow set up, "write the decisions up in Notion" adds a page to that workflow's database. Each reply lists what it changed, with a link to anything it filed.
-- **Meeting Coach (opt-in).** A private card after each call on how you showed up (talk share, interruptions, questions, filler words, pace), with trends over time.
+- **Meeting Coach (opt-in).** *(Pro)* A private card after each call on how you showed up (talk share, interruptions, questions, filler words, pace), with trends over time.
 - **Your notes, expanded.** Jot shorthand while recording, and highlight the moments that matter in one click (⌘⇧H). Nootle fills your notes out from the transcript afterwards, and summaries give your highlights extra attention.
 - **Note suggestions.** As you write notes, during the call or after, the model you picked suggests how each line goes on from what was said, with sub-points nested under it. Press Tab to take it.
 - **Snapshots.** Captures shared slides and screens into your notes, and reads the text on them. They line up in a filmstrip as the meeting records, so you can look back at a slide without waiting for it to end. Summaries cite slides as clickable thumbnails, and a slide recap says what was said while each was up.
-- **Workflows.** Send recaps and action items to Slack, Notion, Linear, GitHub, Asana, Confluence, Obsidian, or email.
+- **Workflows.** *(Pro)* Send recaps and action items to Slack, Notion, Linear, GitHub, Asana, Confluence, Obsidian, or email.
 - **Share links.** End-to-end encrypted `nootle.ai` links to a meeting's notes.
-- **AI connector.** Claude, ChatGPT and other cloud AI apps connect to `nootle.ai/mcp` and read the shared meetings you pick. Each person signs in with their own key, so it works for Claude Team workspaces too.
+- **AI connector.** *(Pro)* Claude, ChatGPT and other cloud AI apps connect to `nootle.ai/mcp` and read the shared meetings you pick. Each person signs in with their own key, so it works for Claude Team workspaces too.
 - **Continue in Claude.** One click opens a meeting in Claude, ChatGPT, Codex, Perplexity, or any app that takes a prompt in a link, with your own icon if you like.
 - **Built for agents.** A CLI and an MCP server (with a read-only mode) give Claude Code and other agents your meetings, and let them pin notes to a meeting's timeline.
 - **Plain files you own.** Export any meeting, or all of them, as Markdown, text, SRT or WebVTT. Import recordings and transcripts from Otter, Fathom, Granola, Zoom, Teams and Meet.
@@ -70,7 +72,7 @@ See [every feature in detail](docs/features.md).
 | Answers from your own docs, live in the call (local knowledge base) | ✅ | ❌ | ❌ | ❌ |
 | MCP server and CLI for agents | ✅ (read-only mode available) | MCP on paid plans | MCP (enterprise) | — |
 | Open source | ✅ MIT | ❌ | ❌ | Open core |
-| Price | Free | Free / $14 a month | Free / from $8.33 a month | Free / about $10 a month |
+| Price | Core free forever; Pro $5 a month, $40 a year or $99 once (14-day trial) | Free / $14 a month | Free / from $8.33 a month | Free / about $10 a month |
 
 Competitor details are as of October 2026 and change often; check their sites.
 

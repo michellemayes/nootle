@@ -15,6 +15,7 @@ import { useBooleanSetting } from "@/hooks/useBooleanSetting";
 import { COACH_SETTING, useCoachTrends } from "@/hooks/useCoach";
 import { formatDate, cn, plural } from "@/lib/utils";
 import type { CommitmentStatus, InsightWithActionItem, Meeting } from "@/types";
+import { ProGate } from "@/components/ProGate";
 
 interface Person {
   name: string;
@@ -162,7 +163,11 @@ export function PeoplePage() {
             </ul>
           </ScrollArea>
           <ScrollArea className="min-h-0 flex-1">
-            {showYou && <CoachTrends points={trends} />}
+            {showYou && (
+              <ProGate feature="coach" className="m-6 max-w-3xl">
+                <CoachTrends points={trends} />
+              </ProGate>
+            )}
             {detail && person && detail.name === person.name && (
               <div className="max-w-3xl space-y-8 p-6">
                 <div>
@@ -175,11 +180,13 @@ export function PeoplePage() {
                 {owed.length > 0 && (
                   <section>
                     <h3 className="mb-2 text-sm font-medium">Open commitments</h3>
-                    <div className="space-y-2">
-                      {owed.map((c) => (
-                        <CommitmentRow key={c.id} commitment={c} onSetStatus={setCommitmentStatus} showOwner={false} />
-                      ))}
-                    </div>
+                    <ProGate feature="commitments" compact>
+                      <div className="space-y-2">
+                        {owed.map((c) => (
+                          <CommitmentRow key={c.id} commitment={c} onSetStatus={setCommitmentStatus} showOwner={false} />
+                        ))}
+                      </div>
+                    </ProGate>
                   </section>
                 )}
                 <section>

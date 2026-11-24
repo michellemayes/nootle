@@ -51,7 +51,9 @@ pub fn spawn_scheduler(app: AppHandle) {
         loop {
             tokio::time::sleep(CHECK_EVERY).await;
             let db = app.state::<DbState>().inner().clone();
-            if !db.get_bool_setting(crate::brief::SETTING_KEY, false) {
+            if !db.get_bool_setting(crate::brief::SETTING_KEY, false)
+                || !crate::account::is_pro(&db)
+            {
                 continue;
             }
             let Ok(upcoming) = tokio::task::spawn_blocking(|| crate::calendar::upcoming(1)).await
@@ -117,6 +119,7 @@ pub async fn synthesize_meeting_brief(
     llm: tauri::State<'_, LlmState>,
     brief: MeetingBrief,
 ) -> Result<Option<String>, String> {
+    crate::account::require_pro(&db, "The meeting brief")?;
     let llm = llm.read().await;
     crate::brief::synthesize(&db, &llm, &brief)
         .await

@@ -11,6 +11,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { CopyButton } from "@/components/CopyButton";
 import { formatDate } from "@/lib/utils";
 import { useBusyAction } from "@/hooks/useBusyAction";
+import { openUpgrade, usePlan } from "@/hooks/usePlan";
+import { ProBadge } from "@/components/ProGate";
 import type { ConnectorAccess, Meeting, MeetingShare } from "@/types";
 
 /**
@@ -23,6 +25,7 @@ export function ShareMenu({ meeting }: { meeting: Meeting }) {
   const [aiAccess, setAiAccess] = useState(false);
   const [hasConnector, setHasConnector] = useState(false);
   const { busy, error, setError, run: act } = useBusyAction();
+  const { pro } = usePlan();
 
   useEffect(() => {
     invoke<MeetingShare | null>("get_meeting_share", { meetingId: meeting.id })
@@ -113,6 +116,17 @@ export function ShareMenu({ meeting }: { meeting: Meeting }) {
             )}
           </p>
         </div>
+
+        {!pro && (
+          <button
+            type="button"
+            onClick={() => openUpgrade("share-branding")}
+            className="flex w-full items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
+          >
+            The page says “Made with Nootle”. Remove it with
+            <ProBadge />
+          </button>
+        )}
 
         {error && <p className="text-xs text-destructive">{error}</p>}
 

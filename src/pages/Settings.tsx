@@ -16,6 +16,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { McpSetup } from "@/components/McpSetup";
 import { ContinueInSettings } from "@/components/ContinueInSettings";
 import { AiConnectorCard } from "@/components/AiConnectorCard";
+import { PlanSettings } from "@/components/PlanSettings";
+import { ProBadge, ProGate, useProGuard } from "@/components/ProGate";
 import { CustomEndpointCard } from "@/components/CustomEndpointCard";
 import { CopyButton } from "@/components/CopyButton";
 import { DictionaryManager } from "@/components/DictionaryManager";
@@ -867,17 +869,18 @@ function NoteSuggestionsSetting() {
 /** Live Assist answers questions heard while recording from your documents and past meetings. */
 function LiveAssistSetting() {
   const [enabled, setEnabled] = useBooleanSetting("live_assist", false);
+  const { locked, guard } = useProGuard("live-assist");
   return (
     <div className="flex items-center justify-between">
       <div>
-        <p className="text-sm font-medium">Live Assist</p>
+        <p className="flex items-center gap-2 text-sm font-medium">Live Assist{locked && <ProBadge />}</p>
         <p className="text-sm text-muted-foreground">
           While recording, answer questions people ask using your{" "}
           <RouterLink to="/knowledge" className="underline">knowledge base</RouterLink> and past meetings,
           with sources. You can always ask Live Assist yourself from the recording screen
         </p>
       </div>
-      <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Live Assist" />
+      <Switch checked={enabled && !locked} onCheckedChange={guard(setEnabled)} aria-label="Live Assist" />
     </div>
   );
 }
@@ -886,6 +889,7 @@ function LiveAssistSetting() {
  * commitments from earlier ones. Off unless turned on. */
 function FollowThroughCard() {
   const [enabled, setEnabled] = useBooleanSetting("commitment_checks", false);
+  const { locked, guard } = useProGuard("commitments");
   return (
     <Card>
       <CardHeader>
@@ -899,7 +903,7 @@ function FollowThroughCard() {
       <CardContent>
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium">Check follow-through after each meeting</p>
+            <p className="flex items-center gap-2 text-sm font-medium">Check follow-through after each meeting{locked && <ProBadge />}</p>
             <p className="text-sm text-muted-foreground">
               When a meeting ends, open commitments whose owner was there, or whose topic came up,
               are checked against what was said, using your summary model. Each is marked done or
@@ -908,7 +912,7 @@ function FollowThroughCard() {
               commitments yourself
             </p>
           </div>
-          <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Check follow-through after each meeting" />
+          <Switch checked={enabled && !locked} onCheckedChange={guard(setEnabled)} aria-label="Check follow-through after each meeting" />
         </div>
       </CardContent>
     </Card>
@@ -922,6 +926,7 @@ function PreMeetingBriefSetting() {
   // Choices match the backend's brief::LEAD_CHOICES.
   const [lead, setLead] = useSetting("pre_meeting_brief_lead_minutes", "5");
   const [calendar, setCalendar] = useState<string | null>(null);
+  const { locked, guard } = useProGuard("brief");
 
   useEffect(() => {
     invoke<{ calendar: string }>("check_permissions")
@@ -934,7 +939,7 @@ function PreMeetingBriefSetting() {
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium">Pre-meeting brief</p>
+          <p className="flex items-center gap-2 text-sm font-medium">Pre-meeting brief{locked && <ProBadge />}</p>
           <p className="text-sm text-muted-foreground">
             Shortly before each calendar meeting, show who's coming and when you last met, open action
             items, what was decided last time, and related documents, put together on this Mac. Every
@@ -942,7 +947,7 @@ function PreMeetingBriefSetting() {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {enabled && (
+          {enabled && !locked && (
             <Select
               size="sm"
               containerClassName="w-32"
@@ -957,7 +962,7 @@ function PreMeetingBriefSetting() {
               ))}
             </Select>
           )}
-          <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Pre-meeting brief" />
+          <Switch checked={enabled && !locked} onCheckedChange={guard(setEnabled)} aria-label="Pre-meeting brief" />
         </div>
       </div>
       {calendarMissing && (
@@ -988,17 +993,18 @@ function PreMeetingBriefSetting() {
 /** Meeting Coach: a private card on how you showed up in each call. */
 function MeetingCoachSetting() {
   const [enabled, setEnabled] = useBooleanSetting(COACH_SETTING, false);
+  const { locked, guard } = useProGuard("coach");
   return (
     <div className="flex items-center justify-between">
       <div>
-        <p className="text-sm font-medium">Meeting Coach</p>
+        <p className="flex items-center gap-2 text-sm font-medium">Meeting Coach{locked && <ProBadge />}</p>
         <p className="text-sm text-muted-foreground">
           After a call, show a private card on how you showed up: talk share, interruptions,
           questions, filler words, pace and monologues, with trends on the People page. Worked out
           on this Mac and never shared or exported
         </p>
       </div>
-      <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Meeting Coach" />
+      <Switch checked={enabled && !locked} onCheckedChange={guard(setEnabled)} aria-label="Meeting Coach" />
     </div>
   );
 }
@@ -1175,7 +1181,7 @@ export function SettingsPage() {
   const { providers: llmProviders } = useLLM();
   const { theme, toggleTheme } = useTheme();
   const version = useAppVersion();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [detectionEnabled, setDetectionEnabled] = useState(true);
   const [remoteControlEnabled, setRemoteControlEnabled] = useState(false);
   const [snapshotsEnabled, setSnapshotsEnabled] = useState(false);
@@ -1222,13 +1228,18 @@ export function SettingsPage() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <Tabs defaultValue={searchParams.get("tab") ?? "general"} className="flex flex-1 flex-col gap-0 overflow-hidden">
+      <Tabs
+        value={searchParams.get("tab") ?? "general"}
+        onValueChange={(tab) => setSearchParams({ tab }, { replace: true })}
+        className="flex flex-1 flex-col gap-0 overflow-hidden"
+      >
         <PageHeader
           title="Settings"
           description="Preferences, AI providers, integrations, and local models"
           tabs={
             <TabsList>
               <TabsTrigger value="general">General</TabsTrigger>
+              <TabsTrigger value="plan">Plan</TabsTrigger>
               <TabsTrigger value="api-keys">API keys</TabsTrigger>
               <TabsTrigger value="integrations">Integrations</TabsTrigger>
               <TabsTrigger value="models">Models</TabsTrigger>
@@ -1322,6 +1333,12 @@ export function SettingsPage() {
           </div>
         </TabsContent>
 
+        <TabsContent value="plan" className="mt-0 flex-1 overflow-auto">
+          <div className="flex flex-col gap-8 p-6 max-w-3xl">
+            <PlanSettings />
+          </div>
+        </TabsContent>
+
         <TabsContent value="api-keys" className="mt-0 flex-1 overflow-auto">
           <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <Card>
@@ -1372,7 +1389,9 @@ export function SettingsPage() {
         <TabsContent value="integrations" className="mt-0 flex-1 overflow-auto">
           <div className="flex flex-col gap-8 p-6 max-w-3xl">
             <IntegrationsManager />
-            <AiConnectorCard />
+            <ProGate feature="ai-connector">
+              <AiConnectorCard />
+            </ProGate>
             <ContinueInSettings />
           </div>
         </TabsContent>

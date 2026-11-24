@@ -11,6 +11,7 @@ import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useBooleanSetting } from "@/hooks/useBooleanSetting";
 import { COACH_SETTING } from "@/hooks/useCoach";
 import { CoachCard } from "@/components/Coach";
+import { ProGate } from "@/components/ProGate";
 
 // Same order as the speaker colors in MeetingDetail, so a speaker keeps one
 // color between the transcript and these bars.
@@ -107,7 +108,11 @@ export function AnalyticsPanel({
   return (
     <ScrollArea className="flex-1">
       <div className="space-y-6 p-5">
-        {coachEnabled && <CoachCard meetingId={meetingId} />}
+        {coachEnabled && (
+          <ProGate feature="coach" compact>
+            <CoachCard meetingId={meetingId} />
+          </ProGate>
+        )}
 
         {hasSpeakers && (
           <div className="space-y-3">

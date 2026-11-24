@@ -178,6 +178,24 @@ const PAGES = [
   { route: "/settings", ready: "h1" },
   { name: "settings-api-keys", route: "/settings?tab=api-keys", ready: "text=Custom endpoint" },
   { name: "settings-models", route: "/settings?tab=models", ready: "text=Cloud transcription" },
+  { name: "settings-plan", route: "/settings?tab=plan", ready: "text=Invite friends" },
+  { name: "settings-plan-ended", route: "/settings?tab=plan&mockPlan=trial-ended", ready: "text=Your Pro trial ended" },
+  { name: "settings-plan-pro", route: "/settings?tab=plan&mockPlan=pro-yearly", ready: "text=Months earned" },
+  {
+    name: "upgrade-dialog",
+    route: "/settings?tab=plan&mockPlan=trial-ended",
+    ready: "text=Your Pro trial ended",
+    async prepare(page) {
+      await page.getByRole("button", { name: "Upgrade", exact: true }).click();
+      await page.getByRole("button", { name: "Continue to checkout" }).waitFor();
+    },
+  },
+  {
+    name: "recording-live-assist-locked",
+    route: "/recording?mockPlan=trial-ended",
+    ready: "text=Live transcript",
+    prepare: emitLiveTranscript,
+  },
   { route: "/help", ready: "h1" },
 ];
 

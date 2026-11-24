@@ -195,6 +195,9 @@ pub async fn handle_url(app: AppHandle, raw: String) {
     };
 
     let action = action_of(&url);
+    if action == "account/connected" {
+        return crate::account::handle_connected(app, &url).await;
+    }
     let db = app.state::<DbState>();
     let enabled = db
         .get_setting(ENABLED_SETTING)

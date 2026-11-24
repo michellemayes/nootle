@@ -52,6 +52,8 @@ import { useSlides } from "@/hooks/useSlides";
 import { SlideCitation, SlideDialog, SlideRecapSection } from "@/components/SlideRecap";
 import { citedSlide, linkSlideCitations } from "@/lib/slides";
 import { RoomRecap } from "@/components/RoomRecap";
+import { ProBadge, ProGate, ProLockedButton } from "@/components/ProGate";
+import { openUpgrade, usePlan } from "@/hooks/usePlan";
 import { toast } from "@/components/Toaster";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useCloudTranscriptionFailures, useCustomEndpoint } from "@/hooks/useCustomEndpoint";
@@ -463,8 +465,10 @@ function InsightsPanel({
   const [extractError, setExtractError] = useState<string | null>(null);
   const [followups, setFollowups] = useFollowups(meetingId);
   const [checking, setChecking] = useState(false);
+  const { pro } = usePlan();
 
   const handleCheckFollowups = async () => {
+    if (!pro) return openUpgrade("commitments");
     if (!selectedProvider || !selectedModel) return;
     setChecking(true);
     try {
@@ -539,6 +543,7 @@ function InsightsPanel({
         >
           <Handshake className={`h-3 w-3 mr-1 ${checking ? "animate-pulse" : ""}`} />
           {checking ? "Checking follow-ups…" : "Check follow-ups"}
+          {!pro && <ProBadge className="ml-1" />}
         </Button>
         {(extractError || insightsError) && (
           <span className="text-xs text-destructive">Couldn't extract insights. Try again.</span>
@@ -950,6 +955,7 @@ function RunWorkflowMenu({
   onViewRuns: () => void;
 }) {
   const { selectedProvider, selectedModel } = useGlobalLLMSelection();
+  const { pro } = usePlan();
   const [open, setOpen] = useState(false);
   // Workflows started from this menu. The backend only records a run once
   // any summary it needs is generated, so the run list alone can't show it.
@@ -957,6 +963,7 @@ function RunWorkflowMenu({
 
   const enabledWorkflows = workflows.filter((w) => w.is_enabled);
   if (enabledWorkflows.length === 0) return null;
+  if (!pro) return <ProLockedButton feature="workflows" icon={Zap} />;
 
   const items = enabledWorkflows.map((w) => {
     const recentRun = runs.find((r) => r.workflow_id === w.id);
@@ -1055,6 +1062,7 @@ function RunWorkflowMenu({
 export function MeetingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { pro } = usePlan();
   const { meeting, loading: meetingLoading, refresh: refreshMeeting } = useMeeting(id!);
   const { segments, loading: transcriptLoading, refresh: refreshTranscript, renameSpeaker } = useTranscript(id!);
   const [dictionaryNotice, setDictionaryNotice] = useState<string | null>(null);
@@ -1632,14 +1640,18 @@ export function MeetingDetail() {
               refreshRuns={refreshRuns}
               onViewRuns={() => setDetailTab("workflows")}
             />
-            <TranslateMenu
-              translations={translations}
-              showing={translation?.language ?? null}
-              translating={translating}
-              canTranslate={!!selectedProvider && !!selectedModel}
-              onShow={showLanguage}
-              onTranslate={translateInto}
-            />
+            {pro ? (
+              <TranslateMenu
+                translations={translations}
+                showing={translation?.language ?? null}
+                translating={translating}
+                canTranslate={!!selectedProvider && !!selectedModel}
+                onShow={showLanguage}
+                onTranslate={translateInto}
+              />
+            ) : (
+              <ProLockedButton feature="translate" icon={Languages} />
+            )}
             <ExportMenu meeting={meeting} />
             <ContinueInButton meetingId={meeting.id} />
           </div>
@@ -2143,7 +2155,9 @@ export function MeetingDetail() {
               <InsightsPanel meetingId={id!} onSeek={jumpToMs} />
             </TabsContent>
             <TabsContent value="listen" className="flex flex-1 flex-col mt-0 overflow-hidden">
-              <RoomRecap meetingId={id!} speakerColors={speakerMap} />
+              <ProGate feature="room" className="m-5">
+                <RoomRecap meetingId={id!} speakerColors={speakerMap} />
+              </ProGate>
             </TabsContent>
             <TabsContent value="analytics" className="flex flex-1 flex-col mt-0">
               <AnalyticsPanel meetingId={id!} />

@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { LLMSelectionProvider } from "@/contexts/LLMSelectionContext";
 import { LiveAssist } from "@/components/LiveAssist";
+import { ProGate } from "@/components/ProGate";
 import { Toaster } from "@/components/Toaster";
 import { useTranscript } from "@/hooks/useTranscripts";
 import { checkIsRecording } from "@/hooks/useRecording";
@@ -34,13 +35,15 @@ function LiveAssistWindow() {
 function Panel({ meetingId }: { meetingId: string }) {
   const { segments } = useTranscript(meetingId);
   return (
-    <LiveAssist
-      meetingId={meetingId}
-      segments={segments}
-      onOpenMeeting={openInMain}
-      onPopOut={popInLiveAssist}
-      windowed
-    />
+    <ProGate feature="live-assist" className="m-3">
+      <LiveAssist
+        meetingId={meetingId}
+        segments={segments}
+        onOpenMeeting={openInMain}
+        onPopOut={popInLiveAssist}
+        windowed
+      />
+    </ProGate>
   );
 }
 

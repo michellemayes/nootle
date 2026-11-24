@@ -17,7 +17,46 @@
     if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify(cards));
   }
 
+  // Which Nootle Pro state account_status reports: ?mockPlan= on the first
+  // page load, or localStorage "mock_plan". trial-active (the default, so
+  // Pro features show), trial-ended, or pro-yearly (with referrals).
+  const mockPlan =
+    new URLSearchParams(location.search).get("mockPlan") || localStorage.getItem("mock_plan") || "trial-active";
+
+  function accountStatus() {
+    const day = 86_400_000;
+    const now = Date.now();
+    const trialEnds = (daysFromNow) => new Date(now + daysFromNow * day).toISOString();
+    const signedOut = {
+      signedIn: false,
+      email: null,
+      plan: null,
+      proUntil: null,
+      referral: null,
+      offline: false,
+    };
+    if (mockPlan === "trial-ended") {
+      return { ...signedOut, pro: false, source: null, trialEndsAt: trialEnds(-3), trialDaysLeft: 0 };
+    }
+    if (mockPlan === "pro-yearly") {
+      return {
+        signedIn: true,
+        email: "sam@example.com",
+        pro: true,
+        source: "plan",
+        plan: { tier: "pro", interval: "yearly", status: "active", renewsAt: trialEnds(296) },
+        trialEndsAt: trialEnds(-55),
+        trialDaysLeft: 0,
+        proUntil: null,
+        referral: { code: "K7MPQ4RX", url: "https://nootle.ai/r/K7MPQ4RX", joined: 5, paid: 2, monthsEarned: 2 },
+        offline: false,
+      };
+    }
+    return { ...signedOut, pro: true, source: "trial", trialEndsAt: trialEnds(9), trialDaysLeft: 9 };
+  }
+
   function resolve(cmd, args) {
+    if (cmd === "account_status" || cmd === "account_refresh") return accountStatus();
     // Conversation messages are keyed by conversation id.
     if (cmd === "list_chat_messages") {
       const byId = fixtures.list_chat_messages || {};

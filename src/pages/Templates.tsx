@@ -30,6 +30,8 @@ import { useRecipes } from "@/hooks/useRecipes";
 import { FileText, Pencil, Plus, Trash2, Sparkles, Star, SquareSlash } from "lucide-react";
 import type { Template, Recipe } from "@/types";
 import { WorkflowsManager } from "@/components/WorkflowsManager";
+import { ProBadge, ProGate } from "@/components/ProGate";
+import { openUpgrade, usePlan } from "@/hooks/usePlan";
 
 export function TemplatesPage() {
   const { templates, loading, createTemplate, updateTemplate, deleteTemplate } = useTemplates();
@@ -65,6 +67,7 @@ export function TemplatesPage() {
   const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<Template | null>(null);
   const [deleteRecipeTarget, setDeleteRecipeTarget] = useState<Recipe | null>(null);
   const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
+  const { pro } = usePlan();
 
   const handleSubmit = async () => {
     if (!newName.trim()) return;
@@ -176,7 +179,7 @@ export function TemplatesPage() {
               <TabsList>
                 <TabsTrigger value="templates">Templates</TabsTrigger>
                 <TabsTrigger value="recipes">Slash commands</TabsTrigger>
-                <TabsTrigger value="post-meeting">Workflows</TabsTrigger>
+                <TabsTrigger value="post-meeting">Workflows{!pro && <ProBadge />}</TabsTrigger>
               </TabsList>
               {activeTab === "templates" && (
                 <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>
@@ -189,7 +192,11 @@ export function TemplatesPage() {
                 </Button>
               )}
               {activeTab === "post-meeting" && (
-                <Button size="sm" variant="outline" onClick={() => setWorkflowDialogOpen(true)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => (pro ? setWorkflowDialogOpen(true) : openUpgrade("workflows"))}
+                >
                   <Plus /> New workflow
                 </Button>
               )}
@@ -550,10 +557,12 @@ export function TemplatesPage() {
 
         <TabsContent value="post-meeting" className="mt-0 flex-1 overflow-auto">
           <div className="p-6">
-            <WorkflowsManager
-              creating={workflowDialogOpen}
-              onCreatingChange={setWorkflowDialogOpen}
-            />
+            <ProGate feature="workflows" className="max-w-xl">
+              <WorkflowsManager
+                creating={workflowDialogOpen}
+                onCreatingChange={setWorkflowDialogOpen}
+              />
+            </ProGate>
           </div>
         </TabsContent>
       </Tabs>

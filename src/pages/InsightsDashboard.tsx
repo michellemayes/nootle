@@ -25,6 +25,7 @@ import { useCommitments } from "@/hooks/useCommitments";
 import { useBooleanSetting } from "@/hooks/useBooleanSetting";
 import { formatDate } from "@/lib/utils";
 import { insightIcon } from "@/lib/insightIcons";
+import { ProGate } from "@/components/ProGate";
 
 function ActionItemTicketButton({
   item,
@@ -404,18 +405,20 @@ function CommitmentsSection({
           </Button>
         )}
       </Toolbar>
-      {!checksOn && (
-        <p className="pb-2 text-xs text-muted-foreground">
-          Turn on <Link to="/settings?tab=insight-types" className="underline">follow-through checks</Link> and
-          each new meeting marks these done or slipped when it comes up.
-        </p>
-      )}
-      <div className="space-y-2">
-        {shown.length === 0 && <p className="text-sm text-muted-foreground">Nothing owed right now.</p>}
-        {shown.map((c) => (
-          <CommitmentRow key={c.id} commitment={c} onSetStatus={setStatus} />
-        ))}
-      </div>
+      <ProGate feature="commitments" compact>
+        {!checksOn && (
+          <p className="pb-2 text-xs text-muted-foreground">
+            Turn on <Link to="/settings?tab=insight-types" className="underline">follow-through checks</Link> and
+            each new meeting marks these done or slipped when it comes up.
+          </p>
+        )}
+        <div className="space-y-2">
+          {shown.length === 0 && <p className="text-sm text-muted-foreground">Nothing owed right now.</p>}
+          {shown.map((c) => (
+            <CommitmentRow key={c.id} commitment={c} onSetStatus={setStatus} />
+          ))}
+        </div>
+      </ProGate>
     </section>
   );
 }

@@ -1,3 +1,4 @@
+pub mod account;
 pub mod analytics;
 pub mod audio;
 pub mod automation;
@@ -181,6 +182,9 @@ pub fn run() {
     let db_path = app_dir.join("nootle.db");
     let db = std::sync::Arc::new(db::Database::new(db_path.to_str().unwrap()).unwrap());
     let _crash_reports = crash_reports::init(&db);
+    if let Err(e) = account::record_first_run(&db) {
+        tracing::warn!("Couldn't record the first run: {e}");
+    }
 
     let recording_state: RecordingState = Arc::new(TokioMutex::new(None));
 
@@ -385,6 +389,7 @@ pub fn run() {
             // Opens the pre-meeting brief shortly before calendar meetings,
             // when turned on.
             brief_popup::spawn_scheduler(app_handle.clone());
+            account::spawn_refresher(app_handle.clone());
 
             let db_for_detection = app.state::<Arc<db::Database>>().inner().clone();
 
@@ -622,6 +627,12 @@ pub fn run() {
             live_assist_window::live_assist_window_meeting,
             live_assist_window::close_live_assist_window,
             live_assist_window::open_in_main_window,
+            account::account_status,
+            account::account_begin_sign_in,
+            account::account_refresh,
+            account::account_sign_out,
+            account::account_open_checkout,
+            account::account_open_billing,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

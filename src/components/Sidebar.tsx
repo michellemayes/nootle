@@ -14,6 +14,7 @@ import { navItems } from "@/lib/navigation";
 import { Kbd } from "@/components/Kbd";
 import { useIsRecording } from "@/hooks/useRecording";
 import { toggleCommandPalette } from "@/components/CommandPalette";
+import { PlanChip } from "@/components/PlanChip";
 
 export function Sidebar() {
   const navigate = useNavigate();
@@ -112,6 +113,8 @@ export function Sidebar() {
         ))}
       </nav>
 
+      {isCompact && <PlanChip compact />}
+
       {/* Footer */}
       {!isCompact && (
         <div className="space-y-2 px-3 pb-4">
@@ -155,11 +158,13 @@ export function Sidebar() {
               </div>
             </PopoverContent>
           </Popover>
-          <div className="flex items-center justify-between px-2">
-            <p className="text-xs text-muted-foreground">v{version}</p>
+          <div className="flex items-center gap-1.5 px-2">
+            <p className="shrink-0 text-xs text-muted-foreground">v{version}</p>
+            <PlanChip />
             <Button
               variant="ghost"
               size="icon-sm"
+              className="ml-auto"
               onClick={toggleTheme}
               title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
             >

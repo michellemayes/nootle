@@ -38,6 +38,18 @@ fn seal(key: &Key<Aes256Gcm>, plaintext: &str) -> serde_json::Value {
     })
 }
 
+/// Adds the sharer's referral code, for the share page's "Made with Nootle"
+/// link, and `branding: false` for Pro, which drops that footer.
+fn with_growth(db: &Database, mut body: serde_json::Value) -> serde_json::Value {
+    if let Some(code) = crate::account::referral_code(db) {
+        body["ref"] = code.into();
+    }
+    if crate::account::is_pro(db) {
+        body["branding"] = false.into();
+    }
+    body
+}
+
 /// A request to nootle.ai's API (`/api/shares…` or `/api/connectors…`),
 /// authorized by the share's or connector's token when given.
 async fn send_api(
@@ -117,7 +129,7 @@ async fn save_share(
         let key = BASE64URL
             .decode(&share.key)
             .map_err(|e| format!("Stored share key is corrupt: {e}"))?;
-        let body = seal(Key::<Aes256Gcm>::from_slice(&key), &content);
+        let body = with_growth(db, seal(Key::<Aes256Gcm>::from_slice(&key), &content));
         let path = format!("/shares/{}", share.share_id);
         let resp = send_api(reqwest::Method::PUT, &path, Some(&share.token), Some(body)).await?;
         if resp.status().is_success() {
@@ -141,7 +153,7 @@ async fn save_share(
         reqwest::Method::POST,
         "/shares",
         None,
-        Some(seal(&key, &content)),
+        Some(with_growth(db, seal(&key, &content))),
     )
     .await?;
     if !resp.status().is_success() {

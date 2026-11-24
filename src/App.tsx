@@ -13,6 +13,7 @@ import { ShortcutsHelp } from "@/components/ShortcutsHelp";
 import { RecordingCelebration } from "@/components/RecordingCelebration";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { Toaster } from "@/components/Toaster";
+import { UpgradeDialog } from "@/components/UpgradeDialog";
 
 // The library is the first screen, so it ships in the main bundle. Every
 // other page loads on demand; the ones usually opened next from the library
@@ -85,6 +86,7 @@ function Layout() {
       <ShortcutsHelp />
       <RecordingCelebration />
       <UpdateBanner />
+      <UpgradeDialog />
       <Toaster />
     </div>
   );

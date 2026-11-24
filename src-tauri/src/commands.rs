@@ -1191,7 +1191,7 @@ async fn auto_check_commitments(
     app: &tauri::AppHandle,
     meeting_id: &str,
 ) {
-    if !db.get_bool_setting(crate::commitments::SETTING_KEY, false) {
+    if !db.get_bool_setting(crate::commitments::SETTING_KEY, false) || !crate::account::is_pro(db) {
         return;
     }
     let registry = llm_state.read().await;
@@ -2092,6 +2092,7 @@ pub async fn check_meeting_followups(
     provider: String,
     model: String,
 ) -> Result<Vec<Commitment>, String> {
+    crate::account::require_pro(&db, "Checking follow-through")?;
     if let Some(check) = gather_followup_check(&db, &embedding_state, &meeting_id).await? {
         let llm = llm.read().await;
         crate::commitments::run(&db, &llm, &provider, &model, &check)
@@ -3207,6 +3208,7 @@ pub async fn synthesize_daily_digest(
     llm: State<'_, LlmState>,
     date: String,
 ) -> Result<Option<String>, String> {
+    crate::account::require_pro(&db, "The daily digest recap")?;
     let date = digest_date(&date)?;
     let registry = llm.read().await;
     crate::digest::synthesize(&db, &registry, date)
@@ -3397,6 +3399,7 @@ pub async fn run_workflow(
     llm_provider: Option<String>,
     llm_model: Option<String>,
 ) -> Result<crate::db::WorkflowRun, String> {
+    crate::account::require_pro(&db, "Running a workflow")?;
     let llm_registry = llm.read().await;
     crate::workflows::run_workflow_for_meeting(
         &db,

@@ -19,6 +19,7 @@ import type {
   MeetingBrief,
   UpcomingEvents,
 } from "@/types";
+import { ProGate } from "@/components/ProGate";
 
 const DISMISS_KEY = "calendarPromptDismissed";
 const REFRESH_MS = 5 * 60 * 1000;
@@ -142,11 +143,13 @@ function BriefDialog({
           Who's coming, open action items, last time's decisions and related documents
         </DialogDescription>
         {brief ? (
-          <MeetingBriefView
-            brief={brief}
-            onRecord={() => event && onRecord(event)}
-            onOpenMeeting={(id) => navigate(`/meeting/${id}`)}
-          />
+          <ProGate feature="brief" className="mt-6">
+            <MeetingBriefView
+              brief={brief}
+              onRecord={() => event && onRecord(event)}
+              onOpenMeeting={(id) => navigate(`/meeting/${id}`)}
+            />
+          </ProGate>
         ) : (
           <p className="py-6 text-center text-sm text-muted-foreground">
             {error ?? "Putting the brief together…"}
