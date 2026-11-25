@@ -41,8 +41,8 @@ pub async fn execute_workflow(
     match integration.integration_type.as_str() {
         "email" => execute_email(workflow, context),
         "slack" => execute_slack(workflow, integration, context).await,
-        "notion" => execute_notion(db, workflow, integration, context).await,
-        "confluence" => execute_confluence(db, workflow, integration, context).await,
+        "notion" => execute_wiki(Wiki::Notion, db, workflow, integration, context).await,
+        "confluence" => execute_wiki(Wiki::Confluence, db, workflow, integration, context).await,
         "github" => {
             execute_github(workflow, integration, context, llm, llm_provider, llm_model).await
         }
@@ -443,55 +443,117 @@ async fn execute_slack(
     }
 }
 
-async fn execute_notion(
+async fn execute_wiki(
+    wiki: Wiki,
     db: &crate::db::Database,
     workflow: &crate::db::Workflow,
     integration: &crate::db::Integration,
     context: &WorkflowContext,
 ) -> std::result::Result<WorkflowResult, String> {
-    let config: serde_json::Value =
-        serde_json::from_str(&workflow.config_json).map_err(|e| format!("Invalid config: {e}"))?;
-    let database_id =
-        notion_database_id(&config).ok_or("Missing database_id in workflow config")?;
-    let content = render_default_summary_body(context);
-    create_notion_page(
-        db,
-        integration,
-        database_id,
-        &context.meeting_title,
-        &content,
-    )
-    .await
+    let location = wiki.workflow_location(workflow)?;
+    let title = match wiki {
+        Wiki::Notion => context.meeting_title.clone(),
+        Wiki::Confluence => format!("Meeting Notes: {}", context.meeting_title),
+    };
+    let body = render_default_summary_body(context);
+    wiki.create_page(db, integration, &location, &title, &body)
+        .await
 }
 
-/// The Notion database a workflow's config names, if any.
-fn notion_database_id(config: &serde_json::Value) -> Option<&str> {
-    config["database_id"]
-        .as_str()
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
+/// A wiki that workflows write pages to, which other features (such as Ask
+/// Nootle) can add pages to as well, in the place the workflow uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wiki {
+    Notion,
+    Confluence,
 }
 
-/// The Notion connection and database of the newest Notion workflow that
-/// names one: where pages go when something other than a workflow adds one.
-pub fn notion_target(db: &crate::db::Database) -> Option<(crate::db::Integration, String)> {
-    let notion: Vec<_> = db
-        .list_integrations()
-        .ok()?
-        .into_iter()
-        .filter(|i| i.integration_type == "notion")
-        .collect();
-    db.list_workflows().ok()?.into_iter().find_map(|w| {
-        let integration = notion.iter().find(|i| i.id == w.integration_id)?;
-        let config: serde_json::Value = serde_json::from_str(&w.config_json).ok()?;
-        let database_id = notion_database_id(&config)?.to_string();
-        Some((integration.clone(), database_id))
-    })
+impl Wiki {
+    pub fn name(self) -> &'static str {
+        match self {
+            Wiki::Notion => "Notion",
+            Wiki::Confluence => "Confluence",
+        }
+    }
+
+    fn integration_type(self) -> &'static str {
+        match self {
+            Wiki::Notion => "notion",
+            Wiki::Confluence => "confluence",
+        }
+    }
+
+    /// What the place pages go is called.
+    pub fn place(self) -> &'static str {
+        match self {
+            Wiki::Notion => "database",
+            Wiki::Confluence => "space",
+        }
+    }
+
+    /// The workflow config field naming where pages go.
+    fn location_key(self) -> &'static str {
+        match self {
+            Wiki::Notion => "database_id",
+            Wiki::Confluence => "space_key",
+        }
+    }
+
+    fn location(self, config: &serde_json::Value) -> Option<String> {
+        config[self.location_key()]
+            .as_str()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(String::from)
+    }
+
+    fn workflow_location(
+        self,
+        workflow: &crate::db::Workflow,
+    ) -> std::result::Result<String, String> {
+        let config: serde_json::Value = serde_json::from_str(&workflow.config_json)
+            .map_err(|e| format!("Invalid config: {e}"))?;
+        self.location(&config)
+            .ok_or_else(|| format!("Missing {} in workflow config", self.location_key()))
+    }
+
+    /// The connection and location of the newest workflow for this wiki that
+    /// names one.
+    pub fn target(self, db: &crate::db::Database) -> Option<(crate::db::Integration, String)> {
+        let connected: Vec<_> = db
+            .list_integrations()
+            .ok()?
+            .into_iter()
+            .filter(|i| i.integration_type == self.integration_type())
+            .collect();
+        db.list_workflows().ok()?.into_iter().find_map(|w| {
+            let integration = connected.iter().find(|i| i.id == w.integration_id)?;
+            let config: serde_json::Value = serde_json::from_str(&w.config_json).ok()?;
+            Some((integration.clone(), self.location(&config)?))
+        })
+    }
+
+    /// Adds a Markdown page at `location`, returning its URL as the output.
+    pub async fn create_page(
+        self,
+        db: &crate::db::Database,
+        integration: &crate::db::Integration,
+        location: &str,
+        title: &str,
+        markdown: &str,
+    ) -> std::result::Result<WorkflowResult, String> {
+        match self {
+            Wiki::Notion => create_notion_page(db, integration, location, title, markdown).await,
+            Wiki::Confluence => {
+                create_confluence_page(db, integration, location, title, markdown).await
+            }
+        }
+    }
 }
 
 /// Adds a page to a Notion database through whichever way Notion is
 /// connected, returning its URL as the output.
-pub async fn create_notion_page(
+async fn create_notion_page(
     db: &crate::db::Database,
     integration: &crate::db::Integration,
     database_id: &str,
@@ -646,18 +708,17 @@ impl ConfluenceApi {
     }
 }
 
-async fn execute_confluence(
+/// Adds a Markdown page to a Confluence space through whichever way
+/// Confluence is connected, returning its URL as the output.
+async fn create_confluence_page(
     db: &crate::db::Database,
-    workflow: &crate::db::Workflow,
     integration: &crate::db::Integration,
-    context: &WorkflowContext,
+    space_key: &str,
+    title: &str,
+    markdown: &str,
 ) -> std::result::Result<WorkflowResult, String> {
-    let (creds, config) = parse_creds_and_config(integration, workflow)?;
-
-    let space_key = config["space_key"]
-        .as_str()
-        .ok_or("Missing space_key in workflow config")?;
-    let title = format!("Meeting Notes: {}", context.meeting_title);
+    let creds: serde_json::Value = serde_json::from_str(&integration.credentials_json)
+        .map_err(|e| format!("Invalid credentials: {e}"))?;
 
     if crate::connectors::is_mcp(&creds) {
         // Atlassian's MCP tools take Markdown and accept a space key directly,
@@ -675,7 +736,7 @@ async fn execute_confluence(
                     "cloudId": cloud_id,
                     "spaceId": space_key,
                     "title": title,
-                    "body": render_default_summary_body(context),
+                    "body": markdown,
                     "contentFormat": "markdown",
                 }),
             )
@@ -690,13 +751,6 @@ async fn execute_confluence(
     let api = ConfluenceApi::from_creds(&creds)?;
     let space_id = api.space_id(space_key).await?;
 
-    // Storage format is XHTML: raw "&" or "<" in a summary is a 400.
-    let content = format!(
-        "<h2>Summary</h2><p>{}</p><h2>Action Items</h2><p>{}</p>",
-        xhtml_text(template_summary_text(context)),
-        xhtml_text(&action_items_text(context)),
-    );
-
     let resp = api
         .request(reqwest::Method::POST, "/wiki/api/v2/pages")
         .json(&serde_json::json!({
@@ -705,7 +759,7 @@ async fn execute_confluence(
             "title": title,
             "body": {
                 "representation": "storage",
-                "value": content
+                "value": storage_format(markdown)
             }
         }))
         .send()
@@ -717,9 +771,14 @@ async fn execute_confluence(
             .json()
             .await
             .map_err(|e| format!("Failed to parse Confluence response: {e}"))?;
+        let links = &body["_links"];
+        let base = links["base"]
+            .as_str()
+            .map(String::from)
+            .unwrap_or_else(|| format!("{}/wiki", api.base));
         Ok(WorkflowResult {
             message: "Page created in Confluence".to_string(),
-            output: body["_links"]["webui"].as_str().map(String::from),
+            output: links["webui"].as_str().map(|path| format!("{base}{path}")),
         })
     } else {
         Err(format!(
@@ -727,6 +786,35 @@ async fn execute_confluence(
             resp.text().await.unwrap_or_default()
         ))
     }
+}
+
+/// Markdown as Confluence storage format (XHTML): headings, bullet lists and
+/// paragraphs, with all text escaped, since a raw "&" or "<" is a 400.
+fn storage_format(markdown: &str) -> String {
+    let mut out = String::new();
+    let mut in_list = false;
+    for line in markdown.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let item = line.strip_prefix("- ").or_else(|| line.strip_prefix("* "));
+        if item.is_some() != in_list {
+            out.push_str(if in_list { "</ul>" } else { "<ul>" });
+            in_list = item.is_some();
+        }
+        let heading = line
+            .split_once(' ')
+            .filter(|(h, _)| (1..=6).contains(&h.len()) && h.chars().all(|c| c == '#'));
+        match (item, heading) {
+            (Some(item), _) => out.push_str(&format!("<li>{}</li>", xhtml_text(item))),
+            (None, Some((hashes, text))) => {
+                let n = hashes.len();
+                out.push_str(&format!("<h{n}>{}</h{n}>", xhtml_text(text)));
+            }
+            (None, None) => out.push_str(&format!("<p>{}</p>", xhtml_text(line))),
+        }
+    }
+    if in_list {
+        out.push_str("</ul>");
+    }
+    out
 }
 
 async fn execute_github(
@@ -1302,6 +1390,36 @@ mod tests {
                 .unwrap();
             assert!(text.chars().count() <= 2000);
         }
+    }
+
+    #[test]
+    fn storage_format_keeps_headings_lists_and_escapes() {
+        assert_eq!(
+            storage_format("## Decisions\n- Ship R&D\n* Defer <calendar>\n\nThanks"),
+            "<h2>Decisions</h2><ul><li>Ship R&amp;D</li><li>Defer &lt;calendar&gt;</li></ul><p>Thanks</p>"
+        );
+        assert_eq!(storage_format("#hashtag"), "<p>#hashtag</p>");
+    }
+
+    #[test]
+    fn wiki_targets_come_from_the_newest_workflow_naming_a_place() {
+        let db = crate::db::Database::new_in_memory().unwrap();
+        assert!(Wiki::Confluence.target(&db).is_none());
+        let wiki = db.create_integration("confluence", "Wiki", "{}").unwrap();
+        db.create_workflow("Notes", None, None, &wiki.id, "create_page", "{}")
+            .unwrap();
+        assert!(Wiki::Confluence.target(&db).is_none());
+        db.create_workflow(
+            "Recaps",
+            None,
+            None,
+            &wiki.id,
+            "create_page",
+            r#"{"space_key": " ENG "}"#,
+        )
+        .unwrap();
+        assert_eq!(Wiki::Confluence.target(&db).unwrap().1, "ENG");
+        assert!(Wiki::Notion.target(&db).is_none());
     }
 
     #[test]

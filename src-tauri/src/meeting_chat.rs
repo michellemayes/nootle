@@ -1,8 +1,8 @@
 //! Ask Nootle inside a meeting: answers questions about the meeting and, when
 //! the user asks, changes it the way the CLI and MCP server can (notes, title,
 //! labels, action items, summaries, speakers, timeline comments), files a
-//! Linear issue when Linear is connected, or adds a page to Notion when a
-//! Notion workflow names a database.
+//! Linear issue when Linear is connected, or adds a page to Notion or
+//! Confluence when a workflow for it names where pages go.
 //!
 //! Every provider here is text in, text out, so instead of native tool calls
 //! the model asks for changes in a fenced `nootle-actions` block of JSON.
@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::{AnnotationKind, Database, NewMeetingAnnotation};
 use crate::llm::{ChatMessage, LlmRegistry};
 use crate::ops;
+use crate::workflows::Wiki;
 
 /// The fence that opens a block of changes in the model's reply.
 const ACTIONS_FENCE: &str = "```nootle-actions";
@@ -77,6 +78,10 @@ pub enum ChatAction {
         description: Option<String>,
     },
     CreateNotionPage {
+        title: String,
+        markdown: String,
+    },
+    CreateConfluencePage {
         title: String,
         markdown: String,
     },
@@ -229,13 +234,20 @@ Linear is connected. When the user asks for an issue or ticket ("file that in Li
 
 Nootle files it in their default Linear team and links it under your reply."###;
 
-const NOTION_GUIDE: &str = r###"## Pages in Notion
+/// How to add a page to `wiki`, which a workflow already writes pages to.
+fn wiki_guide(wiki: Wiki) -> String {
+    let (name, place) = (wiki.name(), wiki.place());
+    let tag = name.to_lowercase();
+    format!(
+        r###"## Pages in {name}
 
-Notion is connected. When the user asks for a page or doc ("put the decisions in Notion", "write this up as a Notion page"), add this to the block, one per page:
+{name} is connected. When the user asks for a {name} page or doc ("put the decisions in {name}", "write this up as a {name} page"), add this to the block, one per page:
 
-  {"action": "create_notion_page", "title": "the page's title", "markdown": "the full page as Markdown, written from this meeting"}
+  {{"action": "create_{tag}_page", "title": "the page's title", "markdown": "the full page as Markdown (headings, bullet lists, paragraphs), written from this meeting"}}
 
-Nootle adds it to the Notion database their meeting workflow uses and links it under your reply."###;
+Nootle adds it to the {name} {place} their meeting workflow uses and links it under your reply."###
+    )
+}
 
 const ONLY_WHAT_WAS_ASKED: &str =
     "Only send what the user asked for. Nothing else can be sent outside Nootle.";
@@ -246,18 +258,20 @@ fn ensure_may_act(db: &Database) -> Result<(), String> {
 }
 
 /// The changes the model may ask for: always the meeting's own, plus Linear
-/// issues and Notion pages when those are set up and meetings may leave this
-/// Mac.
+/// issues and Notion or Confluence pages when those are set up and meetings
+/// may leave this Mac.
 fn actions_guide(db: &Database) -> String {
     if ensure_may_act(db).is_err() {
         return format!("{ACTIONS_GUIDE}\n{NO_SENDING}");
     }
     let mut tools = Vec::new();
     if crate::linear::is_connected(db) {
-        tools.push(LINEAR_GUIDE);
+        tools.push(LINEAR_GUIDE.to_string());
     }
-    if crate::workflows::notion_target(db).is_some() {
-        tools.push(NOTION_GUIDE);
+    for wiki in [Wiki::Notion, Wiki::Confluence] {
+        if wiki.target(db).is_some() {
+            tools.push(wiki_guide(wiki));
+        }
     }
     if tools.is_empty() {
         format!("{ACTIONS_GUIDE}\n{NO_SENDING}")
@@ -511,7 +525,10 @@ async fn run(
                 .await;
         }
         ChatAction::CreateNotionPage { title, markdown } => {
-            return create_notion_page(db, meeting_id, &title, &markdown).await;
+            return create_wiki_page(db, meeting_id, Wiki::Notion, &title, &markdown).await;
+        }
+        ChatAction::CreateConfluencePage { title, markdown } => {
+            return create_wiki_page(db, meeting_id, Wiki::Confluence, &title, &markdown).await;
         }
     };
     Ok(Done {
@@ -567,29 +584,31 @@ async fn create_linear_issue(
     })
 }
 
-/// Adds a page to the Notion database a Notion workflow uses, noting the
-/// meeting it came from.
-async fn create_notion_page(
+/// Adds a page where the wiki's workflow puts them, noting the meeting it
+/// came from.
+async fn create_wiki_page(
     db: &Database,
     meeting_id: &str,
+    wiki: Wiki,
     title: &str,
     markdown: &str,
 ) -> Result<Done> {
+    let name = wiki.name();
     let title = title.trim();
     if title.is_empty() {
-        bail!("Skipped a Notion page with no title");
+        bail!("Skipped a {name} page with no title");
     }
     ensure_may_act(db).map_err(|e| anyhow!(e))?;
-    let (integration, database_id) = crate::workflows::notion_target(db).ok_or_else(|| {
-        anyhow!("Set up a Notion workflow with a database first, so Nootle knows where pages go")
-    })?;
+    let (integration, location) = wiki
+        .target(db)
+        .ok_or_else(|| anyhow!("Set up a {name} workflow first, so Nootle knows where pages go"))?;
     let content = format!("{}\n\n{}", markdown.trim(), source_note(db, meeting_id)?);
-    let page =
-        crate::workflows::create_notion_page(db, &integration, &database_id, title, &content)
-            .await
-            .map_err(|e| anyhow!(e))?;
+    let page = wiki
+        .create_page(db, &integration, &location, title, &content)
+        .await
+        .map_err(|e| anyhow!(e))?;
     Ok(Done {
-        summary: format!("Added “{title}” to Notion"),
+        summary: format!("Added “{title}” to {name}"),
         url: page.output,
         events: &[],
     })
@@ -742,13 +761,43 @@ mod tests {
 
         notion_workflow(&db, r#"{"database_id": " db-1 "}"#);
         assert!(offers(&db));
-        assert_eq!(crate::workflows::notion_target(&db).unwrap().1, "db-1");
+        assert_eq!(Wiki::Notion.target(&db).unwrap().1, "db-1");
         assert!(actions_guide(&db).contains(ONLY_WHAT_WAS_ASKED));
         assert!(!actions_guide(&db).contains("create_linear_issue"));
 
         db.set_setting(crate::llm::LOCAL_ONLY_SETTING, "true")
             .unwrap();
         assert!(!offers(&db));
+    }
+
+    #[test]
+    fn confluence_is_offered_with_a_space_to_write_to() {
+        let db = Database::new_in_memory().unwrap();
+        let offers = |db: &Database| actions_guide(db).contains("create_confluence_page");
+        assert!(!offers(&db));
+        let wiki = db.create_integration("confluence", "Wiki", "{}").unwrap();
+        db.create_workflow(
+            "Notes",
+            None,
+            None,
+            &wiki.id,
+            "create_page",
+            r#"{"space_key": "ENG"}"#,
+        )
+        .unwrap();
+        assert!(offers(&db));
+        assert!(!actions_guide(&db).contains("create_notion_page"));
+
+        let (_, actions) = split_actions(
+            "```nootle-actions\n{\"action\": \"create_confluence_page\", \"title\": \"Decisions\", \"markdown\": \"## Decisions\"}\n```",
+        );
+        assert_eq!(
+            actions[0].as_ref().unwrap(),
+            &ChatAction::CreateConfluencePage {
+                title: "Decisions".into(),
+                markdown: "## Decisions".into(),
+            }
+        );
     }
 
     #[tokio::test]
@@ -766,9 +815,9 @@ mod tests {
 
         let db = Database::new_in_memory().unwrap();
         let id = meeting(&db);
-        let untitled = create_notion_page(&db, &id, " ", "x").await;
+        let untitled = create_wiki_page(&db, &id, Wiki::Notion, " ", "x").await;
         assert!(untitled.unwrap_err().to_string().contains("no title"));
-        let nowhere = create_notion_page(&db, &id, "Decisions", "x").await;
+        let nowhere = create_wiki_page(&db, &id, Wiki::Notion, "Decisions", "x").await;
         assert!(nowhere.unwrap_err().to_string().contains("Notion workflow"));
     }
 
