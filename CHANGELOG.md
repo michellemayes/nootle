@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.40.0] - 2026-11-25
+
+### Features
+
+- Let Ask Nootle add Confluence pages from a meeting (#255) ([60ef5bb](https://github.com/michellemayes/nootle/commit/60ef5bb38b31c45b5b102a93ed5bfe4ea20fe1aa))
+
 ## [0.39.0] - 2026-11-24
 
 ### Features
