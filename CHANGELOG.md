@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.40.1] - 2026-11-26
+
+### Bug Fixes
+
+- Keep headings and lists in Notion pages sent with an API token (#256) ([4c5803a](https://github.com/michellemayes/nootle/commit/4c5803aaab3790fb0782e84f676d9349432d4c1e))
+
 ## [0.40.0] - 2026-11-25
 
 ### Features
