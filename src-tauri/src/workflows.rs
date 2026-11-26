@@ -276,27 +276,64 @@ pub const PLACEHOLDERS: &[&str] = &[
     "{{action_items}}",
 ];
 
-/// Notion caps each rich_text item at 2000 characters and a create request
-/// at 100 child blocks, so emit one paragraph per line, split as needed.
-fn notion_paragraph_blocks(content: &str) -> Vec<serde_json::Value> {
+/// A line of the Markdown that pages are written in: the headings, bullet
+/// lists and paragraphs that both wikis can show.
+enum MarkdownLine<'a> {
+    Heading(usize, &'a str),
+    Bullet(&'a str),
+    Text(&'a str),
+}
+
+fn markdown_lines(markdown: &str) -> impl Iterator<Item = MarkdownLine<'_>> {
+    markdown
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(markdown_line)
+}
+
+fn markdown_line(line: &str) -> MarkdownLine<'_> {
+    if let Some(item) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
+        MarkdownLine::Bullet(item)
+    } else {
+        match line.split_once(' ') {
+            Some((hashes, text))
+                if (1..=6).contains(&hashes.len()) && hashes.chars().all(|c| c == '#') =>
+            {
+                MarkdownLine::Heading(hashes.len(), text)
+            }
+            _ => MarkdownLine::Text(line),
+        }
+    }
+}
+
+/// Markdown as Notion blocks, one per line. Notion has three heading levels,
+/// caps each rich_text item at 2000 characters and a create request at 100
+/// child blocks, so deeper headings become level 3 and long lines span
+/// several rich_text items.
+fn notion_blocks(markdown: &str) -> Vec<serde_json::Value> {
     const MAX_CHARS: usize = 2000;
     const MAX_BLOCKS: usize = 100;
-    content
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .flat_map(|line| {
-            let chars: Vec<char> = line.chars().collect();
-            chars
-                .chunks(MAX_CHARS)
-                .map(|c| c.iter().collect::<String>())
-                .collect::<Vec<_>>()
-        })
+    markdown_lines(markdown)
         .take(MAX_BLOCKS)
-        .map(|text| {
+        .map(|line| {
+            let (kind, text) = match line {
+                MarkdownLine::Heading(level, text) => (
+                    ["heading_1", "heading_2", "heading_3"][level.min(3) - 1],
+                    text,
+                ),
+                MarkdownLine::Bullet(text) => ("bulleted_list_item", text),
+                MarkdownLine::Text(text) => ("paragraph", text),
+            };
+            let chars: Vec<char> = text.chars().collect();
+            let rich_text: Vec<_> = chars
+                .chunks(MAX_CHARS)
+                .map(|c| serde_json::json!({ "text": { "content": c.iter().collect::<String>() } }))
+                .collect();
             serde_json::json!({
                 "object": "block",
-                "type": "paragraph",
-                "paragraph": { "rich_text": [{ "text": { "content": text } }] }
+                "type": kind,
+                kind: { "rich_text": rich_text }
             })
         })
         .collect()
@@ -582,7 +619,7 @@ async fn create_notion_page(
                     "title": [{ "text": { "content": title } }]
                 }
             },
-            "children": notion_paragraph_blocks(content)
+            "children": notion_blocks(content)
         }))
         .send()
         .await
@@ -793,23 +830,17 @@ async fn create_confluence_page(
 fn storage_format(markdown: &str) -> String {
     let mut out = String::new();
     let mut in_list = false;
-    for line in markdown.lines().map(str::trim).filter(|l| !l.is_empty()) {
-        let item = line.strip_prefix("- ").or_else(|| line.strip_prefix("* "));
-        if item.is_some() != in_list {
+    for line in markdown_lines(markdown) {
+        let bullet = matches!(line, MarkdownLine::Bullet(_));
+        if bullet != in_list {
             out.push_str(if in_list { "</ul>" } else { "<ul>" });
-            in_list = item.is_some();
+            in_list = bullet;
         }
-        let heading = line
-            .split_once(' ')
-            .filter(|(h, _)| (1..=6).contains(&h.len()) && h.chars().all(|c| c == '#'));
-        match (item, heading) {
-            (Some(item), _) => out.push_str(&format!("<li>{}</li>", xhtml_text(item))),
-            (None, Some((hashes, text))) => {
-                let n = hashes.len();
-                out.push_str(&format!("<h{n}>{}</h{n}>", xhtml_text(text)));
-            }
-            (None, None) => out.push_str(&format!("<p>{}</p>", xhtml_text(line))),
-        }
+        out.push_str(&match line {
+            MarkdownLine::Bullet(item) => format!("<li>{}</li>", xhtml_text(item)),
+            MarkdownLine::Heading(n, text) => format!("<h{n}>{}</h{n}>", xhtml_text(text)),
+            MarkdownLine::Text(text) => format!("<p>{}</p>", xhtml_text(text)),
+        });
     }
     if in_list {
         out.push_str("</ul>");
@@ -1380,16 +1411,30 @@ mod tests {
     }
 
     #[test]
-    fn test_notion_paragraph_blocks_split_long_text() {
+    fn notion_blocks_split_long_lines_within_a_block() {
         let long = "é".repeat(4500);
-        let blocks = notion_paragraph_blocks(&format!("intro\n\n{long}"));
-        assert_eq!(blocks.len(), 4);
-        for b in &blocks {
-            let text = b["paragraph"]["rich_text"][0]["text"]["content"]
-                .as_str()
-                .unwrap();
+        let blocks = notion_blocks(&format!("intro\n\n{long}"));
+        assert_eq!(blocks.len(), 2);
+        let items = blocks[1]["paragraph"]["rich_text"].as_array().unwrap();
+        assert_eq!(items.len(), 3);
+        for item in items {
+            let text = item["text"]["content"].as_str().unwrap();
             assert!(text.chars().count() <= 2000);
         }
+    }
+
+    #[test]
+    fn notion_blocks_keep_headings_and_lists() {
+        let blocks = notion_blocks("## Decisions\n- Ship it\n#### Detail\n#hashtag");
+        let kinds: Vec<_> = blocks.iter().map(|b| b["type"].as_str().unwrap()).collect();
+        assert_eq!(
+            kinds,
+            ["heading_2", "bulleted_list_item", "heading_3", "paragraph"]
+        );
+        assert_eq!(
+            blocks[1]["bulleted_list_item"]["rich_text"][0]["text"]["content"],
+            "Ship it"
+        );
     }
 
     #[test]
