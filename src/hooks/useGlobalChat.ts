@@ -67,6 +67,7 @@ export function useGlobalChat() {
           role: "assistant",
           content: result.response,
           sources: result.sources,
+          actions: result.actions,
         };
         setMessages((prev) => [...prev, assistantMsg]);
         return result;

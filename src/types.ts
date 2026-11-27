@@ -311,12 +311,15 @@ export interface MenuBarStatus {
 export interface GlobalChatResponse {
   response: string;
   sources: ChatSource[];
+  /** What Ask Nootle sent to other tools, such as a new Linear issue. */
+  actions: ChatActionOutcome[];
 }
 
 export interface GlobalChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   sources?: ChatSource[];
+  actions?: ChatActionOutcome[];
 }
 
 export interface EmbeddingStatus {
@@ -351,6 +354,7 @@ export interface ChatMessageRecord {
   role: "user" | "assistant" | "system";
   content: string;
   sources_json: string | null;
+  actions_json: string | null;
   created_at: string;
 }
 

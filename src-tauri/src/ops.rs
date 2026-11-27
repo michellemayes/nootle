@@ -1209,8 +1209,9 @@ pub(crate) fn passages_context(
 }
 
 /// Answers a question from the most relevant transcript passages across all
-/// meetings, given the question's embedding from `embed_question`. Returns
-/// the answer and the passages it drew on.
+/// meetings, given the question's embedding from `embed_question`, with
+/// `guide` added to the instructions. Returns the answer and the passages it
+/// drew on.
 #[allow(clippy::too_many_arguments)]
 pub async fn rag_chat(
     db: &Database,
@@ -1221,6 +1222,7 @@ pub async fn rag_chat(
     provider: &str,
     model: &str,
     filters: &AskFilters,
+    guide: Option<&str>,
 ) -> Result<(String, Vec<Value>)> {
     let search_knowledge = filters.scope.knowledge() && db.has_knowledge()?;
     let (meeting_limit, knowledge_limit) = match (filters.scope.meetings(), search_knowledge) {
@@ -1264,9 +1266,10 @@ pub async fn rag_chat(
          When you reference information, cite the source as [Meeting Title, timestamp] or \
          [Document title, page].\n\n\
          {}\n\
-         Answer the user's question based on these excerpts. Be concise.{}",
+         Answer the user's question based on these excerpts. Be concise.{}{}",
         context,
-        crate::dictionary::glossary(db)
+        crate::dictionary::glossary(db),
+        guide.map(|g| format!("\n\n{g}")).unwrap_or_default()
     );
 
     let mut messages = vec![ChatMessage {
@@ -1293,9 +1296,11 @@ pub(crate) fn truncate_at_word_boundary(text: &str, max_chars: usize, suffix: &s
     }
 }
 
-/// Asks a question in a saved conversation (the app's Ask view): stores the
-/// question and answer, and titles the conversation after its first message.
-/// Returns `{"response", "sources"}`.
+/// Asks a question in a saved conversation: stores the question and answer,
+/// and titles the conversation after its first message. With `act` (the
+/// app's Ask view), the answer can also file Linear issues and add Notion or
+/// Confluence pages when the user asks. Returns `{"response", "sources",
+/// "actions"}`.
 #[allow(clippy::too_many_arguments)]
 pub async fn send_chat_message(
     db: &Database,
@@ -1306,8 +1311,9 @@ pub async fn send_chat_message(
     provider: &str,
     model: &str,
     filters: &AskFilters,
+    act: bool,
 ) -> Result<Value> {
-    db.create_chat_message(conversation_id, "user", message, None)?;
+    db.create_chat_message(conversation_id, "user", message, None, None)?;
     let db_messages = db.list_chat_messages(conversation_id)?;
 
     // History for the LLM, without the question just saved: rag_chat appends it.
@@ -1319,6 +1325,9 @@ pub async fn send_chat_message(
         })
         .collect();
 
+    let guide = act
+        .then(|| crate::meeting_chat::outbound_guide(db))
+        .flatten();
     let (response, sources) = rag_chat(
         db,
         llm,
@@ -1328,15 +1337,24 @@ pub async fn send_chat_message(
         provider,
         model,
         filters,
+        guide.as_deref(),
     )
     .await?;
+    let (response, actions) = match guide {
+        Some(_) => {
+            crate::meeting_chat::send_requested(db, &response, &sources_note(&sources)).await
+        }
+        None => (response, Vec::new()),
+    };
 
     let sources_json = serde_json::to_string(&sources).ok();
+    let actions_json = serde_json::to_string(&actions).ok();
     db.create_chat_message(
         conversation_id,
         "assistant",
         &response,
         sources_json.as_deref(),
+        actions_json.as_deref(),
     )?;
 
     if db_messages.len() <= 1 {
@@ -1369,7 +1387,23 @@ pub async fn send_chat_message(
 
     db.touch_chat_conversation(conversation_id)?;
 
-    Ok(json!({ "response": response, "sources": sources }))
+    Ok(json!({ "response": response, "sources": sources, "actions": actions }))
+}
+
+/// The line under anything Ask sends out of Nootle, naming the meetings the
+/// answer drew on.
+fn sources_note(sources: &[Value]) -> String {
+    let mut titles: Vec<&str> = Vec::new();
+    for title in sources.iter().filter_map(|s| s["meeting_title"].as_str()) {
+        if !titles.contains(&title) {
+            titles.push(title);
+        }
+    }
+    if titles.is_empty() {
+        return "---\nFrom Ask Nootle.".into();
+    }
+    let titles: Vec<_> = titles.iter().map(|t| format!("“{t}”")).collect();
+    format!("---\nFrom Ask Nootle, drawing on {}.", titles.join(", "))
 }
 
 /// Answers a question from all meetings: in the saved conversation
@@ -1400,6 +1434,7 @@ pub async fn ask(
                 provider,
                 model,
                 filters,
+                None,
             )
             .await?;
             return Ok(json!({ "response": response, "sources": sources }));
@@ -1414,6 +1449,7 @@ pub async fn ask(
         provider,
         model,
         filters,
+        false,
     )
     .await?;
     result["conversation_id"] = json!(conversation_id);
@@ -1446,6 +1482,21 @@ mod tests {
         assert_eq!(m.enriched_notes.as_deref(), Some("Enriched\n\n- third"));
         assert_eq!(m.raw_notes.as_deref(), Some("- first\n\n- second"));
         assert!(append_notes(&db, &id, "  ").is_err());
+    }
+
+    #[test]
+    fn what_ask_sends_names_the_meetings_it_drew_on() {
+        let sources = [
+            json!({"type": "meeting", "meeting_title": "Pricing review"}),
+            json!({"type": "document", "title": "Handbook"}),
+            json!({"type": "meeting", "meeting_title": "Pricing review"}),
+            json!({"type": "meeting", "meeting_title": "Launch sync"}),
+        ];
+        assert_eq!(
+            sources_note(&sources),
+            "---\nFrom Ask Nootle, drawing on “Pricing review”, “Launch sync”."
+        );
+        assert_eq!(sources_note(&[]), "---\nFrom Ask Nootle.");
     }
 
     #[test]

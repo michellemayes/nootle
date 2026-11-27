@@ -735,6 +735,8 @@ pub struct ChatMessage {
     pub role: String,
     pub content: String,
     pub sources_json: Option<String>,
+    /// What the reply sent to other tools, as `meeting_chat::ActionOutcome`s.
+    pub actions_json: Option<String>,
     pub created_at: String,
 }
 
@@ -1866,6 +1868,8 @@ impl Database {
              CREATE INDEX idx_call_speakers_meeting ON meeting_call_speakers(meeting_id, offset_ms);",
             // 13: insights cleared from the insights feed. The meeting keeps them.
             "ALTER TABLE insights ADD COLUMN dismissed_at TEXT;",
+            // 14: what an Ask reply sent to other tools, such as Linear.
+            "ALTER TABLE chat_messages ADD COLUMN actions_json TEXT;",
         ];
 
         let current: usize =
@@ -5356,13 +5360,14 @@ impl Database {
         role: &str,
         content: &str,
         sources_json: Option<&str>,
+        actions_json: Option<&str>,
     ) -> Result<ChatMessage> {
         let conn = self.lock_conn()?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO chat_messages (id, conversation_id, role, content, sources_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, conversation_id, role, content, sources_json, now],
+            "INSERT INTO chat_messages (id, conversation_id, role, content, sources_json, actions_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, conversation_id, role, content, sources_json, actions_json, now],
         )?;
         Ok(ChatMessage {
             id,
@@ -5370,6 +5375,7 @@ impl Database {
             role: role.to_string(),
             content: content.to_string(),
             sources_json: sources_json.map(|s| s.to_string()),
+            actions_json: actions_json.map(|s| s.to_string()),
             created_at: now,
         })
     }
@@ -5377,7 +5383,7 @@ impl Database {
     pub fn list_chat_messages(&self, conversation_id: &str) -> Result<Vec<ChatMessage>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, conversation_id, role, content, sources_json, created_at FROM chat_messages WHERE conversation_id = ?1 ORDER BY created_at ASC",
+            "SELECT id, conversation_id, role, content, sources_json, actions_json, created_at FROM chat_messages WHERE conversation_id = ?1 ORDER BY created_at ASC",
         )?;
         let rows = stmt
             .query_map(params![conversation_id], |row| {
@@ -5387,7 +5393,8 @@ impl Database {
                     role: row.get(2)?,
                     content: row.get(3)?,
                     sources_json: row.get(4)?,
-                    created_at: row.get(5)?,
+                    actions_json: row.get(5)?,
+                    created_at: row.get(6)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -6127,6 +6134,7 @@ mod tests {
                  ALTER TABLE templates DROP COLUMN slug;
                  DROP TABLE meeting_call_speakers;
                  ALTER TABLE insights DROP COLUMN dismissed_at;
+                 ALTER TABLE chat_messages DROP COLUMN actions_json;
                  PRAGMA user_version = 10;",
             )
             .unwrap();
