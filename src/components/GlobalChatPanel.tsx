@@ -278,6 +278,7 @@ export function GlobalChatPanel() {
                     key={i}
                     role={msg.role}
                     content={msg.content}
+                    actions={msg.actions}
                     footer={
                       msg.sources && msg.sources.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">

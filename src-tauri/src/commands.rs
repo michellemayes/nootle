@@ -3010,6 +3010,7 @@ pub async fn send_chat_message(
         &provider,
         &model,
         &filters,
+        true,
     )
     .await
     .map_err(|e| e.to_string())

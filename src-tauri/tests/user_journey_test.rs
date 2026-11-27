@@ -486,6 +486,7 @@ fn journey_chat_conversation_lifecycle() {
         "user",
         "What were the key decisions from last week?",
         None,
+        None,
     )
     .unwrap();
 
@@ -496,10 +497,11 @@ fn journey_chat_conversation_lifecycle() {
         "assistant",
         "Based on your meetings, the key decision was to use Redis for caching.",
         Some(sources),
+        None,
     )
     .unwrap();
 
-    db.create_chat_message(&conv.id, "user", "Who proposed that?", None)
+    db.create_chat_message(&conv.id, "user", "Who proposed that?", None, None)
         .unwrap();
 
     db.create_chat_message(
@@ -507,6 +509,7 @@ fn journey_chat_conversation_lifecycle() {
         "assistant",
         "Alice proposed Redis during the brainstorming session.",
         Some(sources),
+        None,
     )
     .unwrap();
 
@@ -542,9 +545,9 @@ fn journey_chat_multiple_conversations() {
     let c1 = db.create_chat_conversation().unwrap();
     let c2 = db.create_chat_conversation().unwrap();
 
-    db.create_chat_message(&c1.id, "user", "Question about sprint", None)
+    db.create_chat_message(&c1.id, "user", "Question about sprint", None, None)
         .unwrap();
-    db.create_chat_message(&c2.id, "user", "Question about design", None)
+    db.create_chat_message(&c2.id, "user", "Question about design", None, None)
         .unwrap();
 
     // Messages are isolated per conversation

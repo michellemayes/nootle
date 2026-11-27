@@ -17,9 +17,18 @@ import { useLabels } from "@/hooks/useLabels";
 import { useGlobalLLMSelection } from "@/contexts/LLMSelectionContext";
 import { useCompactMode } from "@/contexts/CompactModeContext";
 import { useKnowledgeTags } from "@/hooks/useKnowledge";
-import type { AskScope, ChatSource, GlobalChatResponse } from "@/types";
+import type { AskScope, ChatActionOutcome, ChatSource, GlobalChatResponse } from "@/types";
 import { Plus, Trash2, MessageSquare, PanelLeftOpen, PanelLeftClose } from "lucide-react";
 import { SourceCitation } from "@/components/SourceCitation";
+
+function parseList<T>(json: string | null): T[] {
+  if (!json) return [];
+  try {
+    return JSON.parse(json);
+  } catch {
+    return [];
+  }
+}
 
 export function ChatPage() {
   const navigate = useNavigate();
@@ -134,15 +143,6 @@ export function ChatPage() {
     });
   }, [location.state]);
 
-  // Parse sources from a message's sources_json field
-  const parseSources = (sourcesJson: string | null): ChatSource[] => {
-    if (!sourcesJson) return [];
-    try {
-      return JSON.parse(sourcesJson);
-    } catch {
-      return [];
-    }
-  };
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -337,12 +337,13 @@ export function ChatPage() {
                 </div>
               )}
               {dbMessages.map((msg) => {
-                const sources = msg.role === "assistant" ? parseSources(msg.sources_json) : [];
+                const sources = parseList<ChatSource>(msg.sources_json);
                 return (
                   <ChatMessage
                     key={msg.id}
                     role={msg.role}
                     content={msg.content}
+                    actions={parseList<ChatActionOutcome>(msg.actions_json)}
                     footer={
                       sources.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">

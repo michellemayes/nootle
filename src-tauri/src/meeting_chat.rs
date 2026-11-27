@@ -2,7 +2,9 @@
 //! the user asks, changes it the way the CLI and MCP server can (notes, title,
 //! labels, action items, summaries, speakers, timeline comments), files a
 //! Linear issue when Linear is connected, or adds a page to Notion or
-//! Confluence when a workflow for it names where pages go.
+//! Confluence when a workflow for it names where pages go. The library-wide
+//! Ask view can do the sending part too, through `outbound_guide` and
+//! `send_requested`.
 //!
 //! Every provider here is text in, text out, so instead of native tool calls
 //! the model asks for changes in a fenced `nootle-actions` block of JSON.
@@ -184,19 +186,40 @@ pub async fn chat(
             }
             Err(e) => Err(e),
         };
-        out.actions.push(match result {
-            Ok(done) => {
-                out.events.extend(done.events);
-                done.into()
-            }
-            Err(e) => ActionOutcome {
-                ok: false,
-                summary: e.to_string(),
-                url: None,
-            },
-        });
+        if let Ok(done) = &result {
+            out.events.extend(done.events);
+        }
+        out.actions.push(outcome(result));
     }
     Ok(out)
+}
+
+fn outcome(result: Result<Done>) -> ActionOutcome {
+    match result {
+        Ok(done) => done.into(),
+        Err(e) => ActionOutcome {
+            ok: false,
+            summary: e.to_string(),
+            url: None,
+        },
+    }
+}
+
+/// Sends what a library-wide Ask reply asks for (Linear issues, Notion or
+/// Confluence pages), each signed with `note`. Returns the reply without its
+/// block and the outcome of each.
+pub async fn send_requested(db: &Database, raw: &str, note: &str) -> (String, Vec<ActionOutcome>) {
+    let (reply, requested) = split_actions(raw);
+    let mut linear = None;
+    let mut outcomes = Vec::new();
+    for action in requested {
+        let result = match action {
+            Ok(action) => send(db, &mut linear, action, note).await,
+            Err(e) => Err(e),
+        };
+        outcomes.push(outcome(result));
+    }
+    (reply, outcomes)
 }
 
 const ACTIONS_GUIDE: &str = r###"## Changing this meeting
@@ -230,7 +253,7 @@ const LINEAR_GUIDE: &str = r###"## Filing in Linear
 
 Linear is connected. When the user asks for an issue or ticket ("file that in Linear", "make a ticket for the explainer copy"), add this to the block, one per issue:
 
-  {"action": "create_linear_issue", "title": "under 80 characters, what needs doing", "description": "Markdown: what needs doing, why, and who owns it, from this meeting"}
+  {"action": "create_linear_issue", "title": "under 80 characters, what needs doing", "description": "Markdown: what needs doing, why, and who owns it, from what was discussed"}
 
 Nootle files it in their default Linear team and links it under your reply."###;
 
@@ -243,7 +266,7 @@ fn wiki_guide(wiki: Wiki) -> String {
 
 {name} is connected. When the user asks for a {name} page or doc ("put the decisions in {name}", "write this up as a {name} page"), add this to the block, one per page:
 
-  {{"action": "create_{tag}_page", "title": "the page's title", "markdown": "the full page as Markdown (headings, bullet lists, paragraphs), written from this meeting"}}
+  {{"action": "create_{tag}_page", "title": "the page's title", "markdown": "the full page as Markdown (headings, bullet lists, paragraphs), written from what was discussed"}}
 
 Nootle adds it to the {name} {place} their meeting workflow uses and links it under your reply."###
     )
@@ -257,12 +280,23 @@ fn ensure_may_act(db: &Database) -> Result<(), String> {
     crate::account::require_pro(db, crate::account::ProFeature::Actions)
 }
 
-/// The changes the model may ask for: always the meeting's own, plus Linear
-/// issues and Notion or Confluence pages when those are set up and meetings
-/// may leave this Mac.
-fn actions_guide(db: &Database) -> String {
+const OUTBOUND_GUIDE: &str = r###"## Sending to other tools
+
+When the user asks you to send something to another tool, end your reply with one block like this, listing everything to send:
+
+```nootle-actions
+[
+  {"action": "...", ...}
+]
+```
+
+Above the block, say briefly what you sent, as done. Nootle sends each one and shows the user whether it worked, so don't repeat the content. You can't change meetings from here; if asked, say so and point the user to Ask Nootle inside the meeting."###;
+
+/// How to file Linear issues and add Notion or Confluence pages, for each
+/// that's set up, when meetings may leave this Mac.
+fn outbound_tools(db: &Database) -> Vec<String> {
     if ensure_may_act(db).is_err() {
-        return format!("{ACTIONS_GUIDE}\n{NO_SENDING}");
+        return Vec::new();
     }
     let mut tools = Vec::new();
     if crate::linear::is_connected(db) {
@@ -273,14 +307,25 @@ fn actions_guide(db: &Database) -> String {
             tools.push(wiki_guide(wiki));
         }
     }
-    if tools.is_empty() {
-        format!("{ACTIONS_GUIDE}\n{NO_SENDING}")
-    } else {
-        format!(
-            "{ACTIONS_GUIDE}\n\n{}\n\n{ONLY_WHAT_WAS_ASKED}",
-            tools.join("\n\n")
-        )
-    }
+    tools
+}
+
+/// `intro` followed by what can be sent, or `None` when nothing can be.
+fn with_tools(db: &Database, intro: &str) -> Option<String> {
+    let tools = outbound_tools(db);
+    (!tools.is_empty())
+        .then(|| format!("{intro}\n\n{}\n\n{ONLY_WHAT_WAS_ASKED}", tools.join("\n\n")))
+}
+
+/// What the library-wide Ask can send, or `None` when it can send nothing.
+pub fn outbound_guide(db: &Database) -> Option<String> {
+    with_tools(db, OUTBOUND_GUIDE)
+}
+
+/// The changes the model may ask for: always the meeting's own, plus what it
+/// can send to other tools.
+fn actions_guide(db: &Database) -> String {
+    with_tools(db, ACTIONS_GUIDE).unwrap_or_else(|| format!("{ACTIONS_GUIDE}\n{NO_SENDING}"))
 }
 
 /// The meeting as it stands, for the model to act on: title, labels, notes,
@@ -520,15 +565,10 @@ async fn run(
             let at = crate::summarization::format_ms(start_ms);
             (format!("Pinned a comment at {at}"), &[])
         }
-        ChatAction::CreateLinearIssue { title, description } => {
-            return create_linear_issue(db, linear, meeting_id, &title, description.as_deref())
-                .await;
-        }
-        ChatAction::CreateNotionPage { title, markdown } => {
-            return create_wiki_page(db, meeting_id, Wiki::Notion, &title, &markdown).await;
-        }
-        ChatAction::CreateConfluencePage { title, markdown } => {
-            return create_wiki_page(db, meeting_id, Wiki::Confluence, &title, &markdown).await;
+        action @ (ChatAction::CreateLinearIssue { .. }
+        | ChatAction::CreateNotionPage { .. }
+        | ChatAction::CreateConfluencePage { .. }) => {
+            return send(db, linear, action, &source_note(db, meeting_id)?).await;
         }
     };
     Ok(Done {
@@ -538,12 +578,33 @@ async fn run(
     })
 }
 
-/// Files an issue in the default Linear team, noting the meeting it came
-/// from.
+/// Sends one thing to another tool, signed with `note`. Changes to a meeting
+/// aren't sent anywhere, so they fail here.
+async fn send(
+    db: &Database,
+    linear: &mut Option<LinearTarget>,
+    action: ChatAction,
+    note: &str,
+) -> Result<Done> {
+    match action {
+        ChatAction::CreateLinearIssue { title, description } => {
+            create_linear_issue(db, linear, note, &title, description.as_deref()).await
+        }
+        ChatAction::CreateNotionPage { title, markdown } => {
+            create_wiki_page(db, note, Wiki::Notion, &title, &markdown).await
+        }
+        ChatAction::CreateConfluencePage { title, markdown } => {
+            create_wiki_page(db, note, Wiki::Confluence, &title, &markdown).await
+        }
+        _ => bail!("Changes to a meeting only work in Ask Nootle inside that meeting"),
+    }
+}
+
+/// Files an issue in the default Linear team, signed with `note`.
 async fn create_linear_issue(
     db: &Database,
     linear: &mut Option<LinearTarget>,
-    meeting_id: &str,
+    note: &str,
     title: &str,
     description: Option<&str>,
 ) -> Result<Done> {
@@ -552,10 +613,9 @@ async fn create_linear_issue(
         bail!("Skipped a Linear issue with no title");
     }
     ensure_may_act(db).map_err(|e| anyhow!(e))?;
-    let footer = source_note(db, meeting_id)?;
     let description = match description.map(str::trim).filter(|d| !d.is_empty()) {
-        Some(d) => format!("{d}\n\n{footer}"),
-        None => footer,
+        Some(d) => format!("{d}\n\n{note}"),
+        None => note.to_string(),
     };
     let (client, team, project) = match linear.take() {
         Some(target) => target,
@@ -584,11 +644,10 @@ async fn create_linear_issue(
     })
 }
 
-/// Adds a page where the wiki's workflow puts them, noting the meeting it
-/// came from.
+/// Adds a page where the wiki's workflow puts them, signed with `note`.
 async fn create_wiki_page(
     db: &Database,
-    meeting_id: &str,
+    note: &str,
     wiki: Wiki,
     title: &str,
     markdown: &str,
@@ -602,7 +661,7 @@ async fn create_wiki_page(
     let (integration, location) = wiki
         .target(db)
         .ok_or_else(|| anyhow!("Set up a {name} workflow first, so Nootle knows where pages go"))?;
-    let content = format!("{}\n\n{}", markdown.trim(), source_note(db, meeting_id)?);
+    let content = format!("{}\n\n{note}", markdown.trim());
     let page = wiki
         .create_page(db, &integration, &location, title, &content)
         .await
@@ -814,10 +873,9 @@ mod tests {
         );
 
         let db = Database::new_in_memory().unwrap();
-        let id = meeting(&db);
-        let untitled = create_wiki_page(&db, &id, Wiki::Notion, " ", "x").await;
+        let untitled = create_wiki_page(&db, "", Wiki::Notion, " ", "x").await;
         assert!(untitled.unwrap_err().to_string().contains("no title"));
-        let nowhere = create_wiki_page(&db, &id, Wiki::Notion, "Decisions", "x").await;
+        let nowhere = create_wiki_page(&db, "", Wiki::Notion, "Decisions", "x").await;
         assert!(nowhere.unwrap_err().to_string().contains("Notion workflow"));
     }
 
@@ -835,13 +893,42 @@ mod tests {
         );
 
         let db = Database::new_in_memory().unwrap();
-        let id = meeting(&db);
-        let empty = create_linear_issue(&db, &mut None, &id, "  ", None).await;
+        let empty = create_linear_issue(&db, &mut None, "", "  ", None).await;
         assert!(empty.unwrap_err().to_string().contains("no title"));
         db.set_setting(crate::llm::LOCAL_ONLY_SETTING, "true")
             .unwrap();
         let blocked =
-            create_linear_issue(&db, &mut None, &id, "Write the explainer copy", None).await;
+            create_linear_issue(&db, &mut None, "", "Write the explainer copy", None).await;
         assert!(blocked.unwrap_err().to_string().contains("Local-only"));
+    }
+
+    #[test]
+    fn library_ask_offers_sending_only_when_a_tool_is_set_up() {
+        let db = Database::new_in_memory().unwrap();
+        assert!(outbound_guide(&db).is_none());
+
+        db.set_linear_setting("api_key", "lin_api_x").unwrap();
+        let guide = outbound_guide(&db).unwrap();
+        assert!(guide.contains("create_linear_issue"));
+        assert!(!guide.contains("add_to_notes"));
+
+        db.set_setting(crate::llm::LOCAL_ONLY_SETTING, "true")
+            .unwrap();
+        assert!(outbound_guide(&db).is_none());
+    }
+
+    #[tokio::test]
+    async fn library_ask_sends_nothing_but_issues_and_pages() {
+        let db = Database::new_in_memory().unwrap();
+        let (reply, outcomes) = send_requested(
+            &db,
+            "Done.\n```nootle-actions\n[{\"action\": \"add_to_notes\", \"markdown\": \"x\"}, {\"action\": \"create_notion_page\", \"title\": \"Decisions\", \"markdown\": \"x\"}]\n```",
+            "---\nFrom Ask Nootle.",
+        )
+        .await;
+        assert_eq!(reply, "Done.");
+        assert!(outcomes[0].summary.contains("inside that meeting"));
+        assert!(outcomes[1].summary.contains("Notion workflow"));
+        assert!(outcomes.iter().all(|o| !o.ok));
     }
 }
