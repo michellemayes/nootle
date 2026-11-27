@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.41.0] - 2026-11-27
+
+### Features
+
+- Let Ask across meetings file Linear issues and Notion or Confluence pages (#257) ([58f6749](https://github.com/michellemayes/nootle/commit/58f674959201d6d9f9e68b38016bb156f02f59f9))
+
 ## [0.40.1] - 2026-11-26
 
 ### Bug Fixes
